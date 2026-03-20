@@ -1660,7 +1660,12 @@ requestAnimationFrame(fitTerminalNow);
         case 'output': {
           const tid = msg.termId || 'main';
           const inst = termInstances.get(tid);
-          if (inst) inst.term.write(msg.data);
+          if (inst) {
+            // Auto-scroll if user is near the bottom (within 5 lines)
+            const wasNearBottom = inst.term.buffer.active.baseY - inst.term.buffer.active.viewportY <= 5;
+            inst.term.write(msg.data);
+            if (wasNearBottom) inst.term.scrollToBottom();
+          }
           break;
         }
         case 'term-started':
@@ -3091,11 +3096,20 @@ function handleUiAction(msg) {
     switchTab('files');
     setTimeout(() => viewFile(msg.path), 300);
   }
-  if (msg.action === 'view-diff' && msg.repo && msg.path) {
-    filesCurrentRepo = msg.repo;
-    activeRepo = msg.repo;
-    switchTab('files');
-    setTimeout(() => { viewFile(msg.path).then(() => showSplitDiff(msg.path, msg.base || 'HEAD')); }, 300);
+  if (msg.action === 'view-diff') {
+    const diffRepo = msg.repo || activeRepo || filesCurrentRepo;
+    if (diffRepo) {
+      filesCurrentRepo = diffRepo;
+      activeRepo = diffRepo;
+      if (msg.path) {
+        // Specific file diff
+        switchTab('files');
+        setTimeout(() => { viewFile(msg.path).then(() => showSplitDiff(msg.path, msg.base || 'HEAD')); }, 300);
+      } else {
+        // All working changes — open the diff tab
+        viewChangedFile('').catch(() => {});
+      }
+    }
   }
 }
 
@@ -3316,10 +3330,11 @@ async function onCardDrop(e, targetState) {
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }
     toast(`#${wiId} moved to ${targetState}`, 'success');
-    // Update local state and re-render
+    // Optimistic update + full refresh from server
     wi.state = targetState;
     renderBoard();
     renderBacklog();
+    loadWorkItems(true);
   } catch (e) {
     toast('Failed to update state', 'error');
   }
@@ -3405,7 +3420,7 @@ async function viewWorkItem(id) {
         ${configData.Repos && Object.keys(configData.Repos).length > 0 ? `
           <div style="display:flex;align-items:center;gap:10px;">
             <select id="startWorkRepo" style="padding:7px 10px;background:var(--base);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;flex:1;">
-              ${Object.keys(configData.Repos).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+              ${Object.keys(configData.Repos).map(r => `<option value="${esc(r)}"${r === activeRepo ? ' selected' : ''}>${esc(r)}</option>`).join('')}
             </select>
             <button class="btn btn-primary" onclick="startWorking(${wi.id})" style="flex-shrink:0;width:auto;padding:7px 16px;"><i data-lucide="play"></i> Start Working</button>
           </div>
@@ -3439,6 +3454,11 @@ async function startWorking(wiId) {
   if (!repoSelect) return;
   const repoName = repoSelect.value;
 
+  // Sync the sidebar repo selection to match
+  if (repoName && repoName !== activeRepo) {
+    selectRepo(repoName);
+  }
+
   try {
     const res = await fetch('/api/start-working', {
       method: 'POST',
@@ -3451,15 +3471,49 @@ async function startWorking(wiId) {
     toast(`Branch: ${data.branchName}`, 'success');
     switchTab('terminal');
 
-    // Launch AI with context
-    if (!aiLaunched) {
-      setTimeout(() => {
-        launchAi();
-        if (currentWiDetail) {
-          const ctx = `I'm working on work item #${currentWiDetail.id}: "${currentWiDetail.title}". ${currentWiDetail.description ? 'Description: ' + currentWiDetail.description.replace(/<[^>]*>/g, '').slice(0, 500) : ''} ${currentWiDetail.acceptanceCriteria ? 'Acceptance Criteria: ' + currentWiDetail.acceptanceCriteria.replace(/<[^>]*>/g, '').slice(0, 500) : ''}`;
-          setTimeout(() => sendCommand(ctx), 2000);
-        }
-      }, 500);
+    // Build full work item context for AI
+    if (currentWiDetail) {
+      const wi = currentWiDetail;
+      const lines = [];
+      lines.push(`I'm starting work on ${wi.type} #${wi.id}: "${wi.title}"`);
+      lines.push(`Branch: ${data.branchName}`);
+      lines.push(`State: ${wi.state} | Priority: P${wi.priority}${wi.storyPoints ? ' | Story Points: ' + wi.storyPoints : ''}${wi.effort ? ' | Effort: ' + wi.effort : ''}`);
+      if (wi.tags) lines.push(`Tags: ${wi.tags}`);
+
+      if (wi.description) {
+        const desc = wi.description.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+        if (desc) lines.push(`\nDescription:\n${desc}`);
+      }
+      if (wi.acceptanceCriteria) {
+        const ac = wi.acceptanceCriteria.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+        if (ac) lines.push(`\nAcceptance Criteria:\n${ac}`);
+      }
+      if (wi.reproSteps) {
+        const rs = wi.reproSteps.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+        if (rs) lines.push(`\nRepro Steps:\n${rs}`);
+      }
+      if (wi.linkedItems && wi.linkedItems.length > 0) {
+        const linked = wi.linkedItems.filter(l => l.id).map(l => `  - #${l.id} (${formatRelationType(l.rel)})${l.title ? ': ' + l.title : ''}`).join('\n');
+        if (linked) lines.push(`\nLinked Items:\n${linked}`);
+      }
+      if (wi.attachments && wi.attachments.length > 0) {
+        const atts = wi.attachments.map(a => `  - ${a.name}${a.comment ? ' (' + a.comment + ')' : ''}`).join('\n');
+        lines.push(`\nAttachments:\n${atts}`);
+      }
+      if (wi.webUrl) lines.push(`\nAzure DevOps: ${wi.webUrl}`);
+
+      lines.push(`\nPlease review the above and help me implement this work item. Start by analyzing what needs to be done and suggesting an approach.`);
+
+      const ctx = lines.join('\n');
+
+      const sendCtx = () => setTimeout(() => sendCommand(ctx), 2000);
+      if (!aiLaunched) {
+        setTimeout(() => { launchAi(); sendCtx(); }, 500);
+      } else {
+        sendCtx();
+      }
+    } else if (!aiLaunched) {
+      setTimeout(() => launchAi(), 500);
     }
   } catch (e) {
     toast('Failed to start working', 'error');
@@ -3748,9 +3802,25 @@ async function loadGitStatusForDiffTab(repoName) {
     if (!git.error && git.files && git.files.length > 0) {
       document.getElementById('diffviewTabBtn').style.display = '';
       populateDiffTabWithChanges(git.files, repoName);
+    } else {
+      // Hide diff tab if no changes (unless viewing a commit diff)
+      if (!diffViewCommit || diffViewCommit.hash === 'working') {
+        document.getElementById('diffviewTabBtn').style.display = 'none';
+      }
     }
   } catch (_) {}
 }
+
+// Poll git status every 10s to auto-show/hide the diff tab
+let _gitPollTimer = null;
+function startGitStatusPolling() {
+  if (_gitPollTimer) clearInterval(_gitPollTimer);
+  _gitPollTimer = setInterval(() => {
+    const repo = activeRepo || filesCurrentRepo;
+    if (repo) loadGitStatusForDiffTab(repo);
+  }, 10000);
+}
+startGitStatusPolling();
 
 function selectRepo(name) {
   activeRepo = name;

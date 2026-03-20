@@ -103,6 +103,9 @@ const server = http.createServer(async (req, res) => {
     // ── Start Working ─────────────────────────────────────────────────────
     if (url.pathname === '/api/start-working' && req.method === 'POST') return handleStartWorking(req, res);
 
+    // ── Pull Requests ─────────────────────────────────────────────────────
+    if (url.pathname === '/api/pull-request' && req.method === 'POST') return handleCreatePullRequest(req, res);
+
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
     if (url.pathname === '/api/notes/read' && req.method === 'GET') return handleReadNote(url, res);
@@ -563,6 +566,7 @@ async function handleUpdateWorkItem(id, req, res) {
 
     const result = await adoRequest('PATCH', `/wit/workitems/${id}?api-version=7.1`, patchDoc, 'application/json-patch+json');
     workItemsCache = { data: null, ts: 0 };
+    broadcast({ type: 'ui-action', action: 'refresh-workitems' });
     json(res, { ok: true, id: result.id });
   } catch (e) {
     json(res, { error: e.message }, 502);
@@ -581,6 +585,7 @@ async function handleWorkItemState(id, req, res) {
       'application/json-patch+json'
     );
     workItemsCache = { data: null, ts: 0 };
+    broadcast({ type: 'ui-action', action: 'refresh-workitems' });
     json(res, { ok: true, id: result.id, state: result.fields['System.State'] });
   } catch (e) {
     json(res, { error: e.message }, 502);
@@ -607,6 +612,7 @@ async function handleCreateWorkItem(req, res) {
     const wiType = encodeURIComponent(type);
     const result = await adoRequest('POST', `/wit/workitems/$${wiType}?api-version=7.1`, patchDoc, 'application/json-patch+json');
     workItemsCache = { data: null, ts: 0 };
+    broadcast({ type: 'ui-action', action: 'refresh-workitems' });
 
     const cfg = getConfig();
     json(res, {
@@ -856,6 +862,53 @@ async function handleStartWorking(req, res) {
   }
 }
 
+// ── Pull Request Creation ────────────────────────────────────────────────────
+async function handleCreatePullRequest(req, res) {
+  try {
+    const { repoName, title, description, sourceBranch, targetBranch, workItemId } = await readBody(req);
+    const cfg = getConfig();
+    const org = cfg.AzureDevOpsOrg;
+    const project = cfg.AzureDevOpsProject;
+
+    if (!repoName) return json(res, { error: 'repoName is required' }, 400);
+    if (!title) return json(res, { error: 'title is required' }, 400);
+
+    // Look up the ADO repo ID by name
+    const repos = await adoRequest('GET', `/git/repositories?api-version=7.1`);
+    const adoRepo = (repos.value || []).find(r => r.name.toLowerCase() === repoName.toLowerCase());
+    if (!adoRepo) return json(res, { error: `Repository "${repoName}" not found in Azure DevOps project` }, 404);
+
+    // Determine source branch — use provided or detect from local git
+    let source = sourceBranch;
+    if (!source) {
+      const repoPath = cfg.Repos?.[repoName];
+      if (repoPath) source = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+    }
+    if (!source) return json(res, { error: 'Could not determine source branch' }, 400);
+
+    const target = targetBranch || 'main';
+
+    const prBody = {
+      sourceRefName: `refs/heads/${source}`,
+      targetRefName: `refs/heads/${target}`,
+      title,
+      description: description || '',
+    };
+
+    // Link work item if provided
+    if (workItemId) {
+      prBody.workItemRefs = [{ id: String(workItemId) }];
+    }
+
+    const pr = await adoRequest('POST', `/git/repositories/${adoRepo.id}/pullrequests?api-version=7.1`, prBody);
+
+    const prUrl = `https://dev.azure.com/${org}/${project}/_git/${encodeURIComponent(repoName)}/pullrequest/${pr.pullRequestId}`;
+    json(res, { ok: true, pullRequestId: pr.pullRequestId, url: prUrl, title: pr.title });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
 // ── UI Actions (AI → Dashboard) ─────────────────────────────────────────────
 // ── File Browser ────────────────────────────────────────────────────────────
 function getRepoPath(repoName) {
@@ -963,11 +1016,6 @@ function handleGitStatus(url, res) {
   const statusLabel = { 'modified': 'M', 'added': 'A', 'deleted': 'D', 'renamed': 'R', 'new': 'N', 'conflict': 'U' };
   const files = status ? status.split('\n').filter(Boolean).map(line => {
     // Git porcelain: XY filename — X=index status, Y=worktree status
-    // For "?? file" (untracked), XY="??" and filename starts at position 3
-    // For " M file" (worktree modified), XY=" M" and filename starts at position 3
-    // For "M  file" (index modified), XY="M " and filename starts at position 3
-    // BUT on Windows/git, some lines may have XY directly followed by filename at position 2
-    // Safe approach: try position 3 first, fallback to position 2
     const x = line.charAt(0);
     const y = line.charAt(1);
     let file;
@@ -976,11 +1024,17 @@ function handleGitStatus(url, res) {
     } else {
       file = line.substring(2); // no separator: XYfilename
     }
+    // Handle renamed files: "R  old-name -> new-name"
+    if (file.includes(' -> ')) {
+      file = file.split(' -> ').pop();
+    }
+    // Strip any trailing \r from Windows line endings
+    file = file.replace(/\r$/, '').trim();
     const raw = (x + y).trim() || '?';
     const statusChar = raw.charAt(0);
     const cls = statusMap[statusChar] || 'modified';
     return { status: statusLabel[cls], statusClass: cls, file };
-  }) : [];
+  }).filter(f => f.file) : [];
 
   json(res, { branch, files, clean: files.length === 0 });
 }
