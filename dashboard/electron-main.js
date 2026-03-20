@@ -1,7 +1,7 @@
 /**
  * Electron main process — wraps the HTTP+WS server in a desktop window.
  */
-const { app, BrowserWindow, nativeImage, dialog, screen } = require('electron');
+const { app, BrowserWindow, nativeImage, dialog, screen, shell } = require('electron');
 const path = require('path');
 
 process.env.ELECTRON = '1';
@@ -76,13 +76,13 @@ if (!gotLock) {
         maximizable: false,
         fullscreenable: false,
         autoHideMenuBar: true,
-        backgroundColor: '#0a0f1a',
+        backgroundColor: '#1a1a18',
         title: 'DevOps Pilot',
         icon: nativeImage.createFromPath(path.join(__dirname, 'public', 'icon.ico')),
         titleBarStyle: 'hidden',
         titleBarOverlay: {
-          color: '#0c1220',
-          symbolColor: '#c8d6e5',
+          color: '#1a1a18',
+          symbolColor: '#e8e4dc',
           height: 32,
         },
         webPreferences: {
@@ -94,6 +94,26 @@ if (!gotLock) {
       win.setPosition(0, 0);
       win.loadURL(`http://${HOST}:${PORT}`);
       win.on('closed', () => { win = null; });
+
+      // Open ALL links in system browser except our own app
+      const appUrl = `http://${HOST}:${PORT}`;
+
+      win.webContents.setWindowOpenHandler(({ url }) => {
+        // Only allow our own app URL to open internally
+        if (url.startsWith(appUrl)) {
+          return { action: 'allow' };
+        }
+        // Everything else (including localhost dev servers) opens in system browser
+        shell.openExternal(url);
+        return { action: 'deny' };
+      });
+
+      win.webContents.on('will-navigate', (event, url) => {
+        if (!url.startsWith(appUrl)) {
+          event.preventDefault();
+          shell.openExternal(url);
+        }
+      });
     });
 
     startServer();

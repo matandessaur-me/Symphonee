@@ -3,6 +3,8 @@
   "AzureDevOpsProject": "",
   "AzureDevOpsPAT": "",
   "DefaultTeam": "",
+  "DefaultUser": "",
+  "WisprFlowKey": "",
   "Repos": {},
   "ThemePreference": "claude"
 }

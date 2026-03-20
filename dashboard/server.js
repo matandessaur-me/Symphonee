@@ -73,7 +73,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/prerequisites')                   return handlePrerequisites(res);
 
     // ── Azure DevOps: Iterations ──────────────────────────────────────────
-    if (url.pathname === '/api/iterations' && req.method === 'GET') return handleIterations(res);
+    if (url.pathname === '/api/iterations' && req.method === 'GET') return handleIterations(res, url);
 
     // ── Azure DevOps: Work Items ──────────────────────────────────────────
     if (url.pathname === '/api/workitems' && req.method === 'GET') return handleWorkItems(url, res);
@@ -89,7 +89,8 @@ const server = http.createServer(async (req, res) => {
     // ── Azure DevOps: Velocity ────────────────────────────────────────────
     if (url.pathname === '/api/velocity' && req.method === 'GET') return handleVelocity(res);
 
-    // ── Azure DevOps: Team Members ────────────────────────────────────────
+    // ── Azure DevOps: Teams & Members ─────────────────────────────────────
+    if (url.pathname === '/api/teams' && req.method === 'GET') return handleTeams(res);
     if (url.pathname === '/api/team-members' && req.method === 'GET') return handleTeamMembers(res);
 
     // ── Azure DevOps: Burndown ────────────────────────────────────────────
@@ -102,9 +103,48 @@ const server = http.createServer(async (req, res) => {
     // ── Start Working ─────────────────────────────────────────────────────
     if (url.pathname === '/api/start-working' && req.method === 'POST') return handleStartWorking(req, res);
 
+    // ── Notes ─────────────────────────────────────────────────────────────
+    if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
+    if (url.pathname === '/api/notes/read' && req.method === 'GET') return handleReadNote(url, res);
+    if (url.pathname === '/api/notes/save' && req.method === 'POST') return handleSaveNote(req, res);
+    if (url.pathname === '/api/notes/delete' && req.method === 'DELETE') return handleDeleteNote(req, res);
+    if (url.pathname === '/api/notes/create' && req.method === 'POST') return handleCreateNote(req, res);
+
+    // ── File Browser & Git ─────────────────────────────────────────────────
+    if (url.pathname === '/api/files/tree' && req.method === 'GET')    return handleFileTree(url, res);
+    if (url.pathname === '/api/files/read' && req.method === 'GET')    return handleFileRead(url, res);
+    if (url.pathname === '/api/files/save' && req.method === 'POST')   return handleFileSave(req, res);
+    if (url.pathname === '/api/git/status' && req.method === 'GET')    return handleGitStatus(url, res);
+    if (url.pathname === '/api/git/diff' && req.method === 'GET')      return handleGitDiff(url, res);
+    if (url.pathname === '/api/git/branches' && req.method === 'GET')  return handleGitBranches(url, res);
+    if (url.pathname === '/api/git/log' && req.method === 'GET')       return handleGitLog(url, res);
+    if (url.pathname === '/api/git/commit-diff' && req.method === 'GET') return handleCommitDiff(url, res);
+
+    // ── Split Diff ────────────────────────────────────────────────────────
+    if (url.pathname === '/api/git/split-diff' && req.method === 'GET') return handleSplitDiff(url, res);
+
+    // ── Project Scripts (package.json) ──────────────────────────────────────
+    if (url.pathname === '/api/project/scripts' && req.method === 'GET') return handleProjectScripts(url, res);
+
+    // ── Serve repo files (images, etc.) ────────────────────────────────────
+    if (url.pathname === '/api/files/serve' && req.method === 'GET') return handleServeFile(url, res);
+
+    // ── Voice-to-Text (Wispr Flow) ─────────────────────────────────────────
+    if (url.pathname === '/api/voice/transcribe' && req.method === 'POST') return handleVoiceTranscribe(req, res);
+
+    // ── Image Proxy (ADO images need auth) ─────────────────────────────────
+    if (url.pathname === '/api/image-proxy' && req.method === 'GET') return handleImageProxy(url, res);
+
+    // ── Open External URL ─────────────────────────────────────────────────
+    if (url.pathname === '/api/open-external' && req.method === 'POST') return handleOpenExternal(req, res);
+
     // ── UI Actions (AI → Dashboard) ───────────────────────────────────────
-    if (url.pathname === '/api/ui/tab' && req.method === 'POST')           return handleUiAction(req, res, 'switch-tab');
-    if (url.pathname === '/api/ui/view-workitem' && req.method === 'POST') return handleUiAction(req, res, 'view-workitem');
+    if (url.pathname === '/api/ui/tab' && req.method === 'POST')              return handleUiAction(req, res, 'switch-tab');
+    if (url.pathname === '/api/ui/view-workitem' && req.method === 'POST')  return handleUiAction(req, res, 'view-workitem');
+    if (url.pathname === '/api/ui/view-note' && req.method === 'POST')      return handleUiAction(req, res, 'view-note');
+    if (url.pathname === '/api/ui/refresh-workitems' && req.method === 'POST') return handleUiAction(req, res, 'refresh-workitems');
+    if (url.pathname === '/api/ui/view-file' && req.method === 'POST')       return handleUiAction(req, res, 'view-file');
+    if (url.pathname === '/api/ui/view-diff' && req.method === 'POST')       return handleUiAction(req, res, 'view-diff');
 
     // ── Static files ──────────────────────────────────────────────────────
     const route = ROUTES[url.pathname];
@@ -149,7 +189,12 @@ try {
   fs.watch(path.dirname(configPath), (eventType, filename) => {
     if (filename === 'config.json') {
       if (configWatchDebounce) clearTimeout(configWatchDebounce);
-      configWatchDebounce = setTimeout(() => broadcast({ type: 'config-changed' }), 500);
+      configWatchDebounce = setTimeout(() => {
+        teamAreasCache = { data: null, team: null, ts: 0 };
+        iterationsCache = { data: null, ts: 0 };
+        workItemsCache = { data: null, key: null, ts: 0 };
+        broadcast({ type: 'config-changed' });
+      }, 500);
     }
   });
 } catch (_) {}
@@ -204,11 +249,14 @@ function adoRequest(method, apiPath, body, contentType) {
     const org = cfg.AzureDevOpsOrg;
     const project = cfg.AzureDevOpsProject;
     const pat = cfg.AzureDevOpsPAT;
+    const team = cfg.DefaultTeam;
     if (!org || !project || !pat) {
       return reject(new Error('Azure DevOps not configured. Set Org, Project, and PAT in Settings.'));
     }
 
-    const url = new URL(`https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_apis${apiPath}`);
+    // Only /work/ endpoints are team-scoped in ADO. /wit/ endpoints are project-scoped.
+    const teamSegment = team && apiPath.startsWith('/work/') ? `/${encodeURIComponent(team)}` : '';
+    const url = new URL(`https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}${teamSegment}/_apis${apiPath}`);
     const payload = body ? JSON.stringify(body) : null;
     const options = {
       hostname: url.hostname,
@@ -280,13 +328,39 @@ function adoOrgRequest(method, apiPath) {
 // ── Caches ──────────────────────────────────────────────────────────────────
 let iterationsCache = { data: null, ts: 0 };
 let workItemsCache = { data: null, key: null, ts: 0 };
+let teamAreasCache = { data: null, team: null, ts: 0 };
 const ITER_CACHE_TTL = 300000;
 const WI_CACHE_TTL = 30000;
+const TEAM_AREAS_TTL = 600000; // 10 min
+
+// ── Get team area paths (for scoping work items to a team) ──────────────────
+async function getTeamAreaPaths() {
+  const cfg = getConfig();
+  const team = cfg.DefaultTeam;
+  if (!team) return null; // no team configured, don't filter
+
+  if (teamAreasCache.data && teamAreasCache.team === team && Date.now() - teamAreasCache.ts < TEAM_AREAS_TTL) {
+    return teamAreasCache.data;
+  }
+
+  try {
+    const data = await adoRequest('GET',
+      `/work/teamsettings/teamfieldvalues?api-version=7.1`
+    );
+    // The team field values contain the area paths assigned to this team
+    const areas = (data.values || []).map(v => v.value).filter(Boolean);
+    teamAreasCache = { data: areas, team, ts: Date.now() };
+    return areas;
+  } catch (_) {
+    return null;
+  }
+}
 
 // ── Iterations ──────────────────────────────────────────────────────────────
-async function handleIterations(res) {
+async function handleIterations(res, url) {
   try {
-    if (iterationsCache.data && Date.now() - iterationsCache.ts < ITER_CACHE_TTL) {
+    const forceRefresh = url && url.searchParams.get('refresh') === '1';
+    if (!forceRefresh && iterationsCache.data && Date.now() - iterationsCache.ts < ITER_CACHE_TTL) {
       return json(res, iterationsCache.data);
     }
 
@@ -336,14 +410,24 @@ async function handleWorkItems(url, res) {
       return json(res, workItemsCache.data);
     }
 
+    // Get team area paths to scope work items
+    const teamAreas = await getTeamAreaPaths();
+
     let wiqlQuery = `SELECT [System.Id] FROM WorkItems WHERE [System.State] NOT IN ('Removed')`;
+    // Without an iteration filter, exclude Closed to avoid 20k+ results
+    if (!iterationPath && !state) wiqlQuery += ` AND [System.State] NOT IN ('Closed', 'Done')`;
+    // Scope to team's area paths
+    if (teamAreas && teamAreas.length > 0) {
+      const areaConditions = teamAreas.map(a => `[System.AreaPath] UNDER '${a}'`).join(' OR ');
+      wiqlQuery += ` AND (${areaConditions})`;
+    }
     if (iterationPath) wiqlQuery += ` AND [System.IterationPath] = '${iterationPath}'`;
     if (state)         wiqlQuery += ` AND [System.State] = '${state}'`;
     if (type)          wiqlQuery += ` AND [System.WorkItemType] = '${type}'`;
     if (assignedTo)    wiqlQuery += ` AND [System.AssignedTo] = '${assignedTo}'`;
     wiqlQuery += ` ORDER BY [System.ChangedDate] DESC`;
 
-    const wiql = await adoRequest('POST', '/wit/wiql?api-version=7.1', { query: wiqlQuery });
+    const wiql = await adoRequest('POST', '/wit/wiql?$top=200&api-version=7.1', { query: wiqlQuery });
     const ids = (wiql.workItems || []).map(w => w.id).slice(0, 200);
 
     if (ids.length === 0) {
@@ -415,7 +499,7 @@ async function handleWorkItemDetail(id, res) {
 
     const comments = (commentsData.comments || []).map(c => ({
       id: c.id,
-      text: c.text || '',
+      text: proxyHtmlImages(c.text || ''),
       author: c.createdBy ? c.createdBy.displayName : '',
       date: c.createdDate || '',
     }));
@@ -435,9 +519,9 @@ async function handleWorkItemDetail(id, res) {
       storyPoints: f['Microsoft.VSTS.Scheduling.StoryPoints'] || '',
       effort: f['Microsoft.VSTS.Scheduling.Effort'] || '',
       reason: f['System.Reason'] || '',
-      description: f['System.Description'] || '',
-      acceptanceCriteria: f['Microsoft.VSTS.Common.AcceptanceCriteria'] || '',
-      reproSteps: f['Microsoft.VSTS.TCM.ReproSteps'] || '',
+      description: proxyHtmlImages(f['System.Description'] || ''),
+      acceptanceCriteria: proxyHtmlImages(f['Microsoft.VSTS.Common.AcceptanceCriteria'] || ''),
+      reproSteps: proxyHtmlImages(f['Microsoft.VSTS.TCM.ReproSteps'] || ''),
       areaPath: f['System.AreaPath'] || '',
       iterationPath: f['System.IterationPath'] || '',
       attachments,
@@ -649,19 +733,60 @@ async function handleBurndown(url, res) {
 }
 
 // ── Team Members ────────────────────────────────────────────────────────────
+// List all teams in the project
+async function handleTeams(res) {
+  try {
+    const cfg = getConfig();
+    const project = cfg.AzureDevOpsProject;
+    const data = await adoOrgRequest('GET',
+      `/projects/${encodeURIComponent(project)}/teams?api-version=7.1`
+    );
+    const teams = (data.value || []).map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description || '',
+    }));
+    json(res, teams);
+  } catch (e) {
+    json(res, { error: e.message }, 502);
+  }
+}
+
+// List members — collect from ALL teams to get full picture
 async function handleTeamMembers(res) {
   try {
     const cfg = getConfig();
-    const team = cfg.DefaultTeam || `${cfg.AzureDevOpsProject} Team`;
-    const data = await adoRequest('GET',
-      `/../_apis/projects/${encodeURIComponent(cfg.AzureDevOpsProject)}/teams/${encodeURIComponent(team)}/members?api-version=7.1`
+    const project = cfg.AzureDevOpsProject;
+
+    // Get all teams first
+    const teamsData = await adoOrgRequest('GET',
+      `/projects/${encodeURIComponent(project)}/teams?api-version=7.1`
     );
-    const members = (data.value || []).map(m => ({
-      id: m.identity?.id || '',
-      displayName: m.identity?.displayName || '',
-      uniqueName: m.identity?.uniqueName || '',
-      imageUrl: m.identity?.imageUrl || '',
-    }));
+
+    // Fetch members from all teams in parallel
+    const memberMap = new Map();
+    const fetches = (teamsData.value || []).map(t =>
+      adoOrgRequest('GET',
+        `/projects/${encodeURIComponent(project)}/teams/${encodeURIComponent(t.name)}/members?api-version=7.1`
+      ).catch(() => ({ value: [] }))
+    );
+    const results = await Promise.all(fetches);
+
+    for (const data of results) {
+      for (const m of (data.value || [])) {
+        const id = m.identity?.id;
+        if (id && !memberMap.has(id)) {
+          memberMap.set(id, {
+            id,
+            displayName: m.identity?.displayName || '',
+            uniqueName: m.identity?.uniqueName || '',
+            imageUrl: m.identity?.imageUrl || '',
+          });
+        }
+      }
+    }
+
+    const members = [...memberMap.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
     json(res, members);
   } catch (e) {
     json(res, { error: e.message }, 502);
@@ -699,7 +824,7 @@ async function handleStartWorking(req, res) {
     const wiType = wi.fields['System.WorkItemType'] || 'feature';
     const prefix = wiType.toLowerCase() === 'bug' ? 'bugfix' : 'feature';
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-    const branchName = `${prefix}/${workItemId}-${slug}`;
+    const branchName = `${prefix}/AB#${workItemId}-${slug}`;
 
     // Move work item to Active
     try {
@@ -711,14 +836,18 @@ async function handleStartWorking(req, res) {
       workItemsCache = { data: null, ts: 0 };
     } catch (_) { /* may already be active */ }
 
-    // Send commands to the terminal
+    // Proper branch creation: checkout main, fetch, then create branch
     const commands = [
       `cd "${repoPath.replace(/\\/g, '/')}"`,
-      `git checkout -b ${branchName} 2>/dev/null || git checkout ${branchName}`,
+      `git checkout main 2>/dev/null || git checkout master`,
+      `git fetch origin`,
+      `git pull`,
+      `git checkout -b ${branchName}`,
     ];
 
+    const mainTerm = terminals.get('main');
     for (const cmd of commands) {
-      if (currentPty) currentPty.write(cmd + '\r');
+      if (mainTerm) mainTerm.pty.write(cmd + '\r');
     }
 
     json(res, { ok: true, branchName, repoPath });
@@ -728,6 +857,390 @@ async function handleStartWorking(req, res) {
 }
 
 // ── UI Actions (AI → Dashboard) ─────────────────────────────────────────────
+// ── File Browser ────────────────────────────────────────────────────────────
+function getRepoPath(repoName) {
+  const cfg = getConfig();
+  const repos = cfg.Repos || {};
+  return repos[repoName] || null;
+}
+
+function handleFileTree(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const subPath = url.searchParams.get('path') || '';
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const fullPath = path.join(repoPath, subPath);
+  const resolved = path.resolve(fullPath);
+  if (!resolved.startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+
+  try {
+    const entries = fs.readdirSync(resolved, { withFileTypes: true })
+      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== '__pycache__' && e.name !== 'dist' && e.name !== 'build' && e.name !== '.git')
+      .map(e => ({
+        name: e.name,
+        isDir: e.isDirectory(),
+        path: subPath ? `${subPath}/${e.name}` : e.name,
+      }))
+      .sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    json(res, { entries, currentPath: subPath, repoName });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+function handleFileRead(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const filePath = url.searchParams.get('path') || '';
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const fullPath = path.join(repoPath, filePath);
+  const resolved = path.resolve(fullPath);
+  if (!resolved.startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+
+  try {
+    const st = fs.statSync(resolved);
+    const ext = path.extname(resolved).slice(1).toLowerCase();
+
+    // Check for binary files
+    const binaryExts = ['png','jpg','jpeg','gif','webp','ico','bmp','mp4','webm','ogg','mov','avi','zip','tar','gz','exe','dll','woff','woff2','ttf','eot','pdf'];
+    if (binaryExts.includes(ext)) {
+      return json(res, { content: `[Binary file: ${path.basename(resolved)} - ${st.size} bytes]`, name: path.basename(resolved), path: filePath, size: st.size, lines: 1, ext, isBinary: true });
+    }
+
+    const content = fs.readFileSync(resolved, 'utf8');
+    json(res, {
+      content,
+      name: path.basename(resolved),
+      path: filePath,
+      size: st.size,
+      lines: content.split('\n').length,
+      ext,
+    });
+  } catch (e) {
+    json(res, { error: e.message }, 404);
+  }
+}
+
+async function handleFileSave(req, res) {
+  const { repo, path: filePath, content } = await readBody(req);
+  const repoPath = getRepoPath(repo);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const fullPath = path.join(repoPath, filePath);
+  const resolved = path.resolve(fullPath);
+  if (!resolved.startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+
+  try {
+    fs.writeFileSync(resolved, content, 'utf8');
+    json(res, { ok: true });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── Git Integration ─────────────────────────────────────────────────────────
+function gitExec(repoPath, cmd) {
+  try {
+    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: 10000 }).trim();
+  } catch (e) {
+    return e.stdout || e.stderr || e.message;
+  }
+}
+
+function handleGitStatus(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+  const status = gitExec(repoPath, 'status --porcelain');
+  const statusMap = { 'M': 'modified', 'A': 'added', 'D': 'deleted', 'R': 'renamed', '?': 'new', 'U': 'conflict' };
+  const statusLabel = { 'modified': 'M', 'added': 'A', 'deleted': 'D', 'renamed': 'R', 'new': 'N', 'conflict': 'U' };
+  const files = status ? status.split('\n').filter(Boolean).map(line => {
+    // Git porcelain: XY filename — X=index status, Y=worktree status
+    // For "?? file" (untracked), XY="??" and filename starts at position 3
+    // For " M file" (worktree modified), XY=" M" and filename starts at position 3
+    // For "M  file" (index modified), XY="M " and filename starts at position 3
+    // BUT on Windows/git, some lines may have XY directly followed by filename at position 2
+    // Safe approach: try position 3 first, fallback to position 2
+    const x = line.charAt(0);
+    const y = line.charAt(1);
+    let file;
+    if (line.charAt(2) === ' ') {
+      file = line.substring(3); // standard: XY<space>filename
+    } else {
+      file = line.substring(2); // no separator: XYfilename
+    }
+    const raw = (x + y).trim() || '?';
+    const statusChar = raw.charAt(0);
+    const cls = statusMap[statusChar] || 'modified';
+    return { status: statusLabel[cls], statusClass: cls, file };
+  }) : [];
+
+  json(res, { branch, files, clean: files.length === 0 });
+}
+
+function handleGitDiff(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const filePath = url.searchParams.get('path') || '';
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  let diff = '';
+  if (filePath) {
+    // Try staged + unstaged diff against HEAD
+    diff = gitExec(repoPath, `diff HEAD -- "${filePath}"`);
+    // Try unstaged only
+    if (!diff) diff = gitExec(repoPath, `diff -- "${filePath}"`);
+    // Try staged only
+    if (!diff) diff = gitExec(repoPath, `diff --cached -- "${filePath}"`);
+    // For untracked/new files, show entire content as additions
+    if (!diff) {
+      const fullPath = path.join(repoPath, filePath);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          const lines = content.split('\n');
+          diff = `diff --git a/${filePath} b/${filePath}\nnew file\n--- /dev/null\n+++ b/${filePath}\n@@ -0,0 +1,${lines.length} @@\n` +
+            lines.map(l => `+${l}`).join('\n');
+        } catch (_) {}
+      }
+    }
+  } else {
+    diff = gitExec(repoPath, 'diff HEAD');
+    if (!diff) diff = gitExec(repoPath, 'diff');
+  }
+
+  json(res, { diff: diff || 'No changes', filePath });
+}
+
+function handleGitBranches(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+  const output = gitExec(repoPath, 'branch --format="%(refname:short)"');
+  const branches = output ? output.split('\n').filter(Boolean) : [];
+
+  json(res, { current, branches });
+}
+
+function handleGitLog(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const count = url.searchParams.get('count') || '20';
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const output = gitExec(repoPath, `log -${count} --pretty=format:"%h|%s|%an|%ar"`);
+  const commits = output ? output.split('\n').filter(Boolean).map(line => {
+    const [hash, subject, author, date] = line.replace(/^"|"$/g, '').split('|');
+    return { hash, subject, author, date };
+  }) : [];
+
+  json(res, { commits });
+}
+
+function handleCommitDiff(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const hash = url.searchParams.get('hash');
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+  if (!hash) return json(res, { error: 'hash required' }, 400);
+
+  const diff = gitExec(repoPath, `diff ${hash}~1 ${hash}`);
+  const stat = gitExec(repoPath, `diff --stat ${hash}~1 ${hash}`);
+  const msg = gitExec(repoPath, `log -1 --pretty=format:"%s" ${hash}`);
+
+  json(res, { diff: diff || 'No changes', stat, message: msg, hash });
+}
+
+// ── Split Diff ──────────────────────────────────────────────────────────────
+function handleSplitDiff(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const filePath = url.searchParams.get('path') || '';
+  const base = url.searchParams.get('base') || 'HEAD';
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  try {
+    // Get the original version from git
+    let original = '';
+    try {
+      original = execSync(`git -C "${repoPath}" show ${base}:"${filePath}"`, { encoding: 'utf8', timeout: 10000 });
+    } catch (_) { original = ''; }
+
+    // Get the current version from disk
+    const fullPath = path.join(repoPath, filePath);
+    let modified = '';
+    try { modified = fs.readFileSync(fullPath, 'utf8'); } catch (_) {}
+
+    // Normalize line endings to LF so diff doesn't flag every line
+    original = original.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    modified = modified.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    json(res, { original, modified, filePath, base });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── Project Scripts ──────────────────────────────────────────────────────────
+function handleProjectScripts(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+  const pkgPath = path.join(repoPath, 'package.json');
+  try {
+    if (!fs.existsSync(pkgPath)) return json(res, { scripts: {}, type: 'none' });
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    const scripts = pkg.scripts || {};
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const hasNodeModules = fs.existsSync(path.join(repoPath, 'node_modules'));
+
+    // Detect project type
+    let type = 'node';
+    if (deps['next']) type = 'nextjs';
+    else if (deps['react-scripts']) type = 'cra';
+    else if (deps['vite']) type = 'vite';
+    else if (deps['gatsby']) type = 'gatsby';
+    else if (deps['nuxt']) type = 'nuxt';
+
+    json(res, { scripts, type, name: pkg.name || '', hasNodeModules });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── Serve repo file (for images/media) ──────────────────────────────────────
+function handleServeFile(url, res) {
+  const repoName = url.searchParams.get('repo');
+  const filePath = url.searchParams.get('path');
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath || !filePath) { res.writeHead(400); return res.end('Missing params'); }
+
+  const fullPath = path.join(repoPath, filePath);
+  const resolved = path.resolve(fullPath);
+  if (!resolved.startsWith(path.resolve(repoPath))) { res.writeHead(403); return res.end('Forbidden'); }
+  if (!fs.existsSync(resolved)) { res.writeHead(404); return res.end('Not found'); }
+
+  const ext = path.extname(resolved).slice(1).toLowerCase();
+  const mimeTypes = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',
+    mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg', mov: 'video/quicktime',
+  };
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+  res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'max-age=60' });
+  fs.createReadStream(resolved).pipe(res);
+}
+
+// ── Voice-to-Text (Wispr Flow) ──────────────────────────────────────────────
+async function handleVoiceTranscribe(req, res) {
+  try {
+    const { audio } = await readBody(req);
+    if (!audio) return json(res, { error: 'audio (base64 WAV) required' }, 400);
+
+    const cfg = getConfig();
+    const apiKey = cfg.WisprFlowKey || '';
+    if (!apiKey) return json(res, { error: 'Wispr Flow API key not configured. Add it in Settings.' }, 400);
+
+    const payload = JSON.stringify({
+      audio,
+      language: ['en', 'fr'],
+      context: {
+        app: { name: 'DevOps Pilot', type: 'ai' },
+      },
+    });
+
+    const result = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'platform-api.wisprflow.ai',
+        path: '/api/v1/dash/api',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      };
+
+      const apiReq = https.request(options, (resp) => {
+        let data = '';
+        resp.on('data', chunk => { data += chunk; });
+        resp.on('end', () => {
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            try { resolve(JSON.parse(data)); } catch (_) { resolve({ text: data }); }
+          } else {
+            reject(new Error(`Wispr API error (${resp.statusCode}): ${data.slice(0, 200)}`));
+          }
+        });
+      });
+      apiReq.on('error', reject);
+      apiReq.write(payload);
+      apiReq.end();
+    });
+
+    json(res, { text: result.text || '', language: result.detected_language || '' });
+  } catch (e) {
+    json(res, { error: e.message }, 502);
+  }
+}
+
+// ── Open External URL ───────────────────────────────────────────────────────
+async function handleOpenExternal(req, res) {
+  const { url: extUrl } = await readBody(req);
+  if (!extUrl) return json(res, { error: 'url required' }, 400);
+  try { new URL(extUrl); } catch (_) { return json(res, { error: 'Invalid URL' }, 400); }
+  // Use rundll32 which reliably opens URLs in the default browser on Windows
+  exec(`rundll32 url.dll,FileProtocolHandler "${extUrl}"`);
+  json(res, { ok: true });
+}
+
+// ── Image Proxy ─────────────────────────────────────────────────────────────
+function handleImageProxy(url, res) {
+  const imageUrl = url.searchParams.get('url');
+  if (!imageUrl) { res.writeHead(400); return res.end('Missing url param'); }
+
+  const cfg = getConfig();
+  const pat = cfg.AzureDevOpsPAT;
+  const parsedUrl = new URL(imageUrl);
+
+  const options = {
+    hostname: parsedUrl.hostname,
+    path: parsedUrl.pathname + parsedUrl.search,
+    method: 'GET',
+    headers: { 'Accept': '*/*' },
+  };
+  if (pat && parsedUrl.hostname.includes('dev.azure.com')) {
+    options.headers['Authorization'] = 'Basic ' + Buffer.from(':' + pat).toString('base64');
+  }
+
+  const proto = parsedUrl.protocol === 'https:' ? https : http;
+  const proxyReq = proto.request(options, (proxyRes) => {
+    if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+      // Follow redirect
+      const redirectUrl = new URL(proxyRes.headers.location, imageUrl);
+      const newUrl = new URL(`http://${HOST}:${PORT}/api/image-proxy`);
+      newUrl.searchParams.set('url', redirectUrl.href);
+      return handleImageProxy(newUrl, res);
+    }
+    res.writeHead(proxyRes.statusCode, {
+      'Content-Type': proxyRes.headers['content-type'] || 'image/png',
+      'Cache-Control': 'max-age=3600',
+    });
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', (e) => { res.writeHead(502); res.end(e.message); });
+  proxyReq.end();
+}
+
 async function handleUiAction(req, res, action) {
   const data = await readBody(req);
   broadcast({ type: 'ui-action', action, ...data });
@@ -735,6 +1248,83 @@ async function handleUiAction(req, res, action) {
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
+// ── Notes Management ────────────────────────────────────────────────────────
+const notesDir = path.join(repoRoot, 'notes');
+
+function handleListNotes(res) {
+  try {
+    fs.mkdirSync(notesDir, { recursive: true });
+    const files = fs.readdirSync(notesDir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => {
+        const st = fs.statSync(path.join(notesDir, f));
+        return { name: f.replace('.md', ''), mtime: st.mtime };
+      })
+      .sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+    json(res, files);
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+function handleReadNote(url, res) {
+  const name = url.searchParams.get('name');
+  if (!name) return json(res, { error: 'name required' }, 400);
+  const filePath = path.join(notesDir, name + '.md');
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+  try {
+    const content = fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
+    json(res, { name, content });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+async function handleSaveNote(req, res) {
+  const { name, content } = await readBody(req);
+  if (!name) return json(res, { error: 'name required' }, 400);
+  const filePath = path.join(notesDir, name + '.md');
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+  fs.mkdirSync(notesDir, { recursive: true });
+  fs.writeFileSync(resolved, content || '', 'utf8');
+  json(res, { ok: true });
+}
+
+async function handleCreateNote(req, res) {
+  const { name } = await readBody(req);
+  if (!name) return json(res, { error: 'name required' }, 400);
+  const safeName = name.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+  if (!safeName) return json(res, { error: 'Invalid name' }, 400);
+  const filePath = path.join(notesDir, safeName + '.md');
+  if (fs.existsSync(filePath)) return json(res, { error: 'Note already exists' }, 409);
+  fs.mkdirSync(notesDir, { recursive: true });
+  fs.writeFileSync(filePath, `# ${safeName}\n\n`, 'utf8');
+  json(res, { ok: true, name: safeName });
+}
+
+async function handleDeleteNote(req, res) {
+  const { name } = await readBody(req);
+  if (!name) return json(res, { error: 'name required' }, 400);
+  const filePath = path.join(notesDir, name + '.md');
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+  if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
+  json(res, { ok: true });
+}
+
+// Rewrite ADO-hosted image src URLs to go through our proxy
+function proxyHtmlImages(html) {
+  if (!html) return html;
+  return html.replace(/<img([^>]+)src=["']([^"']+)["']/gi, (match, before, url) => {
+    if (url.includes('dev.azure.com') || url.includes('visualstudio.com')) {
+      return `<img${before}src="/api/image-proxy?url=${encodeURIComponent(url)}"`;
+    }
+    return match;
+  });
+}
+
 function formatAge(date) {
   const ms = Date.now() - new Date(date).getTime();
   const mins = ms / 60000;
@@ -744,9 +1334,23 @@ function formatAge(date) {
   return `${(hrs / 24).toFixed(1)}d ago`;
 }
 
-// ── PTY management ──────────────────────────────────────────────────────────
-let currentPty = null;
-let lastKnownCols = 120, lastKnownRows = 30;
+// ── Multi-PTY management ────────────────────────────────────────────────────
+const terminals = new Map(); // termId -> { pty, cols, rows }
+let defaultCols = 120, defaultRows = 30;
+
+function findShell() {
+  try { execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); return 'pwsh.exe'; } catch (_) {
+    try { execSync('where powershell.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); return 'powershell.exe'; } catch (_2) {
+      const candidates = [
+        path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
+      ];
+      for (const c of candidates) { if (fs.existsSync(c)) return c; }
+      return 'powershell.exe';
+    }
+  }
+}
+const shellPath = findShell();
 
 function broadcast(msg) {
   const payload = JSON.stringify(msg);
@@ -755,27 +1359,17 @@ function broadcast(msg) {
   }
 }
 
-function createPty(cols = 120, rows = 30) {
-  lastKnownCols = cols;
-  lastKnownRows = rows;
-
-  if (currentPty) { try { currentPty.kill(); } catch (_) {} }
-
-  let shell = 'powershell.exe';
-  try { execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); shell = 'pwsh.exe'; } catch (_) {
-    try { execSync('where powershell.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); } catch (_2) {
-      const candidates = [
-        path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
-      ];
-      for (const c of candidates) { if (fs.existsSync(c)) { shell = c; break; } }
-    }
+function createTerminal(termId, cols = 120, rows = 30, cwd = repoRoot) {
+  // Kill existing if same ID
+  if (terminals.has(termId)) {
+    try { terminals.get(termId).pty.kill(); } catch (_) {}
+    terminals.delete(termId);
   }
 
-  currentPty = pty.spawn(shell, ['-ExecutionPolicy', 'Bypass', '-NoLogo', '-NoExit'], {
+  const ptyProcess = pty.spawn(shellPath, ['-ExecutionPolicy', 'Bypass', '-NoProfile', '-NoLogo', '-NoExit'], {
     name: 'xterm-256color',
     cols, rows,
-    cwd: repoRoot,
+    cwd,
     env: {
       ...process.env,
       TERM: 'xterm-256color',
@@ -785,51 +1379,80 @@ function createPty(cols = 120, rows = 30) {
     },
   });
 
-  const ptyProcess = currentPty;
-  ptyProcess.onData(data => broadcast({ type: 'output', data }));
+  terminals.set(termId, { pty: ptyProcess, cols, rows });
+
+  ptyProcess.onData(data => broadcast({ type: 'output', termId, data }));
   ptyProcess.onExit(() => {
-    if (currentPty === ptyProcess) {
-      currentPty = null;
-      setTimeout(() => {
-        if (!currentPty && wss.clients.size > 0) createPty(lastKnownCols, lastKnownRows);
-      }, 500);
-    }
+    terminals.delete(termId);
+    broadcast({ type: 'term-exited', termId });
   });
 
-  broadcast({ type: 'started', cwd: repoRoot, isNewPty: true });
+  broadcast({ type: 'term-started', termId, cwd, isNew: true });
+  return ptyProcess;
 }
+
+function killTerminal(termId) {
+  const t = terminals.get(termId);
+  if (t) {
+    try { t.pty.kill(); } catch (_) {}
+    terminals.delete(termId);
+  }
+}
+
+// Backward compat: currentPty getter for start-working feature
+Object.defineProperty(global, 'currentPty', {
+  get() { return terminals.has('main') ? terminals.get('main').pty : null; },
+});
 
 // ── WebSocket ───────────────────────────────────────────────────────────────
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
-  if (currentPty) {
-    ws.send(JSON.stringify({ type: 'started', cwd: repoRoot, isNewPty: false }));
-  }
+  // Send list of active terminals
+  const active = [];
+  for (const [id] of terminals) active.push(id);
+  ws.send(JSON.stringify({ type: 'term-list', terminals: active }));
 
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
+      const termId = msg.termId || 'main';
+
       switch (msg.type) {
-        case 'input':
-          if (currentPty) currentPty.write(msg.data || '');
+        case 'input': {
+          const t = terminals.get(termId);
+          if (t) t.pty.write(msg.data || '');
           break;
-        case 'resize':
+        }
+        case 'resize': {
           if (msg.cols && msg.rows) {
             const cols = Math.max(msg.cols, 20);
             const rows = Math.max(msg.rows, 5);
-            if (!currentPty) {
-              createPty(cols, rows);
-            } else if (cols !== lastKnownCols || rows !== lastKnownRows) {
-              lastKnownCols = cols;
-              lastKnownRows = rows;
-              currentPty.resize(cols, rows);
+            defaultCols = cols;
+            defaultRows = rows;
+            const t = terminals.get(termId);
+            if (!t) {
+              createTerminal(termId, cols, rows);
+            } else if (cols !== t.cols || rows !== t.rows) {
+              t.cols = cols;
+              t.rows = rows;
+              t.pty.resize(cols, rows);
             }
           }
           break;
-        case 'restart':
-          createPty(msg.cols || lastKnownCols, msg.rows || lastKnownRows);
+        }
+        case 'create-term': {
+          createTerminal(termId, msg.cols || defaultCols, msg.rows || defaultRows, msg.cwd || repoRoot);
           break;
+        }
+        case 'kill-term': {
+          if (termId !== 'main') killTerminal(termId);
+          break;
+        }
+        case 'restart': {
+          createTerminal(termId, msg.cols || defaultCols, msg.rows || defaultRows);
+          break;
+        }
       }
     } catch (_) {}
   });
@@ -856,7 +1479,7 @@ function startServer() {
 if (!process.env.ELECTRON) startServer();
 
 process.on('SIGINT', () => {
-  if (currentPty) try { currentPty.kill(); } catch (_) {}
+  for (const [, t] of terminals) { try { t.pty.kill(); } catch (_) {} }
   server.close();
   process.exit(0);
 });

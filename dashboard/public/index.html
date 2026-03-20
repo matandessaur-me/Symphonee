@@ -6,6 +6,8 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/xterm.css">
   <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
     /* ── Shared layout tokens ────────────────────────────────────────────── */
     :root {
@@ -179,19 +181,23 @@
       transition: all 0.12s; text-align: left;
     }
     .btn:hover { background: var(--surface0); border-color: var(--surface1); color: var(--text); }
-    .btn i { width: 16px; height: 16px; color: var(--overlay1); transition: color 0.12s; flex-shrink: 0; }
-    .btn:hover i { color: var(--accent); }
+    .btn svg { width: 16px; height: 16px; color: var(--overlay1); transition: color 0.12s; flex-shrink: 0; }
+    .btn:hover svg { color: var(--accent); }
     .btn-primary {
       background: var(--accent); color: #fff; border-color: transparent; font-weight: 600;
     }
     .btn-primary:hover { filter: brightness(1.1); }
-    .btn-primary i { color: #fff; }
-    .btn-primary:hover i { color: #fff; }
+    .btn-primary svg { color: #fff; }
+    .btn-primary:hover svg { color: #fff; }
     .btn-sm { padding: 5px 8px; font-size: 11px; }
-    .btn-sm i { width: 14px; height: 14px; }
+    .btn-sm svg { width: 14px; height: 14px; }
 
     /* ── Center panel ─────────────────────────────────────────────────────── */
-    .center { display: flex; flex-direction: column; overflow: hidden; }
+    .center {
+      display: grid;
+      grid-template-rows: var(--term-bar-h) 1fr;
+      overflow: hidden;
+    }
 
     /* ── Tab bar ───────────────────────────────────────────────────────────── */
     .tab-bar {
@@ -216,9 +222,57 @@
     .tab-bar-btn:hover { background: var(--surface0); color: var(--text); }
 
     /* ── Tab panels ───────────────────────────────────────────────────────── */
-    .tab-panel { display: none; flex: 1; overflow: hidden; }
+    .tab-panel { display: none; width: 100%; height: 100%; overflow: hidden; position: relative; }
     .tab-panel.active { display: flex; flex-direction: column; }
-    #terminal { flex: 1; }
+    .tab-panel#panel-terminal.active { display: flex; flex-direction: column; }
+
+    /* ── Terminal sub-tabs ────────────────────────────────────────────────── */
+    .term-tabs {
+      display: flex; align-items: center; gap: 0; height: 34px; flex-shrink: 0;
+      background: var(--mantle); border-bottom: 1px solid var(--surface0); padding: 0 6px;
+      position: relative; z-index: 5;
+    }
+    .term-tab {
+      display: flex; align-items: center; gap: 4px;
+      padding: 0 14px; height: 100%; background: transparent; border: none;
+      color: var(--subtext0); font: 12px var(--font-ui); cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all 0.12s;
+    }
+    .term-tab:hover { color: var(--text); }
+    .term-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .term-tab-close {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px;
+      color: var(--subtext0); cursor: pointer; margin-left: 4px;
+      border-radius: 4px; background: none; border: none;
+      position: relative; z-index: 10;
+    }
+    .term-tab-close:hover { color: var(--red); background: rgba(242,139,130,0.15); }
+    .term-tab-add {
+      background: none; border: none; color: var(--overlay1); font-size: 16px;
+      cursor: pointer; padding: 0 8px; height: 100%; transition: color 0.12s;
+    }
+    .term-tab-add:hover { color: var(--accent); }
+    .term-containers { flex: 1; position: relative; min-height: 0; z-index: 0; }
+    .term-instance {
+      display: none; position: absolute; inset: 0;
+      padding: 8px 12px; box-sizing: border-box;
+    }
+    .term-instance.active { display: block; }
+    .tab-panel#panel-files.active { display: flex; }
+    .tab-panel#panel-notes.active { display: flex; }
+    #terminal { width: 100%; height: 100%; padding: 8px 12px 8px 12px; box-sizing: border-box; overflow: hidden; position: relative; }
+    .scroll-bottom-btn {
+      display: none; position: absolute; bottom: 16px; right: 20px; z-index: 10;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--surface0); border: 1px solid var(--surface1);
+      color: var(--subtext0); cursor: pointer;
+      align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: all 0.15s;
+    }
+    .scroll-bottom-btn:hover { background: var(--surface1); color: var(--text); }
+    .scroll-bottom-btn.visible { display: flex; }
+    .scroll-bottom-btn svg { width: 16px; height: 16px; }
 
     /* ── Board (Kanban) ───────────────────────────────────────────────────── */
     .board {
@@ -240,15 +294,88 @@
       font-size: 11px; color: var(--subtext0);
     }
     .board-col-items { flex: 1; overflow-y: auto; padding: 6px; }
+    .board-col-items { min-height: 60px; }
+    .board-col-items.drag-over { background: rgba(217,119,87,0.05); border-radius: var(--radius); }
     .board-card {
       padding: 10px; margin-bottom: 6px; background: var(--mantle);
       border: 1px solid var(--surface0); border-radius: var(--radius);
-      cursor: pointer; transition: all 0.12s;
+      cursor: grab; transition: all 0.12s;
     }
     .board-card:hover { border-color: var(--accent); background: var(--base); }
+    .board-card.dragging { opacity: 0.4; cursor: grabbing; }
     .board-card-id { font-size: 10px; color: var(--subtext0); font-family: var(--font-mono); }
     .board-card-title { font-size: 12px; color: var(--text); margin: 3px 0; line-height: 1.35; }
     .board-card-meta { font-size: 10px; color: var(--subtext0); display: flex; align-items: center; gap: 6px; }
+    /* ── Unified view toolbar (Board + Backlog) ──────────────────────────── */
+    .view-toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 12px; height: 42px; flex-shrink: 0;
+      background: var(--mantle); border-bottom: 1px solid var(--surface0);
+    }
+    .view-search {
+      flex: 1; max-width: 280px; padding: 6px 10px; background: var(--surface0);
+      border: 1px solid var(--surface1); border-radius: var(--radius);
+      color: var(--text); font: 12px var(--font-ui); outline: none;
+    }
+    .view-search:focus { border-color: var(--accent); }
+    .view-filter {
+      padding: 6px 8px; background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); color: var(--subtext1); font: 11px var(--font-ui); outline: none;
+    }
+    .view-filter:focus { border-color: var(--accent); }
+
+    /* ── Multi-select dropdown ────────────────────────────────────────────── */
+    .multi-select { position: relative; user-select: none; }
+    .multi-select-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 10px; min-width: 110px;
+      background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); cursor: pointer; transition: border-color 0.12s;
+      font: 11px var(--font-ui); color: var(--subtext1);
+    }
+    .multi-select-btn:hover, .multi-select.open .multi-select-btn { border-color: var(--accent); }
+    .multi-select-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .multi-select-arrow { font-size: 10px; color: var(--overlay1); transition: transform 0.15s; }
+    .multi-select.open .multi-select-arrow { transform: rotate(180deg); }
+    .multi-select-chips {
+      display: flex; gap: 3px; flex-wrap: wrap; max-width: 160px;
+    }
+    .multi-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 1px 6px; border-radius: 99px; font-size: 10px; font-weight: 600;
+      background: rgba(217,119,87,0.15); color: var(--accent);
+    }
+    .multi-chip-x {
+      cursor: pointer; font-size: 12px; line-height: 1; opacity: 0.6;
+    }
+    .multi-chip-x:hover { opacity: 1; }
+    .multi-select-panel {
+      display: none; position: absolute; top: calc(100% + 4px); right: 0;
+      min-width: 160px; background: var(--mantle);
+      border: 1px solid var(--surface1); border-radius: var(--radius-lg);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 50; padding: 4px;
+    }
+    .multi-select.open .multi-select-panel { display: block; }
+    .multi-select-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: var(--radius); cursor: pointer;
+      font: 12px var(--font-ui); color: var(--subtext1); transition: all 0.1s;
+    }
+    .multi-select-item:hover { background: var(--surface0); color: var(--text); }
+    .multi-select-check {
+      width: 14px; height: 14px; border-radius: 3px;
+      border: 1.5px solid var(--overlay0); display: flex;
+      align-items: center; justify-content: center; flex-shrink: 0;
+      transition: all 0.1s;
+    }
+    .multi-select-item.selected .multi-select-check {
+      background: var(--accent); border-color: var(--accent);
+    }
+    .multi-select-item.selected .multi-select-check::after {
+      content: ''; width: 6px; height: 3px;
+      border-left: 1.5px solid #fff; border-bottom: 1.5px solid #fff;
+      transform: rotate(-45deg) translateY(-1px);
+    }
     .board-card-type {
       padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.3px;
@@ -261,20 +388,6 @@
 
     /* ── Backlog table ────────────────────────────────────────────────────── */
     .backlog { flex: 1; overflow-y: auto; padding: 0; }
-    .backlog-toolbar {
-      display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-      border-bottom: 1px solid var(--surface0); flex-shrink: 0;
-    }
-    .backlog-search {
-      flex: 1; max-width: 300px; padding: 5px 10px;
-      background: var(--surface0); border: 1px solid var(--surface1);
-      border-radius: var(--radius); color: var(--text); font: 12px var(--font-ui); outline: none;
-    }
-    .backlog-search:focus { border-color: var(--accent); }
-    .backlog-filter {
-      padding: 5px 8px; background: var(--surface0); border: 1px solid var(--surface1);
-      border-radius: var(--radius); color: var(--subtext1); font: 11px var(--font-ui); outline: none;
-    }
     .backlog-table { width: 100%; border-collapse: collapse; }
     .backlog-table th {
       padding: 8px 12px; text-align: left; font-size: 10px; font-weight: 700;
@@ -309,6 +422,7 @@
     .wi-detail-id { font-size: 12px; color: var(--subtext0); font-family: var(--font-mono); margin-bottom: 4px; }
     .wi-detail-title { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1.3; }
     .wi-detail-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .wi-detail-actions .btn { width: auto; white-space: nowrap; }
     .wi-detail-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
     .wi-field { }
     .wi-field-label { font-size: 10px; color: var(--overlay1); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
@@ -316,7 +430,10 @@
     .wi-detail-section { margin-bottom: 20px; }
     .wi-detail-section-title { font-size: 12px; font-weight: 600; color: var(--subtext1); margin-bottom: 8px; }
     .wi-detail-html { font-size: 13px; color: var(--subtext1); line-height: 1.6; }
-    .wi-detail-html img { max-width: 100%; border-radius: var(--radius); margin: 8px 0; }
+    .wi-detail-html a { color: var(--accent); text-decoration: none; }
+    .wi-detail-html a:hover { text-decoration: underline; }
+    .wi-detail-html img { max-width: 100%; border-radius: var(--radius); margin: 8px 0; display: block; }
+    .wi-comment-body a { color: var(--accent); }
     .wi-comment { padding: 10px; margin-bottom: 8px; background: var(--surface0); border-radius: var(--radius); }
     .wi-comment-author { font-size: 11px; font-weight: 600; color: var(--accent); }
     .wi-comment-date { font-size: 10px; color: var(--subtext0); margin-left: 8px; }
@@ -325,6 +442,259 @@
     .wi-linked:hover { background: var(--surface1); }
     .wi-linked-id { font-family: var(--font-mono); font-size: 11px; color: var(--subtext0); }
     .wi-linked-rel { font-size: 10px; color: var(--overlay1); }
+
+    /* ── Files panel ──────────────────────────────────────────────────────── */
+    .files-container { display: flex; width: 100%; height: 100%; }
+    .files-sidebar {
+      width: 260px; flex-shrink: 0; background: var(--mantle);
+      border-right: 1px solid var(--surface0); display: flex; flex-direction: column;
+    }
+    .files-sidebar-header {
+      display: flex; align-items: center; padding: 0 8px; height: 38px;
+      border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+    }
+    .files-sidebar-tabs {
+      display: flex; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+    }
+    .files-stab {
+      flex: 1; padding: 7px 0; background: transparent; border: none;
+      color: var(--subtext0); font: 11px var(--font-ui); cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all 0.12s; text-align: center;
+    }
+    .files-stab:hover { color: var(--text); }
+    .files-stab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .files-stab-panel { display: none; flex: 1; flex-direction: column; overflow-y: auto; min-height: 0; }
+    .files-stab-panel.active { display: flex; }
+    .files-git-section { overflow-y: auto; }
+    .changed-file {
+      display: flex; align-items: center; gap: 6px; padding: 4px 0;
+      cursor: pointer; font: 11px var(--font-mono); transition: color 0.1s;
+    }
+    .changed-file:hover { color: var(--text); }
+    .changed-file-status {
+      width: 16px; text-align: center; font-weight: 700; font-size: 10px; flex-shrink: 0;
+    }
+    .changed-file-status.modified { color: var(--yellow); }
+    .changed-file-status.added { color: var(--green); }
+    .changed-file-status.deleted { color: var(--red); }
+    .changed-file-status.renamed { color: var(--blue); }
+    .changed-file-status.new { color: var(--green); }
+    .commit-item {
+      padding: 8px 10px; border-bottom: 1px solid var(--surface0);
+      cursor: default; transition: background 0.1s;
+    }
+    .commit-item:hover { background: var(--surface0); }
+    .commit-hash { font: 11px var(--font-mono); color: var(--accent); }
+    .commit-msg { font-size: 12px; color: var(--text); margin: 2px 0; line-height: 1.3; }
+    .commit-meta { font-size: 10px; color: var(--subtext0); }
+    .files-git-bar {
+      display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+      border-bottom: 1px solid var(--surface0); font-size: 11px; flex-shrink: 0;
+      overflow: hidden; white-space: nowrap;
+    }
+    .files-branch {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--surface0); padding: 2px 8px; border-radius: 99px;
+      font: 11px var(--font-mono); color: var(--accent);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 160px; flex-shrink: 1;
+    }
+    .files-git-status {
+      font-size: 10px; padding: 2px 8px; border-radius: 99px;
+      background: var(--surface0); color: var(--subtext0);
+    }
+    .files-git-status.clean { color: var(--green); }
+    .files-git-status.dirty { color: var(--yellow); }
+    .script-btn {
+      padding: 3px 8px; border-radius: var(--radius); border: 1px solid var(--surface1);
+      background: var(--surface0); color: var(--subtext1); font: 10px var(--font-mono);
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+    }
+    .script-btn:hover { border-color: var(--accent); color: var(--text); }
+    .script-btn.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+    .script-btn.primary:hover { filter: brightness(1.1); }
+    .script-btn.install { background: var(--yellow); color: var(--crust); border-color: transparent; font-weight: 600; }
+    .script-btn.install:hover { filter: brightness(1.1); }
+    .files-breadcrumb {
+      display: flex; align-items: center; gap: 2px; padding: 6px 10px;
+      font-size: 11px; color: var(--subtext0); flex-shrink: 0;
+      border-bottom: 1px solid var(--surface0); flex-wrap: wrap;
+    }
+    .files-breadcrumb-link {
+      color: var(--accent); cursor: pointer; background: none; border: none;
+      font: 11px var(--font-ui); padding: 0;
+    }
+    .files-breadcrumb-link:hover { text-decoration: underline; }
+    .files-breadcrumb-sep { color: var(--overlay0); margin: 0 2px; }
+    .files-tree { flex: 1; overflow-y: auto; }
+    .file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 12px; cursor: pointer; font-size: 12px; color: var(--subtext1);
+      border-bottom: 1px solid var(--surface0); transition: background 0.1s;
+    }
+    .file-item:hover { background: var(--surface0); }
+    .file-item.active { background: var(--surface0); color: var(--accent); }
+    .file-item svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--overlay1); }
+    .file-item.dir svg { color: var(--accent); }
+    .files-viewer {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .files-viewer-toolbar {
+      display: flex; align-items: center; gap: 6px; padding: 0 12px;
+      height: 38px; border-bottom: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0;
+    }
+
+    /* Code viewer */
+    .code-table { width: 100%; border-collapse: collapse; font: 13px/1.6 var(--font-mono); }
+    .code-table td { padding: 0; vertical-align: top; }
+    .code-ln {
+      width: 50px; text-align: right; padding: 0 12px;
+      color: var(--overlay0); user-select: none; border-right: 1px solid var(--surface0);
+      background: var(--mantle);
+    }
+    .code-line { padding: 0 16px; white-space: pre; }
+    .code-line:hover { background: var(--surface0); }
+
+    /* Override highlight.js background to be transparent (we handle bg ourselves) */
+    .hljs { background: transparent !important; padding: 0 !important; display: inline !important; }
+
+    /* Diff viewer */
+    .diff-table { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--font-mono); }
+    .diff-table td { padding: 0 8px; vertical-align: top; }
+    .diff-ln { width: 45px; text-align: right; color: var(--overlay0); user-select: none; }
+    .diff-marker { width: 20px; text-align: center; font-weight: 700; }
+    .diff-code { white-space: pre; }
+    .diff-add { background: rgba(126,198,153,0.08); }
+    .diff-add .diff-marker { color: var(--green); }
+    .diff-add .diff-code { color: var(--green); }
+    .diff-remove { background: rgba(242,139,130,0.08); }
+    .diff-remove .diff-marker { color: var(--red); }
+    .diff-remove .diff-code { color: var(--red); }
+    .diff-hunk { background: var(--surface0); color: var(--blue); font-size: 11px; }
+    .diff-hunk td { padding: 4px 8px; }
+    .diff-stats-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--surface0); font-size: 11px; }
+    .diff-stats-add { color: var(--green); font-weight: 600; }
+    .diff-stats-del { color: var(--red); font-weight: 600; }
+
+    /* Split diff */
+    .split-diff { display: flex; width: 100%; height: 100%; }
+    .split-diff-pane { flex: 1; overflow: auto; border-right: 1px solid var(--surface0); }
+    .split-diff-pane:last-child { border-right: none; }
+    .split-diff-header {
+      position: sticky; top: 0; z-index: 1;
+      padding: 6px 12px; font: 11px var(--font-ui); font-weight: 600;
+      background: var(--mantle); border-bottom: 1px solid var(--surface0);
+      color: var(--subtext0);
+    }
+    .split-diff-header.original { color: var(--red); }
+    .split-diff-header.modified { color: var(--green); }
+    .split-line { display: flex; min-height: 20px; }
+    .split-line-num {
+      width: 45px; flex-shrink: 0; text-align: right; padding: 0 8px;
+      color: var(--overlay0); font: 12px/1.5 var(--font-mono); user-select: none;
+      background: var(--mantle);
+    }
+    .split-line-code {
+      flex: 1; padding: 0 8px; white-space: pre; font: 12px/1.5 var(--font-mono);
+      color: var(--text);
+    }
+    .split-line.added { background: rgba(126,198,153,0.06); }
+    .split-line.added .split-line-code { color: var(--green); }
+    .split-line.removed { background: rgba(242,139,130,0.06); }
+    .split-line.removed .split-line-code { color: var(--red); }
+    .split-line.empty { background: var(--crust); }
+    .split-line.empty .split-line-code { color: transparent; }
+
+    /* ── Diff Viewer panel ────────────────────────────────────────────────── */
+    .diffview-container { display: flex; width: 100%; height: 100%; }
+    .diffview-sidebar {
+      width: 240px; flex-shrink: 0; background: var(--mantle);
+      border-right: 1px solid var(--surface0); display: flex; flex-direction: column;
+    }
+    .diffview-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .diffview-toolbar {
+      display: flex; align-items: center; gap: 6px; padding: 0 12px;
+      height: 38px; border-bottom: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0;
+    }
+    .diffview-file {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; cursor: pointer; font-size: 12px; color: var(--subtext1);
+      border-bottom: 1px solid var(--surface0); transition: background 0.1s;
+      overflow: hidden;
+    }
+    .diffview-file:hover { background: var(--surface0); }
+    .diffview-file.active { background: var(--surface0); color: var(--accent); }
+    .diffview-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .tab-panel#panel-diffview.active { display: flex; }
+
+    /* ── Notes panel ──────────────────────────────────────────────────────── */
+    .notes-container { display: flex; width: 100%; height: 100%; }
+    .notes-sidebar {
+      width: 200px; flex-shrink: 0; background: var(--mantle);
+      border-right: 1px solid var(--surface0); display: flex; flex-direction: column;
+    }
+    .notes-editor {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .notes-editor-toolbar {
+      display: flex; align-items: center; gap: 6px; padding: 0 12px;
+      height: 38px; border-bottom: 1px solid var(--surface0); background: var(--mantle); flex-shrink: 0;
+    }
+    .note-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--surface0);
+      transition: background 0.1s; font-size: 12px; color: var(--subtext1);
+    }
+    .note-item:hover { background: var(--surface0); }
+    .note-item.active { background: var(--surface0); color: var(--accent); font-weight: 600; }
+    .note-item-date { font-size: 9px; color: var(--overlay0); margin-left: auto; }
+    /* ── Context menu ─────────────────────────────────────────────────────── */
+    .context-menu {
+      display: none; position: fixed; z-index: 300;
+      background: var(--mantle); border: 1px solid var(--surface1);
+      border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      padding: 4px; min-width: 140px;
+    }
+    .context-menu.open { display: block; }
+    .context-menu-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; border-radius: var(--radius); cursor: pointer;
+      font: 12px var(--font-ui); color: var(--subtext1); transition: all 0.1s;
+    }
+    .context-menu-item:hover { background: var(--surface0); color: var(--text); }
+    .context-menu-item.danger:hover { background: rgba(242,139,130,0.1); color: var(--red); }
+    .context-menu-item svg { width: 14px; height: 14px; }
+
+    /* Markdown preview styling */
+    #notePreview { color: var(--text); font: 14px/1.7 var(--font-ui); }
+    #notePreview h1 { font-size: 22px; font-weight: 700; color: var(--text); margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--surface0); }
+    #notePreview h2 { font-size: 18px; font-weight: 600; color: var(--text); margin: 20px 0 8px; }
+    #notePreview h3 { font-size: 15px; font-weight: 600; color: var(--text); margin: 16px 0 6px; }
+    #notePreview p { margin: 0 0 10px; }
+    #notePreview ul, #notePreview ol { margin: 0 0 10px; padding-left: 24px; }
+    #notePreview li { margin: 3px 0; }
+    #notePreview code {
+      background: var(--surface0); padding: 2px 6px; border-radius: 3px;
+      font: 13px var(--font-mono); color: var(--accent);
+    }
+    #notePreview pre {
+      background: var(--crust); padding: 12px 16px; border-radius: var(--radius);
+      overflow-x: auto; margin: 0 0 12px; border: 1px solid var(--surface0);
+    }
+    #notePreview pre code { background: none; padding: 0; color: var(--text); }
+    #notePreview blockquote {
+      border-left: 3px solid var(--accent); padding: 4px 12px; margin: 0 0 10px;
+      color: var(--subtext1); background: var(--surface0); border-radius: 0 var(--radius) var(--radius) 0;
+    }
+    #notePreview strong { color: var(--text); font-weight: 600; }
+    #notePreview a { color: var(--accent); }
+    #notePreview hr { border: none; border-top: 1px solid var(--surface0); margin: 16px 0; }
+    #notePreview table { border-collapse: collapse; margin: 0 0 12px; width: 100%; }
+    #notePreview th, #notePreview td { padding: 6px 10px; border: 1px solid var(--surface0); font-size: 12px; }
+    #notePreview th { background: var(--surface0); font-weight: 600; text-align: left; }
+    #notePreview img { max-width: 100%; border-radius: var(--radius); }
 
     /* ── Right panel (Intelligence) ───────────────────────────────────────── */
     .intel {
@@ -433,6 +803,35 @@
     .repo-item-path { font-size: 11px; color: var(--subtext0); font-family: var(--font-mono); flex: 1; overflow: hidden; text-overflow: ellipsis; }
     .repo-item-del { background: none; border: none; color: var(--red); cursor: pointer; padding: 2px; font-size: 14px; }
 
+    /* ── Voice recording indicator ────────────────────────────────────────── */
+    .voice-indicator {
+      display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 300; background: var(--accent); color: #fff; padding: 10px 20px;
+      border-radius: 99px; font: 13px var(--font-ui); font-weight: 600;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4); align-items: center; gap: 8px;
+    }
+    .voice-indicator.recording { display: flex; animation: pulse 1.5s ease infinite; }
+    .voice-dot { width: 10px; height: 10px; background: #fff; border-radius: 50%; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    /* ── Sidebar bottom hints ────────────────────────────────────────────── */
+    .sidebar-bottom-hints {
+      flex-shrink: 0; padding: 0 0 6px;
+    }
+    .voice-hint {
+      display: none; margin: 4px 10px; padding: 8px 10px;
+      background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); font: 11px var(--font-ui); color: var(--subtext0);
+      align-items: center; gap: 6px; user-select: none; justify-content: center;
+    }
+    .voice-hint.visible { display: flex; }
+    .voice-hint svg { width: 13px; height: 13px; flex-shrink: 0; }
+    .voice-hint kbd {
+      font: 10px var(--font-mono); background: var(--mantle);
+      border: 1px solid var(--surface0); border-radius: 4px;
+      padding: 3px 7px; color: var(--subtext1);
+    }
+
     /* ── Toast notifications ──────────────────────────────────────────────── */
     .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
     .toast {
@@ -482,10 +881,6 @@
     </div>
   </div>
   <div class="header-right">
-    <button class="project-selector" onclick="openSettings()" title="Settings">
-      <i data-lucide="settings" style="width:14px;height:14px"></i>
-      <span id="projectLabel">Not configured</span>
-    </button>
     <div class="status-dot" id="statusDot"></div>
     <span id="connectionStatus">Connecting...</span>
   </div>
@@ -505,27 +900,42 @@
       </div>
     </div>
     <div class="sidebar-scrollable">
-      <div class="section-title">Create</div>
-      <button class="btn" onclick="openCreateModal('User Story')"><i data-lucide="book-open"></i> New Story</button>
-      <button class="btn" onclick="openCreateModal('Bug')"><i data-lucide="bug"></i> New Bug</button>
-      <button class="btn" onclick="openCreateModal('Task')"><i data-lucide="check-square"></i> New Task</button>
-      <button class="btn" onclick="openCreateModal('Feature')"><i data-lucide="star"></i> New Feature</button>
-
-      <div class="divider"></div>
-      <div class="section-title">View</div>
+      <div class="section-title">Actions</div>
+      <button class="btn btn-primary" onclick="openCreateModal()"><i data-lucide="plus"></i> New Work Item</button>
       <button class="btn" onclick="filterMyItems()"><i data-lucide="user"></i> My Items</button>
       <button class="btn" onclick="loadWorkItems(true)"><i data-lucide="refresh-cw"></i> Refresh</button>
 
       <div class="divider"></div>
       <div class="section-title">AI Actions</div>
-      <button class="btn" onclick="askAi('Give me a standup summary. What changed since yesterday?')"><i data-lucide="message-square"></i> Standup Summary</button>
-      <button class="btn" onclick="askAi('Analyze the current sprint. Where are we at? Are we on track?')"><i data-lucide="bar-chart-2"></i> Sprint Status</button>
-      <button class="btn" onclick="askAi('Run a retrospective analysis on the last completed sprint.')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
+      <button class="btn" onclick="runScript('standup')"><i data-lucide="message-square"></i> Standup Summary</button>
+      <button class="btn" onclick="runScript('status')"><i data-lucide="bar-chart-2"></i> Sprint Status</button>
+      <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
+      <div class="divider"></div>
+      <div class="section-title">Git</div>
+      <button class="btn" onclick="aiGit('pull')"><i data-lucide="download"></i> Pull Latest</button>
+      <button class="btn" onclick="aiGit('push')"><i data-lucide="upload"></i> Push Changes</button>
+      <button class="btn" onclick="aiGit('checkout')"><i data-lucide="git-branch"></i> Switch Branch</button>
+      <button class="btn" onclick="aiGit('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
+      <button class="btn" onclick="aiGit('compare')"><i data-lucide="git-compare"></i> Compare with Main</button>
 
       <div class="divider"></div>
       <div class="section-title">Repos</div>
       <div id="repoList"></div>
-      <button class="btn btn-sm" onclick="openAddRepoModal()"><i data-lucide="plus"></i> Add Repository</button>
+      <button class="btn btn-sm" onclick="openAddRepoModal()"><i data-lucide="plus"></i> Add Repo</button>
+    </div>
+    <div class="sidebar-bottom-hints">
+      <div class="voice-hint" id="switchScreenHint" onclick="switchScreen()" style="cursor:pointer;">
+        <i data-lucide="monitor"></i>
+        <span>Switch Screen</span>
+      </div>
+      <div class="voice-hint" id="voiceHint">
+        <i data-lucide="mic"></i>
+        <span>Hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd> to talk</span>
+      </div>
+      <button onclick="openSettings()" title="Settings" style="display:flex;align-items:center;gap:6px;margin:4px 10px;padding:8px 10px;width:calc(100% - 20px);background:var(--surface1);border:1px solid var(--overlay0);border-radius:var(--radius);color:var(--text);font:11px var(--font-ui);cursor:pointer;justify-content:center;transition:all 0.12s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--overlay0)'">
+        <i data-lucide="settings" style="width:13px;height:13px;flex-shrink:0"></i>
+        <span id="projectLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Not configured</span>
+      </button>
     </div>
   </aside>
 
@@ -535,21 +945,67 @@
       <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
       <button class="tab-btn" data-tab="board" onclick="switchTab('board')">Board</button>
       <button class="tab-btn" data-tab="backlog" onclick="switchTab('backlog')">Backlog</button>
-      <button class="tab-btn" data-tab="workitem" onclick="switchTab('workitem')">Work Item</button>
+      <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
+      <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
+      <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
+      <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
       <div class="tab-bar-right">
         <span class="tab-bar-status" id="termStatus"></span>
-        <button class="tab-bar-btn" onclick="launchAi()" id="aiBtn">Launch AI</button>
+        <button class="tab-bar-btn" onclick="toggleAi()" id="aiBtn">Launch AI</button>
         <button class="tab-bar-btn" onclick="restartShell()">Restart</button>
       </div>
     </div>
 
     <!-- Terminal -->
     <div class="tab-panel active" id="panel-terminal">
-      <div id="terminal"></div>
+      <div class="term-tabs" id="termTabs">
+        <div class="term-tab active" data-term="main" onclick="switchTerminal('main')" id="mainTermTab">Shell 1</div>
+        <button class="term-tab-add" onclick="addTerminal()" title="New terminal">+</button>
+      </div>
+      <div class="term-containers" id="termContainers">
+        <div class="term-instance active" id="term-main"></div>
+      </div>
+      <button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="getActiveTerm()?.scrollToBottom()" title="Scroll to bottom">
+        <i data-lucide="chevron-down"></i>
+      </button>
     </div>
 
     <!-- Board -->
     <div class="tab-panel" id="panel-board">
+      <div class="view-toolbar">
+        <select class="view-filter" id="boardTeamSelect" onchange="switchTeam(this.value)" style="font-weight:600;color:var(--text);min-width:160px;">
+          <option value="">Loading teams...</option>
+        </select>
+        <div style="flex:1"></div>
+        <input class="view-search" id="boardSearch" type="text" placeholder="Search..." oninput="renderBoard()">
+        <div class="multi-select" data-id="boardState" data-onchange="renderBoard">
+          <div class="multi-select-btn" onclick="toggleMultiSelect(this.parentElement)">
+            <span class="multi-select-label">State</span>
+            <span class="multi-select-arrow">&#9662;</span>
+          </div>
+          <div class="multi-select-panel">
+            <div class="multi-select-item" data-value="New" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> New</div>
+            <div class="multi-select-item" data-value="Active" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Active</div>
+            <div class="multi-select-item" data-value="Resolved" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Resolved</div>
+            <div class="multi-select-item" data-value="Closed" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Closed</div>
+          </div>
+        </div>
+        <div class="multi-select" data-id="boardType" data-onchange="renderBoard">
+          <div class="multi-select-btn" onclick="toggleMultiSelect(this.parentElement)">
+            <span class="multi-select-label">Type</span>
+            <span class="multi-select-arrow">&#9662;</span>
+          </div>
+          <div class="multi-select-panel">
+            <div class="multi-select-item" data-value="User Story" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Stories</div>
+            <div class="multi-select-item" data-value="Bug" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Bugs</div>
+            <div class="multi-select-item" data-value="Task" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Tasks</div>
+            <div class="multi-select-item" data-value="Feature" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Features</div>
+            <div class="multi-select-item" data-value="Epic" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Epics</div>
+            <div class="multi-select-item" data-value="Test Case" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Test Cases</div>
+            <div class="multi-select-item" data-value="Test Suite" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Test Suites</div>
+          </div>
+        </div>
+      </div>
       <div class="board" id="boardView">
         <div class="board-column">
           <div class="board-col-header">New <span class="board-col-count" id="boardCountNew">0</span></div>
@@ -572,23 +1028,35 @@
 
     <!-- Backlog -->
     <div class="tab-panel" id="panel-backlog">
-      <div class="backlog-toolbar">
-        <input class="backlog-search" id="backlogSearch" type="text" placeholder="Search work items..." oninput="filterBacklog()">
-        <select class="backlog-filter" id="backlogTypeFilter" onchange="filterBacklog()">
-          <option value="">All Types</option>
-          <option value="Bug">Bug</option>
-          <option value="User Story">User Story</option>
-          <option value="Task">Task</option>
-          <option value="Feature">Feature</option>
-          <option value="Epic">Epic</option>
-        </select>
-        <select class="backlog-filter" id="backlogStateFilter" onchange="filterBacklog()">
-          <option value="">All States</option>
-          <option value="New">New</option>
-          <option value="Active">Active</option>
-          <option value="Resolved">Resolved</option>
-          <option value="Closed">Closed</option>
-        </select>
+      <div class="view-toolbar">
+        <input class="view-search" id="backlogSearch" type="text" placeholder="Search..." oninput="filterBacklog()">
+        <div class="multi-select" data-id="backlogState" data-onchange="filterBacklog">
+          <div class="multi-select-btn" onclick="toggleMultiSelect(this.parentElement)">
+            <span class="multi-select-label">State</span>
+            <span class="multi-select-arrow">&#9662;</span>
+          </div>
+          <div class="multi-select-panel">
+            <div class="multi-select-item" data-value="New" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> New</div>
+            <div class="multi-select-item" data-value="Active" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Active</div>
+            <div class="multi-select-item" data-value="Resolved" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Resolved</div>
+            <div class="multi-select-item" data-value="Closed" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Closed</div>
+          </div>
+        </div>
+        <div class="multi-select" data-id="backlogType" data-onchange="filterBacklog">
+          <div class="multi-select-btn" onclick="toggleMultiSelect(this.parentElement)">
+            <span class="multi-select-label">Type</span>
+            <span class="multi-select-arrow">&#9662;</span>
+          </div>
+          <div class="multi-select-panel">
+            <div class="multi-select-item" data-value="User Story" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Stories</div>
+            <div class="multi-select-item" data-value="Bug" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Bugs</div>
+            <div class="multi-select-item" data-value="Task" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Tasks</div>
+            <div class="multi-select-item" data-value="Feature" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Features</div>
+            <div class="multi-select-item" data-value="Epic" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Epics</div>
+            <div class="multi-select-item" data-value="Test Case" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Test Cases</div>
+            <div class="multi-select-item" data-value="Test Suite" onclick="toggleMultiItem(this)"><div class="multi-select-check"></div> Test Suites</div>
+          </div>
+        </div>
       </div>
       <div class="backlog" id="backlogContainer">
         <table class="backlog-table">
@@ -617,46 +1085,127 @@
         </div>
       </div>
     </div>
+
+    <!-- Files -->
+    <div class="tab-panel" id="panel-files">
+      <div class="files-container">
+        <div class="files-sidebar">
+          <div class="files-sidebar-header">
+            <select class="view-filter" id="filesRepoSelect" onchange="selectRepo(this.value)" style="flex:1;font-weight:600;color:var(--text);">
+              <option value="">Select repo...</option>
+            </select>
+          </div>
+          <div class="files-git-bar" id="filesGitBar" style="display:none;">
+            <span class="files-branch" id="filesBranch"></span>
+            <span class="files-git-status" id="filesGitStatus"></span>
+          </div>
+          <div id="filesScriptsBar" style="display:none;padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;display:none;">
+            <div style="display:flex;gap:4px;flex-wrap:wrap;" id="filesScriptBtns"></div>
+          </div>
+          <div id="filesChangedBar" style="display:none;border-bottom:1px solid var(--surface0);flex-shrink:0;">
+            <div style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;">Changed Files</div>
+            <div id="filesChangedList" style="max-height:150px;overflow-y:auto;"></div>
+          </div>
+          <div class="files-breadcrumb" id="filesBreadcrumb"></div>
+          <div class="files-tree" id="filesTree">
+            <div class="empty-state" style="padding:20px;"><div class="empty-state-text">Select a repository</div></div>
+          </div>
+        </div>
+        <div class="files-viewer">
+          <div class="files-viewer-toolbar" id="filesViewerToolbar">
+            <span id="filesViewerTitle" style="font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</span>
+            <button class="tab-bar-btn" id="filesToggleEditBtn" onclick="toggleFilesEdit()" style="display:none;">Edit</button>
+          </div>
+          <div id="monacoContainer" style="flex:1;display:none;position:relative;">
+            <div id="monacoEditor" style="width:100%;height:100%;"></div>
+            <div id="monacoSaveBar" style="display:none;position:absolute;bottom:10px;right:14px;display:flex;gap:6px;z-index:10;">
+              <button class="tab-bar-btn" onclick="cancelFilesEdit()">Cancel</button>
+              <button class="modal-btn modal-btn-primary" onclick="saveFilesEdit()" style="padding:5px 14px;font-size:11px;">Save</button>
+            </div>
+          </div>
+          <div id="filesEmpty" class="empty-state">
+            <i data-lucide="code"></i>
+            <div class="empty-state-text">Select a file to view</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Diff Viewer (dynamic tab) -->
+    <div class="tab-panel" id="panel-diffview">
+      <div class="diffview-container">
+        <div class="diffview-sidebar">
+          <div style="padding:8px 10px;border-bottom:1px solid var(--surface0);font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;justify-content:space-between;height:38px;">
+            <span>Changed Files</span>
+            <span id="diffviewFileCount" style="font-size:10px;color:var(--subtext0);font-weight:400;"></span>
+          </div>
+          <div id="diffviewFileList" style="overflow-y:auto;flex:1;"></div>
+        </div>
+        <div class="diffview-main">
+          <div class="diffview-toolbar">
+            <span id="diffviewTitle" style="font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Select a file</span>
+            <button class="tab-bar-btn" onclick="closeDiffView()" style="color:var(--subtext0);">Close</button>
+          </div>
+          <div style="flex:1;position:relative;min-height:0;"><div id="diffviewContent" style="position:absolute;inset:0;overflow:auto;"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="tab-panel" id="panel-notes">
+      <div class="notes-container">
+        <div class="notes-sidebar">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:38px;border-bottom:1px solid var(--surface0);background:var(--mantle);flex-shrink:0;">
+            <span style="font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;">Notes</span>
+            <button onclick="showNewNoteInput()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;" title="New Note">+</button>
+          </div>
+          <div id="newNoteInputWrap" style="display:none;padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;">
+            <input id="newNoteInput" type="text" placeholder="Note name..." style="width:100%;padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;" onkeydown="if(event.key==='Enter')confirmCreateNote();if(event.key==='Escape')hideNewNoteInput();">
+          </div>
+          <div id="notesList" style="overflow-y:auto;flex:1;"></div>
+        </div>
+        <div class="notes-editor">
+          <div class="notes-editor-toolbar" style="height:38px;">
+            <span id="noteTitle" style="font-size:13px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No note selected</span>
+            <button class="tab-bar-btn" id="noteModeBtn" onclick="toggleNoteMode()" style="font-size:10px;">Preview</button>
+            <button class="tab-bar-btn" onclick="sendNoteToAi()" title="Send note content to AI">Send to AI</button>
+            <button class="tab-bar-btn" onclick="saveCurrentNote()" id="noteSaveBtn" style="display:none;">Save</button>
+          </div>
+          <div id="noteEditor" style="display:none;flex:1;position:relative;">
+            <textarea id="noteTextarea" style="width:100%;height:100%;resize:none;background:var(--crust);color:var(--text);border:none;padding:16px 20px;font:14px/1.7 var(--font-mono);outline:none;tab-size:2;" spellcheck="false" oninput="onNoteInput()"></textarea>
+          </div>
+          <div id="notePreview" style="flex:1;overflow-y:auto;padding:16px 20px;display:none;">
+          </div>
+          <div id="noteEmpty" class="empty-state">
+            <i data-lucide="file-text"></i>
+            <div class="empty-state-text">Select or create a note</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ─── Intelligence Panel ──────────────────────────────────────────── -->
   <aside class="intel">
     <div class="intel-tabs">
-      <button class="intel-tab active" data-itab="sprint" onclick="switchIntelTab('sprint')">Sprint</button>
-      <button class="intel-tab" data-itab="velocity" onclick="switchIntelTab('velocity')">Velocity</button>
-      <button class="intel-tab" data-itab="activity" onclick="switchIntelTab('activity')">Activity</button>
+      <button class="intel-tab active" data-itab="activity" onclick="switchIntelTab('activity')">Activity</button>
       <button class="intel-tab" data-itab="team" onclick="switchIntelTab('team')">Team</button>
-    </div>
-
-    <!-- Sprint Panel -->
-    <div class="intel-panel active" id="ipanel-sprint">
-      <div class="card" id="sprintCard">
-        <div class="card-title">Current Sprint</div>
-        <div id="sprintInfo" style="color:var(--subtext0);font-size:12px;">Loading...</div>
-      </div>
-      <div class="card" id="burndownCard">
-        <div class="card-title">Burndown</div>
-        <div id="burndownInfo" style="color:var(--subtext0);font-size:12px;">Select a sprint</div>
-      </div>
-    </div>
-
-    <!-- Velocity Panel -->
-    <div class="intel-panel" id="ipanel-velocity">
-      <div class="card">
-        <div class="card-title">Velocity (Last 10 Sprints)</div>
-        <canvas class="velocity-chart" id="velocityChart"></canvas>
-        <div id="velocityInfo" style="color:var(--subtext0);font-size:12px;margin-top:8px;">Loading...</div>
-      </div>
+      <button class="intel-tab" data-itab="gitlog" onclick="switchIntelTab('gitlog')">Git Log</button>
     </div>
 
     <!-- Activity Panel -->
-    <div class="intel-panel" id="ipanel-activity">
+    <div class="intel-panel active" id="ipanel-activity">
       <div id="activityFeed" style="color:var(--subtext0);font-size:12px;">Loading recent activity...</div>
     </div>
 
     <!-- Team Panel -->
     <div class="intel-panel" id="ipanel-team">
       <div id="teamList" style="color:var(--subtext0);font-size:12px;">Loading team...</div>
+    </div>
+
+    <!-- Git Log Panel -->
+    <div class="intel-panel" id="ipanel-gitlog">
+      <div id="gitLogList" style="color:var(--subtext0);font-size:12px;padding:4px;">Select a repo in Files tab</div>
     </div>
   </aside>
 </div>
@@ -739,6 +1288,18 @@
         <label>Default Team</label>
         <input id="settingsTeam" type="text" placeholder="e.g. My Project Team">
       </div>
+      <div class="modal-field">
+        <label>Your Display Name (for "My Items")</label>
+        <input id="settingsUser" type="text" placeholder="e.g. Jane Doe">
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Voice Input (Wispr Flow)</div>
+      <div class="modal-field">
+        <label>API Key</label>
+        <input id="settingsWispr" type="password" placeholder="fl-...">
+      </div>
+      <div style="font-size:11px;color:var(--subtext0);margin-top:-8px;">Hold Ctrl+Shift to talk. Release to transcribe.</div>
     </div>
     <div class="settings-section">
       <div class="settings-section-title">Repositories</div>
@@ -776,6 +1337,45 @@
 </div>
 
 <!-- ═══ Toast Container ═════════════════════════════════════════════════ -->
+<!-- ═══ Context Menu ═════════════════════════════════════════════════════ -->
+<div class="context-menu" id="noteContextMenu">
+  <div class="context-menu-item" onclick="renameNoteFromContext()"><i data-lucide="pencil"></i> Rename</div>
+  <div class="context-menu-item" onclick="duplicateNoteFromContext()"><i data-lucide="copy"></i> Duplicate</div>
+  <div class="context-menu-item danger" onclick="deleteNoteFromContext()"><i data-lucide="trash-2"></i> Delete</div>
+</div>
+
+<!-- ═══ Confirm Dialog ══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="confirmDialog">
+  <div class="modal" style="width:380px;">
+    <div class="modal-title" id="confirmTitle">Confirm</div>
+    <div id="confirmMessage" style="font-size:13px;color:var(--subtext1);margin-bottom:20px;"></div>
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeConfirm(false)">Cancel</button>
+      <button class="modal-btn modal-btn-primary" id="confirmOkBtn" onclick="closeConfirm(true)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Prompt Dialog ═══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="promptDialog">
+  <div class="modal" style="width:380px;">
+    <div class="modal-title" id="promptTitle">Input</div>
+    <div class="modal-field">
+      <input id="promptInput" type="text" onkeydown="if(event.key==='Enter')closePrompt(true)">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closePrompt(false)">Cancel</button>
+      <button class="modal-btn modal-btn-primary" onclick="closePrompt(true)">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Voice Recording Indicator ════════════════════════════════════════ -->
+<div class="voice-indicator" id="voiceIndicator">
+  <div class="voice-dot"></div>
+  <span>Recording... Release to send</span>
+</div>
+
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- ═══ Scripts ═════════════════════════════════════════════════════════ -->
@@ -806,77 +1406,283 @@ let ws = null;
 let workItems = [];
 let currentWiDetail = null;
 let configData = {};
+let lastCols = 0, lastRows = 0;
+let fitDebounce = null;
+let reconnectTimer = null;
 
-// ── Terminal setup ──────────────────────────────────────────────────────
-const term = new Terminal({
-  allowTransparency: false,
-  convertEol: true,
-  cursorBlink: true,
-  fontFamily: 'Consolas, "Courier New", monospace',
-  fontSize: 14,
-  scrollback: 5000,
-  theme: TERM_THEMES[activeCli],
-});
+// ── Multi-Terminal System ────────────────────────────────────────────────
+const termInstances = new Map(); // termId -> { term, fitAddon, container }
+let activeTermId = 'main';
+let termCounter = 0;
 
-const fitAddon = new FitAddon.FitAddon();
-term.loadAddon(fitAddon);
-term.loadAddon(new WebLinksAddon.WebLinksAddon());
-term.loadAddon(new Unicode11Addon.Unicode11Addon());
+function createTermOpts() {
+  return {
+    allowTransparency: false,
+    convertEol: true,
+    cursorBlink: true,
+    fontFamily: 'Cascadia Code, Cascadia Mono, Consolas, "Courier New", monospace',
+    fontSize: 14,
+    fontWeight: '400',
+    fontWeightBold: '600',
+    lineHeight: 1.15,
+    scrollback: 10000,
+    allowProposedApi: true,
+    minimumContrastRatio: 1,
+    drawBoldTextInBrightColors: false,
+    theme: TERM_THEMES[activeCli],
+  };
+}
 
-term.open(document.getElementById('terminal'));
-try { term.loadAddon(new WebglAddon.WebglAddon()); } catch (_) {}
-fitAddon.fit();
+function createTermInstance(termId, label) {
+  // Create container div
+  let container = document.getElementById(`term-${termId}`);
+  if (!container) {
+    container = document.createElement('div');
+    container.id = `term-${termId}`;
+    container.className = 'term-instance';
+    document.getElementById('termContainers').appendChild(container);
+  }
 
-// Resize observer
-const termContainer = document.getElementById('terminal');
-const resizeObs = new ResizeObserver(() => {
+  // Create xterm
+  const term = new Terminal(createTermOpts());
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((event, url) => {
+    event.preventDefault();
+    openExternal(url);
+  }));
+  const u11 = new Unicode11Addon.Unicode11Addon();
+  term.loadAddon(u11);
+  term.unicode.activeVersion = '11';
+
+  term.open(container);
+
   try {
-    fitAddon.fit();
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => { webgl.dispose(); });
+    term.loadAddon(webgl);
+  } catch (_) {}
+
+  // Input
+  term.onData(data => {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data }));
+  });
+
+  // Scroll button
+  term.onScroll(() => {
+    if (activeTermId === termId) {
+      const btn = document.getElementById('scrollBottomBtn');
+      const isAtBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
+      btn.classList.toggle('visible', !isAtBottom);
+    }
+  });
+
+  // Right-click
+  container.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sel = term.getSelection();
+    if (sel) {
+      await navigator.clipboard.writeText(sel);
+    } else {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+      } catch (_) {}
+    }
+  });
+
+  container.addEventListener('paste', (e) => { e.preventDefault(); e.stopPropagation(); });
+
+  termInstances.set(termId, { term, fitAddon, container, label: label || termId });
+
+  // Add tab if not main (main tab already exists in HTML)
+  if (termId !== 'main') {
+    const tabsEl = document.getElementById('termTabs');
+    const addBtn = tabsEl.querySelector('.term-tab-add');
+    const tab = document.createElement('div');
+    tab.className = 'term-tab';
+    tab.dataset.term = termId;
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = label || termId;
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'term-tab-close';
+    closeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+    closeBtn.onpointerdown = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); closeTerminal(termId); };
+    tab.appendChild(nameSpan);
+    tab.appendChild(closeBtn);
+    tab.addEventListener('click', (e) => { if (!e.target.closest('.term-tab-close')) switchTerminal(termId); });
+    tabsEl.insertBefore(tab, addBtn);
+  }
+
+  return { term, fitAddon };
+}
+
+function switchTerminal(termId) {
+  activeTermId = termId;
+  document.querySelectorAll('.term-tab').forEach(el => el.classList.toggle('active', el.dataset.term === termId));
+  document.querySelectorAll('.term-instance').forEach(el => el.classList.toggle('active', el.id === `term-${termId}`));
+  const inst = termInstances.get(termId);
+  if (inst) {
+    requestAnimationFrame(() => {
+      try { inst.fitAddon.fit(); } catch (_) {}
+      inst.term.focus();
+    });
+  }
+}
+
+function getNextShellNumber() {
+  // Find the lowest available shell number (main = 1)
+  const used = new Set([1]);
+  for (const [id, inst] of termInstances) {
+    if (id === 'main') continue;
+    const m = inst.label.match(/^Shell (\d+)$/);
+    if (m) used.add(parseInt(m[1]));
+  }
+  let n = 2;
+  while (used.has(n)) n++;
+  return n;
+}
+
+function renumberShells() {
+  // After closing a shell, renumber remaining shells sequentially
+  let num = 2;
+  for (const [id, inst] of termInstances) {
+    if (id === 'main') continue;
+    if (inst.label.startsWith('Shell ')) {
+      inst.label = `Shell ${num}`;
+      const tab = document.querySelector(`.term-tab[data-term="${id}"] span`);
+      if (tab) tab.textContent = inst.label;
+      num++;
+    }
+  }
+}
+
+function addTerminal(label, cwd) {
+  termCounter++;
+  const termId = `term-${termCounter}`;
+  const name = label || `Shell ${getNextShellNumber()}`;
+  createTermInstance(termId, name);
+  switchTerminal(termId);
+  // Tell server to create PTY
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'create-term', termId, cwd }));
+  }
+  return termId;
+}
+
+function closeTerminal(termId) {
+  if (termId === 'main') return; // can't close main
+  const inst = termInstances.get(termId);
+  if (inst) {
+    inst.term.dispose();
+    inst.container.remove();
+    termInstances.delete(termId);
+  }
+  // Remove tab
+  const tab = document.querySelector(`.term-tab[data-term="${termId}"]`);
+  if (tab) tab.remove();
+  // Kill server PTY
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'kill-term', termId }));
+  // Renumber remaining shells
+  renumberShells();
+  // Switch to main
+  if (activeTermId === termId) switchTerminal('main');
+}
+
+function getActiveTerm() {
+  const inst = termInstances.get(activeTermId);
+  return inst ? inst.term : null;
+}
+
+// Backward compat aliases
+function get_term() { return termInstances.get('main')?.term; }
+Object.defineProperty(window, 'term', { get: () => get_term() });
+Object.defineProperty(window, 'fitAddon', { get: () => termInstances.get('main')?.fitAddon });
+
+// Create main terminal
+createTermInstance('main', 'AI');
+
+// ── Resize handling ─────────────────────────────────────────────────────
+function fitTerminalNow() {
+  const inst = termInstances.get(activeTermId);
+  if (!inst) return;
+  const el = inst.container;
+  if (!el.offsetWidth || !el.offsetHeight) return;
+  try {
+    const dims = inst.fitAddon.proposeDimensions();
+    if (!dims || dims.cols <= 0 || dims.rows <= 0) return;
+    inst.fitAddon.fit();
+    if (inst.term.cols !== lastCols || inst.term.rows !== lastRows) {
+      lastCols = inst.term.cols;
+      lastRows = inst.term.rows;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', termId: activeTermId, cols: lastCols, rows: lastRows }));
     }
   } catch (_) {}
+}
+
+const resizeObs = new ResizeObserver(() => {
+  if (fitDebounce) clearTimeout(fitDebounce);
+  const inst = termInstances.get(activeTermId);
+  if (inst) try { inst.fitAddon.fit(); } catch (_) {}
+  fitDebounce = setTimeout(() => {
+    if (!inst) return;
+    if (inst.term.cols !== lastCols || inst.term.rows !== lastRows) {
+      lastCols = inst.term.cols;
+      lastRows = inst.term.rows;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', termId: activeTermId, cols: lastCols, rows: lastRows }));
+    }
+  }, 500);
 });
-resizeObs.observe(termContainer);
+resizeObs.observe(document.getElementById('termContainers'));
+requestAnimationFrame(fitTerminalNow);
 
-// Terminal input
-term.onData(data => {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data }));
-});
+  // ── WebSocket ─────────────────────────────────────────────────────────
+  function connect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    ws = new WebSocket(`ws://${location.host}`);
 
-// Right-click paste
-term.element.addEventListener('contextmenu', async (e) => {
-  e.preventDefault();
-  const sel = term.getSelection();
-  if (sel) {
-    navigator.clipboard.writeText(sel);
-  } else {
-    const text = await navigator.clipboard.readText();
-    if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: text }));
-  }
-});
+    ws.onopen = () => {
+      document.getElementById('statusDot').className = 'status-dot connected';
+      document.getElementById('connectionStatus').textContent = 'Connected';
+      const mainInst = termInstances.get('main');
+      if (mainInst) {
+        try { mainInst.fitAddon.fit(); } catch (_) {}
+        lastCols = mainInst.term.cols;
+        lastRows = mainInst.term.rows;
+        ws.send(JSON.stringify({ type: 'resize', termId: 'main', cols: lastCols, rows: lastRows }));
+      }
+    };
 
-// ── WebSocket ───────────────────────────────────────────────────────────
-function connectWs() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}`);
-
-  ws.onopen = () => {
-    document.getElementById('statusDot').className = 'status-dot connected';
-    document.getElementById('connectionStatus').textContent = 'Connected';
-    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-  };
-
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
       switch (msg.type) {
-        case 'output':
-          term.write(msg.data);
+        case 'output': {
+          const tid = msg.termId || 'main';
+          const inst = termInstances.get(tid);
+          if (inst) inst.term.write(msg.data);
           break;
-        case 'started':
+        }
+        case 'term-started':
+          document.getElementById('statusDot').className = 'status-dot connected';
+          document.getElementById('connectionStatus').textContent = 'Connected';
           document.getElementById('termStatus').textContent = 'Shell ready';
           break;
+        case 'term-list':
+          // Server sent list of active terminals — create main if needed
+          if (!termInstances.has('main') || msg.terminals.includes('main')) {
+            // Main already created in HTML
+          }
+          break;
+        case 'term-exited': {
+          // Terminal process exited on its own (not from user clicking X)
+          // Only auto-close if the terminal still exists (wasn't already closed by user)
+          const tid = msg.termId;
+          if (tid !== 'main' && termInstances.has(tid)) {
+            closeTerminal(tid);
+          }
+          break;
+        }
         case 'config-changed':
           loadConfig();
           break;
@@ -884,17 +1690,1272 @@ function connectWs() {
           handleUiAction(msg);
           break;
       }
-    } catch (_) {}
-  };
+    };
 
-  ws.onclose = () => {
-    document.getElementById('statusDot').className = 'status-dot error';
-    document.getElementById('connectionStatus').textContent = 'Disconnected';
-    setTimeout(connectWs, 2000);
-  };
+    ws.onclose = () => {
+      document.getElementById('statusDot').className = 'status-dot error';
+      document.getElementById('connectionStatus').textContent = 'Disconnected';
+      reconnectTimer = setTimeout(connect, 2500);
+    };
+  }
 
-  ws.onerror = () => ws.close();
+// ── File Browser ────────────────────────────────────────────────────────
+let filesCurrentRepo = '';
+let filesCurrentPath = '';
+let filesCurrentFile = null;
+let filesMode = 'view'; // view, diff, edit
+
+function populateFilesRepoSelect() {
+  const select = document.getElementById('filesRepoSelect');
+  const repos = configData.Repos || {};
+  select.innerHTML = '<option value="">Select repo...</option>';
+  for (const name of Object.keys(repos)) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === filesCurrentRepo) opt.selected = true;
+    select.appendChild(opt);
+  }
 }
+
+async function loadFileTree(subPath) {
+  // Sync from dropdown if no activeRepo set
+  const select = document.getElementById('filesRepoSelect');
+  if (!filesCurrentRepo && select) filesCurrentRepo = select.value;
+  if (subPath !== undefined) filesCurrentPath = subPath;
+
+  if (!filesCurrentRepo) {
+    document.getElementById('filesTree').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">Select a repository</div></div>';
+    document.getElementById('filesGitBar').style.display = 'none';
+    document.getElementById('filesBreadcrumb').innerHTML = '';
+    return;
+  }
+
+  // Load git info into header
+  try {
+    const gitRes = await fetch(`/api/git/status?repo=${encodeURIComponent(filesCurrentRepo)}`);
+    const git = await gitRes.json();
+    if (!git.error) {
+      document.getElementById('filesGitBar').style.display = '';
+      document.getElementById('filesBranch').textContent = git.branch;
+      const statusEl = document.getElementById('filesGitStatus');
+      statusEl.textContent = git.clean ? 'clean' : `${git.files.length} changed`;
+      statusEl.className = `files-git-status ${git.clean ? 'clean' : 'dirty'}`;
+
+      // Show changed files list
+      const changedBar = document.getElementById('filesChangedBar');
+      const changedList = document.getElementById('filesChangedList');
+      if (git.files && git.files.length > 0) {
+        changedBar.style.display = '';
+        changedList.innerHTML = git.files.map(f => `
+          <div class="changed-file" onclick="viewChangedFile('${esc(f.file)}')" title="${esc(f.file)}">
+            <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.file)}</span>
+          </div>
+        `).join('');
+        // Auto-show the Diff tab and populate it with changed files
+        document.getElementById('diffviewTabBtn').style.display = '';
+        populateDiffTabWithChanges(git.files, filesCurrentRepo);
+      } else {
+        changedBar.style.display = 'none';
+        // Hide diff tab if no changes and no commit diff
+        if (!diffViewCommit) document.getElementById('diffviewTabBtn').style.display = 'none';
+      }
+    }
+  } catch (_) {}
+
+  // Breadcrumb
+  renderFilesBreadcrumb();
+
+  // Load tree
+  try {
+    const res = await fetch(`/api/files/tree?repo=${encodeURIComponent(filesCurrentRepo)}&path=${encodeURIComponent(filesCurrentPath)}`);
+    const data = await res.json();
+    if (data.error) { document.getElementById('filesTree').innerHTML = `<div class="empty-state" style="padding:20px;"><div class="empty-state-text">${esc(data.error)}</div></div>`; return; }
+
+    const tree = document.getElementById('filesTree');
+    if (data.entries.length === 0) {
+      tree.innerHTML = '<div style="padding:12px;font-size:11px;color:var(--subtext0);text-align:center;">Empty directory</div>';
+      return;
+    }
+
+    tree.innerHTML = data.entries.map(e => `
+      <div class="file-item ${e.isDir ? 'dir' : ''} ${filesCurrentFile && filesCurrentFile.path === e.path ? 'active' : ''}"
+           onclick="${e.isDir ? `loadFileTree('${esc(e.path)}')` : `viewFile('${esc(e.path)}')`}">
+        <i data-lucide="${e.isDir ? 'folder' : fileIcon(e.name)}"></i>
+        <span>${esc(e.name)}</span>
+      </div>
+    `).join('');
+    try { lucide.createIcons(); } catch (_) {}
+  } catch (e) {
+    document.getElementById('filesTree').innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">Failed to load</div></div>';
+  }
+}
+
+function renderFilesBreadcrumb() {
+  const bc = document.getElementById('filesBreadcrumb');
+  if (!filesCurrentPath) {
+    bc.innerHTML = `<span style="color:var(--text);font-weight:600;">${esc(filesCurrentRepo)}</span>`;
+    return;
+  }
+  const parts = filesCurrentPath.split('/');
+  let html = `<button class="files-breadcrumb-link" onclick="loadFileTree('')">${esc(filesCurrentRepo)}</button>`;
+  let cumulative = '';
+  for (let i = 0; i < parts.length; i++) {
+    cumulative += (cumulative ? '/' : '') + parts[i];
+    html += `<span class="files-breadcrumb-sep">/</span>`;
+    if (i < parts.length - 1) {
+      html += `<button class="files-breadcrumb-link" onclick="loadFileTree('${esc(cumulative)}')">${esc(parts[i])}</button>`;
+    } else {
+      html += `<span style="color:var(--text)">${esc(parts[i])}</span>`;
+    }
+  }
+  bc.innerHTML = html;
+}
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const icons = { js: 'file-code', ts: 'file-code', jsx: 'file-code', tsx: 'file-code', py: 'file-code', cs: 'file-code', css: 'file-code', html: 'file-code', json: 'file-json', md: 'file-text', txt: 'file-text', png: 'image', jpg: 'image', svg: 'image', gif: 'image' };
+  return icons[ext] || 'file';
+}
+
+const IMAGE_EXTS = ['png','jpg','jpeg','gif','svg','webp','ico','bmp'];
+const VIDEO_EXTS = ['mp4','webm','ogg','mov','avi'];
+
+async function viewFile(filePath) {
+  const ext = filePath.split('.').pop().toLowerCase();
+
+  // Handle images and videos — show preview, not code
+  if (IMAGE_EXTS.includes(ext) || VIDEO_EXTS.includes(ext)) {
+    filesCurrentFile = { name: filePath.split('/').pop(), path: filePath, ext, content: '', isMedia: true };
+    document.getElementById('filesViewerTitle').textContent = filesCurrentFile.name;
+    document.getElementById('filesToggleEditBtn').style.display = 'none';
+    document.getElementById('monacoContainer').style.display = 'none';
+    document.getElementById('monacoSaveBar').style.display = 'none';
+    document.getElementById('filesEmpty').style.display = 'none';
+
+    // Use a media preview container
+    const emptyEl = document.getElementById('filesEmpty');
+    const monacoEl = document.getElementById('monacoContainer');
+    monacoEl.style.display = '';
+    const editorDiv = document.getElementById('monacoEditor');
+
+    const serveUrl = `/api/files/serve?repo=${encodeURIComponent(filesCurrentRepo)}&path=${encodeURIComponent(filePath)}`;
+
+    if (IMAGE_EXTS.includes(ext)) {
+      editorDiv.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;"><img src="${serveUrl}" style="max-width:100%;max-height:100%;border-radius:var(--radius);object-fit:contain;"></div>`;
+    } else {
+      editorDiv.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;"><video src="${serveUrl}" controls style="max-width:100%;max-height:100%;border-radius:var(--radius);"></video></div>`;
+    }
+    if (monacoEditor) { monacoEditor.dispose(); monacoEditor = null; }
+    loadFileTree(filesCurrentPath);
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/files/read?repo=${encodeURIComponent(filesCurrentRepo)}&path=${encodeURIComponent(filePath)}`);
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    filesCurrentFile = data;
+    document.getElementById('filesViewerTitle').textContent = data.name;
+    setFilesMode('view');
+    loadFileTree(filesCurrentPath);
+  } catch (e) {
+    toast('Failed to load file', 'error');
+  }
+}
+
+// ── File viewer mode switching (view / edit) ────────────────────────────
+function setFilesMode(mode) {
+  filesMode = mode;
+  const monacoEl = document.getElementById('monacoContainer');
+  const emptyEl = document.getElementById('filesEmpty');
+  const saveBar = document.getElementById('monacoSaveBar');
+  const toggleBtn = document.getElementById('filesToggleEditBtn');
+
+  monacoEl.style.display = 'none';
+  emptyEl.style.display = 'none';
+  saveBar.style.display = 'none';
+
+  if (!filesCurrentFile) {
+    emptyEl.style.display = '';
+    toggleBtn.style.display = 'none';
+    return;
+  }
+
+  toggleBtn.style.display = '';
+  toggleBtn.textContent = mode === 'edit' ? 'View' : 'Edit';
+  monacoEl.style.display = '';
+
+  if (mode === 'edit') {
+    saveBar.style.display = 'flex';
+    openMonacoFile(filesCurrentFile.content, filesCurrentFile.ext, false);
+  } else {
+    openMonacoFile(filesCurrentFile.content, filesCurrentFile.ext, true);
+  }
+}
+
+function openMonacoFile(content, ext, readOnly) {
+  if (monacoReady) { createOrUpdateMonaco(content, ext, readOnly); }
+  else { loadMonaco().then(() => createOrUpdateMonaco(content, ext, readOnly)); }
+}
+
+function createOrUpdateMonaco(content, ext, readOnly) {
+  const lang = getMonacoLang(ext);
+  if (monacoEditor) {
+    const model = monacoEditor.getModel();
+    monaco.editor.setModelLanguage(model, lang);
+    monacoEditor.setValue(content);
+    monacoEditor.updateOptions({ readOnly });
+  } else {
+    monacoEditor = monaco.editor.create(document.getElementById('monacoEditor'), {
+      value: content, language: lang, theme: 'devops-pilot',
+      fontSize: 13, fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
+      minimap: { enabled: true }, scrollBeyondLastLine: false, wordWrap: 'off',
+      automaticLayout: true, lineNumbers: 'on', renderWhitespace: 'selection',
+      bracketPairColorization: { enabled: true }, smoothScrolling: true,
+      cursorBlinking: 'smooth', padding: { top: 8 }, readOnly,
+    });
+    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      if (!monacoEditor.getOption(monaco.editor.EditorOption.readOnly)) saveFilesEdit();
+    });
+  }
+}
+
+function toggleFilesEdit() { setFilesMode(filesMode === 'edit' ? 'view' : 'edit'); }
+
+
+let monacoEditor = null;
+let monacoReady = false;
+
+function loadMonaco() {
+  if (monacoReady) return Promise.resolve();
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js';
+    script.onload = () => {
+      require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
+      require(['vs/editor/editor.main'], () => {
+        monacoReady = true;
+        monaco.editor.defineTheme('devops-pilot', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [],
+          colors: {
+            'editor.background': getComputedStyle(document.documentElement).getPropertyValue('--crust').trim(),
+            'editor.lineHighlightBackground': getComputedStyle(document.documentElement).getPropertyValue('--surface0').trim(),
+            'editorLineNumber.foreground': getComputedStyle(document.documentElement).getPropertyValue('--overlay0').trim(),
+          },
+        });
+
+        // Configure TypeScript/JavaScript to not flag unresolved imports
+        const tsDefaults = monaco.languages.typescript.typescriptDefaults;
+        const jsDefaults = monaco.languages.typescript.javascriptDefaults;
+
+        const compilerOptions = {
+          target: monaco.languages.typescript.ScriptTarget.ESNext,
+          module: monaco.languages.typescript.ModuleKind.ESNext,
+          moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+          jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+          allowJs: true,
+          allowSyntheticDefaultImports: true,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          strict: false,
+          noEmit: true,
+          isolatedModules: true,
+          resolveJsonModule: true,
+          baseUrl: '.',
+        };
+
+        tsDefaults.setCompilerOptions(compilerOptions);
+        jsDefaults.setCompilerOptions(compilerOptions);
+
+        // Disable semantic validation (can't resolve node_modules from browser)
+        tsDefaults.setDiagnosticsOptions({
+          noSemanticValidation: true,
+          noSyntaxValidation: false,
+        });
+        jsDefaults.setDiagnosticsOptions({
+          noSemanticValidation: true,
+          noSyntaxValidation: false,
+        });
+
+        resolve();
+      });
+    };
+    document.head.appendChild(script);
+  });
+}
+
+function getMonacoLang(ext) {
+  const map = {
+    js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+    cs: 'csharp', cpp: 'cpp', c: 'c', h: 'c',
+    css: 'css', scss: 'scss', less: 'less',
+    html: 'html', htm: 'html', xml: 'xml', svg: 'xml',
+    json: 'json', yaml: 'yaml', yml: 'yaml',
+    md: 'markdown', sh: 'shell', bash: 'shell',
+    ps1: 'powershell', sql: 'sql', php: 'php',
+    dockerfile: 'dockerfile', r: 'r', swift: 'swift', kt: 'kotlin',
+  };
+  return map[ext] || 'plaintext';
+}
+
+let monacoDiffEditor = null;
+let diffViewMode = 'inline';
+let diffViewCommit = null; // { hash, files: [{file, status}], selectedFile }
+
+async function viewCommitDiff(hash) {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+
+  try {
+    // Get commit diff stat (file list)
+    const statRes = await fetch(`/api/git/commit-diff?repo=${encodeURIComponent(repo)}&hash=${encodeURIComponent(hash)}`);
+    const statData = await statRes.json();
+    if (statData.error) { toast(statData.error, 'error'); return; }
+
+    // Parse changed files from diff
+    const files = [];
+    const diffLines = (statData.diff || '').split('\n');
+    let currentFile = null;
+    for (const line of diffLines) {
+      const m = line.match(/^diff --git a\/(.+) b\/(.+)/);
+      if (m) { currentFile = m[2]; files.push({ file: currentFile, status: 'M' }); }
+    }
+    // Also parse from stat
+    if (statData.stat) {
+      const statLines = statData.stat.split('\n');
+      for (const sl of statLines) {
+        const sm = sl.match(/^\s*(.+?)\s+\|\s+\d+/);
+        if (sm && !files.find(f => f.file === sm[1].trim())) {
+          files.push({ file: sm[1].trim(), status: 'M' });
+        }
+      }
+    }
+
+    diffViewCommit = { hash, diff: statData.diff, message: statData.message, files, repo };
+
+    // Show the tab
+    document.getElementById('diffviewTabBtn').style.display = '';
+    document.getElementById('diffviewTitle').textContent = `Commit ${hash}: ${statData.message || ''}`;
+
+    // Render file list
+    const fileList = document.getElementById('diffviewFileList');
+    document.getElementById('diffviewFileCount').textContent = `${files.length} files`;
+    fileList.innerHTML = files.map((f, i) => `
+      <div class="diffview-file ${i === 0 ? 'active' : ''}" onclick="selectDiffFile(${i})" data-idx="${i}">
+        <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
+        <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
+      </div>
+    `).join('');
+
+    switchTab('diffview');
+
+    // Show first file's diff
+    if (files.length > 0) renderDiffForFile(0);
+    else renderDiffViewContent(statData.diff);
+
+  } catch (e) {
+    toast('Failed to load commit diff', 'error');
+  }
+}
+
+function selectDiffFile(idx) {
+  document.querySelectorAll('.diffview-file').forEach(el => el.classList.toggle('active', parseInt(el.dataset.idx) === idx));
+  renderDiffForFile(idx);
+}
+
+async function renderDiffForFile(idx) {
+  if (!diffViewCommit) return;
+  const file = diffViewCommit.files[idx];
+  if (!file) return;
+  document.getElementById('diffviewTitle').textContent = file.file;
+
+  const container = document.getElementById('diffviewContent');
+  container.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="spinner"></div></div>';
+
+  const repo = diffViewCommit.repo;
+
+  try {
+    // Fetch the git diff for this specific file
+    const res = await fetch(`/api/git/diff?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(file.file)}`);
+    const data = await res.json();
+    renderInlineDiff(container, data.diff);
+  } catch (_) {
+    container.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">Failed to load diff</div></div>';
+  }
+}
+
+function renderInlineDiff(container, diffText) {
+  if (monacoDiffEditor) { monacoDiffEditor.dispose(); monacoDiffEditor = null; }
+
+  if (!diffText || diffText === 'No changes') {
+    container.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">No changes</div></div>';
+    return;
+  }
+
+  const lines = diffText.split('\n');
+  let added = 0, removed = 0;
+  let html = '<table class="diff-table"><tbody>';
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      html += `<tr class="diff-hunk"><td colspan="3">${esc(line)}</td></tr>`;
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      added++;
+      html += `<tr class="diff-add"><td class="diff-marker">+</td><td class="diff-code">${esc(line.slice(1))}</td></tr>`;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      removed++;
+      html += `<tr class="diff-remove"><td class="diff-marker">-</td><td class="diff-code">${esc(line.slice(1))}</td></tr>`;
+    } else if (!line.startsWith('diff ') && !line.startsWith('index ') && !line.startsWith('---') && !line.startsWith('+++')) {
+      html += `<tr><td class="diff-marker"></td><td class="diff-code">${esc(line.startsWith(' ') ? line.slice(1) : line)}</td></tr>`;
+    }
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = `<div class="diff-stats-bar"><span class="diff-stats-add">+${added}</span> <span class="diff-stats-del">-${removed}</span></div>${html}`;
+}
+
+function populateDiffTabWithChanges(files, repo) {
+  if (!files || files.length === 0) return;
+
+  diffViewCommit = { hash: 'working', diff: '', message: 'Working changes', files: files.map(f => ({ file: f.file, status: f.status })), repo };
+
+  document.getElementById('diffviewTitle').textContent = 'Working Changes';
+  document.getElementById('diffviewFileCount').textContent = `${files.length} files`;
+
+  const fileList = document.getElementById('diffviewFileList');
+  fileList.innerHTML = diffViewCommit.files.map((f, i) => `
+    <div class="diffview-file" onclick="selectDiffFile(${i})" data-idx="${i}">
+      <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
+      <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
+    </div>
+  `).join('');
+
+  // Pre-load the full diff
+  fetch(`/api/git/diff?repo=${encodeURIComponent(repo)}`)
+    .then(r => r.json())
+    .then(data => { if (diffViewCommit && diffViewCommit.hash === 'working') diffViewCommit.diff = data.diff || ''; })
+    .catch(() => {});
+}
+
+function closeDiffView() {
+  document.getElementById('diffviewTabBtn').style.display = 'none';
+  if (monacoDiffEditor) { monacoDiffEditor.dispose(); monacoDiffEditor = null; }
+  diffViewCommit = null;
+  switchTab('terminal');
+}
+
+async function viewChangedFile(filePath) {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+
+  try {
+    // Get all changed files and the diff
+    const statusRes = await fetch(`/api/git/status?repo=${encodeURIComponent(repo)}`);
+    const statusData = await statusRes.json();
+
+    const diffRes = await fetch(`/api/git/diff?repo=${encodeURIComponent(repo)}`);
+    const diffData = await diffRes.json();
+
+    const files = (statusData.files || []).map(f => ({ file: f.file, status: f.status }));
+
+    diffViewCommit = { hash: 'working', diff: diffData.diff, message: 'Working changes', files, repo };
+
+    document.getElementById('diffviewTabBtn').style.display = '';
+    document.getElementById('diffviewTitle').textContent = 'Working Changes';
+    document.getElementById('diffviewFileCount').textContent = `${files.length} files`;
+
+    const fileList = document.getElementById('diffviewFileList');
+    const targetIdx = files.findIndex(f => f.file === filePath);
+    fileList.innerHTML = files.map((f, i) => `
+      <div class="diffview-file ${i === (targetIdx >= 0 ? targetIdx : 0) ? 'active' : ''}" onclick="selectDiffFile(${i})" data-idx="${i}">
+        <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
+        <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
+      </div>
+    `).join('');
+
+    switchTab('diffview');
+    renderDiffForFile(targetIdx >= 0 ? targetIdx : 0);
+  } catch (e) {
+    toast('Failed to load diff', 'error');
+  }
+}
+
+function cancelFilesEdit() { setFilesMode('view'); }
+
+async function saveFilesEdit() {
+  const content = monacoEditor ? monacoEditor.getValue() : '';
+  try {
+    const res = await fetch('/api/files/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: filesCurrentRepo, path: filesCurrentFile.path, content }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast('File saved', 'success');
+      filesCurrentFile.content = content;
+      cancelFilesEdit();
+      viewFile(filesCurrentFile.path);
+    } else {
+      toast(data.error || 'Failed to save', 'error');
+    }
+  } catch (e) {
+    toast('Failed to save', 'error');
+  }
+}
+
+// ── Files Sidebar Tabs ──────────────────────────────────────────────────
+function switchFilesTab(tab) {
+  document.querySelectorAll('.files-stab').forEach(el => el.classList.toggle('active', el.dataset.fstab === tab));
+  document.querySelectorAll('.files-stab-panel').forEach(el => el.classList.toggle('active', el.id === `fstab-${tab}`));
+  if (tab === 'git' && filesCurrentRepo) loadGitPanel();
+  if (tab === 'log' && filesCurrentRepo) loadGitLog();
+}
+
+async function loadGitPanel() {
+  if (!filesCurrentRepo) return;
+
+  // Load branches
+  try {
+    const res = await fetch(`/api/git/branches?repo=${encodeURIComponent(filesCurrentRepo)}`);
+    const data = await res.json();
+    if (!data.error) {
+      const select = document.getElementById('filesBranchSelect');
+      select.innerHTML = data.branches.map(b =>
+        `<option value="${esc(b)}" ${b === data.current ? 'selected' : ''}>${esc(b)}</option>`
+      ).join('');
+    }
+  } catch (_) {}
+
+  // Load changed files
+  try {
+    const res = await fetch(`/api/git/status?repo=${encodeURIComponent(filesCurrentRepo)}`);
+    const git = await res.json();
+    const container = document.getElementById('filesChangedList');
+    if (git.files && git.files.length > 0) {
+      container.innerHTML = git.files.map(f => `
+        <div class="changed-file" onclick="viewFile('${esc(f.file)}')" title="${esc(f.file)}">
+          <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
+          <span>${esc(f.file.split('/').pop())}</span>
+        </div>
+      `).join('');
+    } else {
+      container.innerHTML = '<div style="font-size:11px;color:var(--subtext0);">No changes</div>';
+    }
+  } catch (_) {}
+}
+
+async function loadGitLogPanel() {
+  if (!filesCurrentRepo) return;
+  const container = document.getElementById('gitLogList');
+  try {
+    const res = await fetch(`/api/git/log?repo=${encodeURIComponent(filesCurrentRepo)}&count=30`);
+    const data = await res.json();
+    if (data.commits && data.commits.length > 0) {
+      container.innerHTML = data.commits.map(c => `
+        <div class="commit-item" onclick="viewCommitDiff('${esc(c.hash)}')" style="cursor:pointer;" title="View changes in this commit">
+          <span class="commit-hash">${esc(c.hash)}</span>
+          <div class="commit-msg">${esc(c.subject)}</div>
+          <div class="commit-meta">${esc(c.author)} - ${esc(c.date)}</div>
+        </div>
+      `).join('');
+    } else {
+      container.innerHTML = '<div style="font-size:11px;color:var(--subtext0);padding:10px;text-align:center;">No commits</div>';
+    }
+  } catch (_) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--subtext0);padding:10px;text-align:center;">Failed to load</div>';
+  }
+}
+
+function switchBranch(branch) {
+  if (!filesCurrentRepo || !branch) return;
+  // This is a write action — send to terminal for the user/AI to confirm
+  switchTab('terminal');
+  sendCommand(`cd "${configData.Repos[filesCurrentRepo]}"; git checkout ${branch}`);
+  toast(`Switching to ${branch}...`, 'info');
+}
+
+function aiGit(action) {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) { toast('Select a repo first', 'info'); return; }
+  const repoPath = configData.Repos[repo];
+  const user = configData.DefaultUser || 'the user';
+
+  const prompts = {
+    pull: `In the repo at "${repoPath}", pull the latest changes from the remote. Run: cd "${repoPath}" && git pull`,
+    push: `In the repo at "${repoPath}", push the current branch to the remote. Run: cd "${repoPath}" && git push`,
+    checkout: `In the repo at "${repoPath}", list all branches and ask me which one I want to switch to. Run: cd "${repoPath}" && git branch -a`,
+    commit: `In the repo at "${repoPath}", check git status, show me what changed, suggest a commit message, and create the commit. The commit must be signed by "${user}". Run: cd "${repoPath}" && git status`,
+    compare: `In the repo at "${repoPath}", compare the current branch with main. Show a summary of all differences. Run: cd "${repoPath}" && git diff main...HEAD --stat`,
+  };
+
+  askAi(prompts[action]);
+}
+
+// ── Project Scripts ──────────────────────────────────────────────────────
+async function loadProjectScripts() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+
+  const bar = document.getElementById('filesScriptsBar');
+  const btns = document.getElementById('filesScriptBtns');
+
+  try {
+    const res = await fetch(`/api/project/scripts?repo=${encodeURIComponent(repo)}`);
+    const data = await res.json();
+    if (data.error || !data.scripts) { bar.style.display = 'none'; return; }
+
+    const scripts = data.scripts;
+    let html = '';
+
+    // Install button if no node_modules
+    if (!data.hasNodeModules) {
+      html += `<button class="script-btn install" onclick="runNpmScript('install', '${esc(repo)}')">npm install</button>`;
+    }
+
+    // Priority scripts first
+    const priority = ['dev', 'start', 'build', 'test', 'lint'];
+    const shown = new Set();
+
+    for (const key of priority) {
+      if (scripts[key]) {
+        const isPrimary = key === 'dev' || key === 'start';
+        html += `<button class="script-btn ${isPrimary ? 'primary' : ''}" onclick="runNpmScript('${esc(key)}', '${esc(repo)}')">${key}</button>`;
+        shown.add(key);
+      }
+    }
+
+    // Remaining scripts
+    const remaining = Object.keys(scripts).filter(k => !shown.has(k));
+    if (remaining.length > 0) {
+      html += `<select class="script-btn" onchange="if(this.value){runNpmScript(this.value,'${esc(repo)}');this.value=''}" style="padding:3px 6px;">`;
+      html += `<option value="">more...</option>`;
+      for (const key of remaining) {
+        html += `<option value="${esc(key)}">${esc(key)}</option>`;
+      }
+      html += `</select>`;
+    }
+
+    btns.innerHTML = html;
+    bar.style.display = html ? '' : 'none';
+  } catch (_) {
+    bar.style.display = 'none';
+  }
+}
+
+function runNpmScript(script, repoName) {
+  const repoPath = configData.Repos[repoName];
+  if (!repoPath) return;
+  switchTab('terminal');
+
+  // Create a new terminal for the script so it doesn't interrupt the AI
+  const termId = addTerminal(`${script}`, repoPath);
+
+  // Wait for PTY to be ready, then run the command
+  setTimeout(() => {
+    if (script === 'install') {
+      sendCommand(`cd "${repoPath}"; npm install`, termId);
+    } else {
+      sendCommand(`cd "${repoPath}"; npm run ${script}`, termId);
+    }
+  }, 500);
+}
+
+// ── Syntax Highlighting Language Map ─────────────────────────────────────
+function hlExtMap(ext) {
+  const map = {
+    js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+    cs: 'csharp', cpp: 'cpp', c: 'c', h: 'c', hpp: 'cpp',
+    css: 'css', scss: 'scss', less: 'less', sass: 'scss',
+    html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml', vue: 'xml',
+    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini',
+    md: 'markdown', sh: 'bash', bash: 'bash', zsh: 'bash',
+    ps1: 'powershell', psm1: 'powershell', psd1: 'powershell',
+    sql: 'sql', graphql: 'graphql', gql: 'graphql',
+    dockerfile: 'dockerfile', makefile: 'makefile',
+    r: 'r', swift: 'swift', kt: 'kotlin', scala: 'scala',
+    php: 'php', lua: 'lua', perl: 'perl', pl: 'perl',
+    tf: 'hcl', hcl: 'hcl', ini: 'ini', cfg: 'ini', conf: 'ini',
+    csproj: 'xml', sln: 'plaintext', gitignore: 'plaintext',
+  };
+  return map[ext] || '';
+}
+
+// ── Simple Markdown Parser ──────────────────────────────────────────────
+function renderMarkdown(md) {
+  if (!md) return '';
+
+  // Step 1: Extract code blocks to protect them
+  const codeBlocks = [];
+  let text = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    codeBlocks.push(`<pre><code>${esc(code.trim())}</code></pre>`);
+    return `\x00CODE${codeBlocks.length - 1}\x00`;
+  });
+
+  // Step 2: Process tables (before other line-level transforms)
+  text = text.replace(/^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)*)/gm, (_, headerRow, sepRow, bodyRows) => {
+    const headers = headerRow.split('|').filter(c => c.trim());
+    // Parse alignment from separator
+    const aligns = sepRow.split('|').filter(c => c.trim()).map(c => {
+      c = c.trim();
+      if (c.startsWith(':') && c.endsWith(':')) return 'center';
+      if (c.endsWith(':')) return 'right';
+      return 'left';
+    });
+    let html = '<table><thead><tr>';
+    headers.forEach((h, i) => { html += `<th style="text-align:${aligns[i] || 'left'}">${h.trim()}</th>`; });
+    html += '</tr></thead><tbody>';
+    const rows = bodyRows.trim().split('\n').filter(r => r.trim());
+    for (const row of rows) {
+      const cells = row.split('|').filter(c => c.trim() !== '' || c.includes(' '));
+      // Handle leading/trailing empty from split
+      const cleaned = row.replace(/^\||\|$/g, '').split('|');
+      html += '<tr>';
+      cleaned.forEach((c, i) => { html += `<td style="text-align:${aligns[i] || 'left'}">${c.trim()}</td>`; });
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    return html;
+  });
+
+  // Step 3: Inline transforms
+  let html = text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/^---+$/gm, '<hr>')
+    .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    .replace(/^(?!<[hluobdprit\x00]|<\/|<li|<hr|<pre|<block|<img|<a |<strong|<em|<code|<table|<thead|<tbody|<tr|<td|<th)(.+)$/gm, '<p>$1</p>');
+
+  // Wrap lists
+  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, (m) => `<ul>${m}</ul>`);
+  html = html.replace(/<\/ul>\s*<ul>/g, '');
+  html = html.replace(/<\/blockquote>\s*<blockquote>/g, '<br>');
+
+  // Step 4: Restore code blocks
+  html = html.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)]);
+
+  return html;
+}
+
+// ── Notes State ─────────────────────────────────────────────────────────
+let currentNote = null;
+let noteMode = 'edit'; // 'edit' or 'preview'
+let noteDirty = false;
+
+async function loadNotesList() {
+  try {
+    const res = await fetch('/api/notes');
+    const notes = await res.json();
+    const container = document.getElementById('notesList');
+    container.innerHTML = notes.map(n => `
+      <div class="note-item ${currentNote === n.name ? 'active' : ''}" onclick="openNote('${esc(n.name)}')" oncontextmenu="event.preventDefault();showNoteContextMenu(event,'${esc(n.name)}')">
+        <span>${esc(n.name)}</span>
+      </div>
+    `).join('') || '<div style="padding:12px;font-size:11px;color:var(--subtext0);text-align:center;">No notes yet</div>';
+  } catch (_) {}
+}
+
+async function openNote(name) {
+  if (noteDirty && currentNote) await saveCurrentNote();
+  try {
+    const res = await fetch(`/api/notes/read?name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+    currentNote = name;
+    noteDirty = false;
+    document.getElementById('noteTitle').textContent = name;
+    document.getElementById('noteTextarea').value = data.content || '';
+    document.getElementById('noteEmpty').style.display = 'none';
+    document.getElementById('noteSaveBtn').style.display = 'none';
+    setNoteMode('preview');
+    loadNotesList();
+  } catch (_) {}
+}
+
+function setNoteMode(mode) {
+  noteMode = mode;
+  const editor = document.getElementById('noteEditor');
+  const preview = document.getElementById('notePreview');
+  const btn = document.getElementById('noteModeBtn');
+  if (mode === 'edit') {
+    editor.style.display = 'flex';
+    preview.style.display = 'none';
+    btn.textContent = 'Preview';
+  } else {
+    editor.style.display = 'none';
+    preview.style.display = 'block';
+    preview.innerHTML = renderMarkdown(document.getElementById('noteTextarea').value);
+    btn.textContent = 'Edit';
+  }
+}
+
+function toggleNoteMode() {
+  if (!currentNote) return;
+  setNoteMode(noteMode === 'edit' ? 'preview' : 'edit');
+}
+
+function onNoteInput() {
+  noteDirty = true;
+  document.getElementById('noteSaveBtn').style.display = '';
+}
+
+async function saveCurrentNote() {
+  if (!currentNote) return;
+  const content = document.getElementById('noteTextarea').value;
+  try {
+    await fetch('/api/notes/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: currentNote, content }),
+    });
+    noteDirty = false;
+    document.getElementById('noteSaveBtn').style.display = 'none';
+    toast('Note saved', 'success');
+  } catch (_) {
+    toast('Failed to save', 'error');
+  }
+}
+
+function showNewNoteInput() {
+  const wrap = document.getElementById('newNoteInputWrap');
+  const input = document.getElementById('newNoteInput');
+  wrap.style.display = '';
+  input.value = '';
+  input.focus();
+}
+
+function hideNewNoteInput() {
+  document.getElementById('newNoteInputWrap').style.display = 'none';
+}
+
+async function confirmCreateNote() {
+  const input = document.getElementById('newNoteInput');
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch('/api/notes/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    hideNewNoteInput();
+    await loadNotesList();
+    openNote(data.name);
+  } catch (_) {}
+}
+
+async function deleteNote(name) {
+  const ok = await customConfirm('Delete Note', `Delete "${name}"? This cannot be undone.`, 'Delete');
+  if (!ok) return;
+  try {
+    await fetch('/api/notes/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (currentNote === name) {
+      currentNote = null;
+      document.getElementById('noteTitle').textContent = 'No note selected';
+      document.getElementById('noteEditor').style.display = 'none';
+      document.getElementById('notePreview').style.display = 'none';
+      document.getElementById('noteEmpty').style.display = '';
+    }
+    loadNotesList();
+  } catch (_) {}
+}
+
+function sendNoteToAi() {
+  if (!currentNote) return;
+  const content = document.getElementById('noteTextarea').value;
+  if (!content.trim()) { toast('Note is empty', 'info'); return; }
+  const truncated = content.length > 3000 ? content.slice(0, 3000) + '\n\n[truncated]' : content;
+  askAi(`Read and analyze the following note called "${currentNote}". Use this as context for our conversation — I may ask you to expand on it, update it, or take action based on it.\n\n---\n${truncated}\n---`);
+}
+
+// ── Custom Confirm / Prompt Dialogs ─────────────────────────────────────
+let confirmResolve = null;
+let promptResolve = null;
+
+function customConfirm(title, message, okLabel = 'Confirm') {
+  return new Promise(resolve => {
+    confirmResolve = resolve;
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmOkBtn').textContent = okLabel;
+    document.getElementById('confirmDialog').classList.add('open');
+  });
+}
+
+function closeConfirm(result) {
+  document.getElementById('confirmDialog').classList.remove('open');
+  if (confirmResolve) { confirmResolve(result); confirmResolve = null; }
+}
+
+function customPrompt(title, defaultValue = '') {
+  return new Promise(resolve => {
+    promptResolve = resolve;
+    document.getElementById('promptTitle').textContent = title;
+    const input = document.getElementById('promptInput');
+    input.value = defaultValue;
+    document.getElementById('promptDialog').classList.add('open');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
+}
+
+function closePrompt(ok) {
+  document.getElementById('promptDialog').classList.remove('open');
+  if (promptResolve) {
+    promptResolve(ok ? document.getElementById('promptInput').value.trim() : null);
+    promptResolve = null;
+  }
+}
+
+// ── Note Context Menu ───────────────────────────────────────────────────
+let contextNoteName = null;
+
+function showNoteContextMenu(e, name) {
+  contextNoteName = name;
+  const menu = document.getElementById('noteContextMenu');
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('open');
+  try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('noteContextMenu').classList.remove('open');
+});
+
+async function deleteNoteFromContext() {
+  document.getElementById('noteContextMenu').classList.remove('open');
+  if (!contextNoteName) return;
+  const ok = await customConfirm('Delete Note', `Delete "${contextNoteName}"? This cannot be undone.`, 'Delete');
+  if (!ok) return;
+  try {
+    await fetch('/api/notes/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: contextNoteName }),
+    });
+    if (currentNote === contextNoteName) {
+      currentNote = null;
+      document.getElementById('noteTitle').textContent = 'No note selected';
+      document.getElementById('noteEditor').style.display = 'none';
+      document.getElementById('notePreview').style.display = 'none';
+      document.getElementById('noteEmpty').style.display = '';
+    }
+    loadNotesList();
+  } catch (_) {}
+}
+
+async function renameNoteFromContext() {
+  document.getElementById('noteContextMenu').classList.remove('open');
+  if (!contextNoteName) return;
+  const newName = await customPrompt('Rename Note', contextNoteName);
+  if (!newName || newName === contextNoteName) return;
+  try {
+    // Read old, create new, delete old
+    const res = await fetch(`/api/notes/read?name=${encodeURIComponent(contextNoteName)}`);
+    const data = await res.json();
+    await fetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
+    await fetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, content: data.content }) });
+    await fetch('/api/notes/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: contextNoteName }) });
+    if (currentNote === contextNoteName) currentNote = newName;
+    loadNotesList();
+    if (currentNote === newName) document.getElementById('noteTitle').textContent = newName;
+  } catch (_) { toast('Failed to rename', 'error'); }
+}
+
+async function duplicateNoteFromContext() {
+  document.getElementById('noteContextMenu').classList.remove('open');
+  if (!contextNoteName) return;
+  const newName = await customPrompt('Duplicate Note', contextNoteName + ' (copy)');
+  if (!newName) return;
+  try {
+    const res = await fetch(`/api/notes/read?name=${encodeURIComponent(contextNoteName)}`);
+    const data = await res.json();
+    await fetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
+    await fetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, content: data.content }) });
+    loadNotesList();
+    toast(`Duplicated as "${newName}"`, 'success');
+  } catch (_) { toast('Failed to duplicate', 'error'); }
+}
+
+// ── Voice Sound Effects ─────────────────────────────────────────────────
+function playTone(freq, duration, type = 'sine', volume = 0.15) {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+    setTimeout(() => ctx.close(), (duration + 0.1) * 1000);
+  } catch (_) {}
+}
+
+function playStartSound() {
+  // Rising two-tone chime (like Wispr's activation)
+  playTone(600, 0.12, 'sine', 0.12);
+  setTimeout(() => playTone(900, 0.15, 'sine', 0.12), 80);
+}
+
+function playStopSound() {
+  // Falling single tone
+  playTone(700, 0.15, 'sine', 0.1);
+}
+
+// ── Voice Recording (Ctrl+Shift hold) ───────────────────────────────────
+// Records raw PCM at 16kHz directly via Web Audio API — no webm conversion needed.
+let voiceRecording = false;
+let voiceStream = null;
+let voiceAudioCtx = null;
+let voiceProcessor = null;
+let voiceSamples = [];
+
+async function startVoiceRecording() {
+  if (voiceRecording) return;
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    voiceAudioCtx = new AudioContext({ sampleRate: 16000 });
+    const source = voiceAudioCtx.createMediaStreamSource(voiceStream);
+
+    // Use ScriptProcessor to capture raw PCM samples
+    voiceProcessor = voiceAudioCtx.createScriptProcessor(4096, 1, 1);
+    voiceSamples = [];
+
+    voiceProcessor.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0);
+      voiceSamples.push(new Float32Array(data));
+    };
+
+    source.connect(voiceProcessor);
+    voiceProcessor.connect(voiceAudioCtx.destination);
+
+    voiceRecording = true;
+    document.getElementById('voiceIndicator').classList.add('recording');
+    playStartSound();
+  } catch (e) {
+    toast('Microphone access denied', 'error');
+  }
+}
+
+async function stopVoiceRecording() {
+  if (!voiceRecording) return '';
+  document.getElementById('voiceIndicator').classList.remove('recording');
+  voiceRecording = false;
+  playStopSound();
+
+  // Stop recording
+  if (voiceProcessor) { voiceProcessor.disconnect(); voiceProcessor = null; }
+  if (voiceStream) { voiceStream.getTracks().forEach(t => t.stop()); voiceStream = null; }
+  const sampleRate = voiceAudioCtx ? voiceAudioCtx.sampleRate : 16000;
+  if (voiceAudioCtx) { voiceAudioCtx.close(); voiceAudioCtx = null; }
+
+  if (voiceSamples.length === 0) return '';
+
+  // Merge all sample chunks
+  const totalLength = voiceSamples.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Float32Array(totalLength);
+  let offset = 0;
+  for (const chunk of voiceSamples) { merged.set(chunk, offset); offset += chunk.length; }
+  voiceSamples = [];
+
+  // Encode to 16-bit PCM WAV
+  const wavBuffer = float32ToWav(merged, sampleRate);
+
+  // Convert to base64 in chunks (avoid call stack overflow)
+  const bytes = new Uint8Array(wavBuffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  }
+  const base64 = btoa(binary);
+
+  // Show transcribing state
+  document.getElementById('voiceIndicator').innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> <span>Transcribing...</span>';
+  document.getElementById('voiceIndicator').classList.add('recording');
+
+  try {
+    const res = await fetch('/api/voice/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: base64 }),
+    });
+    const data = await res.json();
+
+    document.getElementById('voiceIndicator').classList.remove('recording');
+    document.getElementById('voiceIndicator').innerHTML = '<div class="voice-dot"></div> <span>Recording... Release to send</span>';
+
+    if (data.error) { toast(data.error, 'error'); return ''; }
+    return data.text || '';
+  } catch (e) {
+    document.getElementById('voiceIndicator').classList.remove('recording');
+    document.getElementById('voiceIndicator').innerHTML = '<div class="voice-dot"></div> <span>Recording... Release to send</span>';
+    toast('Transcription failed', 'error');
+    return '';
+  }
+}
+
+// Encode Float32 PCM samples to a WAV ArrayBuffer
+function float32ToWav(samples, sampleRate) {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const bytesPerSample = 2;
+  const dataSize = samples.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  w(8, 'WAVE');
+  w(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, bitsPerSample, true);
+  w(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // PCM samples
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return buffer;
+}
+
+// Ctrl+Shift: hold both to record, release either to stop and transcribe
+let ctrlDown = false;
+let shiftDown = false;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Control') ctrlDown = true;
+  if (e.key === 'Shift') shiftDown = true;
+
+  // Start recording when both Ctrl+Shift are held
+  if (ctrlDown && shiftDown && !voiceRecording) {
+    e.preventDefault();
+    startVoiceRecording();
+  }
+});
+
+document.addEventListener('keyup', async (e) => {
+  if (e.key === 'Control') ctrlDown = false;
+  if (e.key === 'Shift') shiftDown = false;
+
+  // Stop recording when either key is released
+  if (voiceRecording && (!ctrlDown || !shiftDown)) {
+    e.preventDefault();
+    const text = await stopVoiceRecording();
+    if (text) {
+      if (aiLaunched) {
+        sendCommand(text);
+      } else {
+        launchAi();
+        setTimeout(() => sendCommand(text), 2000);
+      }
+      switchTab('terminal');
+    }
+  }
+});
+
+// ── Bottom Hints Visibility ─────────────────────────────────────────────
+function updateVoiceHint() {
+  const hint = document.getElementById('voiceHint');
+  if (hint) hint.classList.toggle('visible', !!(configData.WisprFlowKey));
+  updateScreenHint();
+}
+
+async function updateScreenHint() {
+  const hint = document.getElementById('switchScreenHint');
+  if (!hint) return;
+  try {
+    const res = await fetch('/api/screen-info');
+    const data = await res.json();
+    hint.classList.toggle('visible', data.count > 1);
+  } catch (_) {
+    hint.classList.remove('visible');
+  }
+}
+
+async function switchScreen() {
+  try {
+    const res = await fetch('/api/switch-screen', { method: 'POST' });
+    const data = await res.json();
+    if (data.switched) toast(`Moved to display ${data.display}/${data.total}`, 'info');
+  } catch (_) {}
+}
+
+// Ctrl+S to save note
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's' && currentNote && document.activeElement === document.getElementById('noteTextarea')) {
+    e.preventDefault();
+    saveCurrentNote();
+  }
+});
+
+// ── Open external links in system browser ───────────────────────────────
+function openExternal(url) {
+  // POST to server which uses Electron shell.openExternal or start command
+  fetch('/api/open-external', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}
+
+// Intercept all link clicks to open externally
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[href]');
+  if (link && link.href && (link.href.startsWith('http://') || link.href.startsWith('https://')) && !link.href.includes('127.0.0.1:3800')) {
+    e.preventDefault();
+    openExternal(link.href);
+  }
+});
+
+// Override window.open for external URLs
+const _origOpen = window.open;
+window.open = function(url, target) {
+  if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('127.0.0.1:3800')) {
+    openExternal(url);
+    return null;
+  }
+  return _origOpen.call(window, url, target);
+};
+
+// ── Init ────────────────────────────────────────────────────────────────
+switchCli(activeCli);
+try { lucide.createIcons(); } catch (_) {}
+connect();
+loadConfig();
 
 // ── CLI Switching ───────────────────────────────────────────────────────
 function toggleCliDropdown() {
@@ -909,31 +2970,64 @@ function switchCli(cli) {
   localStorage.setItem('devops-pilot-cli', cli);
   document.getElementById('cliLabel').textContent = CLI_CONFIG[cli].label;
   document.documentElement.setAttribute('data-theme', CLI_CONFIG[cli].theme);
-  term.options.theme = TERM_THEMES[cli];
+  // Update all terminal themes
+  for (const [, inst] of termInstances) {
+    inst.term.options.theme = TERM_THEMES[cli];
+  }
+  const termPanel = document.getElementById('panel-terminal');
+  if (termPanel) termPanel.style.background = TERM_THEMES[cli].background;
 
   document.querySelectorAll('.cli-option').forEach(el => {
     el.classList.toggle('active', el.dataset.cli === cli);
   });
   document.getElementById('cliDropdown').classList.remove('open');
-  aiLaunched = false;
+  if (aiLaunched) stopAi();
+}
+
+function toggleAi() {
+  if (aiLaunched) { stopAi(); } else { launchAi(); }
 }
 
 function launchAi() {
   const cfg = CLI_CONFIG[activeCli];
-  sendCommand(cfg.cmd, cfg.label);
+  switchTerminal('main');
+  sendCommand(cfg.cmd);
   aiLaunched = true;
   document.getElementById('termStatus').textContent = `${cfg.label} running`;
+  document.getElementById('aiBtn').textContent = 'Stop AI';
+  document.getElementById('mainTermTab').textContent = cfg.label;
 }
 
-function sendCommand(cmd) {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: cmd + '\r' }));
+function stopAi() {
+  // Send Ctrl+C then exit to the AI process
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId: 'main', data: '\x03' }));
+  setTimeout(() => {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId: 'main', data: 'exit\r' }));
+  }, 500);
+  // Clear terminal after AI exits
+  setTimeout(() => {
+    const inst = termInstances.get('main');
+    if (inst) inst.term.clear();
+  }, 1000);
+  aiLaunched = false;
+  document.getElementById('termStatus').textContent = 'Shell ready';
+  document.getElementById('aiBtn').textContent = 'Launch AI';
+  document.getElementById('mainTermTab').textContent = 'Shell 1';
+}
+
+function sendCommand(cmd, termId) {
+  const tid = termId || 'main';
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId: tid, data: cmd + '\r' }));
 }
 
 function restartShell() {
   aiLaunched = false;
   document.getElementById('termStatus').textContent = 'Restarting...';
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'restart', cols: term.cols, rows: term.rows }));
-  term.clear();
+  document.getElementById('aiBtn').textContent = 'Launch AI';
+  document.getElementById('mainTermTab').textContent = 'Shell 1';
+  const inst = termInstances.get(activeTermId);
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 }));
+  if (inst) inst.term.clear();
 }
 
 function askAi(prompt) {
@@ -942,13 +3036,39 @@ function askAi(prompt) {
   setTimeout(() => sendCommand(prompt), aiLaunched ? 100 : 2000);
 }
 
+function runScript(action) {
+  const sprint = document.getElementById('sprintSelect').value;
+  const sprintName = document.getElementById('sprintSelect').selectedOptions[0]?.textContent || '';
+  if (!sprint && action !== 'retro') {
+    toast('Select a sprint first', 'info');
+    return;
+  }
+
+  const prompts = {
+    standup: `Run .\\scripts\\Get-StandupSummary.ps1${sprint ? ` -IterationPath '${sprint}'` : ''} and then give me a brief analysis of the standup for "${sprintName}". What should we focus on today?`,
+    status: `Run .\\scripts\\Get-SprintStatus.ps1 and then analyze the results. Are we on track for "${sprintName}"? Any concerns?`,
+    retro: `Run .\\scripts\\Get-Retrospective.ps1 and then give me a retrospective analysis. What went well? What can we improve?`,
+  };
+
+  askAi(prompts[action]);
+}
+
 // ── Tab Switching ───────────────────────────────────────────────────────
-function switchTab(tab) {
+function switchTab(tab, preserveSearch) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `panel-${tab}`));
-  if (tab === 'terminal') setTimeout(() => fitAddon.fit(), 50);
-  if (tab === 'board') renderBoard();
-  if (tab === 'backlog') renderBacklog();
+  if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); }
+  if (tab === 'board') {
+    if (!preserveSearch) { const s = document.getElementById('boardSearch'); if (s) s.value = ''; }
+    renderBoard();
+  }
+  if (tab === 'backlog') {
+    if (!preserveSearch) { const s = document.getElementById('backlogSearch'); if (s) s.value = ''; }
+    renderBacklog();
+    filterBacklog();
+  }
+  if (tab === 'files') { populateFilesRepoSelect(); if (filesCurrentRepo) { loadFileTree(filesCurrentPath); loadProjectScripts(); } }
+  if (tab === 'notes') loadNotesList();
 }
 
 function switchIntelTab(tab) {
@@ -956,12 +3076,27 @@ function switchIntelTab(tab) {
   document.querySelectorAll('.intel-panel').forEach(el => el.classList.toggle('active', el.id === `ipanel-${tab}`));
   if (tab === 'velocity') loadVelocity();
   if (tab === 'team') loadTeamMembers();
+  if (tab === 'gitlog') loadGitLogPanel();
 }
 
 // ── UI Actions from AI ──────────────────────────────────────────────────
 function handleUiAction(msg) {
   if (msg.action === 'switch-tab') switchTab(msg.tab);
   if (msg.action === 'view-workitem' && msg.id) viewWorkItem(msg.id);
+  if (msg.action === 'view-note' && msg.name) { switchTab('notes'); setTimeout(() => { openNote(msg.name).then(() => setNoteMode('preview')); }, 200); }
+  if (msg.action === 'refresh-workitems') loadWorkItems(true);
+  if (msg.action === 'view-file' && msg.repo && msg.path) {
+    filesCurrentRepo = msg.repo;
+    activeRepo = msg.repo;
+    switchTab('files');
+    setTimeout(() => viewFile(msg.path), 300);
+  }
+  if (msg.action === 'view-diff' && msg.repo && msg.path) {
+    filesCurrentRepo = msg.repo;
+    activeRepo = msg.repo;
+    switchTab('files');
+    setTimeout(() => { viewFile(msg.path).then(() => showSplitDiff(msg.path, msg.base || 'HEAD')); }, 300);
+  }
 }
 
 // ── Config ──────────────────────────────────────────────────────────────
@@ -972,9 +3107,12 @@ async function loadConfig() {
     const label = configData.AzureDevOpsProject || 'Not configured';
     document.getElementById('projectLabel').textContent = label;
     if (configData.AzureDevOpsOrg && configData.AzureDevOpsProject && configData.AzureDevOpsPAT) {
+      loadTeams();
       loadIterations();
       loadRepoList();
+      loadTeamMembers();
     }
+    updateVoiceHint();
   } catch (_) {}
 }
 
@@ -994,8 +3132,9 @@ async function loadIterations() {
       select.appendChild(opt);
       if (it.isCurrent) { currentPath = it.path; opt.selected = true; }
     }
+    // Always load work items — use current sprint if available, otherwise all
+    loadWorkItems();
     if (currentPath) {
-      loadWorkItems();
       loadBurndown(currentPath);
       updateSprintCard(data.find(i => i.isCurrent));
     }
@@ -1029,17 +3168,76 @@ async function loadWorkItems(refresh = false) {
 }
 
 function filterMyItems() {
-  // Filter by config default assignee or show all
-  const search = document.getElementById('backlogSearch');
-  search.value = configData.DefaultAssignee || '';
-  switchTab('backlog');
+  const user = configData.DefaultUser || '';
+  if (!user) { toast('Set your display name in Settings first', 'info'); openSettings(); return; }
+  filterByUser(user);
+}
+
+function filterByUser(name) {
+  document.getElementById('backlogSearch').value = name;
+  switchTab('backlog', true);
   filterBacklog();
 }
 
 // ── Board Rendering ─────────────────────────────────────────────────────
+// ── Multi-Select Dropdown Logic ──────────────────────────────────────────
+function toggleMultiSelect(el) {
+  // Close others first
+  document.querySelectorAll('.multi-select.open').forEach(ms => { if (ms !== el) ms.classList.remove('open'); });
+  el.classList.toggle('open');
+}
+
+function toggleMultiItem(item) {
+  item.classList.toggle('selected');
+  const ms = item.closest('.multi-select');
+  updateMultiSelectLabel(ms);
+  // Call the onchange handler
+  const fn = ms.dataset.onchange;
+  if (fn && window[fn]) window[fn]();
+}
+
+function getMultiSelectValues(dataId) {
+  const ms = document.querySelector(`.multi-select[data-id="${dataId}"]`);
+  if (!ms) return [];
+  return [...ms.querySelectorAll('.multi-select-item.selected')].map(el => el.dataset.value);
+}
+
+function updateMultiSelectLabel(ms) {
+  const selected = [...ms.querySelectorAll('.multi-select-item.selected')];
+  const label = ms.querySelector('.multi-select-label');
+  const defaultLabel = ms.querySelector('.multi-select-btn').dataset.label || label.textContent.split(':')[0].trim();
+
+  if (selected.length === 0) {
+    label.textContent = defaultLabel.replace(/:.*/, '');
+  } else {
+    label.textContent = selected.map(el => el.textContent.trim()).join(', ');
+  }
+}
+
+// Close multi-selects when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.multi-select')) {
+    document.querySelectorAll('.multi-select.open').forEach(ms => ms.classList.remove('open'));
+  }
+});
+
+const HIDDEN_TYPES = ['Test Case', 'Test Suite'];
+
 function renderBoard() {
+  const search = (document.getElementById('boardSearch')?.value || '').toLowerCase();
+  const typeFilters = getMultiSelectValues('boardType');
+  const stateFilters = getMultiSelectValues('boardState');
+  let filtered = workItems;
+  // Hide test types by default; show them only if explicitly selected
+  if (typeFilters.length) filtered = filtered.filter(wi => typeFilters.includes(wi.type));
+  else filtered = filtered.filter(wi => !HIDDEN_TYPES.includes(wi.type));
+  if (stateFilters.length) filtered = filtered.filter(wi => stateFilters.includes(wi.state));
+  if (search) filtered = filtered.filter(wi =>
+    wi.title.toLowerCase().includes(search) || String(wi.id).includes(search) || wi.assignedTo.toLowerCase().includes(search)
+  );
+
   const buckets = { New: [], Active: [], Resolved: [], Closed: [] };
-  for (const wi of workItems) {
+  for (const wi of filtered) {
     const state = wi.state;
     if (buckets[state]) buckets[state].push(wi);
     else if (state === 'Done') buckets.Closed.push(wi);
@@ -1052,7 +3250,8 @@ function renderBoard() {
     if (!container) continue;
     count.textContent = items.length;
     container.innerHTML = items.map(wi => `
-      <div class="board-card" onclick="viewWorkItem(${wi.id})">
+      <div class="board-card" draggable="true" data-wi-id="${wi.id}" onclick="viewWorkItem(${wi.id})"
+           ondragstart="onCardDragStart(event, ${wi.id})" ondragend="onCardDragEnd(event)">
         <div class="board-card-id">#${wi.id}</div>
         <div class="board-card-title">${esc(wi.title)}</div>
         <div class="board-card-meta">
@@ -1062,6 +3261,11 @@ function renderBoard() {
         </div>
       </div>
     `).join('');
+
+    // Add drop handlers to column
+    container.ondragover = (e) => { e.preventDefault(); container.classList.add('drag-over'); };
+    container.ondragleave = () => container.classList.remove('drag-over');
+    container.ondrop = (e) => { e.preventDefault(); container.classList.remove('drag-over'); onCardDrop(e, state); };
   }
 }
 
@@ -1081,17 +3285,57 @@ function renderBacklog() {
   `).join('');
 }
 
+// ── Kanban Drag & Drop ──────────────────────────────────────────────────
+let draggedWiId = null;
+
+function onCardDragStart(e, wiId) {
+  draggedWiId = wiId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.target.classList.add('dragging');
+}
+
+function onCardDragEnd(e) {
+  e.target.classList.remove('dragging');
+}
+
+async function onCardDrop(e, targetState) {
+  if (!draggedWiId) return;
+  const wiId = draggedWiId;
+  draggedWiId = null;
+
+  // Find the work item to check if state actually changed
+  const wi = workItems.find(w => w.id === wiId);
+  if (!wi || wi.state === targetState) return;
+
+  try {
+    const res = await fetch(`/api/workitems/${wiId}/state`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: targetState }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast(`#${wiId} moved to ${targetState}`, 'success');
+    // Update local state and re-render
+    wi.state = targetState;
+    renderBoard();
+    renderBacklog();
+  } catch (e) {
+    toast('Failed to update state', 'error');
+  }
+}
+
 function filterBacklog() {
   const search = document.getElementById('backlogSearch').value.toLowerCase();
-  const typeFilter = document.getElementById('backlogTypeFilter').value;
-  const stateFilter = document.getElementById('backlogStateFilter').value;
+  const typeFilters = getMultiSelectValues('backlogType');
+  const stateFilters = getMultiSelectValues('backlogState');
   const rows = document.querySelectorAll('#backlogBody tr');
   let idx = 0;
   for (const wi of workItems) {
     if (!rows[idx]) break;
     const matchSearch = !search || wi.title.toLowerCase().includes(search) || wi.assignedTo.toLowerCase().includes(search) || String(wi.id).includes(search);
-    const matchType = !typeFilter || wi.type === typeFilter;
-    const matchState = !stateFilter || wi.state === stateFilter;
+    const matchType = typeFilters.length > 0 ? typeFilters.includes(wi.type) : !HIDDEN_TYPES.includes(wi.type);
+    const matchState = stateFilters.length === 0 || stateFilters.includes(wi.state);
     rows[idx].style.display = (matchSearch && matchType && matchState) ? '' : 'none';
     idx++;
   }
@@ -1099,6 +3343,7 @@ function filterBacklog() {
 
 // ── Work Item Detail ────────────────────────────────────────────────────
 async function viewWorkItem(id) {
+  document.getElementById('workitemTabBtn').style.display = '';
   switchTab('workitem');
   const container = document.getElementById('wiDetail');
   container.innerHTML = '<div class="empty-state"><div class="spinner"></div><div class="empty-state-text">Loading...</div></div>';
@@ -1116,13 +3361,8 @@ async function viewWorkItem(id) {
           <div class="wi-detail-title">${esc(wi.title)}</div>
         </div>
         <div class="wi-detail-actions">
-          ${configData.Repos && Object.keys(configData.Repos).length > 0 ? `
-            <select id="startWorkRepo" style="padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font-size:11px;outline:none;">
-              ${Object.keys(configData.Repos).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
-            </select>
-            <button class="btn btn-primary btn-sm" onclick="startWorking(${wi.id})"><i data-lucide="play"></i> Start Working</button>
-          ` : ''}
           ${wi.webUrl ? `<button class="btn btn-sm" onclick="window.open('${wi.webUrl}','_blank')"><i data-lucide="external-link"></i> Open in ADO</button>` : ''}
+          <button class="btn btn-sm" onclick="closeWorkItemView()" style="color:var(--subtext0);"><i data-lucide="x"></i> Close</button>
         </div>
       </div>
       <div class="wi-detail-fields">
@@ -1161,11 +3401,36 @@ async function viewWorkItem(id) {
           `).join('')}
         </div>
       ` : ''}
+      <div style="margin-top:20px;padding:14px;background:var(--surface0);border-radius:var(--radius-lg);border:1px solid var(--surface1);">
+        ${configData.Repos && Object.keys(configData.Repos).length > 0 ? `
+          <div style="display:flex;align-items:center;gap:10px;">
+            <select id="startWorkRepo" style="padding:7px 10px;background:var(--base);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;flex:1;">
+              ${Object.keys(configData.Repos).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+            </select>
+            <button class="btn btn-primary" onclick="startWorking(${wi.id})" style="flex-shrink:0;width:auto;padding:7px 16px;"><i data-lucide="play"></i> Start Working</button>
+          </div>
+        ` : `
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:var(--subtext0);flex:1;">No repositories configured yet.</span>
+            <button class="btn btn-sm" onclick="openSettings()" style="width:auto;flex-shrink:0;"><i data-lucide="settings"></i> Add in Settings</button>
+          </div>
+        `}
+      </div>
     `;
     lucide.createIcons();
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text">Failed to load work item</div></div>`;
   }
+}
+
+function closeWorkItemView() {
+  closeWorkItemTab();
+}
+
+function closeWorkItemTab() {
+  document.getElementById('workitemTabBtn').style.display = 'none';
+  currentWiDetail = null;
+  switchTab('backlog');
 }
 
 // ── Start Working ───────────────────────────────────────────────────────
@@ -1338,6 +3603,40 @@ function drawVelocityChart(velocity, avg) {
 }
 
 // ── Team ────────────────────────────────────────────────────────────────
+async function loadTeams() {
+  try {
+    const res = await fetch('/api/teams');
+    const teams = await res.json();
+    if (teams.error) return;
+
+    const select = document.getElementById('boardTeamSelect');
+    select.innerHTML = '';
+    const currentTeam = configData.DefaultTeam || '';
+    for (const t of teams) {
+      const opt = document.createElement('option');
+      opt.value = t.name;
+      opt.textContent = t.name;
+      if (t.name === currentTeam) opt.selected = true;
+      select.appendChild(opt);
+    }
+  } catch (_) {}
+}
+
+async function switchTeam(teamName) {
+  if (!teamName) return;
+  // Save to config
+  await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ DefaultTeam: teamName }),
+  });
+  configData.DefaultTeam = teamName;
+  // Reload everything for the new team
+  loadIterations();
+  loadWorkItems(true);
+  loadTeamMembers();
+}
+
 async function loadTeamMembers() {
   const container = document.getElementById('teamList');
   container.innerHTML = '<div class="spinner" style="margin:10px auto;"></div>';
@@ -1347,7 +3646,7 @@ async function loadTeamMembers() {
     if (data.error) { container.textContent = data.error; return; }
 
     container.innerHTML = data.map(m => `
-      <div class="team-member">
+      <div class="team-member" onclick="filterByUser('${esc(m.displayName)}')" style="cursor:pointer;" title="View ${esc(m.displayName)}'s items">
         <div class="team-avatar">${(m.displayName || '?')[0]}</div>
         <div>
           <div class="team-name">${esc(m.displayName)}</div>
@@ -1375,49 +3674,104 @@ function updateActivityFeed() {
   const container = document.getElementById('activityFeed');
   const recent = [...workItems]
     .sort((a, b) => new Date(b.changedDate) - new Date(a.changedDate))
-    .slice(0, 20);
+    .slice(0, 25);
 
   if (recent.length === 0) {
     container.innerHTML = '<div style="color:var(--subtext0);font-size:12px;">No recent activity</div>';
     return;
   }
 
-  container.innerHTML = recent.map(wi => `
+  // Determine activity type based on state and timing
+  function activityLabel(wi) {
+    const state = wi.state;
+    const changed = new Date(wi.changedDate);
+    const hoursSince = (Date.now() - changed) / 3600000;
+
+    if (state === 'Closed' || state === 'Done') return { text: 'Closed', color: 'var(--subtext0)', icon: 'check-circle' };
+    if (state === 'Resolved') return { text: 'Resolved', color: 'var(--mauve)', icon: 'check' };
+    if (state === 'Active') return { text: 'In Progress', color: 'var(--green)', icon: 'play' };
+    if (state === 'New' && hoursSince < 48) return { text: 'Created', color: 'var(--blue)', icon: 'plus-circle' };
+    return { text: state, color: 'var(--subtext0)', icon: 'circle' };
+  }
+
+  container.innerHTML = recent.map(wi => {
+    const act = activityLabel(wi);
+    return `
     <div class="activity-item" onclick="viewWorkItem(${wi.id})" style="cursor:pointer;">
-      <div class="activity-dot"></div>
-      <div>
+      <div class="activity-dot" style="background:${act.color}"></div>
+      <div style="flex:1;min-width:0;">
         <div class="activity-text">
-          <span class="board-card-type type-${wi.type.toLowerCase().replace(/\s+/g, '-')}" style="font-size:9px">${wi.type}</span>
+          <span style="font-size:10px;font-weight:600;color:${act.color}">${act.text}</span>
           <strong>#${wi.id}</strong> ${esc(wi.title)}
-          ${wi.assignedTo ? `<span style="color:var(--subtext0)">- ${esc(wi.assignedTo.split(' ')[0])}</span>` : ''}
         </div>
-        <div class="activity-time">${formatDate(wi.changedDate)}</div>
+        <div class="activity-time">
+          ${wi.assignedTo ? `${esc(wi.assignedTo.split(' ')[0])} · ` : ''}${formatDate(wi.changedDate)}
+        </div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── Repos ───────────────────────────────────────────────────────────────
+let activeRepo = localStorage.getItem('devops-pilot-repo') || '';
+
 async function loadRepoList() {
   try {
     const res = await fetch('/api/repos');
     const repos = await res.json();
     const container = document.getElementById('repoList');
+    // Validate saved repo still exists
+    const repoNames = Object.keys(repos);
+    if (activeRepo && !repoNames.includes(activeRepo)) { activeRepo = ''; localStorage.removeItem('devops-pilot-repo'); }
+    // Auto-select saved repo on first load
+    if (activeRepo) filesCurrentRepo = activeRepo;
+
     container.innerHTML = Object.entries(repos).map(([name, path]) => `
-      <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-        <i data-lucide="git-branch" style="width:12px;height:12px;color:var(--overlay1)"></i>
-        <span style="font-size:11px;color:var(--text)">${esc(name)}</span>
-        <span style="font-size:10px;color:var(--subtext0);overflow:hidden;text-overflow:ellipsis;flex:1">${esc(path)}</span>
+      <div class="btn btn-sm ${name === activeRepo ? 'btn-primary' : ''}" onclick="selectRepo('${esc(name)}')" title="${esc(path)}" style="margin:1px 0;">
+        <i data-lucide="git-branch"></i> ${esc(name)}
       </div>
     `).join('');
     lucide.createIcons();
+
+    // On startup, if we have a saved repo, load its git status to show diff tab
+    if (activeRepo && !loadRepoList._initialized) {
+      loadRepoList._initialized = true;
+      loadGitStatusForDiffTab(activeRepo);
+    }
   } catch (_) {}
+}
+
+async function loadGitStatusForDiffTab(repoName) {
+  try {
+    const res = await fetch(`/api/git/status?repo=${encodeURIComponent(repoName)}`);
+    const git = await res.json();
+    if (!git.error && git.files && git.files.length > 0) {
+      document.getElementById('diffviewTabBtn').style.display = '';
+      populateDiffTabWithChanges(git.files, repoName);
+    }
+  } catch (_) {}
+}
+
+function selectRepo(name) {
+  activeRepo = name;
+  filesCurrentRepo = name;
+  localStorage.setItem('devops-pilot-repo', name);
+  loadRepoList();
+  // Sync files tab repo selector
+  const select = document.getElementById('filesRepoSelect');
+  if (select) select.value = name;
+  // Load file tree if on files tab
+  loadFileTree('');
+  // Load git log in right panel
+  loadGitLogPanel();
+  // Load project scripts
+  loadProjectScripts();
 }
 
 // ── Create Work Item Modal ──────────────────────────────────────────────
 function openCreateModal(type) {
   document.getElementById('createType').value = type || 'User Story';
-  document.getElementById('createModalTitle').textContent = `New ${type || 'Work Item'}`;
+  document.getElementById('createModalTitle').textContent = 'New Work Item';
   document.getElementById('createTitle').value = '';
   document.getElementById('createDesc').value = '';
   document.getElementById('createAC').value = '';
@@ -1470,6 +3824,8 @@ function openSettings() {
   document.getElementById('settingsProject').value = configData.AzureDevOpsProject || '';
   document.getElementById('settingsPAT').value = configData.AzureDevOpsPAT || '';
   document.getElementById('settingsTeam').value = configData.DefaultTeam || '';
+  document.getElementById('settingsUser').value = configData.DefaultUser || '';
+  document.getElementById('settingsWispr').value = configData.WisprFlowKey || '';
   renderSettingsRepos();
   document.getElementById('settingsModal').classList.add('open');
 }
@@ -1512,6 +3868,8 @@ async function saveSettings() {
     AzureDevOpsProject: document.getElementById('settingsProject').value.trim(),
     AzureDevOpsPAT: document.getElementById('settingsPAT').value.trim(),
     DefaultTeam: document.getElementById('settingsTeam').value.trim(),
+    DefaultUser: document.getElementById('settingsUser').value.trim(),
+    WisprFlowKey: document.getElementById('settingsWispr').value.trim(),
     Repos: configData.Repos || {},
   };
 
@@ -1525,7 +3883,9 @@ async function saveSettings() {
     if (data.ok) {
       toast('Settings saved', 'success');
       closeSettings();
-      loadConfig();
+      // Force full reload — config changed, caches are stale
+      await loadConfig();
+      loadWorkItems(true);
     }
   } catch (e) {
     toast('Failed to save settings', 'error');
@@ -1613,11 +3973,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── Init ────────────────────────────────────────────────────────────────
-switchCli(activeCli);
-lucide.createIcons();
-connectWs();
-loadConfig();
+
 </script>
 </body>
 </html>
