@@ -878,10 +878,58 @@
     .modal-btn-primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
     .modal-btn-primary:hover { filter: brightness(1.1); }
 
-    /* ── Settings modal (wider) ───────────────────────────────────────────── */
-    .modal-settings { width: 560px; }
+    /* ── Settings modal (wider, tabbed) ──────────────────────────────────── */
+    .modal-settings { width: 820px; height: 60vh; display: flex; flex-direction: column; }
+    .modal-settings .modal-title { flex-shrink: 0; }
+    .settings-layout { display: flex; flex: 1; min-height: 0; gap: 0; border-top: 1px solid var(--surface0); border-bottom: 1px solid var(--surface0); }
+    .settings-nav {
+      width: 170px; flex-shrink: 0; border-right: 1px solid var(--surface0);
+      padding: 8px 0; display: flex; flex-direction: column; gap: 2px;
+    }
+    .settings-nav-btn {
+      display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+      background: transparent; border: none; color: var(--subtext0); font: 12px var(--font-ui);
+      cursor: pointer; text-align: left; border-radius: 0; transition: all 0.12s;
+      border-left: 2px solid transparent;
+    }
+    .settings-nav-btn:hover { color: var(--text); background: var(--surface0); }
+    .settings-nav-btn.active {
+      color: var(--accent); background: var(--surface0); font-weight: 600;
+      border-left-color: var(--accent);
+    }
+    .settings-nav-btn i { width: 14px; height: 14px; flex-shrink: 0; }
+    .settings-content { flex: 1; padding: 16px 20px; overflow-y: auto; min-height: 0; }
+    .settings-tab { display: none; }
+    .settings-tab.active { display: block; }
     .settings-section { margin-bottom: 20px; }
+    .settings-section:last-child { margin-bottom: 0; }
     .settings-section-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--surface0); }
+    .settings-section-desc { font-size: 11px; color: var(--subtext0); margin-bottom: 12px; }
+    .modal-settings .modal-actions { flex-shrink: 0; border-top: 1px solid var(--surface0); padding-top: 14px; margin-top: 0; padding: 12px 20px; }
+    .ai-tool-card {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
+    }
+    .ai-tool-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .ai-tool-info { flex: 1; min-width: 0; }
+    .ai-tool-name { font-size: 12px; font-weight: 600; color: var(--text); }
+    .ai-tool-status { font-size: 10px; margin-top: 1px; }
+    .ai-tool-status.installed { color: var(--green); }
+    .ai-tool-status.not-installed { color: var(--subtext0); }
+    .ai-tool-btn {
+      padding: 4px 12px; border-radius: var(--radius); font-size: 10px; font-weight: 600;
+      cursor: pointer; transition: all 0.12s; flex-shrink: 0; border: 1px solid;
+    }
+    .ai-tool-btn.install {
+      background: transparent; border-color: var(--accent); color: var(--accent);
+    }
+    .ai-tool-btn.install:hover { background: var(--accent); color: var(--base); }
+    .ai-tool-btn.installed {
+      background: transparent; border-color: var(--green); color: var(--green); cursor: default;
+    }
+    .ai-tool-btn.installing {
+      background: transparent; border-color: var(--yellow); color: var(--yellow); cursor: wait;
+    }
     .repo-list { }
     .repo-item {
       display: flex; align-items: center; gap: 8px; padding: 6px 0;
@@ -1381,44 +1429,98 @@
 <div class="modal-overlay" id="settingsModal">
   <div class="modal modal-settings">
     <div class="modal-title">Settings</div>
-    <div class="settings-section">
-      <div class="settings-section-title">Azure DevOps Connection</div>
-      <div class="modal-field">
-        <label>Organization</label>
-        <input id="settingsOrg" type="text" placeholder="e.g. my-org">
+    <div class="settings-layout">
+      <div class="settings-nav">
+        <button class="settings-nav-btn active" onclick="switchSettingsTab('ado', this)">
+          <i data-lucide="cloud" style="width:14px;height:14px;"></i> Azure DevOps
+        </button>
+        <button class="settings-nav-btn" onclick="switchSettingsTab('ai', this)">
+          <i data-lucide="bot" style="width:14px;height:14px;"></i> AI Tools
+        </button>
+        <button class="settings-nav-btn" onclick="switchSettingsTab('repos', this)">
+          <i data-lucide="folder-git-2" style="width:14px;height:14px;"></i> Repositories
+        </button>
+        <button class="settings-nav-btn" onclick="switchSettingsTab('other', this)">
+          <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i> Other
+        </button>
       </div>
-      <div class="modal-field">
-        <label>Project</label>
-        <input id="settingsProject" type="text" placeholder="e.g. My Project">
-      </div>
-      <div class="modal-field">
-        <label>Personal Access Token</label>
-        <input id="settingsPAT" type="password" placeholder="Your PAT with work item read/write scope">
-      </div>
-      <div class="modal-field">
-        <label>Default Team</label>
-        <input id="settingsTeam" type="text" placeholder="e.g. My Project Team">
-      </div>
-      <div class="modal-field">
-        <label>Your Display Name (for "My Items")</label>
-        <input id="settingsUser" type="text" placeholder="e.g. Jane Doe">
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">Voice Input (Wispr Flow)</div>
-      <div class="modal-field">
-        <label>API Key</label>
-        <input id="settingsWispr" type="password" placeholder="fl-...">
-      </div>
-      <div style="font-size:11px;color:var(--subtext0);margin-top:-8px;">Hold Ctrl+Shift to talk. Release to transcribe.</div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">Repositories</div>
-      <div id="settingsRepoList"></div>
-      <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;margin-top:8px;">
-        <input id="settingsRepoName" type="text" placeholder="Name" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none;">
-        <input id="settingsRepoPath" type="text" placeholder="C:\Code\my-project" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-mono);outline:none;">
-        <button class="modal-btn" onclick="addRepoFromSettings()" style="padding:6px 12px;font-size:11px;">Add</button>
+      <div class="settings-content">
+        <!-- Azure DevOps Tab -->
+        <div class="settings-tab active" id="settingsTab-ado">
+          <div class="settings-section">
+            <div class="settings-section-title">Azure DevOps Connection</div>
+            <div class="settings-section-desc">Connect to your Azure DevOps organization to manage work items, sprints, and pull requests.</div>
+            <div class="modal-field">
+              <label>Organization</label>
+              <input id="settingsOrg" type="text" placeholder="e.g. my-org">
+            </div>
+            <div class="modal-field">
+              <label>Project</label>
+              <input id="settingsProject" type="text" placeholder="e.g. My Project">
+            </div>
+            <div class="modal-field">
+              <label>Personal Access Token</label>
+              <input id="settingsPAT" type="password" placeholder="Your PAT with work item read/write scope">
+            </div>
+            <div class="modal-field">
+              <label>Default Team</label>
+              <input id="settingsTeam" type="text" placeholder="e.g. My Project Team">
+            </div>
+            <div class="modal-field">
+              <label>Your Display Name (for "My Items")</label>
+              <input id="settingsUser" type="text" placeholder="e.g. Jane Doe">
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Tools Tab -->
+        <div class="settings-tab" id="settingsTab-ai">
+          <div class="settings-section">
+            <div class="settings-section-title">Installed AI CLIs</div>
+            <div class="settings-section-desc">Manage the terminal-based AI agents available in DevOps Pilot. Click Install to add any missing tools.</div>
+            <div id="settingsAiTools" style="display:flex;flex-direction:column;gap:8px;">
+              <div style="font-size:11px;color:var(--subtext0);">Detecting installed AI CLIs...</div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Default AI</div>
+            <div class="settings-section-desc">Choose which AI agent is selected when the app starts.</div>
+            <div class="modal-field">
+              <select id="settingsDefaultCli" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none;width:100%;">
+                <option value="claude">Claude Code</option>
+                <option value="gemini">Gemini CLI</option>
+                <option value="copilot">Copilot CLI</option>
+                <option value="codex">Codex CLI</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Repositories Tab -->
+        <div class="settings-tab" id="settingsTab-repos">
+          <div class="settings-section">
+            <div class="settings-section-title">Repositories</div>
+            <div class="settings-section-desc">Add local repositories to browse files, view diffs, and create pull requests.</div>
+            <div id="settingsRepoList"></div>
+            <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;margin-top:8px;">
+              <input id="settingsRepoName" type="text" placeholder="Name" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none;">
+              <input id="settingsRepoPath" type="text" placeholder="C:\Code\my-project" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-mono);outline:none;">
+              <button class="modal-btn" onclick="addRepoFromSettings()" style="padding:6px 12px;font-size:11px;">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Other Tab -->
+        <div class="settings-tab" id="settingsTab-other">
+          <div class="settings-section">
+            <div class="settings-section-title">Voice Input (Wispr Flow)</div>
+            <div class="settings-section-desc">Enable voice-to-text input. Hold Ctrl+Shift to talk, release to transcribe.</div>
+            <div class="modal-field">
+              <label>API Key</label>
+              <input id="settingsWispr" type="password" placeholder="fl-...">
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-actions">
@@ -3390,6 +3492,7 @@ function handleUiAction(msg) {
 }
 
 // ── Config ──────────────────────────────────────────────────────────────
+let _configLoaded = false;
 async function loadConfig() {
   try {
     const res = await fetch('/api/config');
@@ -3401,6 +3504,11 @@ async function loadConfig() {
       loadIterations();
       loadRepoList();
       loadTeamMembers();
+    }
+    // Apply saved default CLI on first load
+    if (!_configLoaded && configData.DefaultCli && CLI_CONFIG[configData.DefaultCli]) {
+      switchCli(configData.DefaultCli);
+      _configLoaded = true;
     }
     updateVoiceHint();
   } catch (_) {}
@@ -4448,7 +4556,99 @@ async function submitCreateWorkItem() {
   }
 }
 
+// ── AI Tools Detection & Install ─────────────────────────────────────────
+const AI_TOOLS_META = {
+  claude:  { name: 'Claude Code',  color: '#d97757', pkg: '@anthropic-ai/claude-code', docs: 'https://docs.anthropic.com/en/docs/claude-code' },
+  gemini:  { name: 'Gemini CLI',   color: '#078efa', pkg: '@google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
+  copilot: { name: 'Copilot CLI',  color: '#8534f3', pkg: '@githubnext/github-copilot-cli', docs: 'https://githubnext.com/projects/copilot-cli' },
+  codex:   { name: 'Codex CLI',    color: '#10a37f', pkg: '@openai/codex', docs: 'https://github.com/openai/codex' },
+};
+
+let _aiToolsStatus = {}; // cli -> { installed, path }
+
+async function detectAiTools() {
+  const container = document.getElementById('settingsAiTools');
+  container.innerHTML = '<div style="font-size:11px;color:var(--subtext0);">Detecting installed AI CLIs...</div>';
+
+  try {
+    const res = await fetch('/api/prerequisites');
+    const data = await res.json();
+    _aiToolsStatus = data.cliTools || {};
+    renderAiTools();
+  } catch (e) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--red);">Failed to detect AI tools</div>';
+  }
+}
+
+function renderAiTools() {
+  const container = document.getElementById('settingsAiTools');
+  container.innerHTML = Object.entries(AI_TOOLS_META).map(([id, meta]) => {
+    const status = _aiToolsStatus[id] || { installed: false };
+    const isInstalled = status.installed;
+    const btnClass = isInstalled ? 'installed' : 'install';
+    const btnText = isInstalled ? 'Installed' : 'Install';
+    const statusText = isInstalled
+      ? `<span class="ai-tool-status installed">Installed</span>`
+      : `<span class="ai-tool-status not-installed">Not installed &middot; <code style="font-size:9px;color:var(--subtext0);">npm i -g ${meta.pkg}</code></span>`;
+
+    return `
+      <div class="ai-tool-card" id="aiToolCard-${id}">
+        <div class="ai-tool-dot" style="background:${meta.color}"></div>
+        <div class="ai-tool-info">
+          <div class="ai-tool-name">${meta.name}</div>
+          ${statusText}
+        </div>
+        <button class="ai-tool-btn ${btnClass}" id="aiToolBtn-${id}"
+                onclick="${isInstalled ? '' : `installCli('${id}')`}"
+                ${isInstalled ? 'disabled' : ''}>${btnText}</button>
+      </div>`;
+  }).join('');
+}
+
+async function installCli(cli) {
+  const btn = document.getElementById(`aiToolBtn-${cli}`);
+  if (!btn) return;
+  btn.className = 'ai-tool-btn installing';
+  btn.textContent = 'Installing...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/cli/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cli }),
+    });
+    const data = await res.json();
+
+    if (data.ok && data.installed) {
+      _aiToolsStatus[cli] = { installed: true, path: data.path };
+      toast(`${AI_TOOLS_META[cli].name} installed successfully`, 'success');
+      renderAiTools();
+    } else {
+      btn.className = 'ai-tool-btn install';
+      btn.textContent = 'Retry';
+      btn.disabled = false;
+      toast(`Failed to install ${AI_TOOLS_META[cli].name}: ${data.error || 'Unknown error'}`, 'error');
+    }
+  } catch (e) {
+    btn.className = 'ai-tool-btn install';
+    btn.textContent = 'Retry';
+    btn.disabled = false;
+    toast(`Install failed: ${e.message}`, 'error');
+  }
+}
+
 // ── Settings Modal ──────────────────────────────────────────────────────
+function switchSettingsTab(tabId, btn) {
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.settings-nav-btn').forEach(b => b.classList.remove('active'));
+  const tab = document.getElementById(`settingsTab-${tabId}`);
+  if (tab) tab.classList.add('active');
+  if (btn) btn.classList.add('active');
+  // Trigger AI detection when switching to AI tab
+  if (tabId === 'ai') detectAiTools();
+}
+
 function openSettings() {
   document.getElementById('settingsOrg').value = configData.AzureDevOpsOrg || '';
   document.getElementById('settingsProject').value = configData.AzureDevOpsProject || '';
@@ -4456,8 +4656,15 @@ function openSettings() {
   document.getElementById('settingsTeam').value = configData.DefaultTeam || '';
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
   document.getElementById('settingsWispr').value = configData.WisprFlowKey || '';
+  document.getElementById('settingsDefaultCli').value = configData.DefaultCli || activeCli || 'claude';
   renderSettingsRepos();
+  // Reset to first tab
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.settings-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('settingsTab-ado').classList.add('active');
+  document.querySelector('.settings-nav-btn').classList.add('active');
   document.getElementById('settingsModal').classList.add('open');
+  try { lucide.createIcons(); } catch (_) {}
 }
 
 function closeSettings() {
@@ -4493,6 +4700,7 @@ function deleteRepoFromSettings(name) {
 }
 
 async function saveSettings() {
+  const defaultCli = document.getElementById('settingsDefaultCli').value;
   const payload = {
     AzureDevOpsOrg: document.getElementById('settingsOrg').value.trim(),
     AzureDevOpsProject: document.getElementById('settingsProject').value.trim(),
@@ -4500,6 +4708,7 @@ async function saveSettings() {
     DefaultTeam: document.getElementById('settingsTeam').value.trim(),
     DefaultUser: document.getElementById('settingsUser').value.trim(),
     WisprFlowKey: document.getElementById('settingsWispr').value.trim(),
+    DefaultCli: defaultCli,
     Repos: configData.Repos || {},
   };
 
@@ -4513,6 +4722,10 @@ async function saveSettings() {
     if (data.ok) {
       toast('Settings saved', 'success');
       closeSettings();
+      // Apply default CLI selection
+      if (defaultCli && defaultCli !== activeCli) {
+        switchCli(defaultCli);
+      }
       // Force full reload — config changed, caches are stale
       await loadConfig();
       loadWorkItems(true);

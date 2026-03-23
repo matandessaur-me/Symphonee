@@ -71,6 +71,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/config' && req.method === 'GET')  return handleGetConfig(res);
     if (url.pathname === '/api/config' && req.method === 'POST') return handleSaveConfig(req, res);
     if (url.pathname === '/api/prerequisites')                   return handlePrerequisites(res);
+    if (url.pathname === '/api/cli/install' && req.method === 'POST') return handleCliInstall(req, res);
 
     // ── Azure DevOps: Iterations ──────────────────────────────────────────
     if (url.pathname === '/api/iterations' && req.method === 'GET') return handleIterations(res, url);
@@ -247,6 +248,47 @@ function handlePrerequisites(res) {
   result.ready = anyCliInstalled && result.config.complete;
 
   json(res, result);
+}
+
+// ── CLI Install Handler ──────────────────────────────────────────────────────
+const CLI_INSTALL_COMMANDS = {
+  claude:  'npm install -g @anthropic-ai/claude-code',
+  gemini:  'npm install -g @google/gemini-cli',
+  copilot: 'npm install -g @githubnext/github-copilot-cli',
+  codex:   'npm install -g @openai/codex',
+};
+
+function handleCliInstall(req, res) {
+  let body = '';
+  req.on('data', c => body += c);
+  req.on('end', () => {
+    try {
+      const { cli } = JSON.parse(body);
+      const installCmd = CLI_INSTALL_COMMANDS[cli];
+      if (!installCmd) return json(res, { error: `Unknown CLI: ${cli}` }, 400);
+
+      // Run install asynchronously
+      const { exec } = require('child_process');
+      exec(installCmd, { timeout: 120000, encoding: 'utf8' }, (err, stdout, stderr) => {
+        // After install, re-check if it's actually available
+        const checkCmd = `where ${cli}.cmd 2>nul || where ${cli} 2>nul`;
+        let installed = false;
+        let installPath = '';
+        try {
+          const where = execSync(checkCmd, { encoding: 'utf8', timeout: 5000 }).trim();
+          if (where) { installed = true; installPath = where.split('\n')[0].trim(); }
+        } catch (_) {}
+
+        if (installed) {
+          json(res, { ok: true, cli, installed: true, path: installPath });
+        } else {
+          json(res, { ok: false, cli, installed: false, error: err ? err.message : 'Install completed but CLI not found in PATH' });
+        }
+      });
+    } catch (e) {
+      json(res, { error: 'Invalid request' }, 400);
+    }
+  });
 }
 
 // ── Azure DevOps API Helper ─────────────────────────────────────────────────

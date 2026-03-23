@@ -5,6 +5,7 @@
   "DefaultTeam": "",
   "DefaultUser": "",
   "WisprFlowKey": "",
+  "DefaultCli": "claude",
   "Repos": {},
   "ThemePreference": "claude"
 }
