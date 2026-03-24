@@ -20,6 +20,10 @@ echo Installing dependencies...
 call npm install
 
 echo.
+echo Setting app icon...
+node_modules\rcedit\bin\rcedit-x64.exe node_modules\electron\dist\electron.exe --set-icon dashboard\public\icon.ico
+
+echo.
 echo Creating desktop shortcut...
 powershell -NoProfile -ExecutionPolicy Bypass -File dashboard\create-shortcut.ps1
 
