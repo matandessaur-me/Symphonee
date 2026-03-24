@@ -1021,6 +1021,34 @@
     }
     .git-status-line .branch-name { color: var(--accent); font-weight: 600; font-family: var(--font-mono); }
     .modal-git .modal-actions { flex-shrink: 0; border-top: 1px solid var(--surface0); padding: 12px 20px; margin-top: 0; }
+    .git-select {
+      width: 100%; padding: 7px 10px; background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); color: var(--text); font: 12px var(--font-mono); outline: none;
+      cursor: pointer;
+    }
+    .git-select:focus { border-color: var(--accent); }
+    .git-commit-mode-btn {
+      padding: 5px 14px; border-radius: var(--radius); font: 11px var(--font-ui); font-weight: 600;
+      cursor: pointer; border: 1px solid var(--surface1); background: var(--surface0);
+      color: var(--subtext0); transition: all 0.12s;
+    }
+    .git-commit-mode-btn:hover { color: var(--text); border-color: var(--accent); }
+    .git-commit-mode-btn.active { background: var(--accent); color: #fff; border-color: transparent; }
+    .git-commit-file-list {
+      max-height: 140px; overflow-y: auto; border: 1px solid var(--surface1);
+      border-radius: var(--radius); background: var(--mantle);
+    }
+    .git-commit-file {
+      display: flex; align-items: center; gap: 8px; padding: 4px 10px;
+      font: 11px var(--font-mono); color: var(--text); border-bottom: 1px solid var(--surface0);
+    }
+    .git-commit-file:last-child { border-bottom: none; }
+    .git-commit-file .file-status {
+      font-size: 9px; font-weight: 700; width: 16px; text-align: center; flex-shrink: 0;
+    }
+    .git-commit-file .file-status.modified { color: var(--yellow); }
+    .git-commit-file .file-status.added, .git-commit-file .file-status.new { color: var(--green); }
+    .git-commit-file .file-status.deleted { color: var(--red); }
 
     /* ── Voice recording indicator ────────────────────────────────────────── */
     .voice-indicator {
@@ -1134,8 +1162,8 @@
       <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
       <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
       <button class="btn" onclick="openGitModal('branches')"><i data-lucide="git-branch"></i> Switch Branch</button>
-      <button class="btn" onclick="aiGit('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
-      <button class="btn" onclick="aiGit('compare')"><i data-lucide="git-compare"></i> Compare with Main</button>
+      <button class="btn" onclick="openGitModal('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
+      <button class="btn" onclick="openGitModal('compare')"><i data-lucide="git-compare"></i> Compare Branches</button>
 
       <div class="divider"></div>
       <div class="section-title">Repos</div>
@@ -1630,6 +1658,13 @@
         <button class="git-nav-btn" onclick="switchGitTab('push', this)">
           <i data-lucide="upload" style="width:14px;height:14px;"></i> Push
         </button>
+        <div style="border-top:1px solid var(--surface0);margin:4px 0;"></div>
+        <button class="git-nav-btn" onclick="switchGitTab('commit', this)">
+          <i data-lucide="git-commit" style="width:14px;height:14px;"></i> Commit
+        </button>
+        <button class="git-nav-btn" onclick="switchGitTab('compare', this)">
+          <i data-lucide="git-compare" style="width:14px;height:14px;"></i> Compare
+        </button>
       </div>
       <div class="git-content">
         <!-- Branches Tab -->
@@ -1669,6 +1704,50 @@
             <button class="git-action-btn" id="gitPushBtn" onclick="doGitPush()">Push</button>
             <div class="git-action-result" id="gitPushResult" style="display:none;"></div>
           </div>
+        </div>
+
+        <!-- Commit Tab -->
+        <div class="git-tab" id="gitTab-commit">
+          <div class="git-section-title">Commit Changes</div>
+          <div class="git-section-desc">Stage and commit your changes. Write a custom message or let AI generate one for you.</div>
+          <div class="git-status-line" style="margin-bottom:12px;">
+            On branch <span class="branch-name" id="gitCommitBranch">...</span>
+          </div>
+          <div id="gitCommitFileList" style="margin-bottom:12px;">
+            <div class="git-section-desc">Loading changed files...</div>
+          </div>
+          <div class="git-commit-mode" style="display:flex;gap:6px;margin-bottom:10px;">
+            <button class="git-commit-mode-btn active" id="gitCommitModeCustom" onclick="setCommitMode('custom')">Custom Message</button>
+            <button class="git-commit-mode-btn" id="gitCommitModeAi" onclick="setCommitMode('ai')">Let AI Decide</button>
+          </div>
+          <div id="gitCommitCustomFields">
+            <input type="text" class="git-branch-search" id="gitCommitTitle" placeholder="Commit title (required)" style="margin-bottom:6px;">
+            <textarea class="git-branch-search" id="gitCommitBody" placeholder="Extended description (optional)" rows="3" style="resize:vertical;font-family:var(--font-mono);"></textarea>
+          </div>
+          <div id="gitCommitAiNote" style="display:none;padding:10px;background:var(--surface0);border-radius:var(--radius);font-size:11px;color:var(--subtext0);margin-bottom:10px;">
+            AI will review your changes, suggest a commit message, and create the commit in the terminal.
+          </div>
+          <button class="git-action-btn" id="gitCommitBtn" onclick="doGitCommit()" style="align-self:flex-start;margin-top:8px;">Commit</button>
+        </div>
+
+        <!-- Compare Tab -->
+        <div class="git-tab" id="gitTab-compare">
+          <div class="git-section-title">Compare Branches</div>
+          <div class="git-section-desc">Select two branches to compare. AI will analyze the differences and provide insights.</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:11px;color:var(--subtext0);display:block;margin-bottom:4px;">Source (current work)</label>
+              <select class="git-select" id="gitCompareSource"></select>
+            </div>
+            <div style="padding-top:16px;">
+              <i data-lucide="arrow-right" style="width:16px;height:16px;color:var(--subtext0);"></i>
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label style="font-size:11px;color:var(--subtext0);display:block;margin-bottom:4px;">Target (compare against)</label>
+              <select class="git-select" id="gitCompareTarget"></select>
+            </div>
+          </div>
+          <button class="git-action-btn" id="gitCompareBtn" onclick="doGitCompare()">Compare with AI</button>
         </div>
       </div>
     </div>
@@ -2885,15 +2964,26 @@ function openGitModal(tab) {
   document.getElementById('gitPullBtn').textContent = 'Pull';
   document.getElementById('gitPushBtn').disabled = false;
   document.getElementById('gitPushBtn').textContent = 'Push';
-  // Reset to requested tab or branches
+  // Reset commit fields
+  document.getElementById('gitCommitTitle').value = '';
+  document.getElementById('gitCommitBody').value = '';
+  document.getElementById('gitCommitBtn').disabled = false;
+  document.getElementById('gitCommitBtn').textContent = 'Commit';
+  setCommitMode('custom');
+  // Reset to requested tab
   const tabId = tab || 'branches';
   const btns = document.querySelectorAll('.git-nav-btn');
   const tabs = document.querySelectorAll('.git-tab');
   btns.forEach(b => b.classList.remove('active'));
   tabs.forEach(t => t.classList.remove('active'));
   document.getElementById('gitTab-' + tabId).classList.add('active');
-  btns.forEach(b => { if (b.textContent.trim().toLowerCase().startsWith(tabId === 'branches' ? 'branch' : tabId)) b.classList.add('active'); });
+  // Match nav button by tab keyword
+  const tabKeywords = { branches: 'branch', pull: 'pull', push: 'push', commit: 'commit', compare: 'compare' };
+  const kw = tabKeywords[tabId] || tabId;
+  btns.forEach(b => { if (b.textContent.trim().toLowerCase().startsWith(kw)) b.classList.add('active'); });
   loadGitBranches();
+  // Load commit file list when opening commit tab
+  if (tabId === 'commit') loadCommitFileList();
   lucide.createIcons();
 }
 
@@ -2906,6 +2996,7 @@ function switchGitTab(tabId, btn) {
   document.querySelectorAll('.git-nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('gitTab-' + tabId).classList.add('active');
   if (btn) btn.classList.add('active');
+  if (tabId === 'commit') loadCommitFileList();
 }
 
 async function loadGitBranches() {
@@ -2927,6 +3018,8 @@ async function loadGitBranches() {
     document.getElementById('gitCurrentBranch').textContent = data.current;
     document.getElementById('gitPullBranch').textContent = data.current;
     document.getElementById('gitPushBranch').textContent = data.current;
+    document.getElementById('gitCommitBranch').textContent = data.current;
+    populateCompareDropdowns(data);
     renderGitBranches();
   } catch (e) {
     list.innerHTML = `<div class="git-section-desc" style="color:var(--red);">${e.message}</div>`;
@@ -3063,6 +3156,108 @@ async function doGitPush() {
     btn.disabled = false;
     toast('Push failed', 'error');
   }
+}
+
+// ── Compare & Commit (modal → AI) ───────────────────────────────────────
+function populateCompareDropdowns(data) {
+  const allBranches = [...data.local, ...(data.remoteOnly || [])];
+  const sourceEl = document.getElementById('gitCompareSource');
+  const targetEl = document.getElementById('gitCompareTarget');
+  let opts = allBranches.map(b =>
+    `<option value="${b}"${b === data.current ? ' selected' : ''}>${b}</option>`
+  ).join('');
+  sourceEl.innerHTML = opts;
+  // Target defaults to main/master
+  const defaultTarget = allBranches.includes('main') ? 'main' : allBranches.includes('master') ? 'master' : allBranches[0] || '';
+  let targetOpts = allBranches.map(b =>
+    `<option value="${b}"${b === defaultTarget ? ' selected' : ''}>${b}</option>`
+  ).join('');
+  targetEl.innerHTML = targetOpts;
+}
+
+function doGitCompare() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const repoPath = configData.Repos[repo];
+  const source = document.getElementById('gitCompareSource').value;
+  const target = document.getElementById('gitCompareTarget').value;
+  if (!source || !target) { toast('Select both branches', 'info'); return; }
+  if (source === target) { toast('Select two different branches', 'info'); return; }
+  closeGitModal();
+  askAi(`In the repo at "${repoPath}", compare branch "${source}" with "${target}". Show a summary of all differences — files changed, additions, removals, and key insights about what changed. Run: cd "${repoPath}" && git diff ${target}...${source} --stat`);
+}
+
+function setCommitMode(mode) {
+  const customBtn = document.getElementById('gitCommitModeCustom');
+  const aiBtn = document.getElementById('gitCommitModeAi');
+  const customFields = document.getElementById('gitCommitCustomFields');
+  const aiNote = document.getElementById('gitCommitAiNote');
+  if (mode === 'custom') {
+    customBtn.classList.add('active');
+    aiBtn.classList.remove('active');
+    customFields.style.display = 'block';
+    aiNote.style.display = 'none';
+  } else {
+    customBtn.classList.remove('active');
+    aiBtn.classList.add('active');
+    customFields.style.display = 'none';
+    aiNote.style.display = 'block';
+  }
+  document.getElementById('gitCommitBtn').dataset.mode = mode;
+}
+
+async function loadCommitFileList() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const container = document.getElementById('gitCommitFileList');
+  container.innerHTML = '<div class="git-section-desc">Checking for changes...</div>';
+  try {
+    const res = await fetch(`/api/git/status?repo=${encodeURIComponent(repo)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    document.getElementById('gitCommitBranch').textContent = data.branch;
+    if (data.clean) {
+      container.innerHTML = '<div class="git-section-desc">No changes to commit.</div>';
+      document.getElementById('gitCommitBtn').disabled = true;
+      return;
+    }
+    document.getElementById('gitCommitBtn').disabled = false;
+    let html = '<div class="git-commit-file-list">';
+    for (const f of data.files) {
+      html += `<div class="git-commit-file">
+        <span class="file-status ${f.statusClass}">${f.status}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${f.file}</span>
+      </div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="git-section-desc" style="color:var(--red);">${e.message}</div>`;
+  }
+}
+
+function doGitCommit() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const repoPath = configData.Repos[repo];
+  const user = configData.DefaultUser || 'the user';
+  const mode = document.getElementById('gitCommitBtn').dataset.mode || 'custom';
+
+  if (mode === 'ai') {
+    closeGitModal();
+    askAi(`In the repo at "${repoPath}", check git status, show me what changed, suggest a commit message, and create the commit. The commit must be signed by "${user}". Run: cd "${repoPath}" && git status`);
+    return;
+  }
+
+  // Custom commit message
+  const title = document.getElementById('gitCommitTitle').value.trim();
+  if (!title) { toast('Commit title is required', 'info'); return; }
+  const body = document.getElementById('gitCommitBody').value.trim();
+  const fullMsg = body ? `${title}\n\n${body}` : title;
+  closeGitModal();
+  // Escape for shell — use the AI to run the commit so it shows in terminal
+  const escaped = fullMsg.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  askAi(`In the repo at "${repoPath}", stage all changes and commit with this exact message (do NOT modify it):\n\n${fullMsg}\n\nRun: cd "${repoPath}" && git add -A && git commit -m "${escaped}"`);
 }
 
 // ── Project Scripts ──────────────────────────────────────────────────────
