@@ -5811,7 +5811,7 @@ function renderCmdPalette() {
     return;
   }
   list.innerHTML = _cmdFiltered.map((cmd, i) => `
-    <div class="cmd-palette-item ${i === _cmdSelectedIdx ? 'selected' : ''}" onmouseenter="_cmdSelectedIdx=${i};renderCmdPalette()" onclick="executeCmdPalette(${i})">
+    <div class="cmd-palette-item ${i === _cmdSelectedIdx ? 'selected' : ''}" data-idx="${i}">
       <i data-lucide="${cmd.icon}"></i>
       <span class="cmd-label">${esc(cmd.label)}</span>
       ${cmd.hint ? `<span class="cmd-hint">${cmd.hint}</span>` : ''}
@@ -5819,6 +5819,15 @@ function renderCmdPalette() {
     </div>
   `).join('');
   lucide.createIcons();
+  // Bind events after render (avoids innerHTML replacement killing click targets)
+  list.querySelectorAll('.cmd-palette-item').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      list.querySelectorAll('.cmd-palette-item').forEach(e => e.classList.remove('selected'));
+      el.classList.add('selected');
+      _cmdSelectedIdx = parseInt(el.dataset.idx);
+    });
+    el.addEventListener('click', () => executeCmdPalette(parseInt(el.dataset.idx)));
+  });
   // Scroll selected into view
   const selected = list.querySelector('.selected');
   if (selected) selected.scrollIntoView({ block: 'nearest' });
