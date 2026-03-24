@@ -154,6 +154,20 @@ curl -s http://127.0.0.1:3800/api/velocity
 | GET | `/api/repos` | Configured local repositories |
 | POST | `/api/start-working` | Start working on a work item. Body: `{ workItemId, repoName }` — creates a branch, sets state to Active |
 
+### Git Actions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/git/status?repo={name}` | Current branch and changed files |
+| GET | `/api/git/branches?repo={name}` | List local branches |
+| GET | `/api/git/log?repo={name}&count={20}` | Recent commits |
+| GET | `/api/git/diff?repo={name}&path={file}` | Unified diff output |
+| POST | `/api/git/fetch` | Fetch + prune remote, returns local and remote-only branches. Body: `{ repo }` |
+| POST | `/api/git/checkout` | Switch branch (fails if dirty). Body: `{ repo, branch }` |
+| POST | `/api/git/pull` | Pull latest from remote. Body: `{ repo }` |
+| POST | `/api/git/push` | Push current branch to remote. Body: `{ repo }` |
+
+**Note:** Branch switching, pull, and push are handled by the dashboard's Git modal (not the AI terminal). The AI is only involved for **Commit Changes** (when "Let AI Decide" is chosen) and **Compare Branches** (AI analyzes the diff).
+
 ### Notes (markdown scratchpad)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
