@@ -4172,10 +4172,12 @@ function restartShell() {
   document.getElementById('termStatus').textContent = 'Restarting...';
   document.getElementById('aiBtn').textContent = 'Launch AI';
   document.getElementById('mainTermTab').textContent = 'Shell 1';
-  // Set a callback that will fire when term-started arrives
   _shellReadyResolve = () => {};
   const inst = termInstances.get(activeTermId);
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 }));
+  const msg = JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 });
+  // Send restart twice — first kills the old PTY, second ensures a clean spawn
+  if (ws && ws.readyState === 1) ws.send(msg);
+  setTimeout(() => { if (ws && ws.readyState === 1) ws.send(msg); }, 500);
   if (inst) inst.term.clear();
 }
 
