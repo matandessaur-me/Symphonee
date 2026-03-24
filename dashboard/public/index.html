@@ -83,19 +83,7 @@
     ::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 99px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--surface2); }
 
-    /* ── Custom terminal scrollbar (overlay, since WebGL canvas hides native one) */
-    .term-scrollbar {
-      position: absolute; right: 2px; top: 0; bottom: 0; width: 8px; z-index: 10;
-      pointer-events: none; opacity: 0; transition: opacity 0.2s;
-    }
-    .term-instance:hover .term-scrollbar,
-    .term-scrollbar.active { opacity: 1; }
-    .term-scrollbar-thumb {
-      position: absolute; right: 0; width: 8px; min-height: 20px;
-      background: var(--surface2); border-radius: 99px;
-      pointer-events: auto; cursor: pointer; transition: background 0.12s;
-    }
-    .term-scrollbar-thumb:hover, .term-scrollbar-thumb.dragging { background: var(--overlay0); }
+
 
     /* ── Header ───────────────────────────────────────────────────────────── */
     .header {
@@ -1455,6 +1443,19 @@
       </div>
     </div>
 
+    <!-- Activity Timeline -->
+    <div class="tab-panel" id="panel-activity">
+      <div class="timeline-view" id="timelineView">
+        <div class="timeline-header">
+          <div class="timeline-title">Activity Timeline</div>
+          <button class="btn btn-sm" onclick="closeActivityTimeline()" style="color:var(--subtext0);"><i data-lucide="x"></i> Close</button>
+        </div>
+        <div id="timelineContent">
+          <div class="empty-state"><div class="empty-state-text">Loading activity...</div></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Files -->
     <div class="tab-panel" id="panel-files">
       <div class="files-container">
@@ -1926,6 +1927,19 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- ═══ Command Palette ═══════════════════════════════════════════════ -->
+<div class="cmd-palette-overlay" id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
+  <div class="cmd-palette">
+    <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
+    <div class="cmd-palette-list" id="cmdPaletteList"></div>
+    <div class="cmd-palette-footer">
+      <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
+      <span><kbd>Enter</kbd> select</span>
+      <span><kbd>Esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ Scripts ═════════════════════════════════════════════════════════ -->
 <script src="/xterm.js"></script>
 <script src="/xterm-addon-fit.js"></script>
@@ -2016,68 +2030,14 @@ function createTermInstance(termId, label) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data }));
   });
 
-  // Custom scrollbar overlay
-  const scrollbar = document.createElement('div');
-  scrollbar.className = 'term-scrollbar';
-  scrollbar.innerHTML = '<div class="term-scrollbar-thumb"></div>';
-  container.appendChild(scrollbar);
-  const thumb = scrollbar.querySelector('.term-scrollbar-thumb');
-
-  function updateScrollbar() {
-    const buf = term.buffer.active;
-    const totalRows = buf.baseY + term.rows;
-    if (totalRows <= term.rows) { scrollbar.style.opacity = '0'; return; }
-    const ratio = term.rows / totalRows;
-    const thumbH = Math.max(20, scrollbar.clientHeight * ratio);
-    const scrollFraction = totalRows > term.rows ? buf.viewportY / buf.baseY : 0;
-    const maxTop = scrollbar.clientHeight - thumbH;
-    thumb.style.height = thumbH + 'px';
-    thumb.style.top = (scrollFraction * maxTop) + 'px';
-  }
-
-  // Drag to scroll
-  let dragging = false, dragStartY = 0, dragStartScroll = 0;
-  thumb.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    dragging = true;
-    dragStartY = e.clientY;
-    dragStartScroll = term.buffer.active.viewportY;
-    thumb.classList.add('dragging');
-    scrollbar.classList.add('active');
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const buf = term.buffer.active;
-    const totalRows = buf.baseY + term.rows;
-    const ratio = totalRows / scrollbar.clientHeight;
-    const delta = (e.clientY - dragStartY) * ratio;
-    const target = Math.round(dragStartScroll + delta);
-    term.scrollToLine(Math.max(0, Math.min(buf.baseY, target)));
-  });
-  document.addEventListener('mouseup', () => {
-    if (dragging) { dragging = false; thumb.classList.remove('dragging'); scrollbar.classList.remove('active'); }
-  });
-
-  // Click on track to jump
-  scrollbar.addEventListener('mousedown', (e) => {
-    if (e.target === thumb) return;
-    const rect = scrollbar.getBoundingClientRect();
-    const clickFraction = (e.clientY - rect.top) / rect.height;
-    const buf = term.buffer.active;
-    term.scrollToLine(Math.round(clickFraction * buf.baseY));
-  });
-
-  // Scroll button + scrollbar update
+  // Scroll button
   term.onScroll(() => {
     if (activeTermId === termId) {
       const btn = document.getElementById('scrollBottomBtn');
       const isAtBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
       btn.classList.toggle('visible', !isAtBottom);
     }
-    updateScrollbar();
   });
-  term.onLineFeed(() => updateScrollbar());
-  setTimeout(updateScrollbar, 500);
 
   // Right-click
   container.addEventListener('contextmenu', async (e) => {
@@ -2274,8 +2234,11 @@ requestAnimationFrame(fitTerminalNow);
           document.getElementById('statusDot').className = 'status-dot connected';
           document.getElementById('connectionStatus').textContent = 'Connected';
           document.getElementById('termStatus').textContent = 'Shell ready';
-          _shellRestarting = false;
-          if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; }
+          if (_shellReadyResolve) {
+            const cb = _shellReadyResolve;
+            _shellReadyResolve = null;
+            setTimeout(cb, 300); // small delay to let PTY fully init
+          }
           break;
         case 'term-list':
           // Server sent list of active terminals — create main if needed
@@ -4148,8 +4111,6 @@ function toggleAi() {
 }
 
 let _shellReadyResolve = null;
-let _shellReadyPromise = Promise.resolve();
-let _shellRestarting = false;
 
 function launchAi() {
   const cfg = CLI_CONFIG[activeCli];
@@ -4158,15 +4119,16 @@ function launchAi() {
   function doLaunch() {
     sendCommand(cfg.cmd);
     aiLaunched = true;
-    _shellRestarting = false;
     document.getElementById('termStatus').textContent = `${cfg.label} running`;
     document.getElementById('aiBtn').textContent = 'Stop AI';
     document.getElementById('mainTermTab').textContent = cfg.label;
   }
 
-  if (_shellRestarting) {
-    // Wait for shell to be ready, then launch
-    _shellReadyPromise.then(() => setTimeout(doLaunch, 500));
+  // If a restart is pending, wait for it
+  if (_shellReadyResolve) {
+    // Already waiting — chain onto the callback
+    const prev = _shellReadyResolve;
+    _shellReadyResolve = () => { prev(); setTimeout(doLaunch, 500); };
   } else {
     doLaunch();
   }
@@ -4196,19 +4158,11 @@ function sendCommand(cmd, termId) {
 
 function restartShell() {
   aiLaunched = false;
-  _shellRestarting = true;
   document.getElementById('termStatus').textContent = 'Restarting...';
   document.getElementById('aiBtn').textContent = 'Launch AI';
   document.getElementById('mainTermTab').textContent = 'Shell 1';
-  // Create a promise that resolves when the new PTY sends term-started
-  _shellReadyPromise = new Promise(resolve => {
-    _shellReadyResolve = resolve;
-    // Safety timeout — resolve after 5s even if no term-started received
-    setTimeout(() => {
-      if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; }
-      _shellRestarting = false;
-    }, 5000);
-  });
+  // Set a callback that will fire when term-started arrives
+  _shellReadyResolve = () => {};
   const inst = termInstances.get(activeTermId);
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 }));
   if (inst) inst.term.clear();
@@ -5675,6 +5629,8 @@ document.addEventListener('keydown', (e) => {
   const inInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT';
 
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    // Ctrl+K → Command Palette (works from anywhere, even inputs)
+    if (e.key === 'k') { e.preventDefault(); openCmdPalette(); return; }
     // Ctrl+B → Board
     if (e.key === 'b' && !inInput) { e.preventDefault(); switchTab('board'); }
     // Ctrl+T → Terminal
@@ -5696,6 +5652,221 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ── Command Palette ─────────────────────────────────────────────────────
+let _cmdSelectedIdx = 0;
+let _cmdFiltered = [];
+
+function getCmdActions() {
+  const repos = configData.Repos ? Object.keys(configData.Repos) : [];
+  const actions = [
+    // Navigation
+    { label: 'Go to Terminal', icon: 'terminal', action: () => switchTab('terminal'), category: 'Navigate', hint: 'Ctrl+T' },
+    { label: 'Go to Board', icon: 'kanban', action: () => switchTab('board'), category: 'Navigate', hint: 'Ctrl+B' },
+    { label: 'Go to Backlog', icon: 'list', action: () => switchTab('backlog'), category: 'Navigate' },
+    { label: 'Go to Files', icon: 'folder', action: () => switchTab('files'), category: 'Navigate' },
+    { label: 'Go to Notes', icon: 'file-text', action: () => switchTab('notes'), category: 'Navigate' },
+    // Actions
+    { label: 'New Work Item', icon: 'plus-circle', action: () => openCreateModal(), category: 'Action', hint: 'Ctrl+Shift+N' },
+    { label: 'Refresh Work Items', icon: 'refresh-cw', action: () => { loadWorkItems(true); toast('Refreshed', 'success'); }, category: 'Action', hint: 'Ctrl+R' },
+    { label: 'My Items', icon: 'user', action: () => filterMyItems(), category: 'Action' },
+    { label: 'Activity Timeline', icon: 'activity', action: () => openActivityTimeline(), category: 'Action' },
+    // Git
+    { label: 'Switch Branch', icon: 'git-branch', action: () => openGitModal('branches'), category: 'Git' },
+    { label: 'Pull Latest', icon: 'download', action: () => openGitModal('pull'), category: 'Git' },
+    { label: 'Push Changes', icon: 'upload', action: () => openGitModal('push'), category: 'Git' },
+    { label: 'Commit Changes', icon: 'git-commit', action: () => openGitModal('commit'), category: 'Git' },
+    { label: 'Compare Branches', icon: 'git-compare', action: () => openGitModal('compare'), category: 'Git' },
+    // AI
+    { label: 'Standup Summary', icon: 'message-square', action: () => runScript('standup'), category: 'AI' },
+    { label: 'Iteration Status', icon: 'bar-chart-2', action: () => runScript('status'), category: 'AI' },
+    { label: 'Retrospective', icon: 'rotate-ccw', action: () => runScript('retro'), category: 'AI' },
+    { label: 'Launch AI', icon: 'play', action: () => { if (!aiLaunched) launchAi(); switchTab('terminal'); }, category: 'AI' },
+    { label: 'Stop AI', icon: 'square', action: () => { if (aiLaunched) stopAi(); }, category: 'AI' },
+    // Settings
+    { label: 'Open Settings', icon: 'settings', action: () => openSettings(), category: 'Settings' },
+  ];
+  // Repos
+  for (const name of repos) {
+    actions.push({ label: `Switch to ${name}`, icon: 'git-branch', action: () => selectRepo(name), category: 'Repo' });
+  }
+  // Work items (top 20 recent)
+  const recentWi = [...workItems].sort((a, b) => new Date(b.changedDate) - new Date(a.changedDate)).slice(0, 20);
+  for (const wi of recentWi) {
+    actions.push({
+      label: `#${wi.id} ${wi.title}`,
+      icon: wi.type === 'Bug' ? 'bug' : wi.type === 'Task' ? 'check-square' : 'bookmark',
+      action: () => viewWorkItem(wi.id),
+      category: 'Work Item',
+    });
+  }
+  return actions;
+}
+
+function openCmdPalette() {
+  const el = document.getElementById('cmdPalette');
+  el.classList.add('open');
+  const input = document.getElementById('cmdPaletteInput');
+  input.value = '';
+  _cmdSelectedIdx = 0;
+  filterCmdPalette();
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeCmdPalette() {
+  document.getElementById('cmdPalette').classList.remove('open');
+}
+
+function filterCmdPalette() {
+  const q = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
+  const all = getCmdActions();
+
+  // Check if user typed a work item ID like #12345 or just 12345
+  const idMatch = q.match(/^#?(\d{3,})$/);
+
+  if (idMatch) {
+    const id = idMatch[1];
+    _cmdFiltered = all.filter(a => a.label.includes(`#${id}`));
+    // Also add a "Go to #ID" option
+    if (!_cmdFiltered.some(a => a.label === `#${id}`)) {
+      _cmdFiltered.unshift({ label: `Open Work Item #${id}`, icon: 'external-link', action: () => viewWorkItem(parseInt(id)), category: 'Work Item' });
+    }
+  } else if (q) {
+    _cmdFiltered = all.filter(a => a.label.toLowerCase().includes(q) || a.category.toLowerCase().includes(q));
+  } else {
+    _cmdFiltered = all;
+  }
+
+  _cmdSelectedIdx = 0;
+  renderCmdPalette();
+}
+
+function renderCmdPalette() {
+  const list = document.getElementById('cmdPaletteList');
+  if (_cmdFiltered.length === 0) {
+    list.innerHTML = '<div class="cmd-palette-empty">No matching commands</div>';
+    return;
+  }
+  list.innerHTML = _cmdFiltered.map((cmd, i) => `
+    <div class="cmd-palette-item ${i === _cmdSelectedIdx ? 'selected' : ''}" onmouseenter="_cmdSelectedIdx=${i};renderCmdPalette()" onclick="executeCmdPalette(${i})">
+      <i data-lucide="${cmd.icon}"></i>
+      <span class="cmd-label">${esc(cmd.label)}</span>
+      ${cmd.hint ? `<span class="cmd-hint">${cmd.hint}</span>` : ''}
+      <span class="cmd-category">${cmd.category}</span>
+    </div>
+  `).join('');
+  lucide.createIcons();
+  // Scroll selected into view
+  const selected = list.querySelector('.selected');
+  if (selected) selected.scrollIntoView({ block: 'nearest' });
+}
+
+function cmdPaletteKeydown(e) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _cmdSelectedIdx = Math.min(_cmdSelectedIdx + 1, _cmdFiltered.length - 1);
+    renderCmdPalette();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _cmdSelectedIdx = Math.max(_cmdSelectedIdx - 1, 0);
+    renderCmdPalette();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    executeCmdPalette(_cmdSelectedIdx);
+  } else if (e.key === 'Escape') {
+    closeCmdPalette();
+  }
+}
+
+function executeCmdPalette(idx) {
+  const cmd = _cmdFiltered[idx];
+  if (!cmd) return;
+  closeCmdPalette();
+  cmd.action();
+}
+
+// ── Activity Timeline ───────────────────────────────────────────────────
+function openActivityTimeline() {
+  document.getElementById('activityTabBtn').style.display = '';
+  switchTab('activity');
+  renderTimeline();
+  lucide.createIcons();
+}
+
+function closeActivityTimeline() {
+  document.getElementById('activityTabBtn').style.display = 'none';
+  switchTab('board');
+}
+
+function renderTimeline() {
+  const container = document.getElementById('timelineContent');
+  const recent = [...workItems]
+    .sort((a, b) => new Date(b.changedDate) - new Date(a.changedDate))
+    .slice(0, 50);
+
+  if (recent.length === 0) {
+    container.innerHTML = '<div class="cmd-palette-empty">No activity found</div>';
+    return;
+  }
+
+  // Group by day
+  const groups = {};
+  for (const wi of recent) {
+    const d = new Date(wi.changedDate);
+    const today = new Date();
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    let dayKey;
+    if (d.toDateString() === today.toDateString()) dayKey = 'Today';
+    else if (d.toDateString() === yesterday.toDateString()) dayKey = 'Yesterday';
+    else dayKey = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    if (!groups[dayKey]) groups[dayKey] = [];
+    groups[dayKey].push(wi);
+  }
+
+  function entryMeta(wi) {
+    const state = wi.state;
+    if (state === 'Closed' || state === 'Done') return { text: 'Closed', color: 'var(--subtext0)', bg: 'var(--surface0)', icon: 'check-circle' };
+    if (state === 'Resolved') return { text: 'Resolved', color: 'var(--mauve)', bg: 'rgba(203,166,247,0.1)', icon: 'check' };
+    if (state === 'Active') return { text: 'In Progress', color: 'var(--green)', bg: 'rgba(166,227,161,0.1)', icon: 'play' };
+    if (state === 'New') {
+      const created = wi.createdDate ? new Date(wi.createdDate) : null;
+      const changed = new Date(wi.changedDate);
+      if (created && Math.abs(changed - created) < 120000) return { text: 'Created', color: 'var(--blue)', bg: 'rgba(137,180,250,0.1)', icon: 'plus-circle' };
+      return { text: 'Updated', color: 'var(--sapphire)', bg: 'rgba(116,199,236,0.1)', icon: 'edit' };
+    }
+    return { text: state, color: 'var(--subtext0)', bg: 'var(--surface0)', icon: 'circle' };
+  }
+
+  let html = '';
+  for (const [day, items] of Object.entries(groups)) {
+    html += `<div class="timeline-day">`;
+    html += `<div class="timeline-day-label">${day}</div>`;
+    for (const wi of items) {
+      const m = entryMeta(wi);
+      const time = new Date(wi.changedDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      html += `
+        <div class="timeline-entry" onclick="viewWorkItem(${wi.id})">
+          <div class="timeline-icon" style="background:${m.bg};color:${m.color};">
+            <i data-lucide="${m.icon}"></i>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div class="timeline-entry-title">
+              <span class="timeline-entry-id">#${wi.id}</span> ${esc(wi.title)}
+            </div>
+            <div class="timeline-entry-meta">
+              <span style="color:${m.color};font-weight:600;">${m.text}</span>
+              ${wi.assignedTo ? ` · ${esc(wi.assignedTo.split('<')[0].trim())}` : ''}
+              · ${time}
+              ${wi.type ? ` · ${wi.type}` : ''}
+              ${wi.storyPoints ? ` · ${wi.storyPoints} pts` : ''}
+            </div>
+          </div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+  container.innerHTML = html;
+  lucide.createIcons();
+}
 
 </script>
 </body>
