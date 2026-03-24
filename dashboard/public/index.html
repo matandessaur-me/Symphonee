@@ -3848,6 +3848,7 @@ function float32ToWav(samples, sampleRate) {
 // Ctrl+Shift: hold both to record, release either to stop and transcribe
 let ctrlDown = false;
 let shiftDown = false;
+let _voiceFocusTarget = null; // element that was focused when recording started
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Control') ctrlDown = true;
@@ -3856,6 +3857,7 @@ document.addEventListener('keydown', (e) => {
   // Start recording when both Ctrl+Shift are held
   if (ctrlDown && shiftDown && !voiceRecording) {
     e.preventDefault();
+    _voiceFocusTarget = document.activeElement; // capture before recording
     startVoiceRecording();
   }
 });
@@ -3867,15 +3869,42 @@ document.addEventListener('keyup', async (e) => {
   // Stop recording when either key is released
   if (voiceRecording && (!ctrlDown || !shiftDown)) {
     e.preventDefault();
+    // Remember what was focused before transcription (indicator may steal focus)
+    const target = _voiceFocusTarget;
     const text = await stopVoiceRecording();
     if (text) {
-      if (aiLaunched) {
-        sendCommand(text);
+      const tag = target?.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
+      const isMonaco = target?.closest('.monaco-editor');
+
+      if (isInput) {
+        // Insert at cursor position in input/textarea
+        const start = target.selectionStart || 0;
+        const end = target.selectionEnd || 0;
+        const before = target.value.slice(0, start);
+        const after = target.value.slice(end);
+        target.value = before + text + after;
+        target.selectionStart = target.selectionEnd = start + text.length;
+        target.focus();
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+      } else if (isMonaco && monacoEditor) {
+        // Insert into Monaco editor at cursor
+        const pos = monacoEditor.getPosition();
+        monacoEditor.executeEdits('voice', [{
+          range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+          text: text,
+        }]);
+        monacoEditor.focus();
       } else {
-        launchAi();
-        setTimeout(() => sendCommand(text), 2000);
+        // Default: send to terminal
+        if (aiLaunched) {
+          sendCommand(text);
+        } else {
+          launchAi();
+          setTimeout(() => sendCommand(text), 2000);
+        }
+        switchTab('terminal');
       }
-      switchTab('terminal');
     }
   }
 });
