@@ -5091,6 +5091,8 @@ async function loadRepoList() {
       loadRepoList._initialized = true;
       loadGitStatusForDiffTab(activeRepo);
     }
+    // Always push context after repo list loads (covers page-load restore from localStorage)
+    pushUiContext();
   } catch (_) {}
 }
 
