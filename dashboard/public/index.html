@@ -83,6 +83,13 @@
     ::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 99px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--surface2); }
 
+    /* ── Terminal scrollbar (xterm.js uses its own viewport) ──────────────── */
+    .xterm-viewport { overflow-y: auto !important; }
+    .xterm-viewport::-webkit-scrollbar { width: 8px; }
+    .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+    .xterm-viewport::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 99px; }
+    .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--surface2); }
+
     /* ── Header ───────────────────────────────────────────────────────────── */
     .header {
       display: flex; align-items: center; justify-content: space-between;
@@ -2131,6 +2138,7 @@ requestAnimationFrame(fitTerminalNow);
           document.getElementById('statusDot').className = 'status-dot connected';
           document.getElementById('connectionStatus').textContent = 'Connected';
           document.getElementById('termStatus').textContent = 'Shell ready';
+          if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; }
           break;
         case 'term-list':
           // Server sent list of active terminals — create main if needed
@@ -3973,14 +3981,23 @@ function toggleAi() {
   if (aiLaunched) { stopAi(); } else { launchAi(); }
 }
 
+let _shellReadyResolve = null;
+let _shellReadyPromise = Promise.resolve();
+
 function launchAi() {
   const cfg = CLI_CONFIG[activeCli];
   switchTerminal('main');
-  sendCommand(cfg.cmd);
-  aiLaunched = true;
-  document.getElementById('termStatus').textContent = `${cfg.label} running`;
-  document.getElementById('aiBtn').textContent = 'Stop AI';
-  document.getElementById('mainTermTab').textContent = cfg.label;
+  // Wait for shell to be ready (in case restart is in progress)
+  _shellReadyPromise.then(() => {
+    // Small delay to let the PTY fully initialize
+    setTimeout(() => {
+      sendCommand(cfg.cmd);
+      aiLaunched = true;
+      document.getElementById('termStatus').textContent = `${cfg.label} running`;
+      document.getElementById('aiBtn').textContent = 'Stop AI';
+      document.getElementById('mainTermTab').textContent = cfg.label;
+    }, 300);
+  });
 }
 
 function stopAi() {
@@ -4010,6 +4027,12 @@ function restartShell() {
   document.getElementById('termStatus').textContent = 'Restarting...';
   document.getElementById('aiBtn').textContent = 'Launch AI';
   document.getElementById('mainTermTab').textContent = 'Shell 1';
+  // Create a promise that resolves when the new PTY sends term-started
+  _shellReadyPromise = new Promise(resolve => {
+    _shellReadyResolve = resolve;
+    // Safety timeout — resolve after 3s even if no term-started received
+    setTimeout(() => { if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; } }, 3000);
+  });
   const inst = termInstances.get(activeTermId);
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 }));
   if (inst) inst.term.clear();
@@ -5449,6 +5472,15 @@ function toast(msg, type = 'info') {
   container.appendChild(el);
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 4000);
 }
+
+// ── Re-focus terminal when window regains focus ─────────────────────────
+window.addEventListener('focus', () => {
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab;
+  if (activeTab === 'terminal') {
+    const t = getActiveTerm();
+    if (t) t.focus();
+  }
+});
 
 // ── Close modals on overlay click ───────────────────────────────────────
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
