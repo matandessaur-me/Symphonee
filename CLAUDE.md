@@ -47,19 +47,19 @@ You are running inside a terminal with access to:
 
 **Be fast. The user does NOT want to wait 15 minutes for a note.**
 
-1. **To save a note:**
-   - Short content: `powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Save-Note.ps1 -Name 'My Note' -Content '# Short content'"`
-   - Long/multiline content: **Write to a file first**, then use `-FilePath`:
+1. **To save a note — use the Node.js script (NOT PowerShell):**
+   - Short content: `node scripts/save-note.js "My Note" "# Short content"`
+   - Long/multiline content: **Write to a file first**, then use `--file`:
      ```bash
      cat > .ai-workspace/my-note.md << 'NOTEEOF'
      # Title
      Content goes here...
      NOTEEOF
-     powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Save-Note.ps1 -Name 'My Note' -FilePath '.ai-workspace/my-note.md'"
+     node scripts/save-note.js "My Note" --file .ai-workspace/my-note.md
      rm .ai-workspace/my-note.md
      ```
-   **NEVER try to pass large multiline content as a `-Content` string from bash.** The quote escaping will break. Always use `-FilePath` for anything beyond a single line.
-   Do NOT create intermediate PowerShell scripts. Just call Save-Note.ps1 directly.
+   **NEVER use PowerShell (`Save-Note.ps1`) from bash to save notes.** PowerShell chokes on large content and special characters. Always use `node scripts/save-note.js` from bash.
+   Do NOT create intermediate scripts. Just call save-note.js directly.
 2. **To create a work item**, just run the script directly.
 3. **To query work items**, just run the script directly.
 4. **Never create a script just to call another script.** Call the script directly.
@@ -190,7 +190,7 @@ powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/ScriptName
 | `New-WorkItem.ps1` | Create a work item | `./scripts/New-WorkItem.ps1 -Type 'User Story' -Title 'Add dark mode' -Priority 2 -StoryPoints 5` |
 | `Set-WorkItemState.ps1` | Change work item state | `./scripts/Set-WorkItemState.ps1 -Id 12345 -State Active` |
 | `Find-WorkItems.ps1` | Search/filter work items | `./scripts/Find-WorkItems.ps1 -Search 'login' -Type 'Bug' -State 'Active'` |
-| `Save-Note.ps1` | Save markdown note | `./scripts/Save-Note.ps1 -Name 'Summary' -Content '...'` or `-FilePath '.ai-workspace/note.md'` |
+| `save-note.js` | **Save markdown note (use this from bash!)** | `node scripts/save-note.js "Summary" "content"` or `--file .ai-workspace/note.md` |
 | `Show-Diff.ps1` | Open diff viewer in dashboard | `./scripts/Show-Diff.ps1` or `./scripts/Show-Diff.ps1 -Repo "MyRepo" -Path "src/file.tsx"` |
 | `New-PullRequest.ps1` | Create Azure DevOps pull request | `./scripts/New-PullRequest.ps1 -Repo "MyRepo" -Title "Add feature" -Description "Details..."` |
 | `Get-MyWorkItems.ps1` | My assigned items (grouped by state) | `./scripts/Get-MyWorkItems.ps1` or `./scripts/Get-MyWorkItems.ps1 -State Active` |
