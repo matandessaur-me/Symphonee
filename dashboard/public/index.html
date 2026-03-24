@@ -239,7 +239,7 @@
     .cmd-trigger {
       display: flex; align-items: center; gap: 8px; padding: 4px 12px;
       background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
-      cursor: pointer; transition: all 0.12s; min-width: 200px;
+      cursor: pointer; transition: all 0.12s; width: 280px;
     }
     .cmd-trigger:hover { border-color: var(--accent); background: var(--surface1); }
     .cmd-trigger span { font: 11px var(--font-ui); color: var(--subtext0); flex: 1; }
@@ -1262,6 +1262,11 @@
       </div>
     </div>
   </div>
+  <div class="cmd-trigger" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
+    <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
+    <span>Search or run a command...</span>
+    <kbd>Ctrl+K</kbd>
+  </div>
   <div class="header-right">
     <div class="status-dot" id="statusDot"></div>
     <span id="connectionStatus">Connecting...</span>
@@ -1333,11 +1338,6 @@
       <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
       <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
       <div class="tab-bar-right">
-        <div class="cmd-trigger" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
-          <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
-          <span>Search or run a command...</span>
-          <kbd>Ctrl+K</kbd>
-        </div>
         <span class="tab-bar-status" id="termStatus"></span>
         <button class="tab-bar-btn" onclick="toggleAi()" id="aiBtn">Launch AI</button>
         <button class="tab-bar-btn" onclick="restartShell()">Restart</button>
