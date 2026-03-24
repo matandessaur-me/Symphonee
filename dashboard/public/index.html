@@ -83,19 +83,19 @@
     ::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 99px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--surface2); }
 
-    /* ── Terminal scrollbar (xterm.js viewport sits behind WebGL canvas) ─── */
-    .xterm { position: relative; }
-    .xterm .xterm-viewport {
-      overflow-y: scroll !important;
-      background: transparent !important;
-      scrollbar-width: thin;
-      scrollbar-color: var(--surface2) transparent;
+    /* ── Custom terminal scrollbar (overlay, since WebGL canvas hides native one) */
+    .term-scrollbar {
+      position: absolute; right: 2px; top: 0; bottom: 0; width: 8px; z-index: 10;
+      pointer-events: none; opacity: 0; transition: opacity 0.2s;
     }
-    /* Pull the scrollbar track to the right edge, above the canvas */
-    .xterm .xterm-viewport::-webkit-scrollbar { width: 10px; }
-    .xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
-    .xterm .xterm-viewport::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
-    .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--overlay0); border: 2px solid transparent; background-clip: padding-box; }
+    .term-instance:hover .term-scrollbar,
+    .term-scrollbar.active { opacity: 1; }
+    .term-scrollbar-thumb {
+      position: absolute; right: 0; width: 8px; min-height: 20px;
+      background: var(--surface2); border-radius: 99px;
+      pointer-events: auto; cursor: pointer; transition: background 0.12s;
+    }
+    .term-scrollbar-thumb:hover, .term-scrollbar-thumb.dragging { background: var(--overlay0); }
 
     /* ── Header ───────────────────────────────────────────────────────────── */
     .header {
@@ -1941,14 +1941,69 @@ function createTermInstance(termId, label) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data }));
   });
 
-  // Scroll button
+  // Custom scrollbar overlay
+  const scrollbar = document.createElement('div');
+  scrollbar.className = 'term-scrollbar';
+  scrollbar.innerHTML = '<div class="term-scrollbar-thumb"></div>';
+  container.style.position = 'relative';
+  container.appendChild(scrollbar);
+  const thumb = scrollbar.querySelector('.term-scrollbar-thumb');
+
+  function updateScrollbar() {
+    const buf = term.buffer.active;
+    const totalRows = buf.baseY + term.rows;
+    if (totalRows <= term.rows) { scrollbar.style.opacity = '0'; return; }
+    const ratio = term.rows / totalRows;
+    const thumbH = Math.max(20, scrollbar.clientHeight * ratio);
+    const scrollFraction = totalRows > term.rows ? buf.viewportY / buf.baseY : 0;
+    const maxTop = scrollbar.clientHeight - thumbH;
+    thumb.style.height = thumbH + 'px';
+    thumb.style.top = (scrollFraction * maxTop) + 'px';
+  }
+
+  // Drag to scroll
+  let dragging = false, dragStartY = 0, dragStartScroll = 0;
+  thumb.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    dragStartY = e.clientY;
+    dragStartScroll = term.buffer.active.viewportY;
+    thumb.classList.add('dragging');
+    scrollbar.classList.add('active');
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const buf = term.buffer.active;
+    const totalRows = buf.baseY + term.rows;
+    const ratio = totalRows / scrollbar.clientHeight;
+    const delta = (e.clientY - dragStartY) * ratio;
+    const target = Math.round(dragStartScroll + delta);
+    term.scrollToLine(Math.max(0, Math.min(buf.baseY, target)));
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; thumb.classList.remove('dragging'); scrollbar.classList.remove('active'); }
+  });
+
+  // Click on track to jump
+  scrollbar.addEventListener('mousedown', (e) => {
+    if (e.target === thumb) return;
+    const rect = scrollbar.getBoundingClientRect();
+    const clickFraction = (e.clientY - rect.top) / rect.height;
+    const buf = term.buffer.active;
+    term.scrollToLine(Math.round(clickFraction * buf.baseY));
+  });
+
+  // Scroll button + scrollbar update
   term.onScroll(() => {
     if (activeTermId === termId) {
       const btn = document.getElementById('scrollBottomBtn');
       const isAtBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
       btn.classList.toggle('visible', !isAtBottom);
     }
+    updateScrollbar();
   });
+  term.onLineFeed(() => updateScrollbar());
+  setTimeout(updateScrollbar, 500);
 
   // Right-click
   container.addEventListener('contextmenu', async (e) => {
@@ -2145,6 +2200,7 @@ requestAnimationFrame(fitTerminalNow);
           document.getElementById('statusDot').className = 'status-dot connected';
           document.getElementById('connectionStatus').textContent = 'Connected';
           document.getElementById('termStatus').textContent = 'Shell ready';
+          _shellRestarting = false;
           if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; }
           break;
         case 'term-list':
@@ -4019,21 +4075,27 @@ function toggleAi() {
 
 let _shellReadyResolve = null;
 let _shellReadyPromise = Promise.resolve();
+let _shellRestarting = false;
 
 function launchAi() {
   const cfg = CLI_CONFIG[activeCli];
   switchTerminal('main');
-  // Wait for shell to be ready (in case restart is in progress)
-  _shellReadyPromise.then(() => {
-    // Small delay to let the PTY fully initialize
-    setTimeout(() => {
-      sendCommand(cfg.cmd);
-      aiLaunched = true;
-      document.getElementById('termStatus').textContent = `${cfg.label} running`;
-      document.getElementById('aiBtn').textContent = 'Stop AI';
-      document.getElementById('mainTermTab').textContent = cfg.label;
-    }, 300);
-  });
+
+  function doLaunch() {
+    sendCommand(cfg.cmd);
+    aiLaunched = true;
+    _shellRestarting = false;
+    document.getElementById('termStatus').textContent = `${cfg.label} running`;
+    document.getElementById('aiBtn').textContent = 'Stop AI';
+    document.getElementById('mainTermTab').textContent = cfg.label;
+  }
+
+  if (_shellRestarting) {
+    // Wait for shell to be ready, then launch
+    _shellReadyPromise.then(() => setTimeout(doLaunch, 500));
+  } else {
+    doLaunch();
+  }
 }
 
 function stopAi() {
@@ -4060,14 +4122,18 @@ function sendCommand(cmd, termId) {
 
 function restartShell() {
   aiLaunched = false;
+  _shellRestarting = true;
   document.getElementById('termStatus').textContent = 'Restarting...';
   document.getElementById('aiBtn').textContent = 'Launch AI';
   document.getElementById('mainTermTab').textContent = 'Shell 1';
   // Create a promise that resolves when the new PTY sends term-started
   _shellReadyPromise = new Promise(resolve => {
     _shellReadyResolve = resolve;
-    // Safety timeout — resolve after 3s even if no term-started received
-    setTimeout(() => { if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; } }, 3000);
+    // Safety timeout — resolve after 5s even if no term-started received
+    setTimeout(() => {
+      if (_shellReadyResolve) { _shellReadyResolve(); _shellReadyResolve = null; }
+      _shellRestarting = false;
+    }, 5000);
   });
   const inst = termInstances.get(activeTermId);
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 }));
