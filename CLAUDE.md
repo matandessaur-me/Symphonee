@@ -151,13 +151,17 @@ You can control the dashboard UI. **Use these intelligently based on context** �
 | POST | `/api/ui/view-file` | Open a file in the code viewer. Body: `{ repo: "RepoName", path: "src/index.ts", line: 132 }` (line is optional — scrolls to and highlights that line) |
 | POST | `/api/ui/view-diff` | Open split diff for a file. Body: `{ repo: "RepoName", path: "src/index.ts", base: "HEAD" }` |
 | POST | `/api/ui/refresh-workitems` | Refresh work items list. Body: `{}` |
-| GET | `/api/ui/context` | Get current dashboard state: selected iteration, active repo |
+| POST | `/api/ui/view-activity` | Open the Activity Timeline view. Body: `{}` |
+| GET | `/api/ui/context` | Get current dashboard state: selected iteration, active repo, activeRepoPath |
 
 **When to navigate:**
 - After creating a work item → ask "Want me to open it?" then call `view-workitem`
 - After saving a note → ask "Want to see it?" then call `view-note`
 - When user asks "what's assigned to me?" → show results, then ask "Want me to open the backlog filtered to you?"
+- When user asks about recent activity, "what was done", or "show me an overview" → call `view-activity` to open the Activity Timeline
 - After a query → DON'T auto-switch tabs. Let the user read the terminal output first.
+
+**Command Palette:** The user can press `Ctrl+K` or click the search bar at the top to open the Command Palette. It provides quick access to all actions, tabs, repos, and work items. The AI does NOT need to use this — it's a UI shortcut for the user.
 
 **How to navigate (from bash — use curl):**
 ```bash

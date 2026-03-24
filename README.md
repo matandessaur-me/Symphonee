@@ -15,7 +15,9 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 - **Git Operations** — Switch branches, pull, push, and compare branches through a built-in modal. Commit with custom messages or let AI generate them. View diffs with syntax-highlighted side-by-side comparison.
 - **File Browser & Code Viewer** — Browse repository files, search across codebases, and view files with syntax highlighting — all without opening an external editor.
 - **Markdown Notes** — A built-in scratchpad for meeting notes, sprint planning, and documentation. AI agents can read and write notes too.
-- **Voice Input** — Optional Wispr Flow integration for voice-to-text commands.
+- **Command Palette** — Press `Ctrl+K` or click the search bar at the top to instantly jump to any action, tab, repository, or work item. Fuzzy search across everything.
+- **Activity Timeline** — Visual overview of recent work item changes with charts showing status breakdown and daily activity. Filter by 5, 14, or 30 days. Auto-updates when you change iterations.
+- **Voice Input** — Optional Wispr Flow integration for voice-to-text input anywhere in the app — terminal, search bars, notes editor, or code viewer.
 
 ## Screenshots
 
