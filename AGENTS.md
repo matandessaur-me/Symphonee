@@ -37,8 +37,15 @@ You are running inside a PowerShell terminal with access to:
 
 **Be fast. The user does NOT want to wait 15 minutes for a note.**
 
-1. **To save a note**, just run: `.\scripts\Save-Note.ps1 -Name "My Note" -Content "# Content here"`
-   Do NOT create intermediate scripts to save notes. Do NOT create scripts to read notes then update them. Just call Save-Note.ps1 directly with the content.
+1. **To save a note:**
+   - Short content: `.\scripts\Save-Note.ps1 -Name "My Note" -Content "# Content here"`
+   - Long/multiline content: Write to a file first, then use `-FilePath`:
+     ```powershell
+     Set-Content -Path ".ai-workspace\my-note.md" -Value "# Title`nContent here..."
+     .\scripts\Save-Note.ps1 -Name "My Note" -FilePath ".ai-workspace\my-note.md"
+     Remove-Item ".ai-workspace\my-note.md"
+     ```
+   Do NOT create intermediate scripts to save notes. Just call Save-Note.ps1 directly.
 2. **To create a work item**, just run: `.\scripts\New-WorkItem.ps1 -Type "User Story" -Title "..." -Description "..."`
 3. **To query work items**, just run: `.\scripts\Find-WorkItems.ps1 -Search "keyword"`
 4. **Never create a script just to call another script.** Call the script directly.
@@ -160,7 +167,7 @@ Scripts are in `.\scripts\`. Always prefer these over raw API calls.
 | `New-WorkItem.ps1` | Create a work item | `.\scripts\New-WorkItem.ps1 -Type 'User Story' -Title 'Add dark mode' -Priority 2 -StoryPoints 5` |
 | `Set-WorkItemState.ps1` | Change work item state | `.\scripts\Set-WorkItemState.ps1 -Id 12345 -State Active` |
 | `Find-WorkItems.ps1` | Search/filter work items | `.\scripts\Find-WorkItems.ps1 -Search 'login' -Type 'Bug' -State 'Active'` |
-| `Save-Note.ps1` | Save markdown note | `.\scripts\Save-Note.ps1 -Name 'Summary' -Content '# My notes...'` |
+| `Save-Note.ps1` | Save markdown note | `.\scripts\Save-Note.ps1 -Name 'Summary' -Content '...'` or `-FilePath '.ai-workspace/note.md'` |
 | `Show-Diff.ps1` | Open diff viewer in dashboard | `.\scripts\Show-Diff.ps1` or `.\scripts\Show-Diff.ps1 -Repo "MyRepo" -Path "src/file.tsx"` |
 | `New-PullRequest.ps1` | Create Azure DevOps pull request | `.\scripts\New-PullRequest.ps1 -Repo "MyRepo" -Title "Add feature" -Description "Details..."` |
 | `Get-MyWorkItems.ps1` | My assigned items (grouped by state) | `.\scripts\Get-MyWorkItems.ps1` or `.\scripts\Get-MyWorkItems.ps1 -State Active` |
