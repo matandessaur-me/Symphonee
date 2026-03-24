@@ -83,12 +83,19 @@
     ::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 99px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--surface2); }
 
-    /* ── Terminal scrollbar (xterm.js uses its own viewport) ──────────────── */
-    .xterm-viewport { overflow-y: auto !important; }
-    .xterm-viewport::-webkit-scrollbar { width: 8px; }
-    .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
-    .xterm-viewport::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 99px; }
-    .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--surface2); }
+    /* ── Terminal scrollbar (xterm.js viewport sits behind WebGL canvas) ─── */
+    .xterm { position: relative; }
+    .xterm .xterm-viewport {
+      overflow-y: scroll !important;
+      background: transparent !important;
+      scrollbar-width: thin;
+      scrollbar-color: var(--surface2) transparent;
+    }
+    /* Pull the scrollbar track to the right edge, above the canvas */
+    .xterm .xterm-viewport::-webkit-scrollbar { width: 10px; }
+    .xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+    .xterm .xterm-viewport::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+    .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--overlay0); border: 2px solid transparent; background-clip: padding-box; }
 
     /* ── Header ───────────────────────────────────────────────────────────── */
     .header {
