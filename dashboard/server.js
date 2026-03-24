@@ -123,6 +123,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/git/branches' && req.method === 'GET')  return handleGitBranches(url, res);
     if (url.pathname === '/api/git/log' && req.method === 'GET')       return handleGitLog(url, res);
     if (url.pathname === '/api/git/commit-diff' && req.method === 'GET') return handleCommitDiff(url, res);
+    if (url.pathname === '/api/git/checkout' && req.method === 'POST')  return handleGitCheckout(req, res);
+    if (url.pathname === '/api/git/pull' && req.method === 'POST')      return handleGitPull(req, res);
+    if (url.pathname === '/api/git/push' && req.method === 'POST')      return handleGitPush(req, res);
+    if (url.pathname === '/api/git/fetch' && req.method === 'POST')     return handleGitFetch(req, res);
 
     // ── Split Diff ────────────────────────────────────────────────────────
     if (url.pathname === '/api/git/split-diff' && req.method === 'GET') return handleSplitDiff(url, res);
@@ -1149,9 +1153,9 @@ async function handleFileSave(req, res) {
 // ── Git Integration ─────────────────────────────────────────────────────────
 function gitExec(repoPath, cmd) {
   try {
-    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: 10000 }).trim();
+    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch (e) {
-    return e.stdout || e.stderr || e.message;
+    return (e.stdout || e.stderr || e.message || '').trim();
   }
 }
 
@@ -1264,6 +1268,80 @@ function handleCommitDiff(url, res) {
   const msg = gitExec(repoPath, `log -1 --pretty=format:"%s" ${hash}`);
 
   json(res, { diff: diff || 'No changes', stat, message: msg, hash });
+}
+
+// ── Git Actions (checkout, pull, push, fetch) ───────────────────────────────
+async function handleGitCheckout(req, res) {
+  try {
+    const body = await readBody(req);
+    const repoPath = getRepoPath(body.repo);
+    if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+    if (!body.branch) return json(res, { error: 'branch required' }, 400);
+
+    // Check for uncommitted changes
+    const status = gitExec(repoPath, 'status --porcelain');
+    if (status && status.trim()) {
+      return json(res, { error: 'You have uncommitted changes. Commit or stash them before switching branches.', dirty: true }, 400);
+    }
+
+    const result = gitExec(repoPath, `checkout ${body.branch}`);
+    const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+    json(res, { ok: true, branch: current, message: result });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+async function handleGitPull(req, res) {
+  try {
+    const body = await readBody(req);
+    const repoPath = getRepoPath(body.repo);
+    if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+    const result = gitExec(repoPath, 'pull');
+    const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+    json(res, { ok: true, branch, message: result });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+async function handleGitPush(req, res) {
+  try {
+    const body = await readBody(req);
+    const repoPath = getRepoPath(body.repo);
+    if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+    const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+    const result = gitExec(repoPath, `push -u origin ${branch}`);
+    json(res, { ok: true, branch, message: result || 'Pushed successfully' });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+async function handleGitFetch(req, res) {
+  try {
+    const body = await readBody(req);
+    const repoPath = getRepoPath(body.repo);
+    if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+
+    gitExec(repoPath, 'fetch --prune');
+    // Return both local and remote branches after fetch
+    const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
+    const localOut = gitExec(repoPath, 'branch --format="%(refname:short)"');
+    const remoteOut = gitExec(repoPath, 'branch -r --format="%(refname:short)"');
+    const local = localOut ? localOut.split('\n').filter(Boolean) : [];
+    const remote = remoteOut ? remoteOut.split('\n').filter(Boolean)
+      .filter(b => !b.includes('/HEAD'))
+      .map(b => b.replace(/^origin\//, '')) : [];
+    // Remote-only branches (not checked out locally)
+    const remoteOnly = remote.filter(r => !local.includes(r));
+
+    json(res, { ok: true, current, local, remoteOnly });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
 }
 
 // ── Split Diff ──────────────────────────────────────────────────────────────

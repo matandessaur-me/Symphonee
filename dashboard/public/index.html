@@ -939,6 +939,89 @@
     .repo-item-path { font-size: 11px; color: var(--subtext0); font-family: var(--font-mono); flex: 1; overflow: hidden; text-overflow: ellipsis; }
     .repo-item-del { background: none; border: none; color: var(--red); cursor: pointer; padding: 2px; font-size: 14px; }
 
+    /* ── Git modal (same size as settings) ────────────────────────────────── */
+    .modal-git { width: 820px; height: 60vh; display: flex; flex-direction: column; }
+    .modal-git .modal-title { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+    .modal-git .modal-title .git-modal-repo {
+      font-size: 11px; font-weight: 400; color: var(--subtext0); background: var(--surface0);
+      padding: 2px 8px; border-radius: 99px; font-family: var(--font-mono);
+    }
+    .git-layout { display: flex; flex: 1; min-height: 0; gap: 0; border-top: 1px solid var(--surface0); border-bottom: 1px solid var(--surface0); }
+    .git-nav {
+      width: 170px; flex-shrink: 0; border-right: 1px solid var(--surface0);
+      padding: 8px 0; display: flex; flex-direction: column; gap: 2px;
+    }
+    .git-nav-btn {
+      display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+      background: transparent; border: none; color: var(--subtext0); font: 12px var(--font-ui);
+      cursor: pointer; text-align: left; border-radius: 0; transition: all 0.12s;
+      border-left: 2px solid transparent;
+    }
+    .git-nav-btn:hover { color: var(--text); background: var(--surface0); }
+    .git-nav-btn.active {
+      color: var(--accent); background: var(--surface0); font-weight: 600;
+      border-left-color: var(--accent);
+    }
+    .git-nav-btn i { width: 14px; height: 14px; flex-shrink: 0; }
+    .git-content { flex: 1; padding: 16px 20px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+    .git-tab { display: none; flex: 1; flex-direction: column; }
+    .git-tab.active { display: flex; }
+    .git-section-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--surface0); }
+    .git-section-desc { font-size: 11px; color: var(--subtext0); margin-bottom: 12px; }
+    .git-branch-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+    .git-branch-item {
+      display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+      border-radius: var(--radius); cursor: pointer; transition: all 0.12s;
+      font: 12px var(--font-mono); color: var(--text); border: 1px solid transparent;
+    }
+    .git-branch-item:hover { background: var(--surface0); }
+    .git-branch-item.current {
+      background: var(--surface0); border-color: var(--accent); color: var(--accent); font-weight: 600;
+      cursor: default;
+    }
+    .git-branch-item .branch-badge {
+      font-size: 9px; font-family: var(--font-ui); font-weight: 600; padding: 1px 6px;
+      border-radius: 99px; flex-shrink: 0;
+    }
+    .git-branch-item .branch-badge.local { background: var(--accent); color: #fff; opacity: 0.7; }
+    .git-branch-item .branch-badge.remote { background: var(--surface1); color: var(--subtext0); }
+    .git-branch-item .branch-badge.current-badge { background: var(--green); color: #fff; }
+    .git-branch-search {
+      padding: 7px 10px; background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); color: var(--text); font: 12px var(--font-mono);
+      outline: none; margin-bottom: 10px; width: 100%; box-sizing: border-box;
+    }
+    .git-branch-search:focus { border-color: var(--accent); }
+    .git-action-panel {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+      text-align: center;
+    }
+    .git-action-panel .git-action-icon { color: var(--subtext0); }
+    .git-action-panel .git-action-icon i { width: 40px; height: 40px; }
+    .git-action-panel .git-action-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .git-action-panel .git-action-desc { font-size: 12px; color: var(--subtext0); max-width: 320px; }
+    .git-action-btn {
+      padding: 10px 28px; border-radius: var(--radius); font: 13px var(--font-ui); font-weight: 600;
+      cursor: pointer; border: none; transition: all 0.12s;
+      background: var(--accent); color: #fff;
+    }
+    .git-action-btn:hover { filter: brightness(1.1); }
+    .git-action-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+    .git-action-result {
+      font-size: 11px; font-family: var(--font-mono); color: var(--subtext0);
+      background: var(--surface0); padding: 8px 12px; border-radius: var(--radius);
+      max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+      max-height: 120px; overflow-y: auto;
+    }
+    .git-action-result.success { border-left: 3px solid var(--green); }
+    .git-action-result.error { border-left: 3px solid var(--red); color: var(--red); }
+    .git-status-line {
+      font-size: 11px; color: var(--subtext0); display: flex; align-items: center; gap: 6px;
+      padding: 6px 0;
+    }
+    .git-status-line .branch-name { color: var(--accent); font-weight: 600; font-family: var(--font-mono); }
+    .modal-git .modal-actions { flex-shrink: 0; border-top: 1px solid var(--surface0); padding: 12px 20px; margin-top: 0; }
+
     /* ── Voice recording indicator ────────────────────────────────────────── */
     .voice-indicator {
       display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -1048,9 +1131,9 @@
       <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
       <div class="divider"></div>
       <div class="section-title">Git</div>
-      <button class="btn" onclick="aiGit('pull')"><i data-lucide="download"></i> Pull Latest</button>
-      <button class="btn" onclick="aiGit('push')"><i data-lucide="upload"></i> Push Changes</button>
-      <button class="btn" onclick="aiGit('checkout')"><i data-lucide="git-branch"></i> Switch Branch</button>
+      <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
+      <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
+      <button class="btn" onclick="openGitModal('branches')"><i data-lucide="git-branch"></i> Switch Branch</button>
       <button class="btn" onclick="aiGit('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
       <button class="btn" onclick="aiGit('compare')"><i data-lucide="git-compare"></i> Compare with Main</button>
 
@@ -1526,6 +1609,71 @@
     <div class="modal-actions">
       <button class="modal-btn" onclick="closeSettings()">Cancel</button>
       <button class="modal-btn modal-btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Git Modal ═════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="gitModal">
+  <div class="modal modal-git">
+    <div class="modal-title">
+      Git <span class="git-modal-repo" id="gitModalRepo"></span>
+    </div>
+    <div class="git-layout">
+      <div class="git-nav">
+        <button class="git-nav-btn active" onclick="switchGitTab('branches', this)">
+          <i data-lucide="git-branch" style="width:14px;height:14px;"></i> Branches
+        </button>
+        <button class="git-nav-btn" onclick="switchGitTab('pull', this)">
+          <i data-lucide="download" style="width:14px;height:14px;"></i> Pull
+        </button>
+        <button class="git-nav-btn" onclick="switchGitTab('push', this)">
+          <i data-lucide="upload" style="width:14px;height:14px;"></i> Push
+        </button>
+      </div>
+      <div class="git-content">
+        <!-- Branches Tab -->
+        <div class="git-tab active" id="gitTab-branches">
+          <div class="git-status-line">
+            On branch <span class="branch-name" id="gitCurrentBranch">...</span>
+          </div>
+          <input type="text" class="git-branch-search" id="gitBranchSearch" placeholder="Filter branches..." oninput="filterGitBranches()">
+          <div class="git-branch-list" id="gitBranchList">
+            <div class="git-section-desc">Loading branches...</div>
+          </div>
+        </div>
+
+        <!-- Pull Tab -->
+        <div class="git-tab" id="gitTab-pull">
+          <div class="git-action-panel">
+            <div class="git-action-icon"><i data-lucide="download"></i></div>
+            <div class="git-action-title">Pull Latest Changes</div>
+            <div class="git-action-desc">Fetch and merge the latest changes from the remote into your current branch.</div>
+            <div class="git-status-line">
+              On branch <span class="branch-name" id="gitPullBranch">...</span>
+            </div>
+            <button class="git-action-btn" id="gitPullBtn" onclick="doGitPull()">Pull</button>
+            <div class="git-action-result" id="gitPullResult" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Push Tab -->
+        <div class="git-tab" id="gitTab-push">
+          <div class="git-action-panel">
+            <div class="git-action-icon"><i data-lucide="upload"></i></div>
+            <div class="git-action-title">Push Changes</div>
+            <div class="git-action-desc">Push your local commits on the current branch to the remote repository.</div>
+            <div class="git-status-line">
+              On branch <span class="branch-name" id="gitPushBranch">...</span>
+            </div>
+            <button class="git-action-btn" id="gitPushBtn" onclick="doGitPush()">Push</button>
+            <div class="git-action-result" id="gitPushResult" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeGitModal()">Close</button>
     </div>
   </div>
 </div>
@@ -2720,6 +2868,201 @@ function aiGit(action) {
   };
 
   askAi(prompts[action]);
+}
+
+// ── Git Modal ────────────────────────────────────────────────────────────
+let _gitBranches = { local: [], remoteOnly: [], current: '' };
+
+function openGitModal(tab) {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) { toast('Select a repo first', 'info'); return; }
+  document.getElementById('gitModalRepo').textContent = repo;
+  document.getElementById('gitModal').classList.add('open');
+  document.getElementById('gitBranchSearch').value = '';
+  document.getElementById('gitPullResult').style.display = 'none';
+  document.getElementById('gitPushResult').style.display = 'none';
+  document.getElementById('gitPullBtn').disabled = false;
+  document.getElementById('gitPullBtn').textContent = 'Pull';
+  document.getElementById('gitPushBtn').disabled = false;
+  document.getElementById('gitPushBtn').textContent = 'Push';
+  // Reset to requested tab or branches
+  const tabId = tab || 'branches';
+  const btns = document.querySelectorAll('.git-nav-btn');
+  const tabs = document.querySelectorAll('.git-tab');
+  btns.forEach(b => b.classList.remove('active'));
+  tabs.forEach(t => t.classList.remove('active'));
+  document.getElementById('gitTab-' + tabId).classList.add('active');
+  btns.forEach(b => { if (b.textContent.trim().toLowerCase().startsWith(tabId === 'branches' ? 'branch' : tabId)) b.classList.add('active'); });
+  loadGitBranches();
+  lucide.createIcons();
+}
+
+function closeGitModal() {
+  document.getElementById('gitModal').classList.remove('open');
+}
+
+function switchGitTab(tabId, btn) {
+  document.querySelectorAll('.git-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.git-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('gitTab-' + tabId).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+async function loadGitBranches() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const list = document.getElementById('gitBranchList');
+  list.innerHTML = '<div class="git-section-desc">Fetching branches...</div>';
+
+  try {
+    // Fetch from remote first to get latest branches
+    const fetchRes = await fetch('/api/git/fetch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo })
+    });
+    const data = await fetchRes.json();
+    if (data.error) throw new Error(data.error);
+
+    _gitBranches = data;
+    document.getElementById('gitCurrentBranch').textContent = data.current;
+    document.getElementById('gitPullBranch').textContent = data.current;
+    document.getElementById('gitPushBranch').textContent = data.current;
+    renderGitBranches();
+  } catch (e) {
+    list.innerHTML = `<div class="git-section-desc" style="color:var(--red);">${e.message}</div>`;
+  }
+}
+
+function renderGitBranches(filter) {
+  const list = document.getElementById('gitBranchList');
+  const f = (filter || '').toLowerCase();
+  let html = '';
+
+  // Local branches first
+  const locals = _gitBranches.local.filter(b => !f || b.toLowerCase().includes(f));
+  for (const b of locals) {
+    const isCurrent = b === _gitBranches.current;
+    html += `<div class="git-branch-item ${isCurrent ? 'current' : ''}" ${isCurrent ? '' : `onclick="doGitCheckout('${b.replace(/'/g, "\\'")}')"`}>
+      <i data-lucide="${isCurrent ? 'check' : 'git-branch'}" style="width:13px;height:13px;flex-shrink:0;${isCurrent ? 'color:var(--green);' : 'color:var(--subtext0);'}"></i>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${b}</span>
+      ${isCurrent ? '<span class="branch-badge current-badge">current</span>' : '<span class="branch-badge local">local</span>'}
+    </div>`;
+  }
+
+  // Remote-only branches
+  const remotes = (_gitBranches.remoteOnly || []).filter(b => !f || b.toLowerCase().includes(f));
+  if (remotes.length > 0) {
+    for (const b of remotes) {
+      html += `<div class="git-branch-item" onclick="doGitCheckout('${b.replace(/'/g, "\\'")}')">
+        <i data-lucide="cloud" style="width:13px;height:13px;flex-shrink:0;color:var(--subtext0);"></i>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${b}</span>
+        <span class="branch-badge remote">remote</span>
+      </div>`;
+    }
+  }
+
+  if (!html) {
+    html = '<div class="git-section-desc">No branches match your filter.</div>';
+  }
+  list.innerHTML = html;
+  lucide.createIcons();
+}
+
+function filterGitBranches() {
+  const val = document.getElementById('gitBranchSearch').value;
+  renderGitBranches(val);
+}
+
+async function doGitCheckout(branch) {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo || !branch) return;
+  if (branch === _gitBranches.current) return;
+
+  try {
+    const res = await fetch('/api/git/checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo, branch })
+    });
+    const data = await res.json();
+    if (data.error) {
+      toast(data.error, 'error');
+      return;
+    }
+    toast(`Switched to ${data.branch}`, 'success');
+    _gitBranches.current = data.branch;
+    document.getElementById('gitCurrentBranch').textContent = data.branch;
+    document.getElementById('gitPullBranch').textContent = data.branch;
+    document.getElementById('gitPushBranch').textContent = data.branch;
+    renderGitBranches(document.getElementById('gitBranchSearch').value);
+    // Refresh file tree if visible
+    if (typeof loadFileTree === 'function') loadFileTree(repo);
+  } catch (e) {
+    toast('Checkout failed: ' + e.message, 'error');
+  }
+}
+
+async function doGitPull() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const btn = document.getElementById('gitPullBtn');
+  const result = document.getElementById('gitPullResult');
+  btn.disabled = true;
+  btn.textContent = 'Pulling...';
+  result.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/git/pull', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    result.textContent = data.message || 'Already up to date.';
+    result.className = 'git-action-result success';
+    result.style.display = 'block';
+    btn.textContent = 'Done';
+    toast('Pull complete', 'success');
+    document.getElementById('gitPullBranch').textContent = data.branch;
+  } catch (e) {
+    result.textContent = e.message;
+    result.className = 'git-action-result error';
+    result.style.display = 'block';
+    btn.textContent = 'Retry';
+    btn.disabled = false;
+    toast('Pull failed', 'error');
+  }
+}
+
+async function doGitPush() {
+  const repo = activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const btn = document.getElementById('gitPushBtn');
+  const result = document.getElementById('gitPushResult');
+  btn.disabled = true;
+  btn.textContent = 'Pushing...';
+  result.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/git/push', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    result.textContent = data.message || 'Pushed successfully.';
+    result.className = 'git-action-result success';
+    result.style.display = 'block';
+    btn.textContent = 'Done';
+    toast('Push complete', 'success');
+    document.getElementById('gitPushBranch').textContent = data.branch;
+  } catch (e) {
+    result.textContent = e.message;
+    result.className = 'git-action-result error';
+    result.style.display = 'block';
+    btn.textContent = 'Retry';
+    btn.disabled = false;
+    toast('Push failed', 'error');
+  }
 }
 
 // ── Project Scripts ──────────────────────────────────────────────────────
