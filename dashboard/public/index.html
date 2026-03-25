@@ -388,6 +388,17 @@
       border-radius: var(--radius); color: var(--subtext1); font: 11px var(--font-ui); outline: none;
     }
     .view-filter:focus { border-color: var(--accent); }
+    .backlog-view-toggle {
+      display: flex; border: 1px solid var(--surface1); border-radius: var(--radius); overflow: hidden;
+    }
+    .backlog-view-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 28px; background: var(--surface0); border: none;
+      color: var(--subtext0); cursor: pointer; transition: all 0.1s;
+    }
+    .backlog-view-btn:not(:last-child) { border-right: 1px solid var(--surface1); }
+    .backlog-view-btn:hover { color: var(--text); background: var(--surface1); }
+    .backlog-view-btn.active { background: var(--accent); color: var(--crust); }
 
     /* ── Multi-select dropdown ────────────────────────────────────────────── */
     .multi-select { position: relative; user-select: none; }
@@ -771,21 +782,61 @@
       background: var(--mantle); flex-shrink: 0;
     }
     .pr-item {
-      display: flex; flex-direction: column; gap: 3px;
-      padding: 10px 12px; cursor: pointer; font-size: 12px; color: var(--subtext1);
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 10px 12px; cursor: pointer;
       border-bottom: 1px solid var(--surface0); transition: background 0.1s;
     }
     .pr-item:hover { background: var(--surface0); }
     .pr-item.active { background: var(--surface0); border-left: 2px solid var(--accent); }
-    .pr-item-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pr-item-meta { font-size: 10px; color: var(--subtext0); display: flex; gap: 8px; align-items: center; }
+    .pr-item-top { display: flex; align-items: center; gap: 6px; }
+    .pr-item-number { font-size: 11px; color: var(--subtext0); flex-shrink: 0; }
+    .pr-item-title { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .pr-item-time { font-size: 10px; color: var(--overlay1); flex-shrink: 0; }
+    .pr-item-meta { font-size: 10px; color: var(--subtext0); display: flex; gap: 6px; align-items: center; overflow: hidden; }
+    .pr-item-author { flex-shrink: 0; }
+    .pr-item-branch { color: var(--overlay1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 9px; flex: 1; min-width: 0; }
+    .pr-item-labels { display: flex; gap: 3px; flex-shrink: 0; margin-left: auto; }
     .pr-label { font-size: 9px; padding: 1px 6px; border-radius: 10px; }
     .pr-draft-badge { font-size: 9px; padding: 1px 6px; border-radius: 10px; background: var(--surface2); color: var(--overlay1); }
     .pr-detail { padding: 20px; overflow-y: auto; flex: 1; }
     .pr-detail-header { margin-bottom: 16px; }
     .pr-detail-title { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
     .pr-detail-meta { font-size: 11px; color: var(--subtext0); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .pr-detail-body { font-size: 13px; color: var(--subtext1); line-height: 1.6; margin-bottom: 20px; white-space: pre-wrap; word-wrap: break-word; }
+    .pr-detail-body { font-size: 13px; color: var(--subtext1); line-height: 1.6; margin-bottom: 20px; word-wrap: break-word; }
+    .pr-detail-body a { color: var(--accent); text-decoration: none; }
+    .pr-detail-body a:hover { text-decoration: underline; }
+    .pr-detail-body img { max-width: 100%; border-radius: var(--radius); margin: 8px 0; }
+    .pr-detail-body code { background: var(--surface0); padding: 1px 5px; border-radius: 3px; font: 11px var(--font-mono); }
+    .pr-detail-body pre { background: var(--surface0); padding: 10px; border-radius: var(--radius); overflow-x: auto; font: 12px var(--font-mono); margin: 8px 0; }
+    .pr-detail-body pre code { background: none; padding: 0; }
+    .pr-detail-body blockquote { border-left: 3px solid var(--surface1); padding-left: 10px; color: var(--subtext0); margin: 4px 0; }
+    .pr-detail-body blockquote p { margin: 0; }
+    .pr-detail-body p { margin: 4px 0; }
+    .pr-detail-body h1, .pr-detail-body h2, .pr-detail-body h3, .pr-detail-body h4 { color: var(--text); margin: 14px 0 6px; }
+    .pr-detail-body ul, .pr-detail-body ol { padding-left: 20px; margin: 4px 0; }
+    .pr-detail-body li { margin-bottom: 2px; }
+    .pr-detail-body details { margin: 8px 0; }
+    .pr-detail-body summary { cursor: pointer; color: var(--text); font-weight: 600; }
+    .pr-comment-body a { color: var(--accent); text-decoration: none; }
+    .pr-comment-body a:hover { text-decoration: underline; }
+    .pr-comment-body img { max-width: 100%; border-radius: var(--radius); margin: 4px 0; }
+    .pr-comment-body code { background: var(--surface0); padding: 1px 5px; border-radius: 3px; font: 11px var(--font-mono); }
+    /* GitHub-style callouts */
+    .pr-callout {
+      padding: 10px 14px; border-radius: var(--radius); margin: 8px 0;
+      border-left: 3px solid; font-size: 12px; line-height: 1.5;
+    }
+    .pr-callout-title { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .pr-callout-note { background: rgba(124,172,232,0.08); border-color: var(--blue); }
+    .pr-callout-note .pr-callout-title { color: var(--blue); }
+    .pr-callout-tip { background: rgba(126,198,153,0.08); border-color: var(--green); }
+    .pr-callout-tip .pr-callout-title { color: var(--green); }
+    .pr-callout-important { background: rgba(196,155,232,0.08); border-color: var(--mauve); }
+    .pr-callout-important .pr-callout-title { color: var(--mauve); }
+    .pr-callout-warning { background: rgba(232,196,124,0.08); border-color: var(--yellow); }
+    .pr-callout-warning .pr-callout-title { color: var(--yellow); }
+    .pr-callout-caution { background: rgba(242,139,130,0.08); border-color: var(--red); }
+    .pr-callout-caution .pr-callout-title { color: var(--red); }
     .pr-section { margin-bottom: 20px; }
     .pr-section-title {
       font-size: 11px; font-weight: 600; color: var(--overlay1); text-transform: uppercase;
@@ -815,21 +866,110 @@
     .pr-comment-path { font-size: 10px; color: var(--accent); font-family: var(--font-mono); margin-bottom: 4px; }
     .pr-comment-body { font-size: 12px; color: var(--subtext1); line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
     .pr-actions {
-      display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--surface0);
-      background: var(--mantle); flex-shrink: 0; align-items: flex-end;
+      display: flex; gap: 8px; padding: 8px 20px; border-top: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0; align-items: center;
     }
     .pr-comment-input {
-      flex: 1; padding: 8px 10px; font: 12px var(--font-ui); color: var(--text);
+      flex: 1; padding: 0 10px; font: 12px var(--font-ui); color: var(--text); height: 32px;
       background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
-      resize: vertical; min-height: 36px; outline: none;
+      resize: none; outline: none;
     }
     .pr-comment-input:focus { border-color: var(--accent); }
-    .pr-btn { padding: 6px 14px; border: none; border-radius: var(--radius); font: 11px var(--font-ui); font-weight: 600; cursor: pointer; transition: opacity 0.1s; }
+    .pr-expand-btn {
+      background: none; border: none; color: var(--overlay1); cursor: pointer;
+      padding: 4px; display: flex; align-items: center; transition: color 0.1s;
+    }
+    .pr-expand-btn:hover { color: var(--text); }
+    .pr-btn { padding: 0 14px; height: 32px; border: none; border-radius: var(--radius); font: 11px var(--font-ui); font-weight: 600; cursor: pointer; transition: opacity 0.1s; }
     .pr-btn:hover { opacity: 0.85; }
     .pr-btn-comment { background: var(--surface1); color: var(--text); }
     .pr-btn-approve { background: var(--green); color: var(--crust); }
     .pr-btn-changes { background: var(--red); color: var(--crust); }
     .pr-diff-container { margin-top: 12px; border: 1px solid var(--surface0); border-radius: var(--radius-lg); overflow: hidden; }
+    /* Timeline */
+    .pr-timeline { display: flex; flex-direction: column; gap: 0; }
+    .pr-tl-item { display: flex; gap: 12px; position: relative; }
+    .pr-tl-item::before {
+      content: ''; position: absolute; left: 15px; top: 32px; bottom: -1px;
+      width: 1px; background: var(--surface1);
+    }
+    .pr-tl-item:last-child::before { display: none; }
+    .pr-tl-avatar { width: 32px; flex-shrink: 0; padding-top: 4px; z-index: 1; }
+    .pr-tl-avatar img { width: 32px; height: 32px; border-radius: 50%; }
+    .pr-tl-avatar-icon {
+      width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      background: var(--surface0); border: 1px solid var(--surface1); font-size: 14px;
+    }
+    .pr-tl-content { flex: 1; min-width: 0; padding-bottom: 16px; }
+    .pr-tl-comment-box {
+      border: 1px solid var(--surface1); border-radius: var(--radius-lg); overflow: hidden;
+    }
+    .pr-tl-comment-header {
+      display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+      background: var(--surface0); border-bottom: 1px solid var(--surface1);
+      font-size: 12px; color: var(--subtext0);
+    }
+    .pr-tl-comment-header strong { color: var(--text); }
+    .pr-tl-comment-body { padding: 12px; font-size: 13px; color: var(--subtext1); line-height: 1.6; word-wrap: break-word; }
+    .pr-tl-comment-body a { color: var(--accent); text-decoration: none; }
+    .pr-tl-comment-body a:hover { text-decoration: underline; }
+    .pr-tl-comment-body img { max-width: 100%; border-radius: var(--radius); margin: 8px 0; }
+    .pr-tl-comment-body code { background: var(--surface0); padding: 1px 5px; border-radius: 3px; font: 11px var(--font-mono); }
+    .pr-tl-comment-body pre { background: var(--surface0); padding: 10px; border-radius: var(--radius); overflow-x: auto; font: 12px var(--font-mono); margin: 8px 0; }
+    .pr-tl-comment-body pre code { background: none; padding: 0; }
+    .pr-tl-comment-body blockquote { border-left: 3px solid var(--surface1); padding-left: 10px; color: var(--subtext0); margin: 4px 0; }
+    .pr-tl-comment-body blockquote p { margin: 0; }
+    .pr-tl-comment-body h1, .pr-tl-comment-body h2, .pr-tl-comment-body h3 { color: var(--text); margin: 12px 0 6px; }
+    .pr-tl-comment-body ul, .pr-tl-comment-body ol { padding-left: 20px; margin: 4px 0; }
+    .pr-tl-comment-body details { margin: 8px 0; }
+    .pr-tl-comment-body summary { cursor: pointer; color: var(--text); font-weight: 600; }
+    .pr-tl-event {
+      display: flex; align-items: center; gap: 6px; padding: 6px 0;
+      font-size: 11px; color: var(--subtext0);
+    }
+    .pr-tl-event strong { color: var(--subtext1); }
+    .pr-tl-review-badge {
+      font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 99px;
+    }
+    .pr-tl-review-approved { background: rgba(126,198,153,0.15); color: var(--green); }
+    .pr-tl-review-changes { background: rgba(242,139,130,0.15); color: var(--red); }
+    .pr-tl-review-commented { background: rgba(124,172,232,0.15); color: var(--blue); }
+    .pr-tl-review-dismissed { background: rgba(90,90,82,0.25); color: var(--subtext0); }
+    .pr-tl-commit {
+      display: flex; align-items: center; gap: 6px; padding: 4px 0;
+      font-size: 11px; color: var(--subtext0);
+    }
+    .pr-tl-commit-sha { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+    .pr-tl-commit-msg { color: var(--subtext1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* PR Comment Modal */
+    .pr-comment-modal {
+      display: none; position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
+    }
+    .pr-comment-modal.open { display: flex; }
+    .pr-comment-modal-inner {
+      width: 560px; background: var(--base); border: 1px solid var(--surface1);
+      border-radius: var(--radius-lg); box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .pr-comment-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; border-bottom: 1px solid var(--surface0);
+    }
+    .pr-comment-modal-header span { font: 13px var(--font-ui); font-weight: 600; color: var(--text); }
+    .pr-comment-modal-close { background: none; border: none; color: var(--subtext0); cursor: pointer; font-size: 18px; padding: 0 4px; }
+    .pr-comment-modal-close:hover { color: var(--text); }
+    .pr-comment-modal-body { padding: 16px; }
+    .pr-comment-modal-textarea {
+      width: 100%; height: 160px; padding: 10px; font: 13px/1.5 var(--font-ui); color: var(--text);
+      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
+      resize: vertical; outline: none; box-sizing: border-box;
+    }
+    .pr-comment-modal-textarea:focus { border-color: var(--accent); }
+    .pr-comment-modal-actions {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 12px 16px; border-top: 1px solid var(--surface0);
+    }
 
     /* ── Notes panel ──────────────────────────────────────────────────────── */
     .notes-container { display: flex; width: 100%; height: 100%; }
@@ -1432,7 +1572,7 @@
 
   <!-- ─── Sidebar ──────────────────────────────────────────────────────── -->
   <aside class="sidebar">
-    <div class="sidebar-fixed">
+    <div class="sidebar-fixed" id="sidebarAdoFixed" style="display:none;">
       <div class="field-group">
         <label class="field-label">Iteration</label>
         <select class="field-select" id="sprintSelect" onchange="onSprintChange()">
@@ -1441,17 +1581,19 @@
       </div>
     </div>
     <div class="sidebar-scrollable">
-      <div class="section-title">Actions</div>
-      <button class="btn btn-primary" onclick="openCreateModal()"><i data-lucide="plus"></i> New Work Item</button>
-      <button class="btn" onclick="filterMyItems()"><i data-lucide="user"></i> My Items</button>
-      <button class="btn" onclick="refreshAll()"><i data-lucide="refresh-cw"></i> Refresh</button>
+      <div id="sidebarAdoActions" style="display:none;">
+        <div class="section-title">Actions</div>
+        <button class="btn btn-primary" onclick="openCreateModal()"><i data-lucide="plus"></i> New Work Item</button>
+        <button class="btn" onclick="filterMyItems()"><i data-lucide="user"></i> My Items</button>
+        <button class="btn" onclick="refreshAll()"><i data-lucide="refresh-cw"></i> Refresh</button>
 
-      <div class="divider"></div>
-      <div class="section-title">AI Actions</div>
-      <button class="btn" onclick="runScript('standup')"><i data-lucide="message-square"></i> Standup Summary</button>
-      <button class="btn" onclick="runScript('status')"><i data-lucide="bar-chart-2"></i> Iteration Status</button>
-      <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
-      <div class="divider"></div>
+        <div class="divider"></div>
+        <div class="section-title">AI Actions</div>
+        <button class="btn" onclick="runScript('standup')"><i data-lucide="message-square"></i> Standup Summary</button>
+        <button class="btn" onclick="runScript('status')"><i data-lucide="bar-chart-2"></i> Iteration Status</button>
+        <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
+        <div class="divider"></div>
+      </div>
       <div class="section-title">Git</div>
       <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
       <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
@@ -1484,12 +1626,11 @@
   <div class="center">
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
-      <button class="tab-btn" data-tab="board" onclick="switchTab('board')">Board</button>
-      <button class="tab-btn" data-tab="backlog" onclick="switchTab('backlog')">Backlog</button>
+      <button class="tab-btn" data-tab="backlog" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
       <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
       <button class="tab-btn" data-tab="activity" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
       <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
-      <button class="tab-btn" data-tab="prs" onclick="switchTab('prs')">Pull Requests</button>
+      <button class="tab-btn" data-tab="prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
       <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
       <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
       <div class="tab-bar-right">
@@ -1514,14 +1655,15 @@
     </div>
 
     <!-- Board -->
-    <div class="tab-panel" id="panel-board">
+    <!-- Backlog (unified: list + board views) -->
+    <div class="tab-panel" id="panel-backlog">
       <div class="view-toolbar">
         <select class="view-filter" id="boardTeamSelect" onchange="switchTeam(this.value)" style="font-weight:600;color:var(--text);min-width:160px;">
           <option value="">Loading teams...</option>
         </select>
         <div style="flex:1"></div>
-        <input class="view-search" id="boardSearch" type="text" placeholder="Search..." oninput="renderBoard()">
-        <div class="multi-select" data-id="boardState" data-onchange="renderBoard">
+        <input class="view-search" id="backlogSearch" type="text" placeholder="Search..." oninput="applyBacklogFilters()">
+        <div class="multi-select" data-id="backlogState" data-onchange="applyBacklogFilters">
           <div class="multi-select-btn" data-label="State" onclick="toggleMultiSelect(this.parentElement)">
             <span class="multi-select-label">State</span>
             <span class="multi-select-count"></span>
@@ -1535,7 +1677,7 @@
             <div class="multi-select-item selected" data-value="Closed" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Closed</div>
           </div>
         </div>
-        <div class="multi-select" data-id="boardType" data-onchange="renderBoard">
+        <div class="multi-select" data-id="backlogType" data-onchange="applyBacklogFilters">
           <div class="multi-select-btn" data-label="Type" onclick="toggleMultiSelect(this.parentElement)">
             <span class="multi-select-label">Type</span>
             <span class="multi-select-count"></span>
@@ -1552,16 +1694,38 @@
             <div class="multi-select-item selected" data-value="Test Suite" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Test Suites</div>
           </div>
         </div>
-        <div class="multi-select" data-id="boardTag" data-onchange="renderBoard">
+        <div class="multi-select" data-id="backlogTag" data-onchange="applyBacklogFilters">
           <div class="multi-select-btn" data-label="Tags" onclick="toggleMultiSelect(this.parentElement)">
             <span class="multi-select-label">Tags</span>
             <span class="multi-select-count"></span>
             <span class="multi-select-arrow">&#9662;</span>
           </div>
-          <div class="multi-select-panel" id="boardTagPanel"></div>
+          <div class="multi-select-panel" id="backlogTagPanel"></div>
+        </div>
+        <div class="backlog-view-toggle">
+          <button class="backlog-view-btn active" id="btnViewList" onclick="switchBacklogView('list')" title="List View"><i data-lucide="list" style="width:14px;height:14px;"></i></button>
+          <button class="backlog-view-btn" id="btnViewBoard" onclick="switchBacklogView('board')" title="Board View"><i data-lucide="columns-3" style="width:14px;height:14px;"></i></button>
         </div>
       </div>
-      <div class="board" id="boardView">
+      <!-- List view -->
+      <div class="backlog" id="backlogContainer">
+        <table class="backlog-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Type</th>
+              <th>Title</th>
+              <th>State</th>
+              <th>Assigned To</th>
+              <th>Priority</th>
+              <th>Points</th>
+            </tr>
+          </thead>
+          <tbody id="backlogBody"></tbody>
+        </table>
+      </div>
+      <!-- Board view -->
+      <div class="board" id="boardView" style="display:none;">
         <div class="board-column">
           <div class="board-col-header">New <span class="board-col-count" id="boardCountNew">0</span></div>
           <div class="board-col-items" id="boardNew"></div>
@@ -1578,68 +1742,6 @@
           <div class="board-col-header">Closed <span class="board-col-count" id="boardCountClosed">0</span></div>
           <div class="board-col-items" id="boardClosed"></div>
         </div>
-      </div>
-    </div>
-
-    <!-- Backlog -->
-    <div class="tab-panel" id="panel-backlog">
-      <div class="view-toolbar">
-        <input class="view-search" id="backlogSearch" type="text" placeholder="Search..." oninput="filterBacklog()">
-        <div class="multi-select" data-id="backlogState" data-onchange="filterBacklog">
-          <div class="multi-select-btn" data-label="State" onclick="toggleMultiSelect(this.parentElement)">
-            <span class="multi-select-label">State</span>
-            <span class="multi-select-count"></span>
-            <span class="multi-select-arrow">&#9662;</span>
-          </div>
-          <div class="multi-select-panel">
-            <div class="multi-select-toggle-all selected" onclick="toggleAllMultiItems(this)">Toggle All</div>
-            <div class="multi-select-item selected" data-value="New" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> New</div>
-            <div class="multi-select-item selected" data-value="Active" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Active</div>
-            <div class="multi-select-item selected" data-value="Resolved" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Resolved</div>
-            <div class="multi-select-item selected" data-value="Closed" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Closed</div>
-          </div>
-        </div>
-        <div class="multi-select" data-id="backlogType" data-onchange="filterBacklog">
-          <div class="multi-select-btn" data-label="Type" onclick="toggleMultiSelect(this.parentElement)">
-            <span class="multi-select-label">Type</span>
-            <span class="multi-select-count"></span>
-            <span class="multi-select-arrow">&#9662;</span>
-          </div>
-          <div class="multi-select-panel">
-            <div class="multi-select-toggle-all selected" onclick="toggleAllMultiItems(this)">Toggle All</div>
-            <div class="multi-select-item selected" data-value="User Story" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Stories</div>
-            <div class="multi-select-item selected" data-value="Bug" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Bugs</div>
-            <div class="multi-select-item selected" data-value="Task" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Tasks</div>
-            <div class="multi-select-item selected" data-value="Feature" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Features</div>
-            <div class="multi-select-item selected" data-value="Epic" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Epics</div>
-            <div class="multi-select-item selected" data-value="Test Case" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Test Cases</div>
-            <div class="multi-select-item selected" data-value="Test Suite" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> Test Suites</div>
-          </div>
-        </div>
-        <div class="multi-select" data-id="backlogTag" data-onchange="filterBacklog">
-          <div class="multi-select-btn" data-label="Tags" onclick="toggleMultiSelect(this.parentElement)">
-            <span class="multi-select-label">Tags</span>
-            <span class="multi-select-count"></span>
-            <span class="multi-select-arrow">&#9662;</span>
-          </div>
-          <div class="multi-select-panel" id="backlogTagPanel"></div>
-        </div>
-      </div>
-      <div class="backlog" id="backlogContainer">
-        <table class="backlog-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Type</th>
-              <th>Title</th>
-              <th>State</th>
-              <th>Assigned To</th>
-              <th>Priority</th>
-              <th>Points</th>
-            </tr>
-          </thead>
-          <tbody id="backlogBody"></tbody>
-        </table>
       </div>
     </div>
 
@@ -1774,6 +1876,40 @@
               <div class="empty-state-text">Select a pull request to review</div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PR Comment Modal -->
+    <div class="pr-comment-modal" id="prCommentModal">
+      <div class="pr-comment-modal-inner">
+        <div class="pr-comment-modal-header">
+          <span>Leave a comment</span>
+          <button class="pr-comment-modal-close" onclick="closePRCommentModal()">&times;</button>
+        </div>
+        <div class="pr-comment-modal-body">
+          <textarea class="pr-comment-modal-textarea" id="prCommentModalInput" placeholder="Write your comment..."></textarea>
+        </div>
+        <div class="pr-comment-modal-actions">
+          <button class="pr-btn pr-btn-comment" onclick="closePRCommentModal()">Cancel</button>
+          <button class="pr-btn pr-btn-approve" onclick="submitPRCommentModal()" style="background:var(--accent);">Submit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PR Request Changes Modal -->
+    <div class="pr-comment-modal" id="prRequestChangesModal">
+      <div class="pr-comment-modal-inner">
+        <div class="pr-comment-modal-header">
+          <span>Request Changes</span>
+          <button class="pr-comment-modal-close" onclick="closeRequestChangesModal()">&times;</button>
+        </div>
+        <div class="pr-comment-modal-body">
+          <textarea class="pr-comment-modal-textarea" id="prRequestChangesInput" placeholder="Describe what changes are needed..."></textarea>
+        </div>
+        <div class="pr-comment-modal-actions">
+          <button class="pr-btn pr-btn-comment" onclick="closeRequestChangesModal()">Cancel</button>
+          <button class="pr-btn pr-btn-changes" onclick="submitRequestChanges()">Request Changes</button>
         </div>
       </div>
     </div>
@@ -3820,8 +3956,11 @@ function populatePRsRepoSelect() {
   const sel = document.getElementById('prsRepoSelect');
   const repos = configData.Repos || {};
   const names = Object.keys(repos);
+  // Default to activeRepo if no PR repo selected yet
+  if (!prsCurrentRepo && activeRepo) prsCurrentRepo = activeRepo;
+  if (!prsCurrentRepo && names.length) prsCurrentRepo = names[0];
   sel.innerHTML = names.length
-    ? names.map(n => `<option value="${esc(n)}"${n === (prsCurrentRepo || activeRepo) ? ' selected' : ''}>${esc(n)}</option>`).join('')
+    ? names.map(n => `<option value="${esc(n)}"${n === prsCurrentRepo ? ' selected' : ''}>${esc(n)}</option>`).join('')
     : '<option value="">No repos configured</option>';
 }
 
@@ -3829,6 +3968,8 @@ async function loadPRs() {
   const repo = document.getElementById('prsRepoSelect').value;
   if (!repo) return;
   prsCurrentRepo = repo;
+  // Sync active repo across tabs
+  if (repo !== activeRepo) selectRepo(repo);
   const state = document.getElementById('prsStateSelect').value;
   const list = document.getElementById('prsList');
   list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="spinner"></div></div>';
@@ -3851,16 +3992,19 @@ function renderPRList() {
   }
   list.innerHTML = prsData.map(pr => {
     const active = pr.number === prsCurrentNumber ? ' active' : '';
-    const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join(' ');
+    const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join('');
     const draft = pr.draft ? '<span class="pr-draft-badge">Draft</span>' : '';
     const ago = timeAgo(pr.updatedAt);
     return `<div class="pr-item${active}" onclick="viewPR(${pr.number})">
-      <div class="pr-item-title">#${pr.number} ${esc(pr.title)}</div>
+      <div class="pr-item-top">
+        <span class="pr-item-number">#${pr.number}</span>
+        <span class="pr-item-title">${esc(pr.title)}</span>
+        <span class="pr-item-time">${ago}</span>
+      </div>
       <div class="pr-item-meta">
-        <span>${esc(pr.author)}</span>
-        <span>${esc(pr.headRef)} &rarr; ${esc(pr.baseRef)}</span>
-        <span>${ago}</span>
-        ${draft} ${labels}
+        <span class="pr-item-author">${esc(pr.author)}</span>
+        <span class="pr-item-branch">${esc(pr.headRef)} &rarr; ${esc(pr.baseRef)}</span>
+        <span class="pr-item-labels">${draft}${labels}</span>
       </div>
     </div>`;
   }).join('');
@@ -3881,24 +4025,24 @@ async function viewPR(number) {
   detail.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
   try {
     const repo = prsCurrentRepo;
-    const [prRes, filesRes, commentsRes] = await Promise.all([
+    const [prRes, filesRes, timelineRes] = await Promise.all([
       fetch(`/api/github/pulls/detail?repo=${encodeURIComponent(repo)}&number=${number}`),
       fetch(`/api/github/pulls/files?repo=${encodeURIComponent(repo)}&number=${number}`),
-      fetch(`/api/github/pulls/comments?repo=${encodeURIComponent(repo)}&number=${number}`),
+      fetch(`/api/github/pulls/timeline?repo=${encodeURIComponent(repo)}&number=${number}`),
     ]);
     const pr = await prRes.json();
     const filesData = await filesRes.json();
-    const commentsData = await commentsRes.json();
+    const timelineData = await timelineRes.json();
     if (pr.error) { detail.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(pr.error)}</div></div>`; return; }
     prsCurrentFiles = filesData.files || [];
-    const comments = commentsData.comments || [];
-    renderPRDetail(pr, prsCurrentFiles, comments);
+    const timeline = timelineData.events || [];
+    renderPRDetail(pr, prsCurrentFiles, timeline);
   } catch (e) {
     detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">Failed to load PR</div></div>';
   }
 }
 
-function renderPRDetail(pr, files, comments) {
+function renderPRDetail(pr, files, timeline) {
   const statusBadge = pr.merged
     ? '<span style="color:var(--mauve);font-weight:600;">Merged</span>'
     : pr.state === 'closed'
@@ -3908,7 +4052,6 @@ function renderPRDetail(pr, files, comments) {
         : '<span style="color:var(--green);font-weight:600;">Open</span>';
 
   const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join(' ');
-  const reviewers = pr.reviewers.length ? pr.reviewers.map(r => esc(r)).join(', ') : 'None';
 
   const filesHtml = files.map((f, i) => {
     const statusCls = f.status === 'added' ? 'added' : f.status === 'removed' ? 'removed' : f.status === 'renamed' ? 'renamed' : 'modified';
@@ -3919,18 +4062,8 @@ function renderPRDetail(pr, files, comments) {
     </div>`;
   }).join('');
 
-  const commentsHtml = comments.length ? comments.map(c => {
-    const pathLine = c.path ? `<div class="pr-comment-path">${esc(c.path)}${c.line ? ':' + c.line : ''}</div>` : '';
-    return `<div class="pr-comment">
-      <div class="pr-comment-header">
-        ${c.avatar ? `<img class="pr-comment-avatar" src="${esc(c.avatar)}" alt="">` : ''}
-        <span class="pr-comment-author">${esc(c.author)}</span>
-        <span class="pr-comment-date">${timeAgo(c.createdAt)}</span>
-      </div>
-      ${pathLine}
-      <div class="pr-comment-body">${esc(c.body)}</div>
-    </div>`;
-  }).join('') : '<div style="font-size:12px;color:var(--subtext0);padding:8px 0;">No comments yet.</div>';
+  // Build timeline HTML
+  const timelineHtml = renderPRTimeline(timeline);
 
   document.getElementById('prsDetail').innerHTML = `
     <div class="pr-detail">
@@ -3946,28 +4079,104 @@ function renderPRDetail(pr, files, comments) {
           ${labels}
         </div>
       </div>
-      ${pr.body ? `<div class="pr-section"><div class="pr-section-title">Description</div><div class="pr-detail-body">${esc(pr.body)}</div></div>` : ''}
       <div class="pr-section">
-        <div class="pr-section-title">Reviewers</div>
-        <div style="font-size:12px;color:var(--subtext1);">${reviewers}</div>
+        <div class="pr-section-title">Conversation</div>
+        <div class="pr-timeline">
+          ${(pr.bodyHtml || pr.body) ? renderTimelineComment(pr.author, pr.authorAvatar, pr.createdAt, pr.bodyHtml || renderMarkdown(pr.body), true) : ''}
+          ${timelineHtml}
+        </div>
       </div>
       <div class="pr-section">
         <div class="pr-section-title">Changed Files (${files.length})</div>
         ${filesHtml}
         <div id="prDiffArea"></div>
       </div>
-      <div class="pr-section">
-        <div class="pr-section-title">Comments (${comments.length})</div>
-        ${commentsHtml}
-      </div>
     </div>
     <div class="pr-actions">
-      <textarea class="pr-comment-input" id="prCommentInput" placeholder="Leave a comment..." rows="1"></textarea>
+      <input class="pr-comment-input" id="prCommentInput" type="text" placeholder="Leave a comment...">
+      <button class="pr-expand-btn" onclick="openPRCommentModal()" title="Expand"><i data-lucide="expand" style="width:14px;height:14px;"></i></button>
       <button class="pr-btn pr-btn-comment" onclick="addPRComment()">Comment</button>
+      <button class="pr-btn pr-btn-changes" onclick="openRequestChangesModal()">Request Changes</button>
       <button class="pr-btn pr-btn-approve" onclick="submitPRReview('APPROVE')">Approve</button>
-      <button class="pr-btn pr-btn-changes" onclick="submitPRReview('REQUEST_CHANGES')">Request Changes</button>
     </div>`;
   try { lucide.createIcons(); } catch (_) {}
+}
+
+function _li(name) { return `<i data-lucide="${name}" style="width:14px;height:14px;"></i>`; }
+
+function renderTimelineComment(author, avatar, date, bodyHtml, isHtml) {
+  const content = isHtml ? renderHtmlBody(bodyHtml) : renderMarkdown(bodyHtml);
+  return `<div class="pr-tl-item">
+    <div class="pr-tl-avatar">${avatar ? `<img src="${esc(avatar)}" alt="">` : `<div class="pr-tl-avatar-icon">${_li('user')}</div>`}</div>
+    <div class="pr-tl-content">
+      <div class="pr-tl-comment-box">
+        <div class="pr-tl-comment-header"><strong>${esc(author)}</strong> commented ${timeAgo(date)}</div>
+        <div class="pr-tl-comment-body">${content}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderTimelineEvent(icon, html) {
+  return `<div class="pr-tl-item">
+    <div class="pr-tl-avatar"><div class="pr-tl-avatar-icon">${icon}</div></div>
+    <div class="pr-tl-content"><div class="pr-tl-event">${html}</div></div>
+  </div>`;
+}
+
+function renderPRTimeline(events) {
+  return events.map(e => {
+    switch (e.type) {
+      case 'commented':
+        return renderTimelineComment(e.author, e.avatar, e.createdAt, e.bodyHtml || e.body, !!e.bodyHtml);
+      case 'reviewed': {
+        const stateMap = {
+          APPROVED: ['approved', 'approved', 'check-circle'],
+          CHANGES_REQUESTED: ['changes', 'requested changes', 'alert-circle'],
+          COMMENTED: ['commented', 'reviewed', 'message-square'],
+          DISMISSED: ['dismissed', 'dismissed review', 'x-circle'],
+        };
+        const [cls, label, iconName] = stateMap[e.state] || ['commented', e.state, 'message-square'];
+        let html = `<div class="pr-tl-item">
+          <div class="pr-tl-avatar">${e.avatar ? `<img src="${esc(e.avatar)}" alt="">` : `<div class="pr-tl-avatar-icon">${_li(iconName)}</div>`}</div>
+          <div class="pr-tl-content">`;
+        if (e.body || e.bodyHtml) {
+          html += `<div class="pr-tl-comment-box">
+            <div class="pr-tl-comment-header"><strong>${esc(e.author)}</strong> ${label} ${timeAgo(e.createdAt)} <span class="pr-tl-review-badge pr-tl-review-${cls}">${esc(e.state)}</span></div>
+            <div class="pr-tl-comment-body">${e.bodyHtml ? renderHtmlBody(e.bodyHtml) : renderMarkdown(e.body)}</div>
+          </div>`;
+        } else {
+          html += `<div class="pr-tl-event"><strong>${esc(e.author)}</strong> ${label} ${timeAgo(e.createdAt)} <span class="pr-tl-review-badge pr-tl-review-${cls}">${esc(e.state)}</span></div>`;
+        }
+        html += '</div></div>';
+        return html;
+      }
+      case 'committed': {
+        const sha = (e.sha || '').substring(0, 7);
+        return renderTimelineEvent(_li('git-commit'), `<strong>${esc(e.author)}</strong> committed <span class="pr-tl-commit-sha">${sha}</span> <span class="pr-tl-commit-msg">${esc((e.message || '').split('\n')[0])}</span>`);
+      }
+      case 'review_requested':
+        return renderTimelineEvent(_li('eye'), `<strong>${esc(e.actor)}</strong> requested review from <strong>${esc(e.reviewer)}</strong> ${timeAgo(e.createdAt)}`);
+      case 'assigned':
+        return renderTimelineEvent(_li('user-plus'), `<strong>${esc(e.actor)}</strong> assigned <strong>${esc(e.assignee)}</strong> ${timeAgo(e.createdAt)}`);
+      case 'unassigned':
+        return renderTimelineEvent(_li('user-minus'), `<strong>${esc(e.actor)}</strong> unassigned <strong>${esc(e.assignee)}</strong> ${timeAgo(e.createdAt)}`);
+      case 'labeled':
+        return renderTimelineEvent(_li('tag'), `<strong>${esc(e.actor)}</strong> added <span class="pr-label" style="background:#${e.labelColor}22;color:#${e.labelColor};">${esc(e.label)}</span> ${timeAgo(e.createdAt)}`);
+      case 'unlabeled':
+        return renderTimelineEvent(_li('tag'), `<strong>${esc(e.actor)}</strong> removed <span class="pr-label" style="background:#${e.labelColor}22;color:#${e.labelColor};">${esc(e.label)}</span> ${timeAgo(e.createdAt)}`);
+      case 'merged':
+        return renderTimelineEvent(_li('git-merge'), `<strong>${esc(e.actor)}</strong> merged this pull request ${timeAgo(e.createdAt)}`);
+      case 'closed':
+        return renderTimelineEvent(_li('circle-x'), `<strong>${esc(e.actor)}</strong> closed this ${timeAgo(e.createdAt)}`);
+      case 'reopened':
+        return renderTimelineEvent(_li('rotate-ccw'), `<strong>${esc(e.actor)}</strong> reopened this ${timeAgo(e.createdAt)}`);
+      case 'head_ref_force_pushed':
+        return renderTimelineEvent(_li('arrow-up-circle'), `<strong>${esc(e.actor)}</strong> force-pushed ${timeAgo(e.createdAt)}`);
+      default:
+        return '';
+    }
+  }).join('');
 }
 
 function selectPRFile(idx) {
@@ -3984,6 +4193,38 @@ function selectPRFile(idx) {
   const diffText = `diff --git a/${file.filename} b/${file.filename}\n--- a/${file.filename}\n+++ b/${file.filename}\n${file.patch}`;
   area.innerHTML = '<div class="pr-diff-container"><div id="prDiffContent"></div></div>';
   renderInlineDiff(document.getElementById('prDiffContent'), diffText);
+}
+
+function openPRCommentModal() {
+  const inline = document.getElementById('prCommentInput');
+  const modal = document.getElementById('prCommentModal');
+  const textarea = document.getElementById('prCommentModalInput');
+  textarea.value = inline.value;
+  modal.classList.add('open');
+  setTimeout(() => textarea.focus(), 100);
+}
+
+function closePRCommentModal() {
+  document.getElementById('prCommentModal').classList.remove('open');
+}
+
+async function submitPRCommentModal() {
+  const textarea = document.getElementById('prCommentModalInput');
+  const body = textarea.value.trim();
+  if (!body) return;
+  try {
+    const res = await fetch('/api/github/pulls/comment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, body }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    textarea.value = '';
+    document.getElementById('prCommentInput').value = '';
+    closePRCommentModal();
+    toast('Comment added', 'success');
+    viewPR(prsCurrentNumber);
+  } catch (e) { toast('Failed to add comment', 'error'); }
 }
 
 async function addPRComment() {
@@ -4003,22 +4244,37 @@ async function addPRComment() {
   } catch (e) { toast('Failed to add comment', 'error'); }
 }
 
-async function submitPRReview(event) {
-  let body = '';
-  if (event === 'REQUEST_CHANGES') {
-    body = prompt('What changes are needed?');
-    if (body === null) return; // cancelled
-  }
+async function submitPRReview(event, body) {
   try {
     const res = await fetch('/api/github/pulls/review', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, event, body }),
+      body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, event, body: body || '' }),
     });
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }
     toast(event === 'APPROVE' ? 'PR approved' : 'Changes requested', 'success');
-    viewPR(prsCurrentNumber); // refresh
+    viewPR(prsCurrentNumber);
   } catch (e) { toast('Failed to submit review', 'error'); }
+}
+
+function openRequestChangesModal() {
+  const modal = document.getElementById('prRequestChangesModal');
+  const textarea = document.getElementById('prRequestChangesInput');
+  textarea.value = '';
+  modal.classList.add('open');
+  setTimeout(() => textarea.focus(), 100);
+}
+
+function closeRequestChangesModal() {
+  document.getElementById('prRequestChangesModal').classList.remove('open');
+}
+
+async function submitRequestChanges() {
+  const textarea = document.getElementById('prRequestChangesInput');
+  const body = textarea.value.trim();
+  if (!body) { toast('Please describe the changes needed', 'info'); return; }
+  closeRequestChangesModal();
+  await submitPRReview('REQUEST_CHANGES', body);
 }
 
 // ── Notes State ─────────────────────────────────────────────────────────
@@ -4673,17 +4929,12 @@ function switchTab(tab, preserveSearch) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `panel-${tab}`));
   if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); }
-  if (tab === 'board') {
-    if (!preserveSearch) { const s = document.getElementById('boardSearch'); if (s) s.value = ''; }
-    renderBoard();
-  }
   if (tab === 'backlog') {
     if (!preserveSearch) { const s = document.getElementById('backlogSearch'); if (s) s.value = ''; }
-    renderBacklog();
-    filterBacklog();
+    applyBacklogFilters();
   }
   if (tab === 'files') { populateFilesRepoSelect(); if (filesCurrentRepo) { loadFileTree(filesCurrentPath); loadProjectScripts(); } }
-  if (tab === 'prs') { populatePRsRepoSelect(); if (prsCurrentRepo) loadPRs(); }
+  if (tab === 'prs') { populatePRsRepoSelect(); loadPRs(); }
   if (tab === 'notes') loadNotesList();
 }
 
@@ -4697,7 +4948,10 @@ function switchIntelTab(tab) {
 
 // ── UI Actions from AI ──────────────────────────────────────────────────
 function handleUiAction(msg) {
-  if (msg.action === 'switch-tab') switchTab(msg.tab);
+  if (msg.action === 'switch-tab') {
+    if (msg.tab === 'board') { switchTab('backlog'); setTimeout(() => switchBacklogView('board'), 100); }
+    else switchTab(msg.tab);
+  }
   if (msg.action === 'view-workitem' && msg.id) viewWorkItem(msg.id);
   if (msg.action === 'view-note' && msg.name) { switchTab('notes'); setTimeout(() => { openNote(msg.name).then(() => setNoteMode('preview')); }, 200); }
   if (msg.action === 'refresh-workitems') {
@@ -4724,14 +4978,24 @@ function handleUiAction(msg) {
       filesCurrentRepo = diffRepo;
       activeRepo = diffRepo;
       if (msg.path) {
-        // Specific file diff
         switchTab('files');
         setTimeout(() => { viewFile(msg.path).then(() => showSplitDiff(msg.path, msg.base || 'HEAD')); }, 300);
       } else {
-        // All working changes — open the diff tab
         viewChangedFile('').catch(() => {});
       }
     }
+  }
+  // PR actions
+  if (msg.action === 'view-pr') {
+    switchTab('prs');
+    if (msg.repo) { prsCurrentRepo = msg.repo; populatePRsRepoSelect(); }
+    if (msg.number) setTimeout(() => viewPR(msg.number), 300);
+    else loadPRs();
+  }
+  // Backlog view switching (board vs list)
+  if (msg.action === 'switch-backlog-view' && msg.view) {
+    switchTab('backlog');
+    setTimeout(() => switchBacklogView(msg.view), 100);
   }
 }
 
@@ -4743,7 +5007,14 @@ async function loadConfig(autoSelectSprint) {
     configData = await res.json();
     const label = configData.AzureDevOpsProject || 'Not configured';
     document.getElementById('projectLabel').textContent = label;
-    if (configData.AzureDevOpsOrg && configData.AzureDevOpsProject && configData.AzureDevOpsPAT) {
+    // Show/hide tabs based on configured PATs
+    const hasAdo = !!(configData.AzureDevOpsOrg && configData.AzureDevOpsProject && configData.AzureDevOpsPAT);
+    const hasGh = !!configData.GitHubPAT;
+    document.getElementById('backlogTabBtn').style.display = hasAdo ? '' : 'none';
+    document.getElementById('sidebarAdoFixed').style.display = hasAdo ? '' : 'none';
+    document.getElementById('sidebarAdoActions').style.display = hasAdo ? '' : 'none';
+    document.getElementById('prsTabBtn').style.display = hasGh ? '' : 'none';
+    if (hasAdo) {
       loadTeams();
       await loadIterations(autoSelectSprint);
       loadRepoList();
@@ -4846,9 +5117,7 @@ function populateTagFilters() {
   const html = toggleAllHtml + noTagHtml + sorted.map(tag =>
     `<div class="multi-select-item selected" data-value="${esc(tag)}" onclick="toggleMultiItem(this)"><div class="multi-select-toggle"></div> ${esc(tag)}</div>`
   ).join('');
-  const boardPanel = document.getElementById('boardTagPanel');
   const backlogPanel = document.getElementById('backlogTagPanel');
-  if (boardPanel) boardPanel.innerHTML = html;
   if (backlogPanel) backlogPanel.innerHTML = html;
 }
 
@@ -4958,15 +5227,15 @@ function highlightFamily(parentId, on) {
 const STATE_COLORS = { New: 'var(--blue)', Active: 'var(--green)', Resolved: 'var(--mauve)', Closed: 'var(--subtext0)', Done: 'var(--subtext0)' };
 
 function renderBoard() {
-  const search = (document.getElementById('boardSearch')?.value || '').toLowerCase();
-  const typeFilters = getMultiSelectValues('boardType');
-  const stateFilters = getMultiSelectValues('boardState');
-  const tagFilters = getMultiSelectValues('boardTag');
+  const search = (document.getElementById('backlogSearch')?.value || '').toLowerCase();
+  const typeFilters = getMultiSelectValues('backlogType');
+  const stateFilters = getMultiSelectValues('backlogState');
+  const tagFilters = getMultiSelectValues('backlogTag');
   let filtered = workItems;
   // Filters are ON by default; deselected items are hidden
   filtered = filtered.filter(wi => typeFilters.includes(wi.type));
   filtered = filtered.filter(wi => stateFilters.includes(wi.state));
-  const totalTags = document.querySelectorAll('#boardTagPanel .multi-select-item').length;
+  const totalTags = document.querySelectorAll('#backlogTagPanel .multi-select-item').length;
   if (totalTags > 0 && tagFilters.length < totalTags) {
     const showNoTag = tagFilters.includes('__none__');
     filtered = filtered.filter(wi => {
@@ -5244,6 +5513,27 @@ async function onCardDrop(e, targetState) {
     loadWorkItems(true);
   } catch (e) {
     toast('Failed to update state', 'error');
+  }
+}
+
+let _backlogView = 'list'; // 'list' | 'board'
+
+function switchBacklogView(view) {
+  _backlogView = view;
+  document.getElementById('btnViewList').classList.toggle('active', view === 'list');
+  document.getElementById('btnViewBoard').classList.toggle('active', view === 'board');
+  document.getElementById('backlogContainer').style.display = view === 'list' ? '' : 'none';
+  document.getElementById('boardView').style.display = view === 'board' ? '' : 'none';
+  applyBacklogFilters();
+  try { lucide.createIcons(); } catch (_) {}
+}
+
+function applyBacklogFilters() {
+  if (_backlogView === 'board') {
+    renderBoard();
+  } else {
+    renderBacklog();
+    filterBacklog();
   }
 }
 
@@ -5828,6 +6118,9 @@ function selectRepo(name) {
   loadGitLogPanel();
   // Load project scripts
   loadProjectScripts();
+  // Sync PR tab repo selector
+  const prSelect = document.getElementById('prsRepoSelect');
+  if (prSelect) { prSelect.value = name; prsCurrentRepo = name; }
   pushUiContext();
 }
 
@@ -6099,7 +6392,7 @@ async function saveSettings() {
     const data = await res.json();
     if (data.ok) {
       closeSettings();
-      showLoading('Switching project...');
+      showLoading('Loading...');
       const minWait = new Promise(r => setTimeout(r, 4000));
       // Apply default CLI selection
       if (defaultCli && defaultCli !== activeCli) {
@@ -6225,6 +6518,87 @@ function esc(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function renderHtmlBody(html) {
+  if (!html) return '';
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/<details>/gi, '<details open>');
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  // Convert markdown images to <img> (works for both HTML and markdown paths)
+  // Nested: [![alt](img)](link)
+  text = text.replace(/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g, '<a href="$3" target="_blank"><img src="$2" alt="$1"></a>');
+  // Simple: ![alt](url)
+  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+  // Convert markdown links: [text](url)
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  // Strip markdown comments: [//]: # (...)
+  text = text.replace(/\[\/\/\]: #[^\n]*/g, '');
+  // GitHub callouts in markdown: > [!NOTE]\n> content
+  const calloutIcons = { note: '&#x1F4DD;', tip: '&#x1F4A1;', important: '&#x2757;', warning: '&#x26A0;&#xFE0F;', caution: '&#x1F6D1;' };
+  text = text.replace(/(?:^|\n)> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\n((?:> .*(?:\n|$))*)/gi, (_, type, body) => {
+    const t = type.toLowerCase();
+    const content = body.replace(/^> ?/gm, '').trim();
+    return `\n<div class="pr-callout pr-callout-${t}"><div class="pr-callout-title">${calloutIcons[t] || ''} ${t}</div>${content}</div>\n`;
+  });
+  // If the text contains HTML tags, it's already HTML from GitHub — render directly
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    // Sanitize: strip <script> and event handlers, allow safe HTML
+    let html = text
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+="[^"]*"/gi, '')
+      // Expand <details> sections by default
+      .replace(/<details>/gi, '<details open>')
+      // Proxy GitHub user-attachment images through the server
+      .replace(/src="(https:\/\/github\.com\/user-attachments\/assets\/[^"]+)"/gi, (_, u) => `src="/api/github/image?url=${encodeURIComponent(u)}"`)
+      .replace(/src='(https:\/\/github\.com\/user-attachments\/assets\/[^']+)'/gi, (_, u) => `src="/api/github/image?url=${encodeURIComponent(u)}"`);
+    // GitHub callouts inside HTML blockquotes: <blockquote><p>[!NOTE]</p><p>content</p></blockquote>
+    html = html.replace(/<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]<\/p>([\s\S]*?)<\/blockquote>/gi, (_, type, content) => {
+      const t = type.toLowerCase();
+      return `<div class="pr-callout pr-callout-${t}"><div class="pr-callout-title">${calloutIcons[t] || ''} ${t}</div>${content}</div>`;
+    });
+    // Markdown horizontal rules
+    html = html.replace(/\n---\n/g, '\n<hr style="border:none;border-top:1px solid var(--surface1);margin:12px 0;">\n');
+    html = html.replace(/\n\*\*\*\n/g, '\n<hr style="border:none;border-top:1px solid var(--surface1);margin:12px 0;">\n');
+    // Convert newlines to <br>
+    html = html.replace(/\n/g, '<br>');
+    // Collapse 3+ consecutive <br> into max 2
+    html = html.replace(/(<br>){3,}/gi, '<br><br>');
+    // Clean up <br> around block elements
+    html = html.replace(/(<\/(?:h[1-6]|p|li|ul|ol|blockquote|details|summary|pre|div|hr)>)(<br>)+/gi, '$1');
+    html = html.replace(/(<br>)+(<(?:h[1-6]|p|li|ul|ol|blockquote|details|summary|pre|div|hr)[\s>/])/gi, '$2');
+    html = html.replace(/(<br>)+(<\/(?:blockquote|details|ul|ol|div)>)/gi, '$2');
+    return html;
+  }
+  // Plain markdown — escape HTML first then convert
+  let html = esc(text);
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:var(--surface0);padding:10px;border-radius:var(--radius);overflow-x:auto;font:12px var(--font-mono);margin:8px 0;">$2</pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code style="background:var(--surface0);padding:1px 5px;border-radius:3px;font:11px var(--font-mono);">$1</code>');
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h4 style="font-size:13px;font-weight:600;color:var(--text);margin:12px 0 4px;">$1</h4>');
+  html = html.replace(/^## (.+)$/gm, '<h3 style="font-size:14px;font-weight:600;color:var(--text);margin:14px 0 4px;">$1</h3>');
+  html = html.replace(/^# (.+)$/gm, '<h2 style="font-size:16px;font-weight:700;color:var(--text);margin:16px 0 6px;">$1</h2>');
+  // Bold and italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Unordered lists
+  html = html.replace(/^[-*] (.+)$/gm, '<li style="margin-left:16px;margin-bottom:2px;">$1</li>');
+  // Blockquotes
+  html = html.replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid var(--surface1);padding-left:10px;color:var(--subtext0);margin:4px 0;">$1</div>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  html = html.replace(/(<\/h[234]>)<br>/g, '$1');
+  html = html.replace(/(<\/pre>)<br>/g, '$1');
+  html = html.replace(/(<\/li>)<br>/g, '$1');
+  html = html.replace(/(<\/div>)<br>/g, '$1');
+  return html;
+}
+
 function formatDate(d) {
   if (!d) return '-';
   const date = new Date(d);
@@ -6281,7 +6655,7 @@ document.addEventListener('keydown', (e) => {
     // Ctrl+K → Command Palette (works from anywhere, even inputs)
     if (e.key === 'k') { e.preventDefault(); openCmdPalette(); return; }
     // Ctrl+B → Board
-    if (e.key === 'b' && !inInput) { e.preventDefault(); switchTab('board'); }
+    if (e.key === 'b' && !inInput) { e.preventDefault(); switchTab('backlog'); }
     // Ctrl+T → Terminal
     if (e.key === 't' && !inInput) { e.preventDefault(); switchTab('terminal'); }
     // Ctrl+D → Diff viewer (if visible)
@@ -6310,8 +6684,7 @@ function getCmdActions() {
   const actions = [
     // Navigation
     { label: 'Go to Terminal', icon: 'terminal', action: () => switchTab('terminal'), category: 'Navigate', hint: 'Ctrl+T' },
-    { label: 'Go to Board', icon: 'kanban', action: () => switchTab('board'), category: 'Navigate', hint: 'Ctrl+B' },
-    { label: 'Go to Backlog', icon: 'list', action: () => switchTab('backlog'), category: 'Navigate' },
+    { label: 'Go to Backlog', icon: 'list', action: () => switchTab('backlog'), category: 'Navigate', hint: 'Ctrl+B' },
     { label: 'Go to Files', icon: 'folder', action: () => switchTab('files'), category: 'Navigate' },
     { label: 'Go to Pull Requests', icon: 'git-pull-request', action: () => switchTab('prs'), category: 'Navigate' },
     { label: 'Go to Notes', icon: 'file-text', action: () => switchTab('notes'), category: 'Navigate' },
@@ -6455,7 +6828,7 @@ function openActivityTimeline() {
 
 function closeActivityTimeline() {
   document.getElementById('activityTabBtn').style.display = 'none';
-  switchTab('board');
+  switchTab('backlog');
 }
 
 function setTimelineRange(days, btn) {

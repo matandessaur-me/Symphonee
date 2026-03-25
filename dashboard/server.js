@@ -113,8 +113,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/github/pulls/detail' && req.method === 'GET')    return handleGitHubPullDetail(url, res);
     if (url.pathname === '/api/github/pulls/files' && req.method === 'GET')     return handleGitHubPullFiles(url, res);
     if (url.pathname === '/api/github/pulls/comments' && req.method === 'GET')  return handleGitHubPullComments(url, res);
+    if (url.pathname === '/api/github/pulls/timeline' && req.method === 'GET') return handleGitHubPullTimeline(url, res);
     if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST')  return handleGitHubAddComment(req, res);
     if (url.pathname === '/api/github/pulls/review' && req.method === 'POST')   return handleGitHubSubmitReview(req, res);
+    if (url.pathname === '/api/github/image' && req.method === 'GET')          return handleGitHubImageProxy(url, res);
 
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
@@ -167,6 +169,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ui/view-file' && req.method === 'POST')       return handleUiAction(req, res, 'view-file');
     if (url.pathname === '/api/ui/view-diff' && req.method === 'POST')       return handleUiAction(req, res, 'view-diff');
     if (url.pathname === '/api/ui/view-activity' && req.method === 'POST')   return handleUiAction(req, res, 'view-activity');
+    if (url.pathname === '/api/ui/view-pr' && req.method === 'POST')       return handleUiAction(req, res, 'view-pr');
     if (url.pathname === '/api/ui/context' && req.method === 'GET')         return json(res, getUiContextWithPath());
     if (url.pathname === '/api/ui/context' && req.method === 'POST')        return handleUiContextUpdate(req, res);
 
@@ -406,7 +409,7 @@ function parseGitHubRemote(repoPath) {
   return { owner: m[1], repo: m[2] };
 }
 
-function ghRequest(method, apiPath, body) {
+function ghRequest(method, apiPath, body, accept) {
   return new Promise((resolve, reject) => {
     const cfg = getConfig();
     const pat = cfg.GitHubPAT;
@@ -418,7 +421,7 @@ function ghRequest(method, apiPath, body) {
       method,
       headers: {
         'Authorization': `token ${pat}`,
-        'Accept': 'application/vnd.github+json',
+        'Accept': accept || 'application/vnd.github+json',
         'User-Agent': 'DevOps-Pilot',
         'Content-Type': 'application/json',
       },
@@ -1093,10 +1096,12 @@ async function handleGitHubPullDetail(url, res) {
     const gh = resolveGitHub(url.searchParams.get('repo'));
     if (gh.error) return json(res, gh, 400);
     const num = url.searchParams.get('number');
-    const pr = await ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/pulls/${num}`);
+    // Request with html media type to get body_html with signed image URLs
+    const pr = await ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/pulls/${num}`, null, 'application/vnd.github.html+json');
     json(res, {
       number: pr.number, title: pr.title, state: pr.state, draft: pr.draft,
-      body: pr.body || '', mergeable: pr.mergeable, merged: pr.merged,
+      body: pr.body || '', bodyHtml: pr.body_html || '',
+      mergeable: pr.mergeable, merged: pr.merged,
       author: pr.user?.login || '', authorAvatar: pr.user?.avatar_url || '',
       createdAt: pr.created_at, updatedAt: pr.updated_at,
       headRef: pr.head?.ref || '', baseRef: pr.base?.ref || '',
@@ -1140,6 +1145,57 @@ async function handleGitHubPullComments(url, res) {
   } catch (e) { json(res, { error: e.message }, 500); }
 }
 
+async function handleGitHubPullTimeline(url, res) {
+  try {
+    const gh = resolveGitHub(url.searchParams.get('repo'));
+    if (gh.error) return json(res, gh, 400);
+    const num = url.searchParams.get('number');
+    const data = await ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/issues/${num}/timeline?per_page=100`, null, 'application/vnd.github.html+json');
+    const events = [];
+    for (const e of data) {
+      const ev = { type: e.event || e.node_id?.split('/')[0] || 'unknown', createdAt: e.created_at || e.submitted_at || e.timestamp || '' };
+      if (e.event === 'commented' || (!e.event && e.body !== undefined)) {
+        ev.type = 'commented';
+        ev.author = e.user?.login || e.actor?.login || '';
+        ev.avatar = e.user?.avatar_url || e.actor?.avatar_url || '';
+        ev.body = e.body || '';
+        ev.bodyHtml = e.body_html || '';
+      } else if (e.event === 'reviewed') {
+        ev.author = e.user?.login || '';
+        ev.avatar = e.user?.avatar_url || '';
+        ev.state = e.state; // APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
+        ev.body = e.body || '';
+        ev.bodyHtml = e.body_html || '';
+      } else if (e.event === 'committed') {
+        ev.sha = e.sha;
+        ev.message = e.message;
+        ev.author = e.author?.name || '';
+      } else if (e.event === 'review_requested') {
+        ev.actor = e.actor?.login || '';
+        ev.reviewer = e.requested_reviewer?.login || '';
+      } else if (e.event === 'assigned' || e.event === 'unassigned') {
+        ev.actor = e.actor?.login || '';
+        ev.assignee = e.assignee?.login || '';
+      } else if (e.event === 'labeled' || e.event === 'unlabeled') {
+        ev.actor = e.actor?.login || '';
+        ev.label = e.label?.name || '';
+        ev.labelColor = e.label?.color || '';
+      } else if (e.event === 'head_ref_force_pushed' || e.event === 'head_ref_deleted') {
+        ev.actor = e.actor?.login || '';
+      } else if (e.event === 'merged') {
+        ev.actor = e.actor?.login || '';
+        ev.commitId = e.commit_id || '';
+      } else if (e.event === 'closed' || e.event === 'reopened') {
+        ev.actor = e.actor?.login || '';
+      } else {
+        ev.actor = e.actor?.login || '';
+      }
+      events.push(ev);
+    }
+    json(res, { events });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
 async function handleGitHubAddComment(req, res) {
   try {
     const { repo, number, body } = await readBody(req);
@@ -1162,6 +1218,59 @@ async function handleGitHubSubmitReview(req, res) {
     const result = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/pulls/${number}/reviews`, payload);
     json(res, { ok: true, state: result.state });
   } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+function handleGitHubImageProxy(url, res) {
+  const imgUrl = url.searchParams.get('url');
+  if (!imgUrl || !imgUrl.startsWith('https://github.com/')) {
+    res.writeHead(400); res.end('Invalid URL'); return;
+  }
+  const cfg = getConfig();
+  const pat = cfg.GitHubPAT;
+  const parsed = new URL(imgUrl);
+  const options = {
+    hostname: parsed.hostname,
+    path: parsed.pathname + parsed.search,
+    method: 'GET',
+    headers: {
+      'Authorization': `token ${pat}`,
+      'User-Agent': 'DevOps-Pilot',
+      'Accept': '*/*',
+    },
+  };
+  const proxy = https.request(options, (upstream) => {
+    // Follow redirects (GitHub returns 302 to the actual blob URL)
+    if (upstream.statusCode === 301 || upstream.statusCode === 302) {
+      const loc = upstream.headers.location;
+      if (loc) {
+        const redir = new URL(loc);
+        const redirOpts = {
+          hostname: redir.hostname,
+          path: redir.pathname + redir.search,
+          method: 'GET',
+          headers: { 'User-Agent': 'DevOps-Pilot', 'Accept': '*/*' },
+        };
+        // The redirected URL is usually publicly accessible with a token in the query
+        const r2 = https.request(redirOpts, (resp2) => {
+          res.writeHead(resp2.statusCode, {
+            'Content-Type': resp2.headers['content-type'] || 'image/png',
+            'Cache-Control': 'public, max-age=3600',
+          });
+          resp2.pipe(res);
+        });
+        r2.on('error', () => { res.writeHead(502); res.end(); });
+        r2.end();
+        return;
+      }
+    }
+    res.writeHead(upstream.statusCode, {
+      'Content-Type': upstream.headers['content-type'] || 'image/png',
+      'Cache-Control': 'public, max-age=3600',
+    });
+    upstream.pipe(res);
+  });
+  proxy.on('error', () => { res.writeHead(502); res.end(); });
+  proxy.end();
 }
 
 // ── UI Actions (AI → Dashboard) ─────────────────────────────────────────────

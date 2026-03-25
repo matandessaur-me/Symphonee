@@ -61,13 +61,16 @@ You are running inside a PowerShell terminal with access to:
 - Creating/editing notes via `Save-Note.ps1`
 - Switching dashboard tabs via UI control endpoints
 - Reading work items, iterations, team members
+- Reading GitHub pull requests, files, comments, and timeline
 - Running git commands that don't push (status, log, diff, checkout, branch)
 
 **You MUST ask permission before:**
 - Creating or updating work items in Azure DevOps (this writes to the real board)
 - Changing work item state (moving items between columns)
 - Pushing code to remote repositories
-- Any action that modifies data in Azure DevOps or external systems
+- Commenting on GitHub pull requests (POST to /api/github/pulls/comment)
+- Approving or requesting changes on GitHub pull requests (POST to /api/github/pulls/review)
+- Any action that modifies data in Azure DevOps, GitHub, or external systems
 
 ## Available API Endpoints
 
@@ -114,6 +117,18 @@ You are running inside a PowerShell terminal with access to:
 
 **Note:** Branch switching, pull, and push are handled by the dashboard's Git modal (not the AI terminal). The AI is only involved for **Commit Changes** (when "Let AI Decide" is chosen) and **Compare Branches** (AI analyzes the diff).
 
+### GitHub Pull Requests
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/github/pulls?repo={name}&state=open` | List PRs |
+| GET | `/api/github/pulls/detail?repo={name}&number={n}` | Full PR details |
+| GET | `/api/github/pulls/files?repo={name}&number={n}` | Changed files with patches |
+| GET | `/api/github/pulls/timeline?repo={name}&number={n}` | Full conversation timeline |
+| POST | `/api/github/pulls/comment` | Add comment. Body: `{ repo, number, body }` **ASK PERMISSION** |
+| POST | `/api/github/pulls/review` | Submit review. Body: `{ repo, number, event, body }` **ASK PERMISSION** |
+
+**Note:** GitHub PRs require a GitHub PAT configured in Settings. The `repo` param is the repo name from Settings.
+
 ### Notes (markdown scratchpad — you can read and write notes)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -131,20 +146,24 @@ You can control the dashboard UI. **Use these intelligently based on context** �
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/ui/tab` | Switch tab. Body: `{ tab: "terminal"|"board"|"backlog"|"workitem"|"files"|"notes" }` |
+| POST | `/api/ui/tab` | Switch tab. Body: `{ tab: "terminal"|"backlog"|"workitem"|"prs"|"files"|"notes" }` ("board" maps to backlog with board view) |
 | POST | `/api/ui/view-workitem` | Open work item detail. Body: `{ id: 12345 }` |
 | POST | `/api/ui/view-note` | Open a note in preview. Body: `{ name: "My Note" }` |
 | POST | `/api/ui/view-file` | Open a file in the code viewer. Body: `{ repo: "RepoName", path: "src/index.ts", line: 132 }` (line is optional — scrolls to and highlights that line) |
 | POST | `/api/ui/view-diff` | Open split diff for a file. Body: `{ repo: "RepoName", path: "src/index.ts", base: "HEAD" }` |
 | POST | `/api/ui/refresh-workitems` | Refresh work items list. Body: `{}` |
 | POST | `/api/ui/view-activity` | Open the Activity Timeline view. Body: `{}` |
+| POST | `/api/ui/view-pr` | Open a pull request. Body: `{ repo: "RepoName", number: 123 }` (number optional) |
 | GET | `/api/ui/context` | Get current dashboard state: selected iteration, active repo, activeRepoPath |
+
+**Important: Board and Backlog are a single tab called "Backlog"** with List and Board view toggle. Sending `{ tab: "board" }` auto-maps to backlog with board view.
 
 **When to navigate:**
 - After creating a work item → ask "Want me to open it?" then call `view-workitem`
 - After saving a note → ask "Want to see it?" then call `view-note`
 - When user asks "what's assigned to me?" → show results, then ask "Want me to open the backlog filtered to you?"
-- When user asks about recent activity, "what was done", or "show me an overview" → call `view-activity` to open the Activity Timeline
+- When user asks about recent activity → call `view-activity` to open the Activity Timeline
+- When user asks about pull requests → call `view-pr` with the repo name
 - After a query → DON'T auto-switch tabs. Let the user read the terminal output first.
 
 **Command Palette:** The user can press `Ctrl+K` or click the search bar at the top to open the Command Palette. It provides quick access to all actions, tabs, repos, and work items. The AI does NOT need to use this — it's a UI shortcut for the user.
@@ -154,7 +173,7 @@ You can control the dashboard UI. **Use these intelligently based on context** �
 # Open a work item
 Invoke-RestMethod http://127.0.0.1:3800/api/ui/view-workitem -Method POST -ContentType 'application/json' -Body '{"id":12345}'
 # Switch to board
-Invoke-RestMethod http://127.0.0.1:3800/api/ui/tab -Method POST -ContentType 'application/json' -Body '{"tab":"board"}'
+Invoke-RestMethod http://127.0.0.1:3800/api/ui/tab -Method POST -ContentType 'application/json' -Body '{"tab":"backlog"}'
 # Open a note
 Invoke-RestMethod http://127.0.0.1:3800/api/ui/view-note -Method POST -ContentType 'application/json' -Body '{"name":"My Note"}'
 ```
@@ -219,7 +238,7 @@ Invoke-RestMethod http://127.0.0.1:3800/api/workitems/12345 -Method PATCH -Conte
 $velocity = Invoke-RestMethod http://127.0.0.1:3800/api/velocity
 
 # Switch the dashboard to board view
-Invoke-RestMethod http://127.0.0.1:3800/api/ui/tab -Method POST -ContentType 'application/json' -Body '{"tab":"board"}'
+Invoke-RestMethod http://127.0.0.1:3800/api/ui/tab -Method POST -ContentType 'application/json' -Body '{"tab":"backlog"}'
 ```
 
 ## CRITICAL: Work Item Creation & Management
