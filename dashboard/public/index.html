@@ -4783,7 +4783,8 @@ document.addEventListener('keyup', async (e) => {
     const text = await stopVoiceRecording();
     if (text) {
       const tag = target?.tagName;
-      const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
+      const isTerminal = !!target?.closest('.xterm');
+      const isInput = !isTerminal && (tag === 'INPUT' || tag === 'TEXTAREA');
       const isMonaco = target?.closest('.monaco-editor');
 
       if (isInput) {
