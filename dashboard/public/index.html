@@ -2497,6 +2497,12 @@ function createTermInstance(termId, label) {
     term.loadAddon(webgl);
   } catch (_) {}
 
+  // Let Ctrl+Shift (voice recording) pass through to document handlers
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'Control' || e.key === 'Shift')) return false;
+    return true;
+  });
+
   // Input
   term.onData(data => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data }));
