@@ -6287,6 +6287,7 @@ const AI_TOOLS_META = {
 };
 
 let _aiToolsStatus = {}; // cli -> { installed, path }
+let _pwshStatus = { installed: false };
 
 async function detectAiTools() {
   const container = document.getElementById('settingsAiTools');
@@ -6296,6 +6297,7 @@ async function detectAiTools() {
     const res = await fetch('/api/prerequisites');
     const data = await res.json();
     _aiToolsStatus = data.cliTools || {};
+    _pwshStatus = data.pwsh || { installed: false };
     renderAiTools();
   } catch (e) {
     container.innerHTML = '<div style="font-size:11px;color:var(--red);">Failed to detect AI tools</div>';
@@ -6304,7 +6306,31 @@ async function detectAiTools() {
 
 function renderAiTools() {
   const container = document.getElementById('settingsAiTools');
-  container.innerHTML = Object.entries(AI_TOOLS_META).map(([id, meta]) => {
+
+  // PowerShell 7 prerequisite card
+  const pwshInstalled = _pwshStatus.installed;
+  const pwshCard = `
+    <div style="margin-bottom:8px;padding:0 2px;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin-bottom:6px;">Prerequisites</div>
+      <div class="ai-tool-card" id="aiToolCard-pwsh" style="${pwshInstalled ? '' : 'border-color:var(--yellow);'}">
+        <div class="ai-tool-dot" style="background:var(--blue)"></div>
+        <div class="ai-tool-info">
+          <div class="ai-tool-name">PowerShell 7</div>
+          ${pwshInstalled
+            ? '<span class="ai-tool-status installed">Installed</span>'
+            : '<span class="ai-tool-status not-installed" style="color:var(--yellow);">Required for AI CLI tools</span>'}
+        </div>
+        <button class="ai-tool-btn ${pwshInstalled ? 'installed' : 'install'}" id="aiToolBtn-pwsh"
+                onclick="${pwshInstalled ? '' : "installCli('pwsh')"}"
+                ${pwshInstalled ? 'disabled' : ''}>${pwshInstalled ? 'Installed' : 'Install'}</button>
+      </div>
+    </div>
+    <div style="padding:0 2px;margin-bottom:6px;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);">AI Tools</div>
+    </div>`;
+
+  // AI tool cards
+  const toolCards = Object.entries(AI_TOOLS_META).map(([id, meta]) => {
     const status = _aiToolsStatus[id] || { installed: false };
     const isInstalled = status.installed;
     const btnClass = isInstalled ? 'installed' : 'install';
@@ -6325,6 +6351,8 @@ function renderAiTools() {
                 ${isInstalled ? 'disabled' : ''}>${btnText}</button>
       </div>`;
   }).join('');
+
+  container.innerHTML = pwshCard + toolCards;
 }
 
 async function installCli(cli) {
@@ -6342,15 +6370,17 @@ async function installCli(cli) {
     });
     const data = await res.json();
 
+    const displayName = cli === 'pwsh' ? 'PowerShell 7' : (AI_TOOLS_META[cli]?.name || cli);
     if (data.ok && data.installed) {
-      _aiToolsStatus[cli] = { installed: true, path: data.path };
-      toast(`${AI_TOOLS_META[cli].name} installed successfully`, 'success');
+      if (cli === 'pwsh') { _pwshStatus = { installed: true, path: data.path }; }
+      else { _aiToolsStatus[cli] = { installed: true, path: data.path }; }
+      toast(`${displayName} installed successfully`, 'success');
       renderAiTools();
     } else {
       btn.className = 'ai-tool-btn install';
       btn.textContent = 'Retry';
       btn.disabled = false;
-      toast(`Failed to install ${AI_TOOLS_META[cli].name}: ${data.error || 'Unknown error'}`, 'error');
+      toast(`Failed to install ${displayName}: ${data.error || 'Unknown error'}`, 'error');
     }
   } catch (e) {
     btn.className = 'ai-tool-btn install';
@@ -6802,17 +6832,35 @@ async function obDetectAiTools() {
     const res = await fetch('/api/prerequisites');
     const data = await res.json();
     _obAiStatus = data.cliTools || {};
+    _obPwshStatus = data.pwsh || { installed: false };
     obRenderAiTools();
   } catch (_) {
     container.innerHTML = '<div style="font-size:11px;color:var(--red);">Failed to detect AI tools</div>';
   }
 }
 
+let _obPwshStatus = { installed: false };
+
 function obRenderAiTools() {
   const container = document.getElementById('obAiTools');
   if (!container) return;
+
+  // PowerShell 7 prerequisite
+  const pwshOk = _obPwshStatus.installed;
+  const pwshCard = `
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin-bottom:6px;">Prerequisites</div>
+    <div class="ai-tool-card" style="${pwshOk ? '' : 'border-color:var(--yellow);'}">
+      <div class="ai-tool-dot" style="background:var(--blue)"></div>
+      <div class="ai-tool-info"><div class="ai-tool-name">PowerShell 7</div>
+        ${pwshOk ? '<span class="ai-tool-status installed">Installed</span>' : '<span class="ai-tool-status not-installed" style="color:var(--yellow);">Required for AI CLI tools</span>'}
+      </div>
+      <button class="ai-tool-btn ${pwshOk ? 'installed' : 'install'}" id="obAiBtn-pwsh" onclick="${pwshOk ? '' : "obInstallCli('pwsh')"}" ${pwshOk ? 'disabled' : ''}>${pwshOk ? 'Installed' : 'Install'}</button>
+    </div>
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin:8px 0 6px;">AI Tools</div>`;
+
+  // AI tool cards
   const meta = { claude: { name: 'Claude Code', color: '#d97757', pkg: '@anthropic-ai/claude-code' }, gemini: { name: 'Gemini CLI', color: '#078efa', pkg: '@google/gemini-cli' }, copilot: { name: 'Copilot CLI', color: '#8534f3', pkg: '@githubnext/github-copilot-cli' }, codex: { name: 'Codex CLI', color: '#10a37f', pkg: '@openai/codex' } };
-  container.innerHTML = Object.entries(meta).map(([id, m]) => {
+  const toolCards = Object.entries(meta).map(([id, m]) => {
     const installed = _obAiStatus[id]?.installed;
     return `<div class="ai-tool-card">
       <div class="ai-tool-dot" style="background:${m.color}"></div>
@@ -6822,6 +6870,8 @@ function obRenderAiTools() {
       <button class="ai-tool-btn ${installed ? 'installed' : 'install'}" id="obAiBtn-${id}" onclick="${installed ? '' : `obInstallCli('${id}')`}" ${installed ? 'disabled' : ''}>${installed ? 'Installed' : 'Install'}</button>
     </div>`;
   }).join('');
+
+  container.innerHTML = pwshCard + toolCards;
 }
 
 async function obInstallCli(cli) {
@@ -6831,7 +6881,11 @@ async function obInstallCli(cli) {
   try {
     const res = await fetch('/api/cli/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cli }) });
     const data = await res.json();
-    if (data.ok && data.installed) { _obAiStatus[cli] = { installed: true }; toast(`Installed!`, 'success'); obRenderAiTools(); }
+    if (data.ok && data.installed) {
+      if (cli === 'pwsh') { _obPwshStatus = { installed: true, path: data.path }; }
+      else { _obAiStatus[cli] = { installed: true }; }
+      toast(`Installed!`, 'success'); obRenderAiTools();
+    }
     else { btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false; toast('Install failed', 'error'); }
   } catch (_) { btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false; }
 }

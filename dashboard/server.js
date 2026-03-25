@@ -279,6 +279,7 @@ const CLI_INSTALL_COMMANDS = {
   gemini:  'npm install -g @google/gemini-cli',
   copilot: 'npm install -g @githubnext/github-copilot-cli',
   codex:   'npm install -g @openai/codex',
+  pwsh:    'winget install Microsoft.PowerShell --accept-source-agreements --accept-package-agreements',
 };
 
 function handleCliInstall(req, res) {
@@ -294,7 +295,9 @@ function handleCliInstall(req, res) {
       const { exec } = require('child_process');
       exec(installCmd, { timeout: 120000, encoding: 'utf8' }, (err, stdout, stderr) => {
         // After install, re-check if it's actually available
-        const checkCmd = `where ${cli}.cmd 2>nul || where ${cli} 2>nul`;
+        const checkCmd = cli === 'pwsh'
+          ? 'where pwsh.exe 2>nul'
+          : `where ${cli}.cmd 2>nul || where ${cli} 2>nul`;
         let installed = false;
         let installPath = '';
         try {
