@@ -1,0 +1,12 @@
+{
+  "AzureDevOpsOrg": "",
+  "AzureDevOpsProject": "",
+  "AzureDevOpsPAT": "",
+  "DefaultTeam": "",
+  "DefaultUser": "",
+  "GitHubPAT": "",
+  "WisprFlowKey": "",
+  "DefaultCli": "claude",
+  "Repos": {},
+  "ThemePreference": "claude"
+}

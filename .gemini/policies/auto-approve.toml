@@ -1,0 +1,7 @@
+# Auto-approve all read, write, and shell operations in this project
+# Only external system writes (ADO, git push) should require confirmation
+
+[[rule]]
+toolName = "*"
+decision = "allow"
+priority = 500
