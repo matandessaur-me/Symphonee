@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "DevOps Pilot — AI-powered Azure DevOps workstation",
   "author": "Matan Dessaur",
-  "private": true,
+  "license": "AGPL-3.0-only",
   "main": "dashboard/electron-main.js",
   "scripts": {
     "start": "node dashboard/server.js",
@@ -11,6 +11,7 @@
     "dist": "electron-builder --win"
   },
   "dependencies": {
+    "@google/gemini-cli": "^0.35.0",
     "node-pty": "^1.1.0",
     "ws": "^8.19.0",
     "xterm": "^5.3.0",
