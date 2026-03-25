@@ -26,7 +26,9 @@ You are running inside a PowerShell terminal with access to:
 4. **NEVER use `git diff` to show changes.** Use `.\scripts\Show-Diff.ps1` to open the built-in diff viewer.
 5. **NEVER open VS Code or external editors.** Use the app's built-in file/diff viewers.
 6. **You are inside a PowerShell PTY.** No bash commands (`cat`, `echo`, `grep`). Use PowerShell.
-7. **You are launched in the DevOps Pilot directory, but the user may be working in a DIFFERENT repo.** Before doing any code-related work (searching files, reading code, git operations), ALWAYS check which repo the user has selected by calling `GET /api/ui/context`. The response includes `activeRepo` (name) and `activeRepoPath` (full path on disk). **Work in that directory, not your current working directory.**
+7. **You are launched in the DevOps Pilot directory, but the user may be working in a DIFFERENT repo.** Before doing any code-related work (searching files, reading code, git operations), ALWAYS check which repo the user has selected by calling `GET /api/ui/context`. The response includes `activeRepo` (name) and `activeRepoPath` (full path on disk). **Work in that directory for code-related tasks, not your current working directory.**
+8. **ALWAYS run scripts from the DevOps Pilot directory.** All `.\scripts\*.ps1` files live in the DevOps Pilot project root. NEVER `cd` into another repo and try to run scripts from there — they won't exist. When working on code in another repo, use `activeRepoPath` for git/file operations, but run DevOps Pilot scripts from the DevOps Pilot directory.
+9. **Repo names are CONFIGURED names, not folder names.** When scripts or API endpoints require a `-Repo` parameter or `repoName` field, use the **configured repo name** from `/api/repos` (e.g., `"Residential Site"`, `"High5"`), NOT the folder name on disk (e.g., NOT `"website-bathfitter-residential"`). Always check `/api/repos` or `/api/ui/context` → `activeRepo` to get the correct name.
 
 ## CRITICAL: Shell Rules
 
@@ -211,18 +213,18 @@ Scripts are in `.\scripts\`. Always prefer these over raw API calls.
 
 **When the user asks to see changes, review changes, or show a diff — ALWAYS use the diff viewer, NOT terminal output.**
 
+**ALWAYS pass the `-Repo` parameter** with the configured repo name (from `/api/ui/context` → `activeRepo`). If you omit it, the diff viewer may open with no repo selected and show nothing.
+
 ```powershell
-# Show all working changes in the diff viewer
-.\scripts\Show-Diff.ps1
+# Show all working changes in the diff viewer (ALWAYS include -Repo)
+.\scripts\Show-Diff.ps1 -Repo "Residential Site"
 
 # Show a specific file in the diff viewer
-.\scripts\Show-Diff.ps1 -Path "src/components/Header.tsx"
-
-# Show changes in a specific repo
-.\scripts\Show-Diff.ps1 -Repo "MyRepo"
+.\scripts\Show-Diff.ps1 -Repo "Residential Site" -Path "src/components/Header.tsx"
 ```
 
 **NEVER use `git diff` in the terminal to show changes.** The dashboard has a built-in diff viewer with syntax highlighting and side-by-side comparison. Use it.
+**NEVER omit the `-Repo` parameter.** Always check `/api/ui/context` for `activeRepo` and pass it.
 
 ## Raw API (use only when scripts don't cover your need)
 
@@ -335,14 +337,14 @@ When starting work on a task, the system automatically:
 
 Follow this sequence when working on a task tied to a work item:
 
-1. **Start working** → Work item moves to **Active** (automatic via `/api/start-working`, or do it manually via the API)
+1. **Start working** → **AUTOMATICALLY** move the work item to **Active** (via `/api/start-working`, or manually via the API). Do NOT wait for the user to ask.
 2. **Write code** → Work item stays Active
 3. **Show diff** → Let the user review changes
 4. **Commit** → Ask "Ready to commit?"
-5. **After commit** → Ask "Want me to move AB#12345 to Resolved?"
+5. **After commit** → **AUTOMATICALLY** move the work item to **Resolved** (ask the user for confirmation first: "Want me to move AB#12345 to Resolved?"). Do NOT forget this step.
 6. **Push / Create PR** → Only when the user asks
 
-The AI should guide the user through this flow naturally. Don't skip steps.
+**The AI MUST manage work item states proactively.** When a work item is being worked on, its state should be Active. When work is committed, ask to Resolve it. NEVER leave a work item in "New" while actively coding on it. NEVER forget to offer to Resolve after committing. These state transitions are a core part of the workflow — not optional.
 
 ## CRITICAL: Creating Pull Requests
 
