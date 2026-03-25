@@ -1,3 +1,4 @@
+<img src="https://repository-images.githubusercontent.com/1187508410/001d4330-d22f-4655-bb5f-0cb51022fdab" alt="devopspilot-logo"/>
 # DevOps Pilot
 
 **An AI-powered Azure DevOps workstation built on Electron.**
