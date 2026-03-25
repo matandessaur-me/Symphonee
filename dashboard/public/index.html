@@ -5102,6 +5102,14 @@ function handleUiAction(msg) {
     switchTab('files');
     setTimeout(() => viewFile(msg.path, msg.line || undefined, msg.highlight || undefined), 300);
   }
+  if (msg.action === 'view-commit-diff' && msg.hash) {
+    const diffRepo = msg.repo || activeRepo || filesCurrentRepo;
+    if (diffRepo) {
+      filesCurrentRepo = diffRepo;
+      activeRepo = diffRepo;
+    }
+    viewCommitDiff(msg.hash);
+  }
   if (msg.action === 'view-diff') {
     const diffRepo = msg.repo || activeRepo || filesCurrentRepo;
     if (diffRepo) {
