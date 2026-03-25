@@ -104,8 +104,17 @@ const server = http.createServer(async (req, res) => {
     // ── Start Working ─────────────────────────────────────────────────────
     if (url.pathname === '/api/start-working' && req.method === 'POST') return handleStartWorking(req, res);
 
-    // ── Pull Requests ─────────────────────────────────────────────────────
+    // ── Pull Requests (ADO) ────────────────────────────────────────────────
     if (url.pathname === '/api/pull-request' && req.method === 'POST') return handleCreatePullRequest(req, res);
+
+    // ── GitHub Pull Requests ────────────────────────────────────────────────
+    if (url.pathname === '/api/github/repo-info' && req.method === 'GET')       return handleGitHubRepoInfo(url, res);
+    if (url.pathname === '/api/github/pulls' && req.method === 'GET')           return handleGitHubPulls(url, res);
+    if (url.pathname === '/api/github/pulls/detail' && req.method === 'GET')    return handleGitHubPullDetail(url, res);
+    if (url.pathname === '/api/github/pulls/files' && req.method === 'GET')     return handleGitHubPullFiles(url, res);
+    if (url.pathname === '/api/github/pulls/comments' && req.method === 'GET')  return handleGitHubPullComments(url, res);
+    if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST')  return handleGitHubAddComment(req, res);
+    if (url.pathname === '/api/github/pulls/review' && req.method === 'POST')   return handleGitHubSubmitReview(req, res);
 
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
@@ -385,6 +394,52 @@ function adoOrgRequest(method, apiPath) {
       });
     });
     req.on('error', reject);
+    req.end();
+  });
+}
+
+// ── GitHub API Helper ────────────────────────────────────────────────────────
+function parseGitHubRemote(repoPath) {
+  const url = gitExec(repoPath, 'remote get-url origin');
+  const m = url.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
+  if (!m) return null;
+  return { owner: m[1], repo: m[2] };
+}
+
+function ghRequest(method, apiPath, body) {
+  return new Promise((resolve, reject) => {
+    const cfg = getConfig();
+    const pat = cfg.GitHubPAT;
+    if (!pat) return reject(new Error('GitHub PAT not configured. Set it in Settings.'));
+    const payload = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: 'api.github.com',
+      path: apiPath,
+      method,
+      headers: {
+        'Authorization': `token ${pat}`,
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'DevOps-Pilot',
+        'Content-Type': 'application/json',
+      },
+    };
+    if (payload) options.headers['Content-Length'] = Buffer.byteLength(payload);
+    const req = https.request(options, (resp) => {
+      let data = '';
+      resp.on('data', chunk => { data += chunk; });
+      resp.on('end', () => {
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          try { resolve(JSON.parse(data)); } catch (_) { resolve(data); }
+        } else {
+          const msg = resp.statusCode === 401
+            ? 'GitHub auth failed — PAT may be expired or invalid'
+            : `GitHub API error (${resp.statusCode}): ${data.slice(0, 300)}`;
+          reject(new Error(msg));
+        }
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
@@ -997,6 +1052,116 @@ async function handleCreatePullRequest(req, res) {
   } catch (e) {
     json(res, { error: e.message }, 500);
   }
+}
+
+// ── GitHub Pull Request Handlers ─────────────────────────────────────────────
+function resolveGitHub(repoName) {
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return { error: 'Repo not found' };
+  const gh = parseGitHubRemote(repoPath);
+  if (!gh) return { error: 'Not a GitHub repository' };
+  return gh;
+}
+
+function handleGitHubRepoInfo(url, res) {
+  const gh = resolveGitHub(url.searchParams.get('repo'));
+  if (gh.error) return json(res, gh, 400);
+  json(res, gh);
+}
+
+async function handleGitHubPulls(url, res) {
+  try {
+    const gh = resolveGitHub(url.searchParams.get('repo'));
+    if (gh.error) return json(res, gh, 400);
+    const state = url.searchParams.get('state') || 'open';
+    const data = await ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/pulls?state=${state}&per_page=30&sort=updated&direction=desc`);
+    const pulls = data.map(pr => ({
+      number: pr.number, title: pr.title, state: pr.state, draft: pr.draft,
+      author: pr.user?.login || '', authorAvatar: pr.user?.avatar_url || '',
+      createdAt: pr.created_at, updatedAt: pr.updated_at,
+      headRef: pr.head?.ref || '', baseRef: pr.base?.ref || '',
+      labels: (pr.labels || []).map(l => ({ name: l.name, color: l.color })),
+      reviewers: (pr.requested_reviewers || []).map(r => r.login),
+      additions: pr.additions, deletions: pr.deletions,
+    }));
+    json(res, { pulls });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+async function handleGitHubPullDetail(url, res) {
+  try {
+    const gh = resolveGitHub(url.searchParams.get('repo'));
+    if (gh.error) return json(res, gh, 400);
+    const num = url.searchParams.get('number');
+    const pr = await ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/pulls/${num}`);
+    json(res, {
+      number: pr.number, title: pr.title, state: pr.state, draft: pr.draft,
+      body: pr.body || '', mergeable: pr.mergeable, merged: pr.merged,
+      author: pr.user?.login || '', authorAvatar: pr.user?.avatar_url || '',
+      createdAt: pr.created_at, updatedAt: pr.updated_at,
+      headRef: pr.head?.ref || '', baseRef: pr.base?.ref || '',
+      additions: pr.additions, deletions: pr.deletions,
+      changedFiles: pr.changed_files,
+      labels: (pr.labels || []).map(l => ({ name: l.name, color: l.color })),
+      reviewers: (pr.requested_reviewers || []).map(r => r.login),
+    });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+async function handleGitHubPullFiles(url, res) {
+  try {
+    const gh = resolveGitHub(url.searchParams.get('repo'));
+    if (gh.error) return json(res, gh, 400);
+    const num = url.searchParams.get('number');
+    const data = await ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/pulls/${num}/files?per_page=100`);
+    const files = data.map(f => ({
+      filename: f.filename, status: f.status,
+      additions: f.additions, deletions: f.deletions,
+      patch: f.patch || null,
+    }));
+    json(res, { files });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+async function handleGitHubPullComments(url, res) {
+  try {
+    const gh = resolveGitHub(url.searchParams.get('repo'));
+    if (gh.error) return json(res, gh, 400);
+    const num = url.searchParams.get('number');
+    const [issueComments, reviewComments] = await Promise.all([
+      ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/issues/${num}/comments?per_page=100`),
+      ghRequest('GET', `/repos/${gh.owner}/${gh.repo}/pulls/${num}/comments?per_page=100`),
+    ]);
+    const all = [
+      ...issueComments.map(c => ({ id: c.id, author: c.user?.login || '', avatar: c.user?.avatar_url || '', body: c.body, createdAt: c.created_at, type: 'comment' })),
+      ...reviewComments.map(c => ({ id: c.id, author: c.user?.login || '', avatar: c.user?.avatar_url || '', body: c.body, createdAt: c.created_at, type: 'review', path: c.path, line: c.line })),
+    ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    json(res, { comments: all });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+async function handleGitHubAddComment(req, res) {
+  try {
+    const { repo, number, body } = await readBody(req);
+    if (!repo || !number || !body) return json(res, { error: 'repo, number, and body are required' }, 400);
+    const gh = resolveGitHub(repo);
+    if (gh.error) return json(res, gh, 400);
+    const result = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/issues/${number}/comments`, { body });
+    json(res, { ok: true, id: result.id });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+async function handleGitHubSubmitReview(req, res) {
+  try {
+    const { repo, number, event, body } = await readBody(req);
+    if (!repo || !number || !event) return json(res, { error: 'repo, number, and event are required' }, 400);
+    const gh = resolveGitHub(repo);
+    if (gh.error) return json(res, gh, 400);
+    const payload = { event };
+    if (body) payload.body = body;
+    const result = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/pulls/${number}/reviews`, payload);
+    json(res, { ok: true, state: result.state });
+  } catch (e) { json(res, { error: e.message }, 500); }
 }
 
 // ── UI Actions (AI → Dashboard) ─────────────────────────────────────────────

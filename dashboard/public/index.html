@@ -757,6 +757,80 @@
     .diffview-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
     .tab-panel#panel-diffview.active { display: flex; }
 
+    /* ── Pull Requests panel ─────────────────────────────────────────────── */
+    .tab-panel#panel-prs.active { display: flex; }
+    .prs-container { display: flex; width: 100%; height: 100%; }
+    .prs-sidebar {
+      width: 300px; flex-shrink: 0; background: var(--mantle);
+      border-right: 1px solid var(--surface0); display: flex; flex-direction: column;
+    }
+    .prs-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .prs-toolbar {
+      display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      height: 38px; border-bottom: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0;
+    }
+    .pr-item {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 10px 12px; cursor: pointer; font-size: 12px; color: var(--subtext1);
+      border-bottom: 1px solid var(--surface0); transition: background 0.1s;
+    }
+    .pr-item:hover { background: var(--surface0); }
+    .pr-item.active { background: var(--surface0); border-left: 2px solid var(--accent); }
+    .pr-item-title { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pr-item-meta { font-size: 10px; color: var(--subtext0); display: flex; gap: 8px; align-items: center; }
+    .pr-label { font-size: 9px; padding: 1px 6px; border-radius: 10px; }
+    .pr-draft-badge { font-size: 9px; padding: 1px 6px; border-radius: 10px; background: var(--surface2); color: var(--overlay1); }
+    .pr-detail { padding: 20px; overflow-y: auto; flex: 1; }
+    .pr-detail-header { margin-bottom: 16px; }
+    .pr-detail-title { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .pr-detail-meta { font-size: 11px; color: var(--subtext0); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .pr-detail-body { font-size: 13px; color: var(--subtext1); line-height: 1.6; margin-bottom: 20px; white-space: pre-wrap; word-wrap: break-word; }
+    .pr-section { margin-bottom: 20px; }
+    .pr-section-title {
+      font-size: 11px; font-weight: 600; color: var(--overlay1); text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--surface0);
+    }
+    .pr-file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; cursor: pointer; font-size: 12px; color: var(--subtext1);
+      border-radius: var(--radius); transition: background 0.1s;
+    }
+    .pr-file-item:hover { background: var(--surface0); }
+    .pr-file-item.active { background: var(--surface0); color: var(--accent); }
+    .pr-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-family: var(--font-mono); font-size: 11px; }
+    .pr-file-stats { font-size: 10px; white-space: nowrap; }
+    .pr-file-stats .add { color: var(--green); }
+    .pr-file-stats .del { color: var(--red); }
+    .pr-file-status { font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px; text-transform: uppercase; }
+    .pr-file-status-added { background: rgba(126,198,153,0.15); color: var(--green); }
+    .pr-file-status-modified { background: rgba(232,196,124,0.15); color: var(--yellow); }
+    .pr-file-status-removed { background: rgba(242,139,130,0.15); color: var(--red); }
+    .pr-file-status-renamed { background: rgba(124,172,232,0.15); color: var(--blue); }
+    .pr-comment { padding: 12px; border: 1px solid var(--surface0); border-radius: var(--radius-lg); margin-bottom: 8px; background: var(--surface0); }
+    .pr-comment-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .pr-comment-avatar { width: 20px; height: 20px; border-radius: 50%; }
+    .pr-comment-author { font-size: 12px; font-weight: 600; color: var(--text); }
+    .pr-comment-date { font-size: 10px; color: var(--subtext0); }
+    .pr-comment-path { font-size: 10px; color: var(--accent); font-family: var(--font-mono); margin-bottom: 4px; }
+    .pr-comment-body { font-size: 12px; color: var(--subtext1); line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+    .pr-actions {
+      display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0; align-items: flex-end;
+    }
+    .pr-comment-input {
+      flex: 1; padding: 8px 10px; font: 12px var(--font-ui); color: var(--text);
+      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
+      resize: vertical; min-height: 36px; outline: none;
+    }
+    .pr-comment-input:focus { border-color: var(--accent); }
+    .pr-btn { padding: 6px 14px; border: none; border-radius: var(--radius); font: 11px var(--font-ui); font-weight: 600; cursor: pointer; transition: opacity 0.1s; }
+    .pr-btn:hover { opacity: 0.85; }
+    .pr-btn-comment { background: var(--surface1); color: var(--text); }
+    .pr-btn-approve { background: var(--green); color: var(--crust); }
+    .pr-btn-changes { background: var(--red); color: var(--crust); }
+    .pr-diff-container { margin-top: 12px; border: 1px solid var(--surface0); border-radius: var(--radius-lg); overflow: hidden; }
+
     /* ── Notes panel ──────────────────────────────────────────────────────── */
     .notes-container { display: flex; width: 100%; height: 100%; }
     .notes-sidebar {
@@ -1415,6 +1489,7 @@
       <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
       <button class="tab-btn" data-tab="activity" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
       <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
+      <button class="tab-btn" data-tab="prs" onclick="switchTab('prs')">Pull Requests</button>
       <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
       <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
       <div class="tab-bar-right">
@@ -1675,6 +1750,34 @@
       </div>
     </div>
 
+    <!-- Pull Requests -->
+    <div class="tab-panel" id="panel-prs">
+      <div class="prs-container">
+        <div class="prs-sidebar">
+          <div style="padding:0 8px;height:38px;display:flex;align-items:center;border-bottom:1px solid var(--surface0);gap:6px;">
+            <select class="view-filter" id="prsRepoSelect" onchange="loadPRs()" style="flex:1;font-weight:600;color:var(--text);"></select>
+            <select class="view-filter" id="prsStateSelect" onchange="loadPRs()" style="width:80px;">
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+              <option value="all">All</option>
+            </select>
+            <button class="tab-bar-btn" onclick="loadPRs()" title="Refresh" style="padding:4px 6px;"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i></button>
+          </div>
+          <div id="prsList" style="overflow-y:auto;flex:1;">
+            <div class="empty-state" style="padding:20px;"><div class="empty-state-text">Select a repository</div></div>
+          </div>
+        </div>
+        <div class="prs-main">
+          <div id="prsDetail" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
+            <div class="empty-state" id="prsEmpty">
+              <i data-lucide="git-pull-request"></i>
+              <div class="empty-state-text">Select a pull request to review</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Notes -->
     <div class="tab-panel" id="panel-notes">
       <div class="notes-container">
@@ -1885,6 +1988,14 @@
 
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
+          <div class="settings-section">
+            <div class="settings-section-title">GitHub</div>
+            <div class="settings-section-desc">Connect to GitHub to view and review pull requests from the dashboard.</div>
+            <div class="modal-field">
+              <label>Personal Access Token</label>
+              <input id="settingsGitHubPAT" type="password" placeholder="ghp_...">
+            </div>
+          </div>
           <div class="settings-section">
             <div class="settings-section-title">Voice Input (Wispr Flow)</div>
             <div class="settings-section-desc">Enable voice-to-text input. Hold Ctrl+Shift to talk, release to transcribe.</div>
@@ -3699,6 +3810,217 @@ function renderMarkdown(md) {
   return html;
 }
 
+// ── Pull Requests ───────────────────────────────────────────────────────
+let prsData = [];
+let prsCurrentNumber = null;
+let prsCurrentRepo = '';
+let prsCurrentFiles = [];
+
+function populatePRsRepoSelect() {
+  const sel = document.getElementById('prsRepoSelect');
+  const repos = configData.Repos || {};
+  const names = Object.keys(repos);
+  sel.innerHTML = names.length
+    ? names.map(n => `<option value="${esc(n)}"${n === (prsCurrentRepo || activeRepo) ? ' selected' : ''}>${esc(n)}</option>`).join('')
+    : '<option value="">No repos configured</option>';
+}
+
+async function loadPRs() {
+  const repo = document.getElementById('prsRepoSelect').value;
+  if (!repo) return;
+  prsCurrentRepo = repo;
+  const state = document.getElementById('prsStateSelect').value;
+  const list = document.getElementById('prsList');
+  list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(`/api/github/pulls?repo=${encodeURIComponent(repo)}&state=${state}`);
+    const data = await res.json();
+    if (data.error) { list.innerHTML = `<div class="empty-state" style="padding:20px;"><div class="empty-state-text">${esc(data.error)}</div></div>`; return; }
+    prsData = data.pulls || [];
+    renderPRList();
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">Failed to load PRs</div></div>';
+  }
+}
+
+function renderPRList() {
+  const list = document.getElementById('prsList');
+  if (!prsData.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">No pull requests</div></div>';
+    return;
+  }
+  list.innerHTML = prsData.map(pr => {
+    const active = pr.number === prsCurrentNumber ? ' active' : '';
+    const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join(' ');
+    const draft = pr.draft ? '<span class="pr-draft-badge">Draft</span>' : '';
+    const ago = timeAgo(pr.updatedAt);
+    return `<div class="pr-item${active}" onclick="viewPR(${pr.number})">
+      <div class="pr-item-title">#${pr.number} ${esc(pr.title)}</div>
+      <div class="pr-item-meta">
+        <span>${esc(pr.author)}</span>
+        <span>${esc(pr.headRef)} &rarr; ${esc(pr.baseRef)}</span>
+        <span>${ago}</span>
+        ${draft} ${labels}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function timeAgo(dateStr) {
+  const s = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+async function viewPR(number) {
+  prsCurrentNumber = number;
+  renderPRList(); // update active state
+  const detail = document.getElementById('prsDetail');
+  detail.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  try {
+    const repo = prsCurrentRepo;
+    const [prRes, filesRes, commentsRes] = await Promise.all([
+      fetch(`/api/github/pulls/detail?repo=${encodeURIComponent(repo)}&number=${number}`),
+      fetch(`/api/github/pulls/files?repo=${encodeURIComponent(repo)}&number=${number}`),
+      fetch(`/api/github/pulls/comments?repo=${encodeURIComponent(repo)}&number=${number}`),
+    ]);
+    const pr = await prRes.json();
+    const filesData = await filesRes.json();
+    const commentsData = await commentsRes.json();
+    if (pr.error) { detail.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(pr.error)}</div></div>`; return; }
+    prsCurrentFiles = filesData.files || [];
+    const comments = commentsData.comments || [];
+    renderPRDetail(pr, prsCurrentFiles, comments);
+  } catch (e) {
+    detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">Failed to load PR</div></div>';
+  }
+}
+
+function renderPRDetail(pr, files, comments) {
+  const statusBadge = pr.merged
+    ? '<span style="color:var(--mauve);font-weight:600;">Merged</span>'
+    : pr.state === 'closed'
+      ? '<span style="color:var(--red);font-weight:600;">Closed</span>'
+      : pr.draft
+        ? '<span style="color:var(--overlay1);font-weight:600;">Draft</span>'
+        : '<span style="color:var(--green);font-weight:600;">Open</span>';
+
+  const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join(' ');
+  const reviewers = pr.reviewers.length ? pr.reviewers.map(r => esc(r)).join(', ') : 'None';
+
+  const filesHtml = files.map((f, i) => {
+    const statusCls = f.status === 'added' ? 'added' : f.status === 'removed' ? 'removed' : f.status === 'renamed' ? 'renamed' : 'modified';
+    return `<div class="pr-file-item" onclick="selectPRFile(${i})" data-idx="${i}">
+      <span class="pr-file-status pr-file-status-${statusCls}">${f.status[0].toUpperCase()}</span>
+      <span class="pr-file-name">${esc(f.filename)}</span>
+      <span class="pr-file-stats"><span class="add">+${f.additions}</span> <span class="del">-${f.deletions}</span></span>
+    </div>`;
+  }).join('');
+
+  const commentsHtml = comments.length ? comments.map(c => {
+    const pathLine = c.path ? `<div class="pr-comment-path">${esc(c.path)}${c.line ? ':' + c.line : ''}</div>` : '';
+    return `<div class="pr-comment">
+      <div class="pr-comment-header">
+        ${c.avatar ? `<img class="pr-comment-avatar" src="${esc(c.avatar)}" alt="">` : ''}
+        <span class="pr-comment-author">${esc(c.author)}</span>
+        <span class="pr-comment-date">${timeAgo(c.createdAt)}</span>
+      </div>
+      ${pathLine}
+      <div class="pr-comment-body">${esc(c.body)}</div>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--subtext0);padding:8px 0;">No comments yet.</div>';
+
+  document.getElementById('prsDetail').innerHTML = `
+    <div class="pr-detail">
+      <div class="pr-detail-header">
+        <div class="pr-detail-title">${esc(pr.title)}</div>
+        <div class="pr-detail-meta">
+          ${statusBadge}
+          <span>#${pr.number}</span>
+          <span>${esc(pr.author)}</span>
+          <span>${esc(pr.headRef)} &rarr; ${esc(pr.baseRef)}</span>
+          <span>+${pr.additions || 0} -${pr.deletions || 0}</span>
+          <span>${pr.changedFiles || 0} files</span>
+          ${labels}
+        </div>
+      </div>
+      ${pr.body ? `<div class="pr-section"><div class="pr-section-title">Description</div><div class="pr-detail-body">${esc(pr.body)}</div></div>` : ''}
+      <div class="pr-section">
+        <div class="pr-section-title">Reviewers</div>
+        <div style="font-size:12px;color:var(--subtext1);">${reviewers}</div>
+      </div>
+      <div class="pr-section">
+        <div class="pr-section-title">Changed Files (${files.length})</div>
+        ${filesHtml}
+        <div id="prDiffArea"></div>
+      </div>
+      <div class="pr-section">
+        <div class="pr-section-title">Comments (${comments.length})</div>
+        ${commentsHtml}
+      </div>
+    </div>
+    <div class="pr-actions">
+      <textarea class="pr-comment-input" id="prCommentInput" placeholder="Leave a comment..." rows="1"></textarea>
+      <button class="pr-btn pr-btn-comment" onclick="addPRComment()">Comment</button>
+      <button class="pr-btn pr-btn-approve" onclick="submitPRReview('APPROVE')">Approve</button>
+      <button class="pr-btn pr-btn-changes" onclick="submitPRReview('REQUEST_CHANGES')">Request Changes</button>
+    </div>`;
+  try { lucide.createIcons(); } catch (_) {}
+}
+
+function selectPRFile(idx) {
+  const file = prsCurrentFiles[idx];
+  if (!file) return;
+  // Highlight active file
+  document.querySelectorAll('.pr-file-item').forEach(el => el.classList.toggle('active', parseInt(el.dataset.idx) === idx));
+  const area = document.getElementById('prDiffArea');
+  if (!file.patch) {
+    area.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--subtext0);">No diff available (binary file or too large)</div>';
+    return;
+  }
+  // Build a full unified diff header so renderInlineDiff can parse it
+  const diffText = `diff --git a/${file.filename} b/${file.filename}\n--- a/${file.filename}\n+++ b/${file.filename}\n${file.patch}`;
+  area.innerHTML = '<div class="pr-diff-container"><div id="prDiffContent"></div></div>';
+  renderInlineDiff(document.getElementById('prDiffContent'), diffText);
+}
+
+async function addPRComment() {
+  const input = document.getElementById('prCommentInput');
+  const body = input.value.trim();
+  if (!body) return;
+  try {
+    const res = await fetch('/api/github/pulls/comment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, body }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    input.value = '';
+    toast('Comment added', 'success');
+    viewPR(prsCurrentNumber); // refresh
+  } catch (e) { toast('Failed to add comment', 'error'); }
+}
+
+async function submitPRReview(event) {
+  let body = '';
+  if (event === 'REQUEST_CHANGES') {
+    body = prompt('What changes are needed?');
+    if (body === null) return; // cancelled
+  }
+  try {
+    const res = await fetch('/api/github/pulls/review', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, event, body }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast(event === 'APPROVE' ? 'PR approved' : 'Changes requested', 'success');
+    viewPR(prsCurrentNumber); // refresh
+  } catch (e) { toast('Failed to submit review', 'error'); }
+}
+
 // ── Notes State ─────────────────────────────────────────────────────────
 let currentNote = null;
 let noteMode = 'edit'; // 'edit' or 'preview'
@@ -4361,6 +4683,7 @@ function switchTab(tab, preserveSearch) {
     filterBacklog();
   }
   if (tab === 'files') { populateFilesRepoSelect(); if (filesCurrentRepo) { loadFileTree(filesCurrentPath); loadProjectScripts(); } }
+  if (tab === 'prs') { populatePRsRepoSelect(); if (prsCurrentRepo) loadPRs(); }
   if (tab === 'notes') loadNotesList();
 }
 
@@ -5656,6 +5979,7 @@ function openSettings() {
   document.getElementById('settingsPAT').value = configData.AzureDevOpsPAT || '';
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
   document.getElementById('settingsWispr').value = configData.WisprFlowKey || '';
+  document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   document.getElementById('settingsDefaultCli').value = configData.DefaultCli || activeCli || 'claude';
   document.getElementById('settingsTeam').value = configData.DefaultTeam || '';
   // Initialize projects list from config
@@ -5760,6 +6084,7 @@ async function saveSettings() {
     AzureDevOpsPAT: document.getElementById('settingsPAT').value.trim(),
     DefaultTeam: document.getElementById('settingsTeam').value.trim(),
     DefaultUser: document.getElementById('settingsUser').value.trim(),
+    GitHubPAT: document.getElementById('settingsGitHubPAT').value.trim(),
     WisprFlowKey: document.getElementById('settingsWispr').value.trim(),
     DefaultCli: defaultCli,
     Repos: configData.Repos || {},
@@ -5988,6 +6313,7 @@ function getCmdActions() {
     { label: 'Go to Board', icon: 'kanban', action: () => switchTab('board'), category: 'Navigate', hint: 'Ctrl+B' },
     { label: 'Go to Backlog', icon: 'list', action: () => switchTab('backlog'), category: 'Navigate' },
     { label: 'Go to Files', icon: 'folder', action: () => switchTab('files'), category: 'Navigate' },
+    { label: 'Go to Pull Requests', icon: 'git-pull-request', action: () => switchTab('prs'), category: 'Navigate' },
     { label: 'Go to Notes', icon: 'file-text', action: () => switchTab('notes'), category: 'Navigate' },
     // Actions
     { label: 'New Work Item', icon: 'plus-circle', action: () => openCreateModal(), category: 'Action', hint: 'Ctrl+Shift+N' },

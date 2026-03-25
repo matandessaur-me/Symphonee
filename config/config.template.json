@@ -4,6 +4,7 @@
   "AzureDevOpsPAT": "",
   "DefaultTeam": "",
   "DefaultUser": "",
+  "GitHubPAT": "",
   "WisprFlowKey": "",
   "DefaultCli": "claude",
   "Repos": {},
