@@ -6699,7 +6699,7 @@ async function installCli(cli) {
       if (cli === 'pwsh') { _pwshStatus = { installed: true, path: data.path }; }
       else { _aiToolsStatus[cli] = { installed: true, path: data.path }; }
       if (data.needsRestart) {
-        toast(`${displayName} installed! You may need to restart the app for it to appear in the terminal.`, 'success');
+        toast(`${displayName} installed! Restart the app so the terminal can use it.`, 'success');
       } else {
         toast(`${displayName} installed successfully`, 'success');
       }
@@ -7296,7 +7296,7 @@ async function obInstallCli(cli) {
       if (cli === 'pwsh') { _obPwshStatus = { installed: true, path: data.path }; }
       else { _obAiStatus[cli] = { installed: true }; }
       if (data.needsRestart) {
-        toast('Installed! You may need to restart the app for it to appear in the terminal.', 'success');
+        toast('Installed! Restart the app so the terminal can use it.', 'success');
       } else {
         toast('Installed!', 'success');
       }
@@ -7319,8 +7319,8 @@ function showInstallFallbackHint(btn, cmd, msg) {
   if (existing && existing.previousElementSibling === card) existing.remove();
   const hint = document.createElement('div');
   hint.className = 'install-fallback-hint';
-  const label = msg || 'Auto-install failed.';
-  hint.innerHTML = `<span style="color:var(--yellow);">${label}</span> Open a terminal and run:<code class="install-fallback-cmd" onclick="navigator.clipboard.writeText('${cmd}');toast('Copied to clipboard','success');" title="Click to copy">${cmd}</code>`;
+  const label = msg || 'Could not install automatically.';
+  hint.innerHTML = `<span style="color:var(--yellow);">${label}</span> You can install it manually -- open a terminal and run:<code class="install-fallback-cmd" onclick="navigator.clipboard.writeText('${cmd}');toast('Copied to clipboard','success');" title="Click to copy">${cmd}</code>`;
   card.insertAdjacentElement('afterend', hint);
 }
 

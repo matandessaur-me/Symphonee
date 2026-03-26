@@ -402,7 +402,7 @@ function handleCliInstall(req, res) {
         } else {
           json(res, {
             ok: false, cli, installed: false,
-            error: err ? err.message : 'Install completed but CLI not found in PATH',
+            error: err ? err.message : 'Installation failed. Please try the manual command below.',
             fallbackCmd: installCmd,
           });
         }
