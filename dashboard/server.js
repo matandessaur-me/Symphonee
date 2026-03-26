@@ -87,6 +87,9 @@ const server = http.createServer(async (req, res) => {
     const wiStateMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/state$/);
     if (wiStateMatch && req.method === 'PATCH') return handleWorkItemState(wiStateMatch[1], req, res);
 
+    const wiCommentMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/comments$/);
+    if (wiCommentMatch && req.method === 'POST') return handleAddWorkItemComment(wiCommentMatch[1], req, res);
+
     // ── Azure DevOps: Velocity ────────────────────────────────────────────
     if (url.pathname === '/api/velocity' && req.method === 'GET') return handleVelocity(res);
 
@@ -256,11 +259,7 @@ function handlePrerequisites(res) {
     } catch (_) {}
   }
 
-  result.pwsh = { installed: false, path: '' };
-  try {
-    const pwshPath = execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 5000 }).trim();
-    if (pwshPath) { result.pwsh.installed = true; result.pwsh.path = pwshPath.split('\n')[0].trim(); }
-  } catch (_) {}
+  result.pwsh = detectPwsh();
 
   try {
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -283,6 +282,26 @@ const CLI_INSTALL_COMMANDS = {
 };
 
 const PWSH_WINGET_CMD = 'winget install Microsoft.PowerShell --accept-source-agreements --accept-package-agreements';
+
+// Detect pwsh.exe via `where` first, then fall back to common install paths.
+// `where` relies on the current process PATH which may be stale after a fresh install.
+function detectPwsh() {
+  try {
+    const where = execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 5000 }).trim();
+    if (where) return { installed: true, path: where.split('\n')[0].trim() };
+  } catch (_) {}
+  // Fallback: check common install locations (PATH may not be refreshed yet)
+  const candidates = [
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '8', 'pwsh.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'PowerShell', 'pwsh.exe'),
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', 'pwsh.exe'),
+  ];
+  for (const c of candidates) {
+    try { if (c && fs.existsSync(c)) return { installed: true, path: c }; } catch (_) {}
+  }
+  return { installed: false, path: '' };
+}
 
 function handleCliInstall(req, res) {
   let body = '';
@@ -326,16 +345,10 @@ function handlePwshInstall(res) {
   // Attempt elevated install via Start-Process -Verb RunAs (triggers UAC prompt)
   const elevatedCmd = `powershell.exe -NoProfile -Command "Start-Process -FilePath 'winget' -ArgumentList 'install Microsoft.PowerShell --accept-source-agreements --accept-package-agreements' -Verb RunAs -Wait -PassThru | Select-Object -ExpandProperty ExitCode"`;
   exec(elevatedCmd, { timeout: 180000, encoding: 'utf8' }, (err, stdout, stderr) => {
-    // Check if pwsh is now available regardless of exit code
-    let installed = false;
-    let installPath = '';
-    try {
-      const where = execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 5000 }).trim();
-      if (where) { installed = true; installPath = where.split('\n')[0].trim(); }
-    } catch (_) {}
-
-    if (installed) {
-      json(res, { ok: true, cli: 'pwsh', installed: true, path: installPath });
+    // Check if pwsh is now available (detectPwsh checks common paths too, not just PATH)
+    const result = detectPwsh();
+    if (result.installed) {
+      json(res, { ok: true, cli: 'pwsh', installed: true, path: result.path });
     } else {
       json(res, {
         ok: false, cli: 'pwsh', installed: false,
@@ -747,13 +760,34 @@ async function handleWorkItemState(id, req, res) {
   }
 }
 
+// ── Add Work Item Comment ──────────────────────────────────────────────────
+async function handleAddWorkItemComment(id, req, res) {
+  try {
+    const { text } = await readBody(req);
+    if (!text) return json(res, { error: 'text is required' }, 400);
+    const result = await adoRequest('POST',
+      `/wit/workitems/${id}/comments?api-version=7.1-preview.4`,
+      { text: sanitizeText(text) }
+    );
+    json(res, { ok: true, id: result.id, text: result.text, author: result.createdBy?.displayName || '', date: result.createdDate || '' });
+  } catch (e) {
+    json(res, { error: e.message }, 502);
+  }
+}
+
 // ── Create Work Item ────────────────────────────────────────────────────────
 // Strip non-ASCII control chars and replacement characters (U+FFFD, etc.)
 // Keeps standard printable ASCII, common Unicode letters/symbols, and whitespace.
 function sanitizeText(str) {
   if (!str) return str;
   return str
-    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')       // replacement/noncharacters
+    .replace(/[\u2014]/g, '--')                   // em dash -> --
+    .replace(/[\u2013]/g, '-')                    // en dash -> -
+    .replace(/[\u2018\u2019\u201A]/g, "'")        // smart single quotes -> '
+    .replace(/[\u201C\u201D\u201E]/g, '"')        // smart double quotes -> "
+    .replace(/[\u2026]/g, '...')                   // ellipsis -> ...
+    .replace(/[\u00A0]/g, ' ')                     // non-breaking space -> space
+    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')         // replacement/noncharacters
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '') // control chars (keep \t \n \r)
     .replace(/[\uD800-\uDFFF]/g, '')              // lone surrogates
     .trim();
@@ -1069,12 +1103,12 @@ async function handleCreatePullRequest(req, res) {
     let body = description || '';
     if (workItemId) {
       const adoUrl = `https://dev.azure.com/${cfg.AzureDevOpsOrg}/${encodeURIComponent(cfg.AzureDevOpsProject)}/_workitems/edit/${workItemId}`;
-      body += `${body ? '\n\n' : ''}AB#${workItemId} — [View in Azure DevOps](${adoUrl})`;
+      body += `${body ? '\n\n' : ''}AB#${workItemId} - [View in Azure DevOps](${adoUrl})`;
     }
 
     const pr = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/pulls`, {
-      title,
-      body,
+      title: sanitizeText(title),
+      body: sanitizeText(body),
       head: source,
       base: target,
     });
@@ -1261,7 +1295,7 @@ async function handleGitHubAddComment(req, res) {
     if (!repo || !number || !body) return json(res, { error: 'repo, number, and body are required' }, 400);
     const gh = resolveGitHub(repo);
     if (gh.error) return json(res, gh, 400);
-    const result = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/issues/${number}/comments`, { body });
+    const result = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/issues/${number}/comments`, { body: sanitizeText(body) });
     json(res, { ok: true, id: result.id });
   } catch (e) { json(res, { error: e.message }, 500); }
 }
@@ -1273,7 +1307,7 @@ async function handleGitHubSubmitReview(req, res) {
     const gh = resolveGitHub(repo);
     if (gh.error) return json(res, gh, 400);
     const payload = { event };
-    if (body) payload.body = body;
+    if (body) payload.body = sanitizeText(body);
     const result = await ghRequest('POST', `/repos/${gh.owner}/${gh.repo}/pulls/${number}/reviews`, payload);
     json(res, { ok: true, state: result.state });
   } catch (e) { json(res, { error: e.message }, 500); }
@@ -2007,15 +2041,12 @@ const terminals = new Map(); // termId -> { pty, cols, rows }
 let defaultCols = 120, defaultRows = 30;
 
 function findShell() {
-  try { execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); return 'pwsh.exe'; } catch (_) {
-    try { execSync('where powershell.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); return 'powershell.exe'; } catch (_2) {
-      const candidates = [
-        path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
-      ];
-      for (const c of candidates) { if (fs.existsSync(c)) return c; }
-      return 'powershell.exe';
-    }
+  const pwsh = detectPwsh();
+  if (pwsh.installed) return pwsh.path;
+  try { execSync('where powershell.exe 2>nul', { encoding: 'utf8', timeout: 3000 }).trim(); return 'powershell.exe'; } catch (_) {
+    const fallback = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    if (fs.existsSync(fallback)) return fallback;
+    return 'powershell.exe';
   }
 }
 const shellPath = findShell();

@@ -546,6 +546,28 @@
     .wi-linked-id { font-family: var(--font-mono); font-size: 11px; color: var(--subtext0); }
     .wi-linked-rel { font-size: 10px; color: var(--overlay1); }
 
+    /* ── @mention autocomplete ───────────────────────────────────────────── */
+    .mention-dropdown {
+      position: absolute; z-index: 400; background: var(--base); border: 1px solid var(--surface1);
+      border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0,0,0,0.4); max-height: 180px;
+      overflow-y: auto; display: none; min-width: 200px;
+    }
+    .mention-dropdown.open { display: block; }
+    .mention-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer;
+      font: 12px var(--font-ui); color: var(--text); transition: background 0.1s;
+    }
+    .mention-item:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+    .mention-item:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+    .mention-item.active, .mention-item:hover { background: var(--surface1); }
+    .mention-avatar {
+      width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+      color: var(--crust); display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; flex-shrink: 0;
+    }
+    .mention-name { font-weight: 600; color: var(--text); }
+    .mention-email { font-size: 10px; color: var(--subtext0); }
+
     /* ── Files panel ──────────────────────────────────────────────────────── */
     .files-container { display: flex; width: 100%; height: 100%; }
     .files-sidebar {
@@ -2000,6 +2022,27 @@
         <div class="pr-comment-modal-actions">
           <button class="pr-btn pr-btn-comment" onclick="closePRCommentModal()">Cancel</button>
           <button class="pr-btn pr-btn-approve" onclick="submitPRCommentModal()" style="background:var(--accent);">Submit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- @mention Dropdown (shared by inline input + modal textarea) -->
+    <div class="mention-dropdown" id="mentionDropdown"></div>
+
+    <!-- Work Item Comment Modal -->
+    <div class="pr-comment-modal" id="wiCommentModal">
+      <div class="pr-comment-modal-inner">
+        <div class="pr-comment-modal-header">
+          <span>Add a comment</span>
+          <button class="pr-comment-modal-close" onclick="closeWICommentModal()">&times;</button>
+        </div>
+        <div class="pr-comment-modal-body">
+          <div style="font-size:10px;color:var(--subtext0);margin-bottom:8px;">Supports Markdown formatting</div>
+          <textarea class="pr-comment-modal-textarea" id="wiCommentModalInput" placeholder="Write your comment..." style="height:200px;font-family:var(--font-mono);font-size:12px;"></textarea>
+        </div>
+        <div class="pr-comment-modal-actions">
+          <button class="pr-btn pr-btn-comment" onclick="closeWICommentModal()">Cancel</button>
+          <button class="pr-btn pr-btn-approve" id="wiCommentModalSubmit" style="background:var(--accent);">Submit</button>
         </div>
       </div>
     </div>
@@ -4092,6 +4135,8 @@ async function loadPRs() {
     if (data.error) { list.innerHTML = `<div class="empty-state" style="padding:20px;"><div class="empty-state-text">${esc(data.error)}</div></div>`; return; }
     prsData = data.pulls || [];
     renderPRList();
+    // Also refresh the currently open PR detail
+    if (prsCurrentNumber) viewPR(prsCurrentNumber);
   } catch (e) {
     list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">Failed to load PRs</div></div>';
   }
@@ -4358,7 +4403,7 @@ async function submitPRCommentModal() {
     document.getElementById('prCommentInput').value = '';
     closePRCommentModal();
     toast('Comment added', 'success');
-    viewPR(prsCurrentNumber);
+    setTimeout(() => viewPR(prsCurrentNumber), 1500); // brief delay for GitHub API propagation
   } catch (e) { toast('Failed to add comment', 'error'); }
 }
 
@@ -4375,7 +4420,7 @@ async function addPRComment() {
     if (data.error) { toast(data.error, 'error'); return; }
     input.value = '';
     toast('Comment added', 'success');
-    viewPR(prsCurrentNumber); // refresh
+    setTimeout(() => viewPR(prsCurrentNumber), 1500); // brief delay for GitHub API propagation
   } catch (e) { toast('Failed to add comment', 'error'); }
 }
 
@@ -4388,7 +4433,7 @@ async function submitPRReview(event, body) {
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }
     toast(event === 'APPROVE' ? 'PR approved' : 'Changes requested', 'success');
-    viewPR(prsCurrentNumber);
+    setTimeout(() => viewPR(prsCurrentNumber), 1500);
   } catch (e) { toast('Failed to submit review', 'error'); }
 }
 
@@ -5800,18 +5845,23 @@ async function viewWorkItem(id) {
           `).join('')}
         </div>
       ` : ''}
-      ${wi.comments.length > 0 ? `
-        <div class="wi-detail-section">
-          <div class="wi-detail-section-title">Comments</div>
-          ${wi.comments.map(c => `
+      <div class="wi-detail-section">
+        <div class="wi-detail-section-title">Discussion</div>
+        <div id="wiCommentsList">
+          ${wi.comments.length > 0 ? wi.comments.map(c => `
             <div class="wi-comment">
               <span class="wi-comment-author">${esc(c.author)}</span>
               <span class="wi-comment-date">${formatDate(c.date)}</span>
               <div class="wi-comment-body">${c.text}</div>
             </div>
-          `).join('')}
+          `).join('') : '<div style="font-size:12px;color:var(--subtext0);padding:8px 0;">No comments yet.</div>'}
         </div>
-      ` : ''}
+        <div style="margin-top:10px;display:flex;gap:6px;align-items:center;">
+          <input class="pr-comment-input" id="wiCommentInput" type="text" placeholder="Leave a comment..." style="flex:1;">
+          <button class="pr-expand-btn" onclick="openWICommentModal(${wi.id})" title="Expand"><i data-lucide="expand" style="width:14px;height:14px;"></i></button>
+          <button class="pr-btn pr-btn-comment" onclick="addWIComment(${wi.id})">Comment</button>
+        </div>
+      </div>
       <div style="margin-top:20px;padding:14px;background:var(--surface0);border-radius:var(--radius-lg);border:1px solid var(--surface1);">
         ${configData.Repos && Object.keys(configData.Repos).length > 0 ? `
           <div style="display:flex;align-items:center;gap:10px;">
@@ -5829,6 +5879,8 @@ async function viewWorkItem(id) {
       </div>
     `;
     lucide.createIcons();
+    // Attach @mention autocomplete to inline comment input
+    attachMention(document.getElementById('wiCommentInput'));
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text">Failed to load work item</div></div>`;
   }
@@ -5842,6 +5894,211 @@ function closeWorkItemTab() {
   document.getElementById('workitemTabBtn').style.display = 'none';
   currentWiDetail = null;
   switchTab('backlog');
+}
+
+// ── @mention autocomplete ────────────────────────────────────────────
+let _mentionCache = null;
+let _mentionActiveIdx = -1;
+let _mentionTarget = null; // the input/textarea being typed in
+let _mentionStart = -1;    // caret position of the '@'
+
+async function getMentionMembers() {
+  if (_mentionCache) return _mentionCache;
+  try {
+    const res = await fetch('/api/team-members');
+    const data = await res.json();
+    if (!data.error) _mentionCache = data;
+    return _mentionCache || [];
+  } catch (_) { return []; }
+}
+
+function mentionSearch(query, members) {
+  const q = query.toLowerCase();
+  return members.filter(m =>
+    m.displayName.toLowerCase().includes(q) || m.uniqueName.toLowerCase().includes(q)
+  ).slice(0, 8);
+}
+
+function renderMentionDropdown(matches) {
+  const dd = document.getElementById('mentionDropdown');
+  if (!matches.length) { dd.classList.remove('open'); return; }
+  _mentionActiveIdx = 0;
+  dd.innerHTML = matches.map((m, i) => `
+    <div class="mention-item${i === 0 ? ' active' : ''}" data-idx="${i}" data-name="${esc(m.displayName)}">
+      <div class="mention-avatar">${(m.displayName || '?')[0].toUpperCase()}</div>
+      <div>
+        <div class="mention-name">${esc(m.displayName)}</div>
+        <div class="mention-email">${esc(m.uniqueName)}</div>
+      </div>
+    </div>
+  `).join('');
+  dd.classList.add('open');
+
+  // Position near the caret
+  positionMentionDropdown();
+
+  // Click handler
+  dd.querySelectorAll('.mention-item').forEach(item => {
+    item.onmousedown = (e) => {
+      e.preventDefault();
+      acceptMention(item.dataset.name);
+    };
+  });
+}
+
+function positionMentionDropdown() {
+  const dd = document.getElementById('mentionDropdown');
+  if (!_mentionTarget) return;
+  const rect = _mentionTarget.getBoundingClientRect();
+  // Place below the input, aligned left
+  dd.style.left = rect.left + 'px';
+  dd.style.top = (rect.bottom + 4) + 'px';
+  dd.style.minWidth = Math.min(rect.width, 280) + 'px';
+}
+
+function acceptMention(name) {
+  if (!_mentionTarget) return;
+  const el = _mentionTarget;
+  const val = el.value;
+  const before = val.slice(0, _mentionStart);
+  const after = val.slice(el.selectionStart || _mentionStart);
+  el.value = before + '@' + name + ' ' + after;
+  // Move caret after the inserted name
+  const newPos = _mentionStart + name.length + 2; // @name + space
+  el.setSelectionRange(newPos, newPos);
+  el.focus();
+  closeMentionDropdown();
+}
+
+function closeMentionDropdown() {
+  const dd = document.getElementById('mentionDropdown');
+  dd.classList.remove('open');
+  _mentionActiveIdx = -1;
+  _mentionStart = -1;
+}
+
+async function handleMentionInput(e) {
+  const el = e.target;
+  _mentionTarget = el;
+  const val = el.value;
+  const caret = el.selectionStart || 0;
+
+  // Find the '@' before the caret with no spaces between @ and caret
+  const textBefore = val.slice(0, caret);
+  const atIdx = textBefore.lastIndexOf('@');
+  if (atIdx < 0) { closeMentionDropdown(); return; }
+
+  // The character before @ must be start-of-string, space, or newline
+  if (atIdx > 0 && !/[\s\n]/.test(val[atIdx - 1])) { closeMentionDropdown(); return; }
+
+  const query = textBefore.slice(atIdx + 1);
+  // If query has a space, mention is done
+  if (/\s/.test(query)) { closeMentionDropdown(); return; }
+
+  _mentionStart = atIdx;
+  const members = await getMentionMembers();
+  const matches = query.length === 0 ? members.slice(0, 8) : mentionSearch(query, members);
+  renderMentionDropdown(matches);
+}
+
+function handleMentionKeydown(e) {
+  const dd = document.getElementById('mentionDropdown');
+  if (!dd.classList.contains('open')) return;
+  const items = dd.querySelectorAll('.mention-item');
+  if (!items.length) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    items[_mentionActiveIdx]?.classList.remove('active');
+    _mentionActiveIdx = (_mentionActiveIdx + 1) % items.length;
+    items[_mentionActiveIdx]?.classList.add('active');
+    items[_mentionActiveIdx]?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    items[_mentionActiveIdx]?.classList.remove('active');
+    _mentionActiveIdx = (_mentionActiveIdx - 1 + items.length) % items.length;
+    items[_mentionActiveIdx]?.classList.add('active');
+    items[_mentionActiveIdx]?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (_mentionActiveIdx >= 0 && items[_mentionActiveIdx]) {
+      e.preventDefault();
+      acceptMention(items[_mentionActiveIdx].dataset.name);
+    }
+  } else if (e.key === 'Escape') {
+    closeMentionDropdown();
+  }
+}
+
+// Attach to an input/textarea element
+function attachMention(el) {
+  if (!el || el._mentionAttached) return;
+  el._mentionAttached = true;
+  el.addEventListener('input', handleMentionInput);
+  el.addEventListener('keydown', handleMentionKeydown);
+  el.addEventListener('blur', () => setTimeout(closeMentionDropdown, 200));
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.mention-dropdown') && !e.target.closest('#wiCommentInput') && !e.target.closest('#wiCommentModalInput')) {
+    closeMentionDropdown();
+  }
+});
+
+let _wiCommentTargetId = null;
+
+function openWICommentModal(wiId) {
+  _wiCommentTargetId = wiId;
+  const inline = document.getElementById('wiCommentInput');
+  const modal = document.getElementById('wiCommentModal');
+  const textarea = document.getElementById('wiCommentModalInput');
+  textarea.value = inline ? inline.value : '';
+  modal.classList.add('open');
+  const submitBtn = document.getElementById('wiCommentModalSubmit');
+  submitBtn.onclick = () => submitWICommentModal();
+  attachMention(textarea);
+  setTimeout(() => textarea.focus(), 100);
+}
+
+function closeWICommentModal() {
+  document.getElementById('wiCommentModal').classList.remove('open');
+}
+
+async function submitWICommentModal() {
+  const textarea = document.getElementById('wiCommentModalInput');
+  const text = textarea.value.trim();
+  if (!text || !_wiCommentTargetId) return;
+  try {
+    const res = await fetch(`/api/workitems/${_wiCommentTargetId}/comments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    textarea.value = '';
+    const inline = document.getElementById('wiCommentInput');
+    if (inline) inline.value = '';
+    closeWICommentModal();
+    toast('Comment added', 'success');
+    viewWorkItem(_wiCommentTargetId);
+  } catch (e) { toast('Failed to add comment', 'error'); }
+}
+
+async function addWIComment(wiId) {
+  const input = document.getElementById('wiCommentInput');
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    const res = await fetch(`/api/workitems/${wiId}/comments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    input.value = '';
+    toast('Comment added', 'success');
+    viewWorkItem(wiId);
+  } catch (e) { toast('Failed to add comment', 'error'); }
 }
 
 // ── Start Working ───────────────────────────────────────────────────────
@@ -6692,6 +6949,10 @@ async function refreshAll() {
   try {
     await loadWorkItems(true);
     loadVelocity();
+    // Refresh the currently open work item detail if viewing one
+    if (currentWiDetail) viewWorkItem(currentWiDetail.id);
+    // Refresh the currently open PR detail if viewing one
+    if (prsCurrentNumber) viewPR(prsCurrentNumber);
   } catch (_) {}
   await minWait;
   hideLoading();

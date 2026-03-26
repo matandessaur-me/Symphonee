@@ -95,6 +95,7 @@ You are running inside a terminal with access to:
 - Changing work item state (moving items between columns)
 - Pushing code to remote repositories
 - Commenting on GitHub pull requests (POST to /api/github/pulls/comment)
+- Commenting on Azure DevOps work items (POST to /api/workitems/{id}/comments)
 - Approving or requesting changes on GitHub pull requests (POST to /api/github/pulls/review)
 - Any action that modifies data in Azure DevOps, GitHub, or external systems
 
@@ -108,6 +109,7 @@ You are running inside a terminal with access to:
 | POST | `/api/workitems/create` | Create a work item. Body: `{ type, title, description, priority, tags, assignedTo, iterationPath, storyPoints, acceptanceCriteria }` |
 | PATCH | `/api/workitems/{id}` | Update fields. Body: `{ title, description, state, assignedTo, priority, tags, iterationPath, storyPoints, acceptanceCriteria }` |
 | PATCH | `/api/workitems/{id}/state` | Change state. Body: `{ state }` |
+| POST | `/api/workitems/{id}/comments` | Add a comment to a work item. Body: `{ text }` |
 | POST | `/api/pull-request` | Create a pull request on GitHub. Body: `{ repoName, title, description, sourceBranch, targetBranch, workItemId }` |
 
 ### Sprints & Velocity
@@ -294,8 +296,10 @@ This returns `{ selectedIteration, selectedIterationName, activeRepo }`.
 - If `selectedIteration` has a value, assign the work item to that iteration.
 - **NEVER assume the current sprint.** Always respect the user's selection.
 
+### CRITICAL: No Special Unicode Characters -- ANYWHERE
+**Use only plain ASCII characters in ALL text you write -- titles, descriptions, comments, PR bodies, commit messages, EVERYWHERE.** No emojis, no em dashes, no en dashes, no smart quotes, no ellipsis characters, no non-breaking spaces, no special Unicode symbols. Use `--` instead of em dashes, `-` instead of en dashes, straight quotes instead of smart quotes, `...` instead of ellipsis. These special characters show up as corrupted characters in Azure DevOps and GitHub. The server sanitizes text as a safety net, but you should never produce these characters in the first place.
+
 ### Creating Work Items
-**Use only plain ASCII characters in titles and descriptions.** No emojis, no smart quotes, no special Unicode symbols. These show up as corrupted characters (�) in Azure DevOps.
 
 When creating work items, ALWAYS include:
 1. **Title** — clear, concise, descriptive (plain text only, no special characters)
