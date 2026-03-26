@@ -70,6 +70,8 @@ const server = http.createServer(async (req, res) => {
     // ── Config ────────────────────────────────────────────────────────────
     if (url.pathname === '/api/config' && req.method === 'GET')  return handleGetConfig(res);
     if (url.pathname === '/api/config' && req.method === 'POST') return handleSaveConfig(req, res);
+    if (url.pathname === '/api/config/export' && req.method === 'GET')  return handleExportConfig(res);
+    if (url.pathname === '/api/config/import' && req.method === 'POST') return handleImportConfig(req, res);
     if (url.pathname === '/api/prerequisites')                   return handlePrerequisites(res);
     if (url.pathname === '/api/cli/install' && req.method === 'POST') return handleCliInstall(req, res);
 
@@ -218,6 +220,47 @@ async function handleSaveConfig(req, res) {
   json(res, { ok: true });
 }
 
+// Sensitive fields to strip from exports (PATs, API keys)
+const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WisprFlowKey'];
+
+function handleExportConfig(res) {
+  const cfg = getConfig();
+  // Strip sensitive fields
+  const exportCfg = { ...cfg };
+  for (const key of SENSITIVE_KEYS) delete exportCfg[key];
+  exportCfg._exportedAt = new Date().toISOString();
+  exportCfg._exportedFrom = 'DevOps Pilot';
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Content-Disposition': 'attachment; filename="devops-pilot-settings.json"',
+  });
+  res.end(JSON.stringify(exportCfg, null, 2));
+}
+
+async function handleImportConfig(req, res) {
+  const incoming = await readBody(req);
+  if (!incoming || typeof incoming !== 'object') {
+    return json(res, { error: 'Invalid settings file' }, 400);
+  }
+  // Remove export metadata
+  delete incoming._exportedAt;
+  delete incoming._exportedFrom;
+  // Merge with existing config (preserve existing PATs if not provided)
+  let existing = {};
+  try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
+  const config = { ...existing, ...incoming };
+  // Restore sensitive fields from existing if not in import
+  for (const key of SENSITIVE_KEYS) {
+    if (!incoming[key] && existing[key]) config[key] = existing[key];
+  }
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+  teamAreasCache = { data: null, team: null, ts: 0 };
+  iterationsCache = { data: null, ts: 0 };
+  workItemsCache = { data: null, key: null, ts: 0 };
+  json(res, { ok: true });
+}
+
 // ── Watch config for external changes ─────────────────────────────────────
 let configWatchDebounce = null;
 try {
@@ -242,21 +285,8 @@ function handlePrerequisites(res) {
     config: { exists: false, complete: false },
   };
 
-  const cliChecks = [
-    { id: 'claude',  cmd: 'where claude.cmd 2>nul || where claude 2>nul' },
-    { id: 'gemini',  cmd: 'where gemini.cmd 2>nul || where gemini 2>nul' },
-    { id: 'copilot', cmd: 'where copilot.cmd 2>nul || where copilot 2>nul' },
-    { id: 'codex',   cmd: 'where codex.cmd 2>nul || where codex 2>nul' },
-  ];
-  for (const cli of cliChecks) {
-    result.cliTools[cli.id] = { installed: false, path: '' };
-    try {
-      const where = execSync(cli.cmd, { encoding: 'utf8', timeout: 5000 }).trim();
-      if (where) {
-        result.cliTools[cli.id].installed = true;
-        result.cliTools[cli.id].path = where.split('\n')[0].trim();
-      }
-    } catch (_) {}
+  for (const id of ['claude', 'gemini', 'copilot', 'codex']) {
+    result.cliTools[id] = detectCli(id);
   }
 
   result.pwsh = detectPwsh();
@@ -280,6 +310,47 @@ const CLI_INSTALL_COMMANDS = {
   copilot: 'npm install -g @githubnext/github-copilot-cli',
   codex:   'npm install -g @openai/codex',
 };
+
+// Detect a CLI tool via `where` first, then fall back to common npm global paths.
+// After a fresh npm install the current process PATH may be stale, so we also
+// check the typical npm global bin directories directly (same strategy as detectPwsh).
+// Returns { installed, path, inPath } -- `inPath` indicates if `where` found it (ready to use)
+// vs found via fallback (installed but may need terminal restart).
+function detectCli(cli) {
+  // 1. Try `where` (checks current PATH -- means it's ready to use right now)
+  const whereCmd = `where ${cli}.cmd 2>nul || where ${cli} 2>nul`;
+  try {
+    const where = execSync(whereCmd, { encoding: 'utf8', timeout: 5000 }).trim();
+    if (where) return { installed: true, path: where.split('\n')[0].trim(), inPath: true };
+  } catch (_) {}
+
+  // 2. Fallback: check common npm global install locations
+  const npmPrefixes = [];
+  // Try to get the actual npm prefix
+  try {
+    const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000 }).trim();
+    if (prefix) npmPrefixes.push(prefix);
+  } catch (_) {}
+  // Common Windows locations
+  const appData = process.env.APPDATA || '';
+  if (appData) npmPrefixes.push(path.join(appData, 'npm'));
+  const localAppData = process.env.LOCALAPPDATA || '';
+  if (localAppData) npmPrefixes.push(path.join(localAppData, 'npm'));
+  // nvm-windows uses per-version dirs
+  const nvmHome = process.env.NVM_HOME || process.env.NVM_SYMLINK || '';
+  if (nvmHome) npmPrefixes.push(nvmHome);
+  // Deduplicate
+  const seen = new Set();
+  for (const prefix of npmPrefixes) {
+    if (!prefix || seen.has(prefix.toLowerCase())) continue;
+    seen.add(prefix.toLowerCase());
+    for (const ext of ['.cmd', '.ps1', '']) {
+      const candidate = path.join(prefix, cli + ext);
+      try { if (fs.existsSync(candidate)) return { installed: true, path: candidate, inPath: false }; } catch (_) {}
+    }
+  }
+  return { installed: false, path: '', inPath: false };
+}
 
 const PWSH_WINGET_CMD = 'winget install Microsoft.PowerShell --accept-source-agreements --accept-package-agreements';
 
@@ -319,19 +390,21 @@ function handleCliInstall(req, res) {
       // Run install asynchronously
       const { exec } = require('child_process');
       exec(installCmd, { timeout: 120000, encoding: 'utf8' }, (err, stdout, stderr) => {
-        // After install, re-check if it's actually available
-        const checkCmd = `where ${cli}.cmd 2>nul || where ${cli} 2>nul`;
-        let installed = false;
-        let installPath = '';
-        try {
-          const where = execSync(checkCmd, { encoding: 'utf8', timeout: 5000 }).trim();
-          if (where) { installed = true; installPath = where.split('\n')[0].trim(); }
-        } catch (_) {}
+        // After install, re-check using detectCli (checks PATH + common npm global dirs)
+        const result = detectCli(cli);
 
-        if (installed) {
-          json(res, { ok: true, cli, installed: true, path: installPath });
+        if (result.installed) {
+          json(res, {
+            ok: true, cli, installed: true, path: result.path,
+            // If found via fallback (not in PATH), the user may need to restart the app
+            needsRestart: !result.inPath,
+          });
         } else {
-          json(res, { ok: false, cli, installed: false, error: err ? err.message : 'Install completed but CLI not found in PATH' });
+          json(res, {
+            ok: false, cli, installed: false,
+            error: err ? err.message : 'Install completed but CLI not found in PATH',
+            fallbackCmd: installCmd,
+          });
         }
       });
     } catch (e) {

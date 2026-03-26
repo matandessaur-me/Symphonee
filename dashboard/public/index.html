@@ -1229,6 +1229,20 @@
     .ai-tool-btn.installing {
       background: transparent; border-color: var(--yellow); color: var(--yellow); cursor: wait;
     }
+    .settings-export-import-btn { font-size: 11px !important; color: var(--subtext0) !important; opacity: 0.8; }
+    .settings-export-import-btn:hover { opacity: 1; }
+    .export-import-menu {
+      position: absolute; bottom: 100%; left: 0; margin-bottom: 4px;
+      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); min-width: 170px; z-index: 10; overflow: hidden;
+    }
+    .export-import-menu-item {
+      display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+      background: transparent; border: none; color: var(--text); font: 12px var(--font-ui);
+      cursor: pointer; text-align: left; width: 100%; transition: background 0.12s;
+    }
+    .export-import-menu-item:hover { background: var(--surface1); }
+    .export-import-menu-item i { width: 14px; height: 14px; flex-shrink: 0; }
     .install-fallback-hint {
       font-size: 11px; color: var(--subtext1); padding: 8px 12px; margin-top: 4px;
       border-left: 2px solid var(--yellow); background: color-mix(in srgb, var(--yellow) 5%, transparent);
@@ -2200,6 +2214,10 @@
         </button>
         <button class="settings-nav-btn" onclick="switchSettingsTab('other', this)">
           <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i> Other
+        </button>
+        <div style="flex:1;"></div>
+        <button class="settings-nav-btn settings-export-import-btn" onclick="openExportImportMenu(this)">
+          <i data-lucide="arrow-left-right" style="width:14px;height:14px;"></i> Export / Import
         </button>
       </div>
       <div class="settings-content">
@@ -6680,14 +6698,19 @@ async function installCli(cli) {
     if (data.ok && data.installed) {
       if (cli === 'pwsh') { _pwshStatus = { installed: true, path: data.path }; }
       else { _aiToolsStatus[cli] = { installed: true, path: data.path }; }
-      toast(`${displayName} installed successfully`, 'success');
+      if (data.needsRestart) {
+        toast(`${displayName} installed! You may need to restart the app for it to appear in the terminal.`, 'success');
+      } else {
+        toast(`${displayName} installed successfully`, 'success');
+      }
       renderAiTools();
     } else {
       btn.className = 'ai-tool-btn install';
       btn.textContent = 'Retry';
       btn.disabled = false;
-      toast(`Failed to install ${displayName}: ${data.error || 'Unknown error'}`, 'error');
-      if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd); }
+      const errMsg = data.error || 'Unknown error';
+      toast(`Failed to install ${displayName}: ${errMsg}`, 'error');
+      if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd, errMsg); }
     }
   } catch (e) {
     btn.className = 'ai-tool-btn install';
@@ -6853,6 +6876,75 @@ async function saveSettings() {
   }
 }
 
+// ── Export / Import Settings ────────────────────────────────────────────
+function openExportImportMenu(btn) {
+  // Close existing menu if any
+  const existing = document.querySelector('.export-import-menu');
+  if (existing) { existing.remove(); return; }
+  const menu = document.createElement('div');
+  menu.className = 'export-import-menu';
+  menu.innerHTML = `
+    <button class="export-import-menu-item" onclick="exportSettings()">
+      <i data-lucide="download" style="width:14px;height:14px;"></i> Export Settings
+    </button>
+    <button class="export-import-menu-item" onclick="importSettings()">
+      <i data-lucide="upload" style="width:14px;height:14px;"></i> Import Settings
+    </button>`;
+  btn.style.position = 'relative';
+  btn.appendChild(menu);
+  try { lucide.createIcons(); } catch (_) {}
+  // Close on outside click
+  setTimeout(() => {
+    const close = (e) => { if (!menu.contains(e.target) && e.target !== btn) { menu.remove(); document.removeEventListener('click', close); } };
+    document.addEventListener('click', close);
+  }, 0);
+}
+
+function exportSettings() {
+  document.querySelector('.export-import-menu')?.remove();
+  const a = document.createElement('a');
+  a.href = '/api/config/export';
+  a.download = 'devops-pilot-settings.json';
+  a.click();
+  toast('Settings exported (PATs excluded for security)', 'success');
+}
+
+function importSettings() {
+  document.querySelector('.export-import-menu')?.remove();
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch('/api/config/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const result = await res.json();
+      if (result.ok) {
+        closeSettings();
+        showLoading('Importing settings...');
+        const minWait = new Promise(r => setTimeout(r, 3000));
+        await loadConfig(true);
+        loadVelocity();
+        await minWait;
+        hideLoading();
+        toast('Settings imported successfully', 'success');
+      } else {
+        toast(`Import failed: ${result.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      toast('Invalid settings file', 'error');
+    }
+  };
+  input.click();
+}
+
 // ── Add Repo Modal ──────────────────────────────────────────────────────
 function openAddRepoModal() {
   document.getElementById('repoName').value = '';
@@ -6985,6 +7077,11 @@ const OB_STEPS = [
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="cloud" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Azure DevOps</strong><span>Connect to your boards and sprints</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="folder-git-2" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Repositories</strong><span>Add your local code repositories</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="settings" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Integrations</strong><span>GitHub PRs and voice input</span></div></div>
+    </div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--surface1);text-align:center;">
+      <button class="onboarding-btn onboarding-btn-secondary" onclick="obImportSettings()" style="font-size:11px;padding:6px 16px;opacity:0.85;">
+        <i data-lucide="upload" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"></i> Import settings from another machine
+      </button>
     </div>`,
   }),
   // 2: AI Tools
@@ -7198,25 +7295,68 @@ async function obInstallCli(cli) {
     if (data.ok && data.installed) {
       if (cli === 'pwsh') { _obPwshStatus = { installed: true, path: data.path }; }
       else { _obAiStatus[cli] = { installed: true }; }
-      toast(`Installed!`, 'success'); obRenderAiTools();
+      if (data.needsRestart) {
+        toast('Installed! You may need to restart the app for it to appear in the terminal.', 'success');
+      } else {
+        toast('Installed!', 'success');
+      }
+      obRenderAiTools();
     }
     else {
       btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false;
-      toast('Install failed', 'error');
-      if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd); }
+      const errMsg = data.error || 'Install failed';
+      toast(`Install failed: ${errMsg}`, 'error');
+      if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd, errMsg); }
     }
   } catch (_) { btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false; }
 }
 
-function showInstallFallbackHint(btn, cmd) {
+function showInstallFallbackHint(btn, cmd, msg) {
   const card = btn.closest('.ai-tool-card');
   if (!card) return;
   // Don't add duplicate hints
-  if (card.querySelector('.install-fallback-hint')) return;
+  const existing = card.parentElement.querySelector('.install-fallback-hint');
+  if (existing && existing.previousElementSibling === card) existing.remove();
   const hint = document.createElement('div');
   hint.className = 'install-fallback-hint';
-  hint.innerHTML = `<span style="color:var(--yellow);">Requires admin privileges.</span> Open a terminal as <strong>Administrator</strong> and run:<code class="install-fallback-cmd" onclick="navigator.clipboard.writeText('${cmd}');toast('Copied to clipboard','success');" title="Click to copy">${cmd}</code>`;
+  const label = msg || 'Auto-install failed.';
+  hint.innerHTML = `<span style="color:var(--yellow);">${label}</span> Open a terminal and run:<code class="install-fallback-cmd" onclick="navigator.clipboard.writeText('${cmd}');toast('Copied to clipboard','success');" title="Click to copy">${cmd}</code>`;
   card.insertAdjacentElement('afterend', hint);
+}
+
+async function obImportSettings() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch('/api/config/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const result = await res.json();
+      if (result.ok) {
+        document.getElementById('onboarding').classList.remove('visible');
+        showLoading('Importing settings...');
+        const minWait = new Promise(r => setTimeout(r, 3000));
+        await loadConfig(true);
+        loadVelocity();
+        await minWait;
+        hideLoading();
+        toast('Settings imported successfully! You may need to re-enter your PATs in Settings.', 'success');
+      } else {
+        toast(`Import failed: ${result.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      toast('Invalid settings file', 'error');
+    }
+  };
+  input.click();
 }
 
 function obRenderRepos() {
