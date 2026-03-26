@@ -307,7 +307,7 @@ function handlePrerequisites(res) {
 const CLI_INSTALL_COMMANDS = {
   claude:  'npm install -g @anthropic-ai/claude-code',
   gemini:  'npm install -g @google/gemini-cli',
-  copilot: 'npm install -g @githubnext/github-copilot-cli',
+  copilot: 'npm install -g @github/copilot',
   codex:   'npm install -g @openai/codex',
 };
 

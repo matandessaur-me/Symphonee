@@ -6603,7 +6603,7 @@ async function submitCreateWorkItem() {
 const AI_TOOLS_META = {
   claude:  { name: 'Claude Code',  color: '#d97757', pkg: '@anthropic-ai/claude-code', docs: 'https://docs.anthropic.com/en/docs/claude-code' },
   gemini:  { name: 'Gemini CLI',   color: '#078efa', pkg: '@google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
-  copilot: { name: 'Copilot CLI',  color: '#8534f3', pkg: '@githubnext/github-copilot-cli', docs: 'https://githubnext.com/projects/copilot-cli' },
+  copilot: { name: 'Copilot CLI',  color: '#8534f3', pkg: '@github/copilot', docs: 'https://www.npmjs.com/package/@github/copilot' },
   codex:   { name: 'Codex CLI',    color: '#10a37f', pkg: '@openai/codex', docs: 'https://github.com/openai/codex' },
 };
 
@@ -7267,7 +7267,7 @@ function obRenderAiTools() {
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin:8px 0 6px;">AI Tools</div>`;
 
   // AI tool cards
-  const meta = { claude: { name: 'Claude Code', color: '#d97757', pkg: '@anthropic-ai/claude-code' }, gemini: { name: 'Gemini CLI', color: '#078efa', pkg: '@google/gemini-cli' }, copilot: { name: 'Copilot CLI', color: '#8534f3', pkg: '@githubnext/github-copilot-cli' }, codex: { name: 'Codex CLI', color: '#10a37f', pkg: '@openai/codex' } };
+  const meta = { claude: { name: 'Claude Code', color: '#d97757', pkg: '@anthropic-ai/claude-code' }, gemini: { name: 'Gemini CLI', color: '#078efa', pkg: '@google/gemini-cli' }, copilot: { name: 'Copilot CLI', color: '#8534f3', pkg: '@github/copilot' }, codex: { name: 'Codex CLI', color: '#10a37f', pkg: '@openai/codex' } };
   const toolCards = Object.entries(meta).map(([id, m]) => {
     const installed = _obAiStatus[id]?.installed;
     return `<div class="ai-tool-card">
