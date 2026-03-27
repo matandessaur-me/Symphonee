@@ -123,6 +123,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST')  return handleGitHubAddComment(req, res);
     if (url.pathname === '/api/github/pulls/review' && req.method === 'POST')   return handleGitHubSubmitReview(req, res);
     if (url.pathname === '/api/github/image' && req.method === 'GET')          return handleGitHubImageProxy(url, res);
+    if (url.pathname === '/api/github/user-repos' && req.method === 'GET')    return handleGitHubUserRepos(url, res);
+    if (url.pathname === '/api/github/clone' && req.method === 'POST')        return handleGitHubClone(req, res);
 
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
@@ -144,6 +146,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/git/pull' && req.method === 'POST')      return handleGitPull(req, res);
     if (url.pathname === '/api/git/push' && req.method === 'POST')      return handleGitPush(req, res);
     if (url.pathname === '/api/git/fetch' && req.method === 'POST')     return handleGitFetch(req, res);
+    if (url.pathname === '/api/git/discard' && req.method === 'POST')   return handleGitDiscard(req, res);
 
     // ── Split Diff ────────────────────────────────────────────────────────
     if (url.pathname === '/api/git/split-diff' && req.method === 'GET') return handleSplitDiff(url, res);
@@ -227,9 +230,9 @@ const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WisprFlowKey'];
 
 function handleExportConfig(res) {
   const cfg = getConfig();
-  // Strip sensitive fields
+  // Strip machine-specific fields only (repos have local paths)
   const exportCfg = { ...cfg };
-  for (const key of SENSITIVE_KEYS) delete exportCfg[key];
+  delete exportCfg.Repos;
   exportCfg._exportedAt = new Date().toISOString();
   exportCfg._exportedFrom = 'DevOps Pilot';
   res.writeHead(200, {
@@ -244,9 +247,10 @@ async function handleImportConfig(req, res) {
   if (!incoming || typeof incoming !== 'object') {
     return json(res, { error: 'Invalid settings file' }, 400);
   }
-  // Remove export metadata
+  // Remove export metadata and machine-specific fields
   delete incoming._exportedAt;
   delete incoming._exportedFrom;
+  delete incoming.Repos;  // Repos have local paths -- never import them
   // Merge with existing config (preserve existing PATs if not provided)
   let existing = {};
   try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
@@ -1528,7 +1532,60 @@ function handleGitHubImageProxy(url, res) {
   proxy.end();
 }
 
-// ── UI Actions (AI → Dashboard) ─────────────────────────────────────────────
+// ── GitHub: List user repos ──────────────────────────────────────────────────
+async function handleGitHubUserRepos(url, res) {
+  try {
+    const query = (url.searchParams.get('q') || '').toLowerCase();
+    const page = parseInt(url.searchParams.get('page')) || 1;
+    const perPage = 50;
+    // Fetch repos the authenticated user has access to, sorted by recent push
+    const repos = await ghRequest('GET', `/user/repos?sort=pushed&per_page=${perPage}&page=${page}&affiliation=owner,collaborator,organization_member`);
+    const items = repos.map(r => ({
+      name: r.name,
+      full_name: r.full_name,
+      description: r.description || '',
+      private: r.private,
+      clone_url: r.clone_url,
+      ssh_url: r.ssh_url,
+      html_url: r.html_url,
+      default_branch: r.default_branch,
+      pushed_at: r.pushed_at,
+      language: r.language,
+    }));
+    const filtered = query ? items.filter(r =>
+      r.name.toLowerCase().includes(query) || r.full_name.toLowerCase().includes(query)
+    ) : items;
+    json(res, { repos: filtered, page, hasMore: repos.length === perPage });
+  } catch (e) {
+    json(res, { error: e.message }, 502);
+  }
+}
+
+// ── GitHub: Clone repo ──────────────────────────────────────────────────────
+async function handleGitHubClone(req, res) {
+  try {
+    const { cloneUrl, destPath } = await readBody(req);
+    if (!cloneUrl || !destPath) return json(res, { error: 'cloneUrl and destPath are required' }, 400);
+    if (!fs.existsSync(destPath)) return json(res, { error: `Destination does not exist: ${destPath}` }, 400);
+    // Extract repo name from clone URL for the folder name
+    const match = cloneUrl.match(/\/([^/]+?)(?:\.git)?$/);
+    const repoFolder = match ? match[1] : 'repo';
+    const fullDest = path.join(destPath, repoFolder);
+    if (fs.existsSync(fullDest)) return json(res, { error: `Folder already exists: ${fullDest}` }, 400);
+    // Inject PAT for HTTPS clone
+    const cfg = getConfig();
+    let authUrl = cloneUrl;
+    if (cfg.GitHubPAT && cloneUrl.startsWith('https://')) {
+      authUrl = cloneUrl.replace('https://', `https://${cfg.GitHubPAT}@`);
+    }
+    execSync(`git clone "${authUrl}" "${fullDest}"`, { encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+    json(res, { ok: true, path: fullDest, name: repoFolder });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── UI Actions (AI -> Dashboard) ─────────────────────────────────────────────
 // ── File Browser ────────────────────────────────────────────────────────────
 function getRepoPath(repoName) {
   const cfg = getConfig();
@@ -1548,7 +1605,10 @@ function handleFileTree(url, res) {
 
   try {
     const entries = fs.readdirSync(resolved, { withFileTypes: true })
-      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== '__pycache__' && e.name !== 'dist' && e.name !== 'build' && e.name !== '.git')
+      .filter(e => {
+        const SKIP = ['.git', 'node_modules', '__pycache__', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache'];
+        return !SKIP.includes(e.name);
+      })
       .map(e => ({
         name: e.name,
         isDir: e.isDirectory(),
@@ -1583,7 +1643,7 @@ function handleFileSearch(url, res) {
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entries) {
       if (results.length >= MAX) return;
-      if (e.name.startsWith('.') || SKIP.has(e.name)) continue;
+      if (SKIP.has(e.name)) continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         walk(path.join(dir, e.name), childRel);
@@ -1622,7 +1682,7 @@ function handleFileGrep(url, res) {
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entries) {
       if (results.length >= MAX_MATCHES) return;
-      if (e.name.startsWith('.') || SKIP.has(e.name)) continue;
+      if (SKIP.has(e.name)) continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         walk(path.join(dir, e.name), childRel);
@@ -1704,9 +1764,9 @@ async function handleFileSave(req, res) {
 }
 
 // ── Git Integration ─────────────────────────────────────────────────────────
-function gitExec(repoPath, cmd) {
+function gitExec(repoPath, cmd, timeoutMs) {
   try {
-    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: timeoutMs || 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch (e) {
     return (e.stdout || e.stderr || e.message || '').trim();
   }
@@ -1837,9 +1897,20 @@ async function handleGitCheckout(req, res) {
       return json(res, { error: 'You have uncommitted changes. Commit or stash them before switching branches.', dirty: true }, 400);
     }
 
+    // Fetch latest from remote before switching
+    gitExec(repoPath, 'fetch --prune', 30000);
+
     const result = gitExec(repoPath, `checkout ${body.branch}`);
     const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
-    json(res, { ok: true, branch: current, message: result });
+
+    // Pull latest changes after switching
+    let pullMsg = '';
+    const pullResult = gitExec(repoPath, 'pull', 30000);
+    if (pullResult && !pullResult.includes('error') && !pullResult.includes('fatal')) {
+      pullMsg = pullResult;
+    }
+
+    json(res, { ok: true, branch: current, message: result, pullMessage: pullMsg });
   } catch (e) {
     json(res, { error: e.message }, 500);
   }
@@ -1851,7 +1922,10 @@ async function handleGitPull(req, res) {
     const repoPath = getRepoPath(body.repo);
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-    const result = gitExec(repoPath, 'pull');
+    // Fetch first to ensure we know about all remote changes
+    gitExec(repoPath, 'fetch --prune', 30000);
+
+    const result = gitExec(repoPath, 'pull', 30000);
     const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
     json(res, { ok: true, branch, message: result });
   } catch (e) {
@@ -1866,7 +1940,21 @@ async function handleGitPush(req, res) {
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
     const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
-    const result = gitExec(repoPath, `push -u origin ${branch}`);
+
+    // Fetch first to check if we're behind
+    gitExec(repoPath, 'fetch --prune', 30000);
+
+    // Check if branch is behind remote
+    const behind = gitExec(repoPath, `rev-list --count HEAD..origin/${branch}`);
+    const behindCount = parseInt(behind, 10);
+    if (behindCount > 0) {
+      return json(res, {
+        error: `Your branch is ${behindCount} commit(s) behind origin/${branch}. Pull first, then push.`,
+        needsPull: true
+      }, 409);
+    }
+
+    const result = gitExec(repoPath, `push -u origin ${branch}`, 30000);
     json(res, { ok: true, branch, message: result || 'Pushed successfully' });
   } catch (e) {
     json(res, { error: e.message }, 500);
@@ -1879,7 +1967,7 @@ async function handleGitFetch(req, res) {
     const repoPath = getRepoPath(body.repo);
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-    gitExec(repoPath, 'fetch --prune');
+    gitExec(repoPath, 'fetch --prune', 30000);
     // Return both local and remote branches after fetch
     const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
     const localOut = gitExec(repoPath, 'branch --format="%(refname:short)"');
@@ -1892,6 +1980,35 @@ async function handleGitFetch(req, res) {
     const remoteOnly = remote.filter(r => !local.includes(r));
 
     json(res, { ok: true, current, local, remoteOnly });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── Git Discard (restore file to HEAD) ──────────────────────────────────────
+async function handleGitDiscard(req, res) {
+  try {
+    const body = await readBody(req);
+    const repoPath = getRepoPath(body.repo);
+    if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+    if (!body.path) return json(res, { error: 'path required' }, 400);
+
+    const filePath = body.path;
+
+    // Check if the file is untracked (new) or tracked
+    const status = gitExec(repoPath, `status --porcelain -- "${filePath}"`);
+    const statusCode = status ? status.substring(0, 2) : '';
+
+    if (statusCode.trim().startsWith('?')) {
+      // Untracked file -- remove it
+      gitExec(repoPath, `clean -f -- "${filePath}"`);
+    } else {
+      // Tracked file -- unstage and restore
+      gitExec(repoPath, `reset HEAD -- "${filePath}"`);
+      gitExec(repoPath, `checkout -- "${filePath}"`);
+    }
+
+    json(res, { ok: true, discarded: filePath });
   } catch (e) {
     json(res, { error: e.message }, 500);
   }

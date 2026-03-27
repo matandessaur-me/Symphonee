@@ -3,6 +3,7 @@ dist/
 config/config.json
 notes/
 .ai-workspace/
+.claude/
 *.ps1.tmp
 temp-*.ps1
 dashboard/public/icon.ico

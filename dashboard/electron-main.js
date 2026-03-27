@@ -65,6 +65,26 @@ if (!gotLock) {
       res.end(JSON.stringify({ count: displays.length }));
     });
 
+    // ── Browse for folder (native OS dialog) ────────────────────────────
+    addRoute('POST', '/api/browse-folder', async (req, res) => {
+      if (!win) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'No window' }));
+      }
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory'],
+        title: 'Select Repository Folder',
+      });
+      if (result.canceled || !result.filePaths.length) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ canceled: true }));
+      }
+      const folderPath = result.filePaths[0];
+      const folderName = path.basename(folderPath);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ canceled: false, path: folderPath, name: folderName }));
+    });
+
     server.on('listening', () => {
       console.log('Server listening, creating window...');
       const { width, height } = screen.getPrimaryDisplay().workAreaSize;
