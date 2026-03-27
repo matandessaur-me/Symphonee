@@ -1761,7 +1761,7 @@
       <div class="divider"></div>
       <div class="section-title">Repos</div>
       <div id="repoList"></div>
-      <button class="btn btn-sm" onclick="openAddRepoModal()"><i data-lucide="plus"></i> Add Repo</button>
+      <button class="btn btn-sm" onclick="openSettings('repos')"><i data-lucide="plus"></i> Add Repo</button>
     </div>
     <div class="sidebar-bottom-hints">
       <div class="voice-hint" id="switchScreenHint" onclick="switchScreen()" style="cursor:pointer;">
@@ -2214,16 +2214,16 @@
     <div class="modal-title">Settings</div>
     <div class="settings-layout">
       <div class="settings-nav">
-        <button class="settings-nav-btn active" onclick="switchSettingsTab('ado', this)">
+        <button class="settings-nav-btn active" data-settings-tab="ado" onclick="switchSettingsTab('ado', this)">
           <i data-lucide="cloud" style="width:14px;height:14px;"></i> Azure DevOps
         </button>
-        <button class="settings-nav-btn" onclick="switchSettingsTab('ai', this)">
+        <button class="settings-nav-btn" data-settings-tab="ai" onclick="switchSettingsTab('ai', this)">
           <i data-lucide="bot" style="width:14px;height:14px;"></i> AI Tools
         </button>
-        <button class="settings-nav-btn" onclick="switchSettingsTab('repos', this)">
+        <button class="settings-nav-btn" data-settings-tab="repos" onclick="switchSettingsTab('repos', this)">
           <i data-lucide="folder-git-2" style="width:14px;height:14px;"></i> Repositories
         </button>
-        <button class="settings-nav-btn" onclick="switchSettingsTab('other', this)">
+        <button class="settings-nav-btn" data-settings-tab="other" onclick="switchSettingsTab('other', this)">
           <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i> Other
         </button>
         <div style="flex:1;"></div>
@@ -2293,10 +2293,16 @@
             <div class="settings-section-title">Repositories</div>
             <div class="settings-section-desc">Add local repositories to browse files, view diffs, and create pull requests.</div>
             <div id="settingsRepoList"></div>
-            <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;margin-top:8px;">
-              <input id="settingsRepoName" type="text" placeholder="Name" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none;">
-              <input id="settingsRepoPath" type="text" placeholder="C:\Code\my-project" style="padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-mono);outline:none;">
-              <button class="modal-btn" onclick="addRepoFromSettings()" style="padding:6px 12px;font-size:11px;">Add</button>
+            <div id="settingsRepoAdd" style="margin-top:8px;">
+              <div id="settingsRepoAddBtns" style="display:flex;gap:6px;">
+                <button class="modal-btn" onclick="repoAddBrowse('settings')" style="padding:6px 12px;font-size:11px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;">
+                  <i data-lucide="folder-open" style="width:13px;height:13px;"></i> Browse Local
+                </button>
+                <button class="modal-btn" onclick="repoAddGitHubClone('settings')" style="padding:6px 12px;font-size:11px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;">
+                  <i data-lucide="github" style="width:13px;height:13px;"></i> Clone from GitHub
+                </button>
+              </div>
+              <div id="settingsRepoAddPanel" style="display:none;"></div>
             </div>
           </div>
         </div>
@@ -2445,24 +2451,6 @@
   </div>
 </div>
 
-<!-- ═══ Add Repo Modal ═══════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="addRepoModal">
-  <div class="modal" style="width:400px;">
-    <div class="modal-title">Add Repository</div>
-    <div class="modal-field">
-      <label>Name</label>
-      <input id="repoName" type="text" placeholder="e.g. Frontend">
-    </div>
-    <div class="modal-field">
-      <label>Local Path</label>
-      <input id="repoPath" type="text" placeholder="C:\Code\my-project">
-    </div>
-    <div class="modal-actions">
-      <button class="modal-btn" onclick="closeAddRepoModal()">Cancel</button>
-      <button class="modal-btn modal-btn-primary" onclick="saveRepo()">Add</button>
-    </div>
-  </div>
-</div>
 
 <!-- ═══ Toast Container ═════════════════════════════════════════════════ -->
 <!-- ═══ Context Menu ═════════════════════════════════════════════════════ -->
@@ -6815,7 +6803,7 @@ function switchSettingsTab(tabId, btn) {
   if (tabId === 'ai') detectAiTools();
 }
 
-function openSettings() {
+function openSettings(tab) {
   document.getElementById('settingsOrg').value = configData.AzureDevOpsOrg || '';
   document.getElementById('settingsPAT').value = configData.AzureDevOpsPAT || '';
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
@@ -6833,11 +6821,13 @@ function openSettings() {
   }
   renderSettingsProjects();
   renderSettingsRepos();
-  // Reset to first tab
+  // Reset to requested tab (default: ado)
+  const targetTab = tab || 'ado';
   document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.settings-nav-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('settingsTab-ado').classList.add('active');
-  document.querySelector('.settings-nav-btn').classList.add('active');
+  document.getElementById(`settingsTab-${targetTab}`).classList.add('active');
+  const navBtn = document.querySelector(`.settings-nav-btn[data-settings-tab="${targetTab}"]`);
+  if (navBtn) navBtn.classList.add('active');
   document.getElementById('settingsModal').classList.add('open');
   try { lucide.createIcons(); } catch (_) {}
 }
@@ -6914,6 +6904,143 @@ function addRepoFromSettings() {
 function deleteRepoFromSettings(name) {
   if (configData.Repos) delete configData.Repos[name];
   renderSettingsRepos();
+}
+
+// ── Shared Repo Add flows (used by Settings & Onboarding) ──────────────────
+function _repoAddCommit(ctx, name, repoPath) {
+  if (ctx === 'settings') {
+    configData.Repos = configData.Repos || {};
+    configData.Repos[name] = repoPath;
+    renderSettingsRepos();
+  } else {
+    _obData.repos[name] = repoPath;
+    obRenderRepos();
+  }
+}
+
+function _repoPanel(ctx) {
+  return document.getElementById(ctx === 'settings' ? 'settingsRepoAddPanel' : 'obRepoAddPanel');
+}
+
+function _repoHidePanel(ctx) {
+  const panel = _repoPanel(ctx);
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+}
+
+// ── Browse Local Folder ─────────────────────────────────────────────────────
+async function repoAddBrowse(ctx) {
+  try {
+    const res = await fetch('/api/browse-folder', { method: 'POST' });
+    const data = await res.json();
+    if (data.canceled) return;
+    _repoAddCommit(ctx, data.name, data.path);
+    toast('Repository added: ' + data.name, 'success');
+  } catch (e) {
+    toast('Failed to open folder picker', 'error');
+  }
+}
+
+// ── Import from GitHub (already cloned locally) ─────────────────────────────
+let _ghRepoCache = null;
+let _ghRepoCacheTs = 0;
+
+async function _fetchGitHubRepos(query) {
+  const now = Date.now();
+  // Cache full list for 60s
+  if (!query && _ghRepoCache && now - _ghRepoCacheTs < 60000) return _ghRepoCache;
+  const qs = query ? `&q=${encodeURIComponent(query)}` : '';
+  const res = await fetch(`/api/github/user-repos?per_page=50${qs}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  if (!query) { _ghRepoCache = data.repos; _ghRepoCacheTs = now; }
+  return data.repos;
+}
+
+function _renderGitHubRepoList(repos, ctx, mode) {
+  if (!repos.length) return '<div style="font-size:11px;color:var(--subtext0);padding:8px 0;">No repos found.</div>';
+  return repos.map(r => `
+    <div class="repo-gh-pick" onclick="_ghRepoSelected('${ctx}','${mode}',${JSON.stringify(JSON.stringify(r))})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;border-radius:var(--radius);transition:background 0.15s;" onmouseenter="this.style.background='var(--surface1)'" onmouseleave="this.style.background='none'">
+      <i data-lucide="${r.private ? 'lock' : 'globe'}" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.full_name)}</div>
+        ${r.description ? `<div style="font-size:10px;color:var(--subtext0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.description)}</div>` : ''}
+      </div>
+      ${r.language ? `<span style="font-size:9px;color:var(--subtext0);flex-shrink:0;">${esc(r.language)}</span>` : ''}
+    </div>
+  `).join('');
+}
+
+async function _showGitHubPicker(ctx, mode) {
+  const panel = _repoPanel(ctx);
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div style="margin-top:8px;border:1px solid var(--surface1);border-radius:var(--radius);background:var(--surface0);overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--surface1);">
+        <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);"></i>
+        <input id="ghRepoSearch_${ctx}" type="text" placeholder="Search your GitHub repos..." oninput="_ghRepoSearch('${ctx}','${mode}')" style="flex:1;background:none;border:none;color:var(--text);font-size:12px;outline:none;">
+        <button onclick="_repoHidePanel('${ctx}')" style="background:none;border:none;color:var(--subtext0);cursor:pointer;font-size:14px;padding:0 2px;">&times;</button>
+      </div>
+      <div id="ghRepoResults_${ctx}" style="max-height:200px;overflow-y:auto;padding:4px;">
+        <div style="font-size:11px;color:var(--subtext0);padding:8px;">Loading...</div>
+      </div>
+    </div>`;
+  try { lucide.createIcons(); } catch (_) {}
+  try {
+    const repos = await _fetchGitHubRepos();
+    const results = document.getElementById(`ghRepoResults_${ctx}`);
+    if (results) {
+      results.innerHTML = _renderGitHubRepoList(repos, ctx, mode);
+      try { lucide.createIcons(); } catch (_) {}
+    }
+  } catch (e) {
+    const results = document.getElementById(`ghRepoResults_${ctx}`);
+    if (results) results.innerHTML = `<div style="font-size:11px;color:var(--red);padding:8px;">${esc(e.message)}</div>`;
+  }
+}
+
+let _ghSearchTimer = null;
+function _ghRepoSearch(ctx, mode) {
+  clearTimeout(_ghSearchTimer);
+  _ghSearchTimer = setTimeout(async () => {
+    const input = document.getElementById(`ghRepoSearch_${ctx}`);
+    const query = input ? input.value.trim() : '';
+    const results = document.getElementById(`ghRepoResults_${ctx}`);
+    if (!results) return;
+    results.innerHTML = '<div style="font-size:11px;color:var(--subtext0);padding:8px;">Searching...</div>';
+    try {
+      const repos = await _fetchGitHubRepos(query);
+      results.innerHTML = _renderGitHubRepoList(repos, ctx, mode);
+      try { lucide.createIcons(); } catch (_) {}
+    } catch (e) {
+      results.innerHTML = `<div style="font-size:11px;color:var(--red);padding:8px;">${esc(e.message)}</div>`;
+    }
+  }, 300);
+}
+
+async function _ghRepoSelected(ctx, mode, repoJson) {
+  const repo = JSON.parse(repoJson);
+  _repoHidePanel(ctx);
+  try {
+    const res = await fetch('/api/browse-folder', { method: 'POST' });
+    const data = await res.json();
+    if (data.canceled) return;
+    toast('Cloning ' + repo.full_name + '...', 'info');
+    const cloneRes = await fetch('/api/github/clone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cloneUrl: repo.clone_url, destPath: data.path }),
+    });
+    const cloneData = await cloneRes.json();
+    if (cloneData.error) { toast('Clone failed: ' + cloneData.error, 'error'); return; }
+    _repoAddCommit(ctx, cloneData.name, cloneData.path);
+    toast('Cloned and added: ' + cloneData.name, 'success');
+  } catch (e) {
+    toast('Clone failed: ' + e.message, 'error');
+  }
+}
+
+function repoAddGitHubClone(ctx) {
+  _showGitHubPicker(ctx, 'clone');
 }
 
 async function saveSettings() {
@@ -7029,39 +7156,6 @@ function importSettings() {
   input.click();
 }
 
-// ── Add Repo Modal ──────────────────────────────────────────────────────
-function openAddRepoModal() {
-  document.getElementById('repoName').value = '';
-  document.getElementById('repoPath').value = '';
-  document.getElementById('addRepoModal').classList.add('open');
-  document.getElementById('repoName').focus();
-}
-
-function closeAddRepoModal() {
-  document.getElementById('addRepoModal').classList.remove('open');
-}
-
-async function saveRepo() {
-  const name = document.getElementById('repoName').value.trim();
-  const repoPath = document.getElementById('repoPath').value.trim();
-  if (!name || !repoPath) { toast('Name and path required', 'error'); return; }
-
-  try {
-    const res = await fetch('/api/repos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, path: repoPath }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      toast(`Repo "${name}" added`, 'success');
-      closeAddRepoModal();
-      loadConfig();
-    }
-  } catch (e) {
-    toast('Failed to add repo', 'error');
-  }
-}
 
 // ── Utilities ───────────────────────────────────────────────────────────
 // ── Full-screen loading overlay ──────────────────────────────────────────
@@ -7206,17 +7300,18 @@ const OB_STEPS = [
     title: 'Repositories',
     subtitle: 'Add the local repositories you work with. DevOps Pilot uses these for file browsing, diffs, commits, and pull requests.',
     html: `<div id="obRepoList" style="margin-bottom:10px;"></div>
-      <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;margin-bottom:14px;">
-        <input id="obRepoName" type="text" placeholder="Name" style="padding:8px;font-size:12px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);outline:none;">
-        <input id="obRepoPath" type="text" placeholder="C:\\Code\\my-project" style="padding:8px;font:12px var(--font-mono);background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);outline:none;">
-        <button class="onboarding-btn onboarding-btn-primary" onclick="obAddRepo()" style="padding:8px 14px;">Add</button>
+      <div id="obRepoAddBtns" style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="onboarding-btn onboarding-btn-primary" onclick="repoAddBrowse('ob')" style="padding:8px 14px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;">
+          <i data-lucide="folder-open" style="width:13px;height:13px;"></i> Browse Local
+        </button>
+        <button class="onboarding-btn onboarding-btn-primary" onclick="repoAddGitHubClone('ob')" style="padding:8px 14px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;">
+          <i data-lucide="github" style="width:13px;height:13px;"></i> Clone from GitHub
+        </button>
       </div>
+      <div id="obRepoAddPanel" style="display:none;"></div>
       <div class="onboarding-hint">
-        <strong>How to find your repo path:</strong><br>
-        1. Open the folder in File Explorer<br>
-        2. Click the address bar at the top<br>
-        3. Copy the full path (e.g. <code>C:\\Code\\my-project</code>)<br>
-        The <strong>Name</strong> is a short label you choose (e.g. "Frontend", "API").
+        <strong>Browse Local</strong> opens a folder picker and adds the repo automatically.<br>
+        <strong>Clone from GitHub</strong> picks a repo from your account, clones it to a folder you choose, and adds it.
       </div>`,
     onEnter: () => obRenderRepos(),
   }),

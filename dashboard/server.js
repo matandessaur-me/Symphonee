@@ -123,6 +123,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST')  return handleGitHubAddComment(req, res);
     if (url.pathname === '/api/github/pulls/review' && req.method === 'POST')   return handleGitHubSubmitReview(req, res);
     if (url.pathname === '/api/github/image' && req.method === 'GET')          return handleGitHubImageProxy(url, res);
+    if (url.pathname === '/api/github/user-repos' && req.method === 'GET')    return handleGitHubUserRepos(url, res);
+    if (url.pathname === '/api/github/clone' && req.method === 'POST')        return handleGitHubClone(req, res);
 
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
@@ -227,9 +229,9 @@ const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WisprFlowKey'];
 
 function handleExportConfig(res) {
   const cfg = getConfig();
-  // Strip sensitive fields
+  // Strip machine-specific fields only (repos have local paths)
   const exportCfg = { ...cfg };
-  for (const key of SENSITIVE_KEYS) delete exportCfg[key];
+  delete exportCfg.Repos;
   exportCfg._exportedAt = new Date().toISOString();
   exportCfg._exportedFrom = 'DevOps Pilot';
   res.writeHead(200, {
@@ -244,9 +246,10 @@ async function handleImportConfig(req, res) {
   if (!incoming || typeof incoming !== 'object') {
     return json(res, { error: 'Invalid settings file' }, 400);
   }
-  // Remove export metadata
+  // Remove export metadata and machine-specific fields
   delete incoming._exportedAt;
   delete incoming._exportedFrom;
+  delete incoming.Repos;  // Repos have local paths -- never import them
   // Merge with existing config (preserve existing PATs if not provided)
   let existing = {};
   try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
@@ -1528,7 +1531,60 @@ function handleGitHubImageProxy(url, res) {
   proxy.end();
 }
 
-// ── UI Actions (AI → Dashboard) ─────────────────────────────────────────────
+// ── GitHub: List user repos ──────────────────────────────────────────────────
+async function handleGitHubUserRepos(url, res) {
+  try {
+    const query = (url.searchParams.get('q') || '').toLowerCase();
+    const page = parseInt(url.searchParams.get('page')) || 1;
+    const perPage = 50;
+    // Fetch repos the authenticated user has access to, sorted by recent push
+    const repos = await ghRequest('GET', `/user/repos?sort=pushed&per_page=${perPage}&page=${page}&affiliation=owner,collaborator,organization_member`);
+    const items = repos.map(r => ({
+      name: r.name,
+      full_name: r.full_name,
+      description: r.description || '',
+      private: r.private,
+      clone_url: r.clone_url,
+      ssh_url: r.ssh_url,
+      html_url: r.html_url,
+      default_branch: r.default_branch,
+      pushed_at: r.pushed_at,
+      language: r.language,
+    }));
+    const filtered = query ? items.filter(r =>
+      r.name.toLowerCase().includes(query) || r.full_name.toLowerCase().includes(query)
+    ) : items;
+    json(res, { repos: filtered, page, hasMore: repos.length === perPage });
+  } catch (e) {
+    json(res, { error: e.message }, 502);
+  }
+}
+
+// ── GitHub: Clone repo ──────────────────────────────────────────────────────
+async function handleGitHubClone(req, res) {
+  try {
+    const { cloneUrl, destPath } = await readBody(req);
+    if (!cloneUrl || !destPath) return json(res, { error: 'cloneUrl and destPath are required' }, 400);
+    if (!fs.existsSync(destPath)) return json(res, { error: `Destination does not exist: ${destPath}` }, 400);
+    // Extract repo name from clone URL for the folder name
+    const match = cloneUrl.match(/\/([^/]+?)(?:\.git)?$/);
+    const repoFolder = match ? match[1] : 'repo';
+    const fullDest = path.join(destPath, repoFolder);
+    if (fs.existsSync(fullDest)) return json(res, { error: `Folder already exists: ${fullDest}` }, 400);
+    // Inject PAT for HTTPS clone
+    const cfg = getConfig();
+    let authUrl = cloneUrl;
+    if (cfg.GitHubPAT && cloneUrl.startsWith('https://')) {
+      authUrl = cloneUrl.replace('https://', `https://${cfg.GitHubPAT}@`);
+    }
+    execSync(`git clone "${authUrl}" "${fullDest}"`, { encoding: 'utf8', timeout: 120000, stdio: ['pipe', 'pipe', 'pipe'] });
+    json(res, { ok: true, path: fullDest, name: repoFolder });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── UI Actions (AI -> Dashboard) ─────────────────────────────────────────────
 // ── File Browser ────────────────────────────────────────────────────────────
 function getRepoPath(repoName) {
   const cfg = getConfig();
