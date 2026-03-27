@@ -146,6 +146,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/git/pull' && req.method === 'POST')      return handleGitPull(req, res);
     if (url.pathname === '/api/git/push' && req.method === 'POST')      return handleGitPush(req, res);
     if (url.pathname === '/api/git/fetch' && req.method === 'POST')     return handleGitFetch(req, res);
+    if (url.pathname === '/api/git/discard' && req.method === 'POST')   return handleGitDiscard(req, res);
 
     // ── Split Diff ────────────────────────────────────────────────────────
     if (url.pathname === '/api/git/split-diff' && req.method === 'GET') return handleSplitDiff(url, res);
@@ -1763,9 +1764,9 @@ async function handleFileSave(req, res) {
 }
 
 // ── Git Integration ─────────────────────────────────────────────────────────
-function gitExec(repoPath, cmd) {
+function gitExec(repoPath, cmd, timeoutMs) {
   try {
-    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execSync(`git -C "${repoPath}" ${cmd}`, { encoding: 'utf8', timeout: timeoutMs || 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch (e) {
     return (e.stdout || e.stderr || e.message || '').trim();
   }
@@ -1896,9 +1897,20 @@ async function handleGitCheckout(req, res) {
       return json(res, { error: 'You have uncommitted changes. Commit or stash them before switching branches.', dirty: true }, 400);
     }
 
+    // Fetch latest from remote before switching
+    gitExec(repoPath, 'fetch --prune', 30000);
+
     const result = gitExec(repoPath, `checkout ${body.branch}`);
     const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
-    json(res, { ok: true, branch: current, message: result });
+
+    // Pull latest changes after switching
+    let pullMsg = '';
+    const pullResult = gitExec(repoPath, 'pull', 30000);
+    if (pullResult && !pullResult.includes('error') && !pullResult.includes('fatal')) {
+      pullMsg = pullResult;
+    }
+
+    json(res, { ok: true, branch: current, message: result, pullMessage: pullMsg });
   } catch (e) {
     json(res, { error: e.message }, 500);
   }
@@ -1910,7 +1922,10 @@ async function handleGitPull(req, res) {
     const repoPath = getRepoPath(body.repo);
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-    const result = gitExec(repoPath, 'pull');
+    // Fetch first to ensure we know about all remote changes
+    gitExec(repoPath, 'fetch --prune', 30000);
+
+    const result = gitExec(repoPath, 'pull', 30000);
     const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
     json(res, { ok: true, branch, message: result });
   } catch (e) {
@@ -1925,7 +1940,21 @@ async function handleGitPush(req, res) {
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
     const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
-    const result = gitExec(repoPath, `push -u origin ${branch}`);
+
+    // Fetch first to check if we're behind
+    gitExec(repoPath, 'fetch --prune', 30000);
+
+    // Check if branch is behind remote
+    const behind = gitExec(repoPath, `rev-list --count HEAD..origin/${branch}`);
+    const behindCount = parseInt(behind, 10);
+    if (behindCount > 0) {
+      return json(res, {
+        error: `Your branch is ${behindCount} commit(s) behind origin/${branch}. Pull first, then push.`,
+        needsPull: true
+      }, 409);
+    }
+
+    const result = gitExec(repoPath, `push -u origin ${branch}`, 30000);
     json(res, { ok: true, branch, message: result || 'Pushed successfully' });
   } catch (e) {
     json(res, { error: e.message }, 500);
@@ -1938,7 +1967,7 @@ async function handleGitFetch(req, res) {
     const repoPath = getRepoPath(body.repo);
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-    gitExec(repoPath, 'fetch --prune');
+    gitExec(repoPath, 'fetch --prune', 30000);
     // Return both local and remote branches after fetch
     const current = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
     const localOut = gitExec(repoPath, 'branch --format="%(refname:short)"');
@@ -1951,6 +1980,35 @@ async function handleGitFetch(req, res) {
     const remoteOnly = remote.filter(r => !local.includes(r));
 
     json(res, { ok: true, current, local, remoteOnly });
+  } catch (e) {
+    json(res, { error: e.message }, 500);
+  }
+}
+
+// ── Git Discard (restore file to HEAD) ──────────────────────────────────────
+async function handleGitDiscard(req, res) {
+  try {
+    const body = await readBody(req);
+    const repoPath = getRepoPath(body.repo);
+    if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+    if (!body.path) return json(res, { error: 'path required' }, 400);
+
+    const filePath = body.path;
+
+    // Check if the file is untracked (new) or tracked
+    const status = gitExec(repoPath, `status --porcelain -- "${filePath}"`);
+    const statusCode = status ? status.substring(0, 2) : '';
+
+    if (statusCode.trim().startsWith('?')) {
+      // Untracked file -- remove it
+      gitExec(repoPath, `clean -f -- "${filePath}"`);
+    } else {
+      // Tracked file -- unstage and restore
+      gitExec(repoPath, `reset HEAD -- "${filePath}"`);
+      gitExec(repoPath, `checkout -- "${filePath}"`);
+    }
+
+    json(res, { ok: true, discarded: filePath });
   } catch (e) {
     json(res, { error: e.message }, 500);
   }

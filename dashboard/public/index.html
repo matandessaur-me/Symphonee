@@ -2459,6 +2459,9 @@
   <div class="context-menu-item" onclick="duplicateNoteFromContext()"><i data-lucide="copy"></i> Duplicate</div>
   <div class="context-menu-item danger" onclick="deleteNoteFromContext()"><i data-lucide="trash-2"></i> Delete</div>
 </div>
+<div class="context-menu" id="diffFileContextMenu">
+  <div class="context-menu-item danger" onclick="discardFileFromContext()"><i data-lucide="undo-2"></i> Discard Changes</div>
+</div>
 
 <!-- ═══ Confirm Dialog ══════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="confirmDialog">
@@ -2907,7 +2910,7 @@ async function loadFileTree(subPath) {
       if (git.files && git.files.length > 0) {
         changedBar.style.display = '';
         changedList.innerHTML = git.files.map(f => `
-          <div class="changed-file" onclick="viewChangedFile('${esc(f.file)}')" title="${esc(f.file)}">
+          <div class="changed-file" onclick="viewChangedFile('${esc(f.file)}')" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" title="${esc(f.file)}">
             <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.file)}</span>
           </div>
@@ -3495,7 +3498,7 @@ function populateDiffTabWithChanges(files, repo) {
 
   const fileList = document.getElementById('diffviewFileList');
   fileList.innerHTML = diffViewCommit.files.map((f, i) => `
-    <div class="diffview-file" onclick="selectDiffFile(${i})" data-idx="${i}">
+    <div class="diffview-file" onclick="selectDiffFile(${i})" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" data-idx="${i}">
       <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
       <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
     </div>
@@ -3513,6 +3516,49 @@ function closeDiffView() {
   if (monacoDiffEditor) { monacoDiffEditor.dispose(); monacoDiffEditor = null; }
   diffViewCommit = null;
   switchTab('terminal');
+}
+
+let contextDiffFile = null;
+function showDiffFileContextMenu(e, filePath) {
+  e.preventDefault();
+  contextDiffFile = filePath;
+  const menu = document.getElementById('diffFileContextMenu');
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('open');
+  try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+}
+
+async function discardFileFromContext() {
+  document.getElementById('diffFileContextMenu').classList.remove('open');
+  if (!contextDiffFile) return;
+  const repo = (diffViewCommit && diffViewCommit.repo) || activeRepo || filesCurrentRepo;
+  if (!repo) return;
+  const ok = await customConfirm('Discard Changes', `Discard all changes to "${contextDiffFile}"? This cannot be undone.`, 'Discard');
+  if (!ok) return;
+  try {
+    const r = await fetch('/api/git/discard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo, path: contextDiffFile }),
+    });
+    const data = await r.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast(`Discarded changes to ${contextDiffFile}`);
+    // Refresh the current view
+    if (diffViewCommit && diffViewCommit.hash === 'working') {
+      const remaining = diffViewCommit.files.filter(f => f.file !== contextDiffFile);
+      if (remaining.length > 0) {
+        viewChangedFile(remaining[0].file);
+      } else {
+        closeDiffView();
+      }
+    }
+    // Refresh the files tab changed list
+    if (typeof loadGitPanel === 'function' && filesCurrentRepo) loadGitPanel();
+  } catch (e) {
+    toast('Failed to discard changes', 'error');
+  }
 }
 
 async function viewChangedFile(filePath) {
@@ -3538,7 +3584,7 @@ async function viewChangedFile(filePath) {
     const fileList = document.getElementById('diffviewFileList');
     const targetIdx = files.findIndex(f => f.file === filePath);
     fileList.innerHTML = files.map((f, i) => `
-      <div class="diffview-file ${i === (targetIdx >= 0 ? targetIdx : 0) ? 'active' : ''}" onclick="selectDiffFile(${i})" data-idx="${i}">
+      <div class="diffview-file ${i === (targetIdx >= 0 ? targetIdx : 0) ? 'active' : ''}" onclick="selectDiffFile(${i})" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" data-idx="${i}">
         <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
         <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
       </div>
@@ -3605,7 +3651,7 @@ async function loadGitPanel() {
     const container = document.getElementById('filesChangedList');
     if (git.files && git.files.length > 0) {
       container.innerHTML = git.files.map(f => `
-        <div class="changed-file" onclick="viewFile('${esc(f.file)}')" title="${esc(f.file)}">
+        <div class="changed-file" onclick="viewFile('${esc(f.file)}')" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" title="${esc(f.file)}">
           <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
           <span>${esc(f.file.split('/').pop())}</span>
         </div>
@@ -3785,6 +3831,11 @@ async function doGitCheckout(branch) {
   if (!repo || !branch) return;
   if (branch === _gitBranches.current) return;
 
+  // Show a switching status in the branch list
+  const list = document.getElementById('gitBranchList');
+  const prevHtml = list.innerHTML;
+  list.innerHTML = '<div class="git-section-desc">Switching branch, fetching & pulling...</div>';
+
   try {
     const res = await fetch('/api/git/checkout', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3792,10 +3843,15 @@ async function doGitCheckout(branch) {
     });
     const data = await res.json();
     if (data.error) {
+      list.innerHTML = prevHtml;
       toast(data.error, 'error');
       return;
     }
-    toast(`Switched to ${data.branch}`, 'success');
+    let msg = `Switched to ${data.branch}`;
+    if (data.pullMessage && data.pullMessage !== 'Already up to date.') {
+      msg += ' (pulled latest)';
+    }
+    toast(msg, 'success');
     _gitBranches.current = data.branch;
     document.getElementById('gitCurrentBranch').textContent = data.branch;
     document.getElementById('gitPullBranch').textContent = data.branch;
@@ -3807,6 +3863,7 @@ async function doGitCheckout(branch) {
     // Refresh file tree if visible
     if (typeof loadFileTree === 'function') loadFileTree(repo);
   } catch (e) {
+    list.innerHTML = prevHtml;
     toast('Checkout failed: ' + e.message, 'error');
   }
 }
@@ -3817,7 +3874,7 @@ async function doGitPull() {
   const btn = document.getElementById('gitPullBtn');
   const result = document.getElementById('gitPullResult');
   btn.disabled = true;
-  btn.textContent = 'Pulling...';
+  btn.textContent = 'Fetching & Pulling...';
   result.style.display = 'none';
 
   try {
@@ -3849,7 +3906,7 @@ async function doGitPush() {
   const btn = document.getElementById('gitPushBtn');
   const result = document.getElementById('gitPushResult');
   btn.disabled = true;
-  btn.textContent = 'Pushing...';
+  btn.textContent = 'Fetching & Pushing...';
   result.style.display = 'none';
 
   try {
@@ -3858,7 +3915,19 @@ async function doGitPush() {
       body: JSON.stringify({ repo })
     });
     const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    if (data.error) {
+      if (data.needsPull) {
+        // Behind remote -- prompt user to pull first
+        result.innerHTML = `${esc(data.error)}<br><button class="btn btn-sm" style="margin-top:8px;" onclick="switchGitTab('pull');doGitPull();">Pull Now</button>`;
+        result.className = 'git-action-result error';
+        result.style.display = 'block';
+        btn.textContent = 'Push';
+        btn.disabled = false;
+        toast('Pull required before pushing', 'warning');
+        return;
+      }
+      throw new Error(data.error);
+    }
     result.textContent = data.message || 'Pushed successfully.';
     result.className = 'git-action-result success';
     result.style.display = 'block';
@@ -4677,6 +4746,7 @@ function showNoteContextMenu(e, name) {
 
 document.addEventListener('click', () => {
   document.getElementById('noteContextMenu').classList.remove('open');
+  document.getElementById('diffFileContextMenu').classList.remove('open');
 });
 
 async function deleteNoteFromContext() {
@@ -6560,9 +6630,11 @@ async function loadRepoList() {
     // Fetch branch for active repo
     if (activeRepo) fetchRepoSidebarBranch(activeRepo);
 
-    // On startup, if we have a saved repo, load its git status to show diff tab
+    // On startup, if we have a saved repo, fetch+pull and load git status
     if (activeRepo && !loadRepoList._initialized) {
       loadRepoList._initialized = true;
+      // Fetch + pull in background to ensure we have latest changes
+      fetchAndPullOnStartup(activeRepo);
       loadGitStatusForDiffTab(activeRepo);
     }
     // Always push context after repo list loads (covers page-load restore from localStorage)
@@ -6576,6 +6648,27 @@ async function fetchRepoSidebarBranch(repoName) {
     const data = await res.json();
     const el = document.getElementById('repoSidebarBranch');
     if (el && data.current) el.textContent = data.current;
+  } catch (_) {}
+}
+
+async function fetchAndPullOnStartup(repoName) {
+  try {
+    // Only pull if the working tree is clean (don't risk conflicts with uncommitted changes)
+    const statusRes = await fetch(`/api/git/status?repo=${encodeURIComponent(repoName)}`);
+    const statusData = await statusRes.json();
+    if (statusData.files && statusData.files.length > 0) return; // dirty -- skip pull
+
+    const res = await fetch('/api/git/pull', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: repoName })
+    });
+    const data = await res.json();
+    if (data.ok && data.message && data.message !== 'Already up to date.') {
+      toast('Pulled latest changes for ' + repoName, 'info');
+    }
+    // Refresh sidebar branch and diff tab after pull
+    fetchRepoSidebarBranch(repoName);
+    loadGitStatusForDiffTab(repoName);
   } catch (_) {}
 }
 
