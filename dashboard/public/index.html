@@ -2663,7 +2663,15 @@ function switchTerminal(termId) {
   const inst = termInstances.get(termId);
   if (inst) {
     requestAnimationFrame(() => {
-      try { inst.fitAddon.fit(); } catch (_) {}
+      try {
+        inst.fitAddon.fit();
+        // Always send resize to server so the PTY matches xterm dimensions
+        const cols = inst.term.cols;
+        const rows = inst.term.rows;
+        lastCols = cols;
+        lastRows = rows;
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', termId, cols, rows }));
+      } catch (_) {}
       inst.term.focus();
     });
   }
@@ -2702,9 +2710,12 @@ function addTerminal(label, cwd) {
   const name = label || `Shell ${getNextShellNumber()}`;
   createTermInstance(termId, name);
   switchTerminal(termId);
-  // Tell server to create PTY
+  // Tell server to create PTY with correct dimensions from the fitted xterm
   if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'create-term', termId, cwd }));
+    const inst = termInstances.get(termId);
+    const cols = inst ? inst.term.cols : lastCols;
+    const rows = inst ? inst.term.rows : lastRows;
+    ws.send(JSON.stringify({ type: 'create-term', termId, cwd, cols, rows }));
   }
   return termId;
 }

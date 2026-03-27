@@ -1604,7 +1604,10 @@ function handleFileTree(url, res) {
 
   try {
     const entries = fs.readdirSync(resolved, { withFileTypes: true })
-      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== '__pycache__' && e.name !== 'dist' && e.name !== 'build' && e.name !== '.git')
+      .filter(e => {
+        const SKIP = ['.git', 'node_modules', '__pycache__', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache'];
+        return !SKIP.includes(e.name);
+      })
       .map(e => ({
         name: e.name,
         isDir: e.isDirectory(),
@@ -1639,7 +1642,7 @@ function handleFileSearch(url, res) {
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entries) {
       if (results.length >= MAX) return;
-      if (e.name.startsWith('.') || SKIP.has(e.name)) continue;
+      if (SKIP.has(e.name)) continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         walk(path.join(dir, e.name), childRel);
@@ -1678,7 +1681,7 @@ function handleFileGrep(url, res) {
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entries) {
       if (results.length >= MAX_MATCHES) return;
-      if (e.name.startsWith('.') || SKIP.has(e.name)) continue;
+      if (SKIP.has(e.name)) continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         walk(path.join(dir, e.name), childRel);
