@@ -2230,6 +2230,9 @@
         <button class="settings-nav-btn" data-settings-tab="other" onclick="switchSettingsTab('other', this)">
           <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i> Other
         </button>
+        <button class="settings-nav-btn" data-settings-tab="plugins" onclick="switchSettingsTab('plugins', this)" id="settingsPluginsBtn" style="display:none;">
+          <i data-lucide="puzzle" style="width:14px;height:14px;"></i> Plugins
+        </button>
         <div style="flex:1;"></div>
         <button class="settings-nav-btn settings-export-import-btn" onclick="openExportImportMenu(this)">
           <i data-lucide="arrow-left-right" style="width:14px;height:14px;"></i> Export / Import
@@ -2309,6 +2312,11 @@
               <div id="settingsRepoAddPanel" style="display:none;"></div>
             </div>
           </div>
+        </div>
+
+        <!-- Plugins Tab -->
+        <div class="settings-tab" id="settingsTab-plugins">
+          <div id="pluginSettingsContainer"><div style="color:var(--subtext0);padding:12px;">No plugins installed.</div></div>
         </div>
 
         <!-- Other Tab -->
@@ -7179,6 +7187,8 @@ async function saveSettings() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    // Also save plugin settings
+    await savePluginSettings();
     if (data.ok) {
       closeSettings();
       showLoading('Loading...');
@@ -8363,12 +8373,15 @@ function registerContextMenuItem(plugin, item) {
 }
 
 // Initialize all plugins on load
+var _loadedPlugins = [];
+
 (async function initPlugins() {
   var plugins = [];
   try {
     var res = await fetch('/api/plugins');
     plugins = await res.json();
   } catch (_) { return; }
+  _loadedPlugins = plugins;
   if (!plugins.length) return;
 
   for (var i = 0; i < plugins.length; i++) {
@@ -8380,8 +8393,84 @@ function registerContextMenuItem(plugin, item) {
     if (c.intelPanels) c.intelPanels.forEach(function (ip) { injectIntelPanel(p, ip); });
     if (c.contextMenuItems) c.contextMenuItems.forEach(function (m) { registerContextMenuItem(p, m); });
   }
+
+  // Show Plugins tab in settings if any plugins have settings
+  var hasSettings = plugins.some(function (p) { return p.settings && p.settings.length; });
+  if (hasSettings || plugins.length) {
+    document.getElementById('settingsPluginsBtn').style.display = '';
+    renderPluginSettings(plugins);
+  }
+
   lucide.createIcons();
 })();
+
+// Render plugin settings fields in the Settings > Plugins tab
+function renderPluginSettings(plugins) {
+  var container = document.getElementById('pluginSettingsContainer');
+  var html = '';
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    var settings = p.settings || [];
+    html += '<div class="settings-section">';
+    html += '<div class="settings-section-title">' + (p.name || p.id) + '</div>';
+    if (p.description) html += '<div class="settings-section-desc">' + p.description + '</div>';
+    if (!settings.length) {
+      html += '<div style="font-size:12px;color:var(--subtext0);padding:4px 0;">No configurable settings.</div>';
+    }
+    for (var j = 0; j < settings.length; j++) {
+      var s = settings[j];
+      var fieldId = 'pluginSetting_' + p.id + '_' + s.key;
+      var inputType = s.secret ? 'password' : 'text';
+      html += '<div class="modal-field">';
+      html += '<label>' + (s.label || s.key) + '</label>';
+      if (s.description) html += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">' + s.description + '</div>';
+      html += '<input id="' + fieldId + '" type="' + inputType + '" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+
+  // Load current values from each plugin's config
+  plugins.forEach(function (p) {
+    if (!p.settings || !p.settings.length) return;
+    fetch('/api/plugins/' + p.id + '/config').then(function (r) { return r.json(); }).then(function (cfg) {
+      (p.settings || []).forEach(function (s) {
+        var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
+        if (!el) return;
+        // For secret fields, show placeholder if set
+        if (s.secret && cfg[s.key + 'Set']) {
+          el.placeholder = '(configured)';
+        } else if (cfg[s.key] !== undefined && !s.secret) {
+          el.value = cfg[s.key];
+        }
+      });
+    }).catch(function () {});
+  });
+}
+
+// Save plugin settings (called from saveSettings)
+async function savePluginSettings() {
+  var inputs = document.querySelectorAll('.plugin-setting-input');
+  var byPlugin = {};
+  inputs.forEach(function (el) {
+    var pid = el.dataset.plugin;
+    var key = el.dataset.key;
+    var val = el.value.trim();
+    if (!val) return; // skip empty (don't overwrite with blank)
+    if (!byPlugin[pid]) byPlugin[pid] = {};
+    byPlugin[pid][key] = val;
+  });
+  for (var pid in byPlugin) {
+    try {
+      await fetch('/api/plugins/' + pid + '/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(byPlugin[pid])
+      });
+    } catch (_) {}
+  }
+}
 
 </script>
 </body>
