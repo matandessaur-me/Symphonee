@@ -7062,8 +7062,9 @@ async function _fetchGitHubRepos(query) {
 
 function _renderGitHubRepoList(repos, ctx, mode) {
   if (!repos.length) return '<div style="font-size:11px;color:var(--subtext0);padding:8px 0;">No repos found.</div>';
-  return repos.map(r => `
-    <div class="repo-gh-pick" onclick="_ghRepoSelected('${ctx}','${mode}',${JSON.stringify(JSON.stringify(r))})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;border-radius:var(--radius);transition:background 0.15s;" onmouseenter="this.style.background='var(--surface1)'" onmouseleave="this.style.background='none'">
+  window._ghRepoPicks = repos;
+  return repos.map((r, i) => `
+    <div class="repo-gh-pick" onclick="_ghRepoSelected('${ctx}','${mode}',${i})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;border-radius:var(--radius);transition:background 0.15s;" onmouseenter="this.style.background='var(--surface1)'" onmouseleave="this.style.background='none'">
       <i data-lucide="${r.private ? 'lock' : 'globe'}" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.full_name)}</div>
@@ -7121,8 +7122,8 @@ function _ghRepoSearch(ctx, mode) {
   }, 300);
 }
 
-async function _ghRepoSelected(ctx, mode, repoJson) {
-  const repo = JSON.parse(repoJson);
+async function _ghRepoSelected(ctx, mode, idx) {
+  const repo = window._ghRepoPicks[idx];
   _repoHidePanel(ctx);
   try {
     const res = await fetch('/api/browse-folder', { method: 'POST' });
