@@ -1743,20 +1743,24 @@
         <button class="btn btn-primary" onclick="openCreateModal()"><i data-lucide="plus"></i> New Work Item</button>
         <button class="btn" onclick="filterMyItems()"><i data-lucide="user"></i> My Items</button>
         <button class="btn" onclick="refreshAll()"><i data-lucide="refresh-cw"></i> Refresh</button>
+        <div id="sidebarPluginActions"></div>
 
         <div class="divider"></div>
         <div class="section-title">AI Actions</div>
         <button class="btn" onclick="runScript('standup')"><i data-lucide="message-square"></i> Standup Summary</button>
         <button class="btn" onclick="runScript('status')"><i data-lucide="bar-chart-2"></i> Iteration Status</button>
         <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
+        <div id="sidebarPluginAiActions"></div>
         <div class="divider"></div>
       </div>
-      <div class="section-title">Git</div>
-      <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
-      <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
-      <button class="btn" onclick="openGitModal('branches')"><i data-lucide="git-branch"></i> Switch Branch</button>
-      <button class="btn" onclick="openGitModal('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
-      <button class="btn" onclick="openGitModal('compare')"><i data-lucide="git-compare"></i> Compare Branches</button>
+      <div id="sidebarGitActions">
+        <div class="section-title">Git</div>
+        <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
+        <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
+        <button class="btn" onclick="openGitModal('branches')"><i data-lucide="git-branch"></i> Switch Branch</button>
+        <button class="btn" onclick="openGitModal('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
+        <button class="btn" onclick="openGitModal('compare')"><i data-lucide="git-compare"></i> Compare Branches</button>
+      </div>
 
       <div class="divider"></div>
       <div class="section-title">Repos</div>
@@ -2847,6 +2851,7 @@ requestAnimationFrame(fitTerminalNow);
         }
         case 'config-changed':
           loadConfig();
+          notifyPluginIframes('configChanged', {});
           break;
         case 'ui-action':
           handleUiAction(msg);
@@ -5223,6 +5228,7 @@ function switchTab(tab, preserveSearch) {
   if (tab === 'files') { populateFilesRepoSelect(); if (filesCurrentRepo) { loadFileTree(filesCurrentPath); loadProjectScripts(); } }
   if (tab === 'prs') { populatePRsRepoSelect(); loadPRs(); }
   if (tab === 'notes') loadNotesList();
+  notifyPluginIframes('tabActivated', { tab: tab });
 }
 
 function switchIntelTab(tab) {
@@ -5362,6 +5368,8 @@ function onSprintChange() {
   const path = document.getElementById('sprintSelect').value;
   if (path) loadBurndown(path);
   pushUiContext();
+  const name = (document.getElementById('sprintSelect').selectedOptions[0] || {}).textContent || '';
+  notifyPluginIframes('iterationChanged', { iteration: path, name: name });
 }
 
 function pushUiContext() {
@@ -6723,6 +6731,7 @@ function selectRepo(name) {
   if (prSelect) { prSelect.value = name; prsCurrentRepo = name; }
   if (document.getElementById('panel-prs')?.classList.contains('active')) { loadPRs(); }
   pushUiContext();
+  notifyPluginIframes('repoChanged', { repo: name });
 }
 
 // ── Create Work Item Modal ──────────────────────────────────────────────
@@ -8192,6 +8201,187 @@ function renderTimeline() {
   container.innerHTML = html;
   lucide.createIcons();
 }
+
+// ── Plugin System ──────────────────────────────────────────────────────────
+
+// Notify all plugin iframes of an event
+function notifyPluginIframes(eventType, data) {
+  document.querySelectorAll('iframe[data-plugin-id]').forEach(function (iframe) {
+    try {
+      iframe.contentWindow.postMessage({ __devopsPilot: true, type: eventType, data: data }, location.origin);
+    } catch (_) {}
+  });
+}
+
+// Listen for postMessage from plugin iframes
+window.addEventListener('message', function (event) {
+  if (event.origin !== location.origin) return;
+  var msg = event.data;
+  if (!msg || !msg.__devopsPilot) return;
+
+  switch (msg.type) {
+    case 'switchTab':
+      switchTab(msg.tab);
+      break;
+    case 'askAi':
+      askAi(msg.prompt);
+      break;
+    case 'toast':
+      if (typeof toast === 'function') toast(msg.message, msg.level || 'info');
+      break;
+    case 'getContext':
+      var ctxData = {
+        activeRepo: activeRepo,
+        selectedIteration: document.getElementById('sprintSelect').value,
+        selectedIterationName: (document.getElementById('sprintSelect').selectedOptions[0] || {}).textContent || '',
+        config: {}
+      };
+      // Send config without secrets
+      if (configData) {
+        var keys = Object.keys(configData);
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          if (k.indexOf('PAT') === -1 && k.indexOf('Token') === -1 && k.indexOf('Secret') === -1) {
+            ctxData.config[k] = configData[k];
+          }
+        }
+      }
+      event.source.postMessage({
+        __devopsPilot: true, type: 'contextResponse', requestId: msg.requestId, data: ctxData
+      }, event.origin);
+      break;
+    case 'viewWorkItem':
+      viewWorkItem(msg.id);
+      break;
+  }
+});
+
+// Execute a plugin action
+function executePluginAction(plugin, action) {
+  switch (action.type) {
+    case 'switchTab':
+      var tabId = action.tab;
+      if (tabId.indexOf('plugin-') !== 0) tabId = 'plugin-' + plugin.id + '-' + tabId;
+      switchTab(tabId);
+      break;
+    case 'prompt':
+      var prompt = action.template
+        .replace(/\$\{repo\}/g, activeRepo || '')
+        .replace(/\$\{config\.(\w+)\}/g, function (_, key) { return (configData || {})[key] || ''; });
+      askAi(prompt);
+      break;
+    case 'api':
+      fetch('http://127.0.0.1:3800' + action.path, {
+        method: action.method || 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: action.body ? JSON.stringify(action.body) : undefined
+      });
+      break;
+    case 'script':
+      askAi('Run this command: powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/' + plugin.id + '/' + action.path + '"');
+      break;
+  }
+}
+
+// Inject a sidebar action button
+function injectSidebarAction(plugin, action) {
+  var containers = {
+    actions: document.getElementById('sidebarPluginActions'),
+    aiActions: document.getElementById('sidebarPluginAiActions'),
+  };
+  var container = containers[action.section];
+  if (!container) return;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.innerHTML = '<i data-lucide="' + (action.icon || 'puzzle') + '"></i> ' + action.label;
+  btn.onclick = function () { executePluginAction(plugin, action.action); };
+  container.appendChild(btn);
+}
+
+// Inject an AI action button
+function injectAiAction(plugin, action) {
+  var container = document.getElementById('sidebarPluginAiActions');
+  if (!container) return;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.innerHTML = '<i data-lucide="' + (action.icon || 'sparkles') + '"></i> ' + action.label;
+  btn.onclick = function () { executePluginAction(plugin, action.action); };
+  container.appendChild(btn);
+}
+
+// Inject a center tab with iframe panel
+function injectCenterTab(plugin, tab) {
+  var tabBar = document.querySelector('.tab-bar');
+  var rightSection = tabBar.querySelector('.tab-bar-right');
+  var tabId = 'plugin-' + plugin.id + '-' + tab.id;
+
+  var btn = document.createElement('button');
+  btn.className = 'tab-btn';
+  btn.dataset.tab = tabId;
+  btn.textContent = tab.label;
+  btn.onclick = function () { switchTab(tabId); };
+  tabBar.insertBefore(btn, rightSection);
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel';
+  panel.id = 'panel-' + tabId;
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"></iframe>';
+  document.querySelector('.center').appendChild(panel);
+}
+
+// Inject a right-side intel panel with iframe
+function injectIntelPanel(plugin, ip) {
+  var tabBar = document.querySelector('.intel-tabs');
+  var panelId = 'plugin-' + plugin.id + '-' + ip.id;
+
+  var btn = document.createElement('button');
+  btn.className = 'intel-tab';
+  btn.dataset.itab = panelId;
+  btn.textContent = ip.label;
+  btn.onclick = function () { switchIntelTab(panelId); };
+  tabBar.appendChild(btn);
+
+  var panel = document.createElement('div');
+  panel.className = 'intel-panel';
+  panel.id = 'ipanel-' + panelId;
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + ip.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + ip.id + '"></iframe>';
+  document.querySelector('.intel').appendChild(panel);
+}
+
+// Store context menu items for later use
+var pluginContextMenuItems = [];
+function registerContextMenuItem(plugin, item) {
+  pluginContextMenuItems.push({ plugin: plugin, item: item });
+}
+
+// Initialize all plugins on load
+(async function initPlugins() {
+  var plugins = [];
+  try {
+    var res = await fetch('/api/plugins');
+    plugins = await res.json();
+  } catch (_) { return; }
+  if (!plugins.length) return;
+
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    var c = p.contributions || {};
+    if (c.sidebarActions) c.sidebarActions.forEach(function (a) { injectSidebarAction(p, a); });
+    if (c.aiActions) c.aiActions.forEach(function (a) { injectAiAction(p, a); });
+    if (c.centerTabs) c.centerTabs.forEach(function (t) { injectCenterTab(p, t); });
+    if (c.intelPanels) c.intelPanels.forEach(function (ip) { injectIntelPanel(p, ip); });
+    if (c.contextMenuItems) c.contextMenuItems.forEach(function (m) { registerContextMenuItem(p, m); });
+  }
+  lucide.createIcons();
+})();
 
 </script>
 </body>

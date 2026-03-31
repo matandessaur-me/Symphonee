@@ -37,6 +37,11 @@ function addRoute(method, pathname, handler) {
   extraRoutes.push({ method: method.toUpperCase(), pathname, handler });
 }
 
+// ── Plugin system ────────────────────────────────────────────────────────────
+const { loadPlugins } = require('./plugin-loader');
+const pluginsDir = path.join(__dirname, 'plugins');
+let loadedPlugins = [];
+
 // ── Helper: read JSON body ────────────────────────────────────────────────────
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -61,7 +66,19 @@ const server = http.createServer(async (req, res) => {
 
   // Pluggable routes first
   for (const r of extraRoutes) {
-    if (url.pathname === r.pathname && req.method === r.method) {
+    // Exact match for normal routes, prefix match for plugin static files and plugin API prefixes
+    if (r.pathname === '/__plugin_static__') {
+      if (url.pathname.startsWith('/plugins/') && req.method === 'GET') {
+        const result = r.handler(req, res, url);
+        if (result !== false) return;
+      }
+    } else if (r.method === '__PREFIX__') {
+      if (url.pathname.startsWith(r.pathname + '/') || url.pathname === r.pathname) {
+        const subpath = url.pathname.slice(r.pathname.length) || '/';
+        const result = r.handler(req, res, url, subpath);
+        if (result !== false) return;
+      }
+    } else if (url.pathname === r.pathname && req.method === r.method) {
       return r.handler(req, res, url);
     }
   }
@@ -2436,6 +2453,10 @@ wss.on('connection', (ws) => {
   });
 });
 
+// ── Load plugins ─────────────────────────────────────────────────────────────
+loadedPlugins = loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json });
+if (loadedPlugins.length) console.log(`  Loaded ${loadedPlugins.length} plugin(s)`);
+
 // ── Start ───────────────────────────────────────────────────────────────────
 function startServer() {
   server.on('error', (err) => {
@@ -2462,4 +2483,4 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-module.exports = { server, startServer, addRoute };
+module.exports = { server, startServer, addRoute, loadedPlugins };
