@@ -7986,11 +7986,14 @@ async function loadPluginCmdItems() {
   _pluginCmdItems = [];
   if (!_loadedPlugins) return;
   for (const p of _loadedPlugins) {
+    try {
+      const cfg = await (await fetch('/api/plugins/' + p.id + '/config')).json();
+      if (!cfg.configured) continue;
+    } catch (_) { continue; }
+
     if (p.id === 'wrike') {
       try {
-        const cfg = await (await fetch('/api/plugins/wrike/config')).json();
-        if (!cfg.configured) continue;
-        const tasks = await (await fetch('/api/plugins/wrike/tasks?limit=15')).json();
+        const tasks = await (await fetch('/api/plugins/wrike/tasks?limit=20')).json();
         if (Array.isArray(tasks)) {
           for (const t of tasks) {
             _pluginCmdItems.push({
@@ -7998,13 +8001,31 @@ async function loadPluginCmdItems() {
               icon: 'check-square',
               action: () => {
                 switchTab('plugin-wrike-board');
-                // Send postMessage to the wrike iframe to view this task
                 var iframes = document.querySelectorAll('iframe[data-plugin-id="wrike"]');
-                iframes.forEach(function(f) {
-                  f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin);
-                });
+                iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin); });
               },
-              category: 'Wrike Task',
+              category: 'Wrike',
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (p.id === 'builderio') {
+      try {
+        const models = await (await fetch('/api/plugins/builderio/models')).json();
+        if (Array.isArray(models)) {
+          for (const m of models) {
+            const displayName = m.name.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            _pluginCmdItems.push({
+              label: displayName + ' (' + m.kind + ', ' + m.fieldCount + ' fields)',
+              icon: 'blocks',
+              action: () => {
+                switchTab('plugin-builderio-manager');
+                var iframes = document.querySelectorAll('iframe[data-plugin-id="builderio"]');
+                iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'openModel', modelId: m.id }, location.origin); });
+              },
+              category: 'Builder.io',
             });
           }
         }
