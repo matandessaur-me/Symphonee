@@ -8432,46 +8432,57 @@ var _loadedPlugins = [];
 // Render plugin settings fields in the Settings > Plugins tab
 function renderPluginSettings(plugins) {
   var container = document.getElementById('pluginSettingsContainer');
-  var html = '';
+  if (!plugins.length) { container.innerHTML = '<div style="color:var(--subtext0);padding:12px;">No plugins installed.</div>'; return; }
+
+  // Build sub-nav + panels per plugin
+  var nav = '<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">';
+  var panels = '';
   for (var i = 0; i < plugins.length; i++) {
     var p = plugins[i];
+    var active = i === 0 ? ' active' : '';
+    nav += '<button class="settings-nav-btn plugin-settings-nav' + active + '" data-plugin-tab="ps_' + p.id + '" onclick="switchPluginSettingsTab(\'' + p.id + '\',this)" style="font-size:12px;padding:6px 14px;">' + (p.name || p.id) + '</button>';
+    panels += '<div class="plugin-settings-panel" id="ps_' + p.id + '" style="' + (i === 0 ? '' : 'display:none;') + '">';
+    panels += '<div class="settings-section">';
+    if (p.description) panels += '<div class="settings-section-desc" style="margin-bottom:12px;">' + p.description + '</div>';
     var settings = p.settings || [];
-    html += '<div class="settings-section">';
-    html += '<div class="settings-section-title">' + (p.name || p.id) + '</div>';
-    if (p.description) html += '<div class="settings-section-desc">' + p.description + '</div>';
     if (!settings.length) {
-      html += '<div style="font-size:12px;color:var(--subtext0);padding:4px 0;">No configurable settings.</div>';
+      panels += '<div style="font-size:12px;color:var(--subtext0);padding:4px 0;">No configurable settings for this plugin.</div>';
     }
     for (var j = 0; j < settings.length; j++) {
       var s = settings[j];
       var fieldId = 'pluginSetting_' + p.id + '_' + s.key;
       var inputType = s.secret ? 'password' : 'text';
-      html += '<div class="modal-field">';
-      html += '<label>' + (s.label || s.key) + '</label>';
-      if (s.description) html += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">' + s.description + '</div>';
-      html += '<input id="' + fieldId + '" type="' + inputType + '" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
-      html += '</div>';
+      panels += '<div class="modal-field">';
+      panels += '<label>' + (s.label || s.key) + '</label>';
+      if (s.description) panels += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">' + s.description + '</div>';
+      panels += '<input id="' + fieldId + '" type="' + inputType + '" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
+      panels += '</div>';
     }
-    html += '</div>';
+    panels += '</div></div>';
   }
-  container.innerHTML = html;
+  nav += '</div>';
+  container.innerHTML = nav + panels;
 
-  // Load current values from each plugin's config
+  // Load current values
   plugins.forEach(function (p) {
     if (!p.settings || !p.settings.length) return;
     fetch('/api/plugins/' + p.id + '/config').then(function (r) { return r.json(); }).then(function (cfg) {
       (p.settings || []).forEach(function (s) {
         var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
         if (!el) return;
-        // For secret fields, show placeholder if set
-        if (s.secret && cfg[s.key + 'Set']) {
-          el.placeholder = '(configured)';
-        } else if (cfg[s.key] !== undefined && !s.secret) {
-          el.value = cfg[s.key];
-        }
+        if (s.secret && cfg[s.key + 'Set']) el.placeholder = '(configured)';
+        else if (cfg[s.key] !== undefined && !s.secret) el.value = cfg[s.key];
       });
     }).catch(function () {});
   });
+}
+
+function switchPluginSettingsTab(pluginId, btn) {
+  document.querySelectorAll('.plugin-settings-nav').forEach(function (b) { b.classList.remove('active'); });
+  document.querySelectorAll('.plugin-settings-panel').forEach(function (p) { p.style.display = 'none'; });
+  btn.classList.add('active');
+  var panel = document.getElementById('ps_' + pluginId);
+  if (panel) panel.style.display = '';
 }
 
 // Save plugin settings (called from saveSettings)
