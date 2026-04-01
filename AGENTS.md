@@ -168,6 +168,7 @@ You can control the dashboard UI. **Use these intelligently based on context** �
 | POST | `/api/ui/refresh-workitems` | Refresh work items list. Body: `{}` |
 | POST | `/api/ui/view-activity` | Open the Activity Timeline view. Body: `{}` |
 | POST | `/api/ui/view-pr` | Open a pull request. Body: `{ repo: "RepoName", number: 123 }` (number optional) |
+| POST | `/api/ui/view-plugin` | Open a plugin tab. Body: `{ plugin: "pluginId", message: { type: "action", ... } }` (message is optional -- forwarded to the plugin iframe via postMessage) |
 | GET | `/api/ui/context` | Get current dashboard state: selected iteration, active repo, activeRepoPath |
 
 **Important: Board and Backlog are a single tab called "Backlog"** with List and Board view toggle. Sending `{ tab: "board" }` auto-maps to backlog with board view.
@@ -378,3 +379,6 @@ You can also use `New-PullRequest.ps1` directly if you need more control over th
 - **NEVER use `gh`** — the app's REST API handles all GitHub interactions. Use `Push-AndPR.ps1` for PRs.
 - **NEVER use `az`** — the app's REST API handles everything
 - **All repos are on GitHub**, not Azure DevOps. Azure DevOps is only for work item tracking.
+
+<!-- PLUGIN_INSTRUCTIONS_START -->
+<!-- PLUGIN_INSTRUCTIONS_END -->

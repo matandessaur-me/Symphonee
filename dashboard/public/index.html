@@ -1709,6 +1709,7 @@
   <div class="header-right">
     <div class="status-dot" id="statusDot"></div>
     <span id="connectionStatus">Connecting...</span>
+    <button onclick="restartApp()" title="Restart App" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="rotate-cw" style="width:14px;height:14px;"></i></button>
   </div>
 </header>
 
@@ -1743,20 +1744,26 @@
         <button class="btn btn-primary" onclick="openCreateModal()"><i data-lucide="plus"></i> New Work Item</button>
         <button class="btn" onclick="filterMyItems()"><i data-lucide="user"></i> My Items</button>
         <button class="btn" onclick="refreshAll()"><i data-lucide="refresh-cw"></i> Refresh</button>
+        <div id="sidebarPluginActions"></div>
 
         <div class="divider"></div>
         <div class="section-title">AI Actions</div>
         <button class="btn" onclick="runScript('standup')"><i data-lucide="message-square"></i> Standup Summary</button>
         <button class="btn" onclick="runScript('status')"><i data-lucide="bar-chart-2"></i> Iteration Status</button>
         <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
+        <div id="sidebarPluginAiActions"></div>
         <div class="divider"></div>
       </div>
-      <div class="section-title">Git</div>
-      <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
-      <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
-      <button class="btn" onclick="openGitModal('branches')"><i data-lucide="git-branch"></i> Switch Branch</button>
-      <button class="btn" onclick="openGitModal('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
-      <button class="btn" onclick="openGitModal('compare')"><i data-lucide="git-compare"></i> Compare Branches</button>
+      <div id="sidebarGitActions">
+        <div class="section-title">Git</div>
+        <button class="btn" onclick="openGitModal('pull')"><i data-lucide="download"></i> Pull Latest</button>
+        <button class="btn" onclick="openGitModal('push')"><i data-lucide="upload"></i> Push Changes</button>
+        <button class="btn" onclick="openGitModal('branches')"><i data-lucide="git-branch"></i> Switch Branch</button>
+        <button class="btn" onclick="openGitModal('commit')"><i data-lucide="git-commit"></i> Commit Changes</button>
+        <button class="btn" onclick="openGitModal('compare')"><i data-lucide="git-compare"></i> Compare Branches</button>
+      </div>
+
+      <div id="sidebarPluginSections"></div>
 
       <div class="divider"></div>
       <div class="section-title">Repos</div>
@@ -1793,7 +1800,7 @@
       <div class="tab-bar-right">
         <span class="tab-bar-status" id="termStatus"></span>
         <button class="tab-bar-btn" onclick="toggleAi()" id="aiBtn">Launch AI</button>
-        <button class="tab-bar-btn" onclick="restartShell()">Restart</button>
+        <button class="tab-bar-btn" onclick="restartShell()">Restart Shell</button>
       </div>
     </div>
 
@@ -2226,6 +2233,9 @@
         <button class="settings-nav-btn" data-settings-tab="other" onclick="switchSettingsTab('other', this)">
           <i data-lucide="sliders-horizontal" style="width:14px;height:14px;"></i> Other
         </button>
+        <button class="settings-nav-btn" data-settings-tab="plugins" onclick="switchSettingsTab('plugins', this)" id="settingsPluginsBtn">
+          <i data-lucide="puzzle" style="width:14px;height:14px;"></i> Plugins
+        </button>
         <div style="flex:1;"></div>
         <button class="settings-nav-btn settings-export-import-btn" onclick="openExportImportMenu(this)">
           <i data-lucide="arrow-left-right" style="width:14px;height:14px;"></i> Export / Import
@@ -2251,7 +2261,7 @@
             </div>
             <div class="modal-field">
               <label>Personal Access Token</label>
-              <input id="settingsPAT" type="password" placeholder="Your PAT with work item read/write scope">
+              <div style="display:flex;gap:0;"><input id="settingsPAT" type="password" placeholder="Your PAT with work item read/write scope" style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsPAT',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             </div>
             <div class="modal-field">
               <label>Default Team</label>
@@ -2307,6 +2317,15 @@
           </div>
         </div>
 
+        <!-- Plugins Tab -->
+        <div class="settings-tab" id="settingsTab-plugins">
+          <div style="display:flex;align-items:center;margin-bottom:14px;">
+            <div style="flex:1;"></div>
+            <button onclick="browsePlugins()" style="font-size:11px;padding:6px 14px;background:var(--surface1);border:1px solid var(--overlay0);color:var(--text);border-radius:var(--radius);cursor:pointer;">Browse Plugins</button>
+          </div>
+          <div id="pluginSettingsContainer"><div style="color:var(--subtext0);padding:12px;">No plugins installed.</div></div>
+        </div>
+
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
@@ -2314,7 +2333,7 @@
             <div class="settings-section-desc">Connect to GitHub to view and review pull requests from the dashboard.</div>
             <div class="modal-field">
               <label>Personal Access Token</label>
-              <input id="settingsGitHubPAT" type="password" placeholder="ghp_...">
+              <div style="display:flex;gap:0;"><input id="settingsGitHubPAT" type="password" placeholder="ghp_..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsGitHubPAT',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             </div>
           </div>
           <div class="settings-section">
@@ -2322,7 +2341,7 @@
             <div class="settings-section-desc">Enable voice-to-text input. Hold Ctrl+Shift to talk, release to transcribe.</div>
             <div class="modal-field">
               <label>API Key</label>
-              <input id="settingsWispr" type="password" placeholder="fl-...">
+              <div style="display:flex;gap:0;"><input id="settingsWispr" type="password" placeholder="fl-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsWispr',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             </div>
           </div>
         </div>
@@ -2331,6 +2350,33 @@
     <div class="modal-actions">
       <button class="modal-btn" onclick="closeSettings()">Cancel</button>
       <button class="modal-btn modal-btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Plugin Registry Modal ══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="registryModal" style="z-index:201;">
+  <div class="modal" style="width:820px;max-width:90vw;height:60vh;display:flex;flex-direction:column;">
+    <div class="modal-title" style="display:flex;align-items:center;gap:10px;">
+      <span>Plugin Registry</span>
+      <div style="flex:1;"></div>
+      <button onclick="closeRegistryModal()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div style="padding:10px 16px;border-bottom:1px solid var(--surface0);display:flex;gap:8px;align-items:center;">
+      <input type="text" id="registrySearch" placeholder="Search plugins..." oninput="filterRegistry()" style="flex:1;padding:6px 10px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;">
+      <select id="registryFilter" onchange="filterRegistry()" style="padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:11px var(--font-ui);outline:none;">
+        <option value="">All</option>
+        <option value="installed">Installed</option>
+        <option value="available">Not Installed</option>
+        <option value="updates">Updates Available</option>
+      </select>
+      <button onclick="browsePlugins()" title="Refresh" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="refresh-cw" style="width:14px;height:14px;"></i></button>
+    </div>
+    <div id="registryList" style="flex:1;overflow-y:auto;padding:12px 16px;"></div>
+    <div style="padding:10px 16px;border-top:1px solid var(--surface0);display:flex;align-items:center;gap:8px;">
+      <button onclick="installPluginPrompt()" style="font-size:11px;padding:5px 12px;background:var(--surface1);color:var(--text);border:1px solid var(--overlay0);border-radius:var(--radius);cursor:pointer;font-family:var(--font-ui);">Install from Local Path</button>
+      <div style="flex:1;"></div>
+      <span id="registryCount" style="font-size:10px;color:var(--subtext0);"></span>
     </div>
   </div>
 </div>
@@ -2847,6 +2893,7 @@ requestAnimationFrame(fitTerminalNow);
         }
         case 'config-changed':
           loadConfig();
+          notifyPluginIframes('configChanged', {});
           break;
         case 'ui-action':
           handleUiAction(msg);
@@ -5174,6 +5221,12 @@ function sendCommand(cmd, termId) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId: tid, data: cmd + '\r' }));
 }
 
+async function restartApp() {
+  try {
+    await fetch('/api/restart-app', { method: 'POST' });
+  } catch (_) { /* connection drops as app restarts */ }
+}
+
 function restartShell() {
   aiLaunched = false;
   document.getElementById('termStatus').textContent = 'Restarting...';
@@ -5213,7 +5266,20 @@ function runScript(action) {
 
 // ── Tab Switching ───────────────────────────────────────────────────────
 function switchTab(tab, preserveSearch) {
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.tab-btn').forEach(el => {
+    var isActive = el.dataset.tab === tab;
+    el.classList.toggle('active', isActive);
+    // Plugin tint: color active tab text + border, clear inactive
+    if (el.dataset.tint) {
+      if (isActive) {
+        el.style.color = 'rgb(' + el.dataset.tint + ')';
+        el.style.borderBottomColor = 'rgb(' + el.dataset.tint + ')';
+      } else {
+        el.style.color = '';
+        el.style.borderBottomColor = '';
+      }
+    }
+  });
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `panel-${tab}`));
   if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); }
   if (tab === 'backlog') {
@@ -5223,10 +5289,23 @@ function switchTab(tab, preserveSearch) {
   if (tab === 'files') { populateFilesRepoSelect(); if (filesCurrentRepo) { loadFileTree(filesCurrentPath); loadProjectScripts(); } }
   if (tab === 'prs') { populatePRsRepoSelect(); loadPRs(); }
   if (tab === 'notes') loadNotesList();
+  notifyPluginIframes('tabActivated', { tab: tab });
 }
 
 function switchIntelTab(tab) {
-  document.querySelectorAll('.intel-tab').forEach(el => el.classList.toggle('active', el.dataset.itab === tab));
+  document.querySelectorAll('.intel-tab').forEach(el => {
+    var isActive = el.dataset.itab === tab;
+    el.classList.toggle('active', isActive);
+    if (el.dataset.tint) {
+      if (isActive) {
+        el.style.color = 'rgb(' + el.dataset.tint + ')';
+        el.style.borderBottomColor = 'rgb(' + el.dataset.tint + ')';
+      } else {
+        el.style.color = '';
+        el.style.borderBottomColor = '';
+      }
+    }
+  });
   document.querySelectorAll('.intel-panel').forEach(el => el.classList.toggle('active', el.id === `ipanel-${tab}`));
   if (tab === 'velocity') loadVelocity();
   if (tab === 'team') loadTeamMembers();
@@ -5291,6 +5370,22 @@ function handleUiAction(msg) {
   if (msg.action === 'switch-backlog-view' && msg.view) {
     switchTab('backlog');
     setTimeout(() => switchBacklogView(msg.view), 100);
+  }
+  // Open a plugin tab and optionally send a message to its iframe
+  if (msg.action === 'view-plugin' && msg.plugin) {
+    var tabPrefix = 'plugin-' + msg.plugin + '-';
+    // Find the first tab for this plugin
+    var pluginPanel = document.querySelector('.tab-panel[id^="panel-' + tabPrefix + '"]');
+    if (pluginPanel) {
+      switchTab(pluginPanel.id.replace('panel-', ''));
+      // Forward any extra data to the plugin iframe via postMessage
+      if (msg.message) {
+        setTimeout(function() {
+          var iframes = document.querySelectorAll('iframe[data-plugin-id="' + msg.plugin + '"]');
+          iframes.forEach(function(f) { f.contentWindow.postMessage(Object.assign({ __devopsPilot: true }, msg.message), location.origin); });
+        }, 300);
+      }
+    }
   }
 }
 
@@ -5362,6 +5457,8 @@ function onSprintChange() {
   const path = document.getElementById('sprintSelect').value;
   if (path) loadBurndown(path);
   pushUiContext();
+  const name = (document.getElementById('sprintSelect').selectedOptions[0] || {}).textContent || '';
+  notifyPluginIframes('iterationChanged', { iteration: path, name: name });
 }
 
 function pushUiContext() {
@@ -6723,6 +6820,7 @@ function selectRepo(name) {
   if (prSelect) { prSelect.value = name; prsCurrentRepo = name; }
   if (document.getElementById('panel-prs')?.classList.contains('active')) { loadPRs(); }
   pushUiContext();
+  notifyPluginIframes('repoChanged', { repo: name });
 }
 
 // ── Create Work Item Modal ──────────────────────────────────────────────
@@ -7062,8 +7160,9 @@ async function _fetchGitHubRepos(query) {
 
 function _renderGitHubRepoList(repos, ctx, mode) {
   if (!repos.length) return '<div style="font-size:11px;color:var(--subtext0);padding:8px 0;">No repos found.</div>';
-  return repos.map(r => `
-    <div class="repo-gh-pick" onclick="_ghRepoSelected('${ctx}','${mode}',${JSON.stringify(JSON.stringify(r))})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;border-radius:var(--radius);transition:background 0.15s;" onmouseenter="this.style.background='var(--surface1)'" onmouseleave="this.style.background='none'">
+  window._ghRepoPicks = repos;
+  return repos.map((r, i) => `
+    <div class="repo-gh-pick" onclick="_ghRepoSelected('${ctx}','${mode}',${i})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;border-radius:var(--radius);transition:background 0.15s;" onmouseenter="this.style.background='var(--surface1)'" onmouseleave="this.style.background='none'">
       <i data-lucide="${r.private ? 'lock' : 'globe'}" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.full_name)}</div>
@@ -7121,8 +7220,8 @@ function _ghRepoSearch(ctx, mode) {
   }, 300);
 }
 
-async function _ghRepoSelected(ctx, mode, repoJson) {
-  const repo = JSON.parse(repoJson);
+async function _ghRepoSelected(ctx, mode, idx) {
+  const repo = window._ghRepoPicks[idx];
   _repoHidePanel(ctx);
   try {
     const res = await fetch('/api/browse-folder', { method: 'POST' });
@@ -7169,6 +7268,8 @@ async function saveSettings() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    // Also save plugin settings
+    await savePluginSettings();
     if (data.ok) {
       closeSettings();
       showLoading('Loading...');
@@ -7937,7 +8038,79 @@ function getCmdActions() {
       category: 'Work Item',
     });
   }
+  // Plugin-contributed navigation (tabs)
+  if (_loadedPlugins && _loadedPlugins.length) {
+    for (const p of _loadedPlugins) {
+      const tabs = (p.contributions || {}).centerTabs || [];
+      for (const t of tabs) {
+        actions.push({
+          label: 'Go to ' + (t.label || p.name),
+          icon: t.icon || p.icon || 'puzzle',
+          action: () => switchTab('plugin-' + p.id + '-' + t.id),
+          category: 'Plugin',
+        });
+      }
+    }
+  }
+  // Plugin-contributed cached items (loaded async)
+  if (_pluginCmdItems && _pluginCmdItems.length) {
+    for (const item of _pluginCmdItems) actions.push(item);
+  }
   return actions;
+}
+
+// Async-load plugin items for command palette (called after plugins init)
+var _pluginCmdItems = [];
+async function loadPluginCmdItems() {
+  _pluginCmdItems = [];
+  if (!_loadedPlugins) return;
+  for (const p of _loadedPlugins) {
+    try {
+      const cfg = await (await fetch('/api/plugins/' + p.id + '/config')).json();
+      if (!cfg.configured) continue;
+    } catch (_) { continue; }
+
+    if (p.id === 'wrike') {
+      try {
+        const tasks = await (await fetch('/api/plugins/wrike/tasks?limit=20')).json();
+        if (Array.isArray(tasks)) {
+          for (const t of tasks) {
+            _pluginCmdItems.push({
+              label: t.title,
+              icon: 'check-square',
+              action: () => {
+                switchTab('plugin-wrike-board');
+                var iframes = document.querySelectorAll('iframe[data-plugin-id="wrike"]');
+                iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin); });
+              },
+              category: 'Wrike',
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (p.id === 'builderio') {
+      try {
+        const models = await (await fetch('/api/plugins/builderio/models')).json();
+        if (Array.isArray(models)) {
+          for (const m of models) {
+            const displayName = m.name.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            _pluginCmdItems.push({
+              label: displayName + ' (' + m.kind + ', ' + m.fieldCount + ' fields)',
+              icon: 'blocks',
+              action: () => {
+                switchTab('plugin-builderio-manager');
+                var iframes = document.querySelectorAll('iframe[data-plugin-id="builderio"]');
+                iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'openModel', modelId: m.id }, location.origin); });
+              },
+              category: 'Builder.io',
+            });
+          }
+        }
+      } catch (_) {}
+    }
+  }
 }
 
 function openCmdPalette() {
@@ -7953,6 +8126,8 @@ function openCmdPalette() {
 function closeCmdPalette() {
   document.getElementById('cmdPalette').classList.remove('open');
 }
+
+var _cmdSearchTimer = null;
 
 function filterCmdPalette() {
   const q = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
@@ -7976,6 +8151,55 @@ function filterCmdPalette() {
 
   _cmdSelectedIdx = 0;
   renderCmdPalette();
+
+  // Live search plugins when query is 3+ chars and few plugin results
+  clearTimeout(_cmdSearchTimer);
+  if (q.length >= 3) {
+    var pluginHits = _cmdFiltered.filter(a => a.category === 'Wrike' || a.category === 'Builder.io').length;
+    if (pluginHits < 3) {
+      _cmdSearchTimer = setTimeout(function() { liveSearchPlugins(q); }, 300);
+    }
+  }
+}
+
+async function liveSearchPlugins(q) {
+  if (!_loadedPlugins) return;
+  var currentQ = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
+  if (currentQ !== q) return; // user typed something else
+
+  var newItems = [];
+
+  // Wrike live search
+  if (_loadedPlugins.some(function(p) { return p.id === 'wrike'; })) {
+    try {
+      var tasks = await (await fetch('/api/plugins/wrike/tasks/search?q=' + encodeURIComponent(q) + '&limit=10')).json();
+      if (Array.isArray(tasks)) {
+        var existing = new Set(_cmdFiltered.map(a => a.label));
+        tasks.forEach(function(t) {
+          if (!existing.has(t.title)) {
+            newItems.push({
+              label: t.title,
+              icon: 'check-square',
+              action: function() {
+                switchTab('plugin-wrike-board');
+                var iframes = document.querySelectorAll('iframe[data-plugin-id="wrike"]');
+                iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin); });
+              },
+              category: 'Wrike',
+            });
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  if (newItems.length) {
+    // Re-check the query hasn't changed
+    currentQ = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
+    if (currentQ !== q) return;
+    _cmdFiltered = _cmdFiltered.concat(newItems);
+    renderCmdPalette();
+  }
 }
 
 function renderCmdPalette() {
@@ -8190,6 +8414,468 @@ function renderTimeline() {
   }
   container.innerHTML = html;
   lucide.createIcons();
+}
+
+// ── Plugin System ──────────────────────────────────────────────────────────
+
+// Notify all plugin iframes of an event
+function notifyPluginIframes(eventType, data) {
+  document.querySelectorAll('iframe[data-plugin-id]').forEach(function (iframe) {
+    try {
+      iframe.contentWindow.postMessage({ __devopsPilot: true, type: eventType, data: data }, location.origin);
+    } catch (_) {}
+  });
+}
+
+// Listen for postMessage from plugin iframes
+window.addEventListener('message', function (event) {
+  if (event.origin !== location.origin) return;
+  var msg = event.data;
+  if (!msg || !msg.__devopsPilot) return;
+
+  switch (msg.type) {
+    case 'switchTab':
+      switchTab(msg.tab);
+      break;
+    case 'askAi':
+      askAi(msg.prompt);
+      break;
+    case 'toast':
+      if (typeof toast === 'function') toast(msg.message, msg.level || 'info');
+      break;
+    case 'getContext':
+      var ctxData = {
+        activeRepo: activeRepo,
+        selectedIteration: document.getElementById('sprintSelect').value,
+        selectedIterationName: (document.getElementById('sprintSelect').selectedOptions[0] || {}).textContent || '',
+        config: {}
+      };
+      // Send config without secrets
+      if (configData) {
+        var keys = Object.keys(configData);
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          if (k.indexOf('PAT') === -1 && k.indexOf('Token') === -1 && k.indexOf('Secret') === -1) {
+            ctxData.config[k] = configData[k];
+          }
+        }
+      }
+      event.source.postMessage({
+        __devopsPilot: true, type: 'contextResponse', requestId: msg.requestId, data: ctxData
+      }, event.origin);
+      break;
+    case 'viewWorkItem':
+      viewWorkItem(msg.id);
+      break;
+  }
+});
+
+// Execute a plugin action
+function executePluginAction(plugin, action) {
+  switch (action.type) {
+    case 'switchTab':
+      var tabId = action.tab;
+      if (tabId.indexOf('plugin-') !== 0) tabId = 'plugin-' + plugin.id + '-' + tabId;
+      switchTab(tabId);
+      break;
+    case 'prompt':
+      var prompt = action.template
+        .replace(/\$\{repo\}/g, activeRepo || '')
+        .replace(/\$\{config\.(\w+)\}/g, function (_, key) { return (configData || {})[key] || ''; });
+      askAi(prompt);
+      break;
+    case 'api':
+      fetch('http://127.0.0.1:3800' + action.path, {
+        method: action.method || 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: action.body ? JSON.stringify(action.body) : undefined
+      });
+      break;
+    case 'script':
+      var scriptPath = 'dashboard/plugins/' + plugin.id + '/' + action.path;
+      var cmd = scriptPath.endsWith('.js') ? 'node ' + scriptPath
+        : scriptPath.endsWith('.ps1') ? 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./' + scriptPath + '"'
+        : './' + scriptPath;
+      var aiPrompt = 'Run this command: ' + cmd;
+      if (action.analyze) aiPrompt += ' and then ' + action.analyze;
+      askAi(aiPrompt);
+      break;
+  }
+}
+
+// Inject a sidebar action button
+function injectSidebarAction(plugin, action) {
+  var containers = {
+    actions: document.getElementById('sidebarPluginActions'),
+    aiActions: document.getElementById('sidebarPluginAiActions'),
+  };
+  var container = containers[action.section];
+  if (!container) return;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.innerHTML = '<i data-lucide="' + (action.icon || 'puzzle') + '"></i> ' + action.label;
+  btn.onclick = function () { executePluginAction(plugin, action.action); };
+  container.appendChild(btn);
+}
+
+// Inject an AI action button
+function injectAiAction(plugin, action) {
+  var container = document.getElementById('sidebarPluginAiActions');
+  if (!container) return;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.innerHTML = '<i data-lucide="' + (action.icon || 'sparkles') + '"></i> ' + action.label;
+  btn.onclick = function () { executePluginAction(plugin, action.action); };
+  container.appendChild(btn);
+}
+
+// Inject a custom sidebar section with its own title and buttons
+function injectSidebarSection(plugin, section) {
+  var container = document.getElementById('sidebarPluginSections');
+  if (!container) return;
+
+  var wrapper = document.createElement('div');
+  var titleStyle = plugin.tint ? ' style="color: rgba(' + plugin.tint + ', 0.8);"' : '';
+  wrapper.innerHTML = '<div class="divider"></div><div class="section-title"' + titleStyle + '>' + (section.title || plugin.name) + '</div>';
+
+  var items = section.items || [];
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.innerHTML = '<i data-lucide="' + (item.icon || 'puzzle') + '"></i> ' + item.label;
+    (function (it) {
+      btn.onclick = function () { executePluginAction(plugin, it.action); };
+    })(item);
+    wrapper.appendChild(btn);
+  }
+  container.appendChild(wrapper);
+}
+
+// Inject a center tab with iframe panel
+function injectCenterTab(plugin, tab) {
+  var tabBar = document.querySelector('.tab-bar');
+  var rightSection = tabBar.querySelector('.tab-bar-right');
+  var tabId = 'plugin-' + plugin.id + '-' + tab.id;
+
+  var btn = document.createElement('button');
+  btn.className = 'tab-btn';
+  btn.dataset.tab = tabId;
+  btn.textContent = tab.label;
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
+  btn.onclick = function () { switchTab(tabId); };
+  tabBar.insertBefore(btn, rightSection);
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel';
+  panel.id = 'panel-' + tabId;
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
+  document.querySelector('.center').appendChild(panel);
+}
+
+// Inject a right-side intel panel with iframe
+function injectIntelPanel(plugin, ip) {
+  var tabBar = document.querySelector('.intel-tabs');
+  var panelId = 'plugin-' + plugin.id + '-' + ip.id;
+
+  var btn = document.createElement('button');
+  btn.className = 'intel-tab';
+  btn.dataset.itab = panelId;
+  btn.textContent = ip.label;
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
+  btn.onclick = function () { switchIntelTab(panelId); };
+  tabBar.appendChild(btn);
+
+  var panel = document.createElement('div');
+  panel.className = 'intel-panel';
+  panel.id = 'ipanel-' + panelId;
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + ip.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + ip.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
+  document.querySelector('.intel').appendChild(panel);
+}
+
+// Store context menu items for later use
+var pluginContextMenuItems = [];
+function registerContextMenuItem(plugin, item) {
+  pluginContextMenuItems.push({ plugin: plugin, item: item });
+}
+
+// Initialize all plugins on load
+var _loadedPlugins = [];
+
+(async function initPlugins() {
+  var plugins = [];
+  try {
+    var res = await fetch('/api/plugins');
+    plugins = await res.json();
+  } catch (_) { return; }
+  _loadedPlugins = plugins;
+
+  // Always show Plugins tab in settings so users can browse/install plugins
+  document.getElementById('settingsPluginsBtn').style.display = '';
+
+  if (plugins.length) {
+    for (var i = 0; i < plugins.length; i++) {
+      var p = plugins[i];
+      var c = p.contributions || {};
+      if (c.sidebarActions) c.sidebarActions.forEach(function (a) { injectSidebarAction(p, a); });
+      if (c.aiActions) c.aiActions.forEach(function (a) { injectAiAction(p, a); });
+      if (c.sidebarSections) c.sidebarSections.forEach(function (s) { injectSidebarSection(p, s); });
+      if (c.centerTabs) c.centerTabs.forEach(function (t) { injectCenterTab(p, t); });
+      if (c.intelPanels) c.intelPanels.forEach(function (ip) { injectIntelPanel(p, ip); });
+      if (c.contextMenuItems) c.contextMenuItems.forEach(function (m) { registerContextMenuItem(p, m); });
+    }
+
+    renderPluginSettings(plugins);
+  }
+
+  lucide.createIcons();
+
+  // Load plugin items for command palette (async, non-blocking)
+  loadPluginCmdItems();
+})();
+
+// Render plugin settings fields in the Settings > Plugins tab
+function renderPluginSettings(plugins) {
+  var container = document.getElementById('pluginSettingsContainer');
+  if (!plugins.length) { container.innerHTML = '<div style="color:var(--subtext0);padding:12px;">No plugins installed.</div>'; return; }
+
+  // Vertical nav column + settings panel (matching main settings pattern)
+  var nav = '<div style="display:flex;gap:0;height:100%;">';
+  nav += '<div style="min-width:140px;border-right:1px solid var(--surface0);padding:8px 0;display:flex;flex-direction:column;gap:2px;">';
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    var active = i === 0 ? ' active' : '';
+    var tintStyle = p.tint ? 'border-left:2px solid rgba(' + p.tint + ',0.5);' : '';
+    nav += '<button class="settings-nav-btn plugin-settings-nav' + active + '" data-plugin-tab="ps_' + p.id + '" onclick="switchPluginSettingsTab(\'' + p.id + '\',this)" style="text-align:left;padding:8px 14px;font-size:12px;border-radius:0;' + tintStyle + '">'
+      + '<i data-lucide="' + (p.icon || 'puzzle') + '" style="width:14px;height:14px;"></i> ' + (p.name || p.id) + '</button>';
+  }
+  nav += '</div><div style="flex:1;padding:16px;overflow-y:auto;">';
+
+  // Panels
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    nav += '<div class="plugin-settings-panel" id="ps_' + p.id + '" style="' + (i === 0 ? '' : 'display:none;') + '">';
+    nav += '<div class="settings-section-title">' + (p.name || p.id) + '</div>';
+    if (p.description) nav += '<div class="settings-section-desc" style="margin-bottom:16px;">' + p.description + '</div>';
+    var settings = p.settings || [];
+    if (!settings.length) {
+      nav += '<div style="font-size:12px;color:var(--subtext0);">No configurable settings.</div>';
+    }
+    for (var j = 0; j < settings.length; j++) {
+      var s = settings[j];
+      var fieldId = 'pluginSetting_' + p.id + '_' + s.key;
+      var inputType = s.secret ? 'password' : 'text';
+      nav += '<div class="modal-field">';
+      nav += '<label>' + (s.label || s.key) + '</label>';
+      if (s.description) nav += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">' + s.description + '</div>';
+      if (s.secret) {
+        nav += '<div style="display:flex;gap:0;">';
+        nav += '<input id="' + fieldId + '" type="password" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input" style="border-radius:var(--radius) 0 0 var(--radius);flex:1;">';
+        nav += '<button type="button" onclick="toggleSecretField(\'' + fieldId + '\',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>';
+        nav += '</div>';
+      } else {
+        nav += '<input id="' + fieldId + '" type="text" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
+      }
+      nav += '</div>';
+    }
+    nav += '</div>';
+  }
+  nav += '</div></div>';
+  container.innerHTML = nav;
+
+  // Load current values
+  plugins.forEach(function (p) {
+    if (!p.settings || !p.settings.length) return;
+    fetch('/api/plugins/' + p.id + '/config').then(function (r) { return r.json(); }).then(function (cfg) {
+      (p.settings || []).forEach(function (s) {
+        var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
+        if (!el) return;
+        if (cfg[s.key] !== undefined) el.value = cfg[s.key];
+        else if (s.secret && cfg[s.key + 'Set']) el.placeholder = '(configured)';
+      });
+    }).catch(function () {});
+  });
+}
+
+function switchPluginSettingsTab(pluginId, btn) {
+  document.querySelectorAll('.plugin-settings-nav').forEach(function (b) { b.classList.remove('active'); });
+  document.querySelectorAll('.plugin-settings-panel').forEach(function (p) { p.style.display = 'none'; });
+  btn.classList.add('active');
+  var panel = document.getElementById('ps_' + pluginId);
+  if (panel) panel.style.display = '';
+}
+
+function toggleSecretField(fieldId, btn) {
+  var el = document.getElementById(fieldId);
+  if (el.type === 'password') { el.type = 'text'; btn.style.color = 'var(--accent)'; }
+  else { el.type = 'password'; btn.style.color = 'var(--subtext0)'; }
+}
+
+var _registryPlugins = [];
+
+async function browsePlugins() {
+  document.getElementById('registryModal').classList.add('open');
+  document.getElementById('registrySearch').value = '';
+  document.getElementById('registryFilter').value = '';
+  document.getElementById('registryList').innerHTML = '<div style="text-align:center;padding:40px;color:var(--subtext0);font-size:12px;">Loading registry...</div>';
+
+  try {
+    var res = await fetch('/api/plugins/registry');
+    var data = await res.json();
+    if (data.error) { document.getElementById('registryList').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;">Error: ' + data.error + '</div>'; return; }
+    _registryPlugins = data.plugins || [];
+    filterRegistry();
+  } catch (e) {
+    document.getElementById('registryList').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+function closeRegistryModal() { document.getElementById('registryModal').classList.remove('open'); }
+
+function filterRegistry() {
+  var q = (document.getElementById('registrySearch').value || '').toLowerCase();
+  var filter = document.getElementById('registryFilter').value;
+  var visible = _registryPlugins.filter(function(p) {
+    if (q && p.name.toLowerCase().indexOf(q) === -1 && p.description.toLowerCase().indexOf(q) === -1 && !(p.tags || []).some(function(t) { return t.toLowerCase().indexOf(q) !== -1; })) return false;
+    if (filter === 'installed' && !p.installed) return false;
+    if (filter === 'available' && p.installed) return false;
+    if (filter === 'updates' && !p.updateAvailable) return false;
+    return true;
+  });
+  document.getElementById('registryCount').textContent = visible.length + ' of ' + _registryPlugins.length + ' plugins';
+  renderRegistryList(visible);
+}
+
+function renderRegistryList(plugins) {
+  if (!plugins.length) {
+    document.getElementById('registryList').innerHTML = '<div style="text-align:center;padding:40px;color:var(--subtext0);font-size:13px;">No plugins match your search</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    var borderColor = p.tint ? 'rgba(' + p.tint + ',0.4)' : 'var(--surface1)';
+    html += '<div style="background:var(--surface0);border:1px solid ' + borderColor + ';border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:8px;">';
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">';
+    html += '<span style="font-size:15px;font-weight:600;">' + esc(p.name) + '</span>';
+    html += '<span style="font-size:10px;color:var(--subtext0);background:var(--surface1);padding:1px 6px;border-radius:3px;">v' + esc(p.version) + '</span>';
+    if (p.updateAvailable) {
+      html += '<span style="font-size:10px;color:var(--yellow);background:rgba(249,206,108,0.1);padding:1px 6px;border-radius:3px;">v' + esc(p.installedVersion) + ' installed</span>';
+    }
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--subtext1);line-height:1.5;margin-bottom:8px;">' + esc(p.description) + '</div>';
+    html += '<div style="display:flex;align-items:center;gap:8px;">';
+    html += '<span style="font-size:10px;color:var(--overlay1);">by ' + esc(p.author) + '</span>';
+    if (p.tags && p.tags.length) {
+      p.tags.forEach(function(t) { html += '<span style="font-size:9px;padding:1px 6px;border-radius:99px;background:var(--surface1);color:var(--subtext0);">' + esc(t) + '</span>'; });
+    }
+    html += '<div style="flex:1;"></div>';
+    if (p.installed && p.updateAvailable) {
+      var btnBg = p.tint ? 'rgba(' + p.tint + ',0.15)' : 'var(--surface1)';
+      var btnColor = p.tint ? 'rgb(' + p.tint + ')' : 'var(--text)';
+      var btnBorder = p.tint ? 'rgba(' + p.tint + ',0.3)' : 'var(--overlay0)';
+      html += '<button onclick="updatePlugin(\'' + esc(p.id) + '\',\'' + esc(p.repo) + '\',\'' + esc(p.name) + '\')" style="font-size:11px;padding:4px 14px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:var(--radius);cursor:pointer;font-weight:600;font-family:var(--font-ui);">Update</button>';
+    } else if (p.installed) {
+      html += '<span style="font-size:11px;color:var(--green);font-weight:600;display:flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Installed</span>';
+    } else {
+      var btnBg = p.tint ? 'rgba(' + p.tint + ',0.15)' : 'var(--surface1)';
+      var btnColor = p.tint ? 'rgb(' + p.tint + ')' : 'var(--text)';
+      var btnBorder = p.tint ? 'rgba(' + p.tint + ',0.3)' : 'var(--overlay0)';
+      html += '<button onclick="installFromRegistry(\'' + esc(p.id) + '\',\'' + esc(p.repo) + '\',\'' + esc(p.name) + '\')" style="font-size:11px;padding:4px 14px;background:' + btnBg + ';color:' + btnColor + ';border:1px solid ' + btnBorder + ';border-radius:var(--radius);cursor:pointer;font-weight:600;font-family:var(--font-ui);">Install</button>';
+    }
+    html += '</div>';
+    html += '</div>';
+  }
+  document.getElementById('registryList').innerHTML = html;
+}
+
+async function installFromRegistry(id, repo, name) {
+  if (!confirm('Install "' + name + '" plugin?')) return;
+  try {
+    var res = await fetch('/api/plugins/install-from-registry', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, repo: repo })
+    });
+    var data = await res.json();
+    if (data.ok) {
+      toast('Plugin "' + name + '" installed. Restart to activate.', 'success');
+      // Refresh registry to show "Installed"
+      var r = await fetch('/api/plugins/registry');
+      var d = await r.json();
+      _registryPlugins = d.plugins || [];
+      filterRegistry();
+    } else {
+      toast(data.error || 'Install failed', 'error');
+    }
+  } catch (e) { toast('Install failed: ' + e.message, 'error'); }
+}
+
+async function updatePlugin(id, repo, name) {
+  if (!confirm('Update "' + name + '"? Your settings will be preserved.')) return;
+  try {
+    var res = await fetch('/api/plugins/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, repo: repo })
+    });
+    var data = await res.json();
+    if (data.ok) {
+      toast('Plugin "' + name + '" updated. Restart to activate.', 'success');
+      var r = await fetch('/api/plugins/registry');
+      var d = await r.json();
+      _registryPlugins = d.plugins || [];
+      filterRegistry();
+    } else {
+      toast(data.error || 'Update failed', 'error');
+    }
+  } catch (e) { toast('Update failed: ' + e.message, 'error'); }
+}
+
+async function installPluginPrompt() {
+  try {
+    var browse = await fetch('/api/browse-folder', { method: 'POST' });
+    var result = await browse.json();
+    if (result.canceled || !result.path) return;
+    var res = await fetch('/api/plugins/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: result.path })
+    });
+    var data = await res.json();
+    if (data.ok) { toast('Plugin "' + data.name + '" installed. Restart to activate.', 'success'); }
+    else { toast(data.error || 'Install failed', 'error'); }
+  } catch (e) { toast('Install failed', 'error'); }
+}
+
+// Save plugin settings (called from saveSettings)
+async function savePluginSettings() {
+  var inputs = document.querySelectorAll('.plugin-setting-input');
+  var byPlugin = {};
+  inputs.forEach(function (el) {
+    var pid = el.dataset.plugin;
+    var key = el.dataset.key;
+    var val = el.value.trim();
+    if (!val) return; // skip empty (don't overwrite with blank)
+    if (!byPlugin[pid]) byPlugin[pid] = {};
+    byPlugin[pid][key] = val;
+  });
+  for (var pid in byPlugin) {
+    try {
+      await fetch('/api/plugins/' + pid + '/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(byPlugin[pid])
+      });
+    } catch (_) {}
+  }
 }
 
 </script>

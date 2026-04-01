@@ -37,6 +37,11 @@ function addRoute(method, pathname, handler) {
   extraRoutes.push({ method: method.toUpperCase(), pathname, handler });
 }
 
+// ── Plugin system ────────────────────────────────────────────────────────────
+const { loadPlugins } = require('./plugin-loader');
+const pluginsDir = path.join(__dirname, 'plugins');
+let loadedPlugins = [];
+
 // ── Helper: read JSON body ────────────────────────────────────────────────────
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -61,7 +66,19 @@ const server = http.createServer(async (req, res) => {
 
   // Pluggable routes first
   for (const r of extraRoutes) {
-    if (url.pathname === r.pathname && req.method === r.method) {
+    // Exact match for normal routes, prefix match for plugin static files and plugin API prefixes
+    if (r.pathname === '/__plugin_static__') {
+      if (url.pathname.startsWith('/plugins/') && req.method === 'GET') {
+        const result = r.handler(req, res, url);
+        if (result !== false) return;
+      }
+    } else if (r.method === '__PREFIX__') {
+      if (url.pathname.startsWith(r.pathname + '/') || url.pathname === r.pathname) {
+        const subpath = url.pathname.slice(r.pathname.length) || '/';
+        const result = r.handler(req, res, url, subpath);
+        if (result !== false) return;
+      }
+    } else if (url.pathname === r.pathname && req.method === r.method) {
       return r.handler(req, res, url);
     }
   }
@@ -180,6 +197,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ui/view-commit-diff' && req.method === 'POST') return handleUiAction(req, res, 'view-commit-diff');
     if (url.pathname === '/api/ui/view-activity' && req.method === 'POST')   return handleUiAction(req, res, 'view-activity');
     if (url.pathname === '/api/ui/view-pr' && req.method === 'POST')       return handleUiAction(req, res, 'view-pr');
+    if (url.pathname === '/api/ui/view-plugin' && req.method === 'POST')   return handleUiAction(req, res, 'view-plugin');
     if (url.pathname === '/api/ui/context' && req.method === 'GET')         return json(res, getUiContextWithPath());
     if (url.pathname === '/api/ui/context' && req.method === 'POST')        return handleUiContextUpdate(req, res);
 
@@ -235,6 +253,19 @@ function handleExportConfig(res) {
   delete exportCfg.Repos;
   exportCfg._exportedAt = new Date().toISOString();
   exportCfg._exportedFrom = 'DevOps Pilot';
+  // Collect plugin configs
+  const pluginConfigs = {};
+  try {
+    const dirs = fs.readdirSync(pluginsDir);
+    for (const dir of dirs) {
+      if (dir === 'sdk') continue;
+      const cfgFile = path.join(pluginsDir, dir, 'config.json');
+      if (fs.existsSync(cfgFile)) {
+        try { pluginConfigs[dir] = JSON.parse(fs.readFileSync(cfgFile, 'utf8')); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  if (Object.keys(pluginConfigs).length) exportCfg._pluginConfigs = pluginConfigs;
   res.writeHead(200, {
     'Content-Type': 'application/json',
     'Content-Disposition': 'attachment; filename="devops-pilot-settings.json"',
@@ -251,6 +282,17 @@ async function handleImportConfig(req, res) {
   delete incoming._exportedAt;
   delete incoming._exportedFrom;
   delete incoming.Repos;  // Repos have local paths -- never import them
+  // Restore plugin configs
+  const pluginConfigs = incoming._pluginConfigs;
+  delete incoming._pluginConfigs;
+  if (pluginConfigs && typeof pluginConfigs === 'object') {
+    for (const [pluginId, cfg] of Object.entries(pluginConfigs)) {
+      const pluginDir = path.join(pluginsDir, pluginId);
+      if (fs.existsSync(pluginDir)) {
+        try { fs.writeFileSync(path.join(pluginDir, 'config.json'), JSON.stringify(cfg, null, 2), 'utf8'); } catch (_) {}
+      }
+    }
+  }
   // Merge with existing config (preserve existing PATs if not provided)
   let existing = {};
   try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
@@ -1835,6 +1877,25 @@ function handleGitDiff(url, res) {
   } else {
     diff = gitExec(repoPath, 'diff --ignore-cr-at-eol HEAD');
     if (!diff) diff = gitExec(repoPath, 'diff --ignore-cr-at-eol');
+    // Include untracked (new) files in the combined diff
+    const status = gitExec(repoPath, 'status --porcelain');
+    if (status) {
+      const untrackedFiles = status.split('\n').filter(Boolean)
+        .filter(l => l.startsWith('??'))
+        .map(l => l.substring(3).replace(/\r$/, '').trim());
+      for (const uf of untrackedFiles) {
+        const fullPath = path.join(repoPath, uf);
+        if (fs.existsSync(fullPath)) {
+          try {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            const lines = content.split('\n');
+            const fileDiff = `diff --git a/${uf} b/${uf}\nnew file\n--- /dev/null\n+++ b/${uf}\n@@ -0,0 +1,${lines.length} @@\n` +
+              lines.map(l => `+${l}`).join('\n');
+            diff = diff ? diff + '\n' + fileDiff : fileDiff;
+          } catch (_) {}
+        }
+      }
+    }
   }
 
   json(res, { diff: diff || 'No changes', filePath });
@@ -2436,6 +2497,87 @@ wss.on('connection', (ws) => {
   });
 });
 
+// ── Write .claude/CLAUDE.md with plugin instructions for AI ─────────────────
+function writePluginHints() {
+  // Collect all installed plugins with instructions or keywords
+  const pluginData = [];
+  try {
+    const dirs = fs.readdirSync(pluginsDir);
+    for (const dir of dirs) {
+      if (dir === 'sdk') continue;
+      const mf = path.join(pluginsDir, dir, 'plugin.json');
+      if (!fs.existsSync(mf)) continue;
+      try {
+        const manifest = JSON.parse(fs.readFileSync(mf, 'utf8'));
+        const instrFile = manifest.instructions
+          ? path.join(pluginsDir, dir, manifest.instructions)
+          : path.join(pluginsDir, dir, 'instructions.md');
+        let instructions = '';
+        if (fs.existsSync(instrFile)) {
+          try { instructions = fs.readFileSync(instrFile, 'utf8'); } catch (_) {}
+        }
+        pluginData.push({
+          id: manifest.id,
+          name: manifest.name,
+          description: manifest.description || '',
+          keywords: manifest.aiKeywords || [],
+          instructions,
+        });
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  // Build the plugin instructions block
+  let block = '';
+  if (pluginData.length) {
+    block += '\n## Installed Plugins\n\n';
+    block += 'The following plugins are installed in DevOps Pilot. They provide dedicated API endpoints and workflows -- do NOT try to handle these tasks with generic code or by searching the repo.\n\n';
+    block += '### IMPORTANT: Always Ask Before Using a Plugin\n\n';
+    block += 'When the user\'s request matches any of the keywords below, **ASK the user if they want to use the plugin** before proceeding. For example: "Would you like to use the Builder.io plugin for this?"\n\n';
+    block += 'Do NOT silently use a plugin. Do NOT ignore plugins and search the repo instead. Ask first, then use the plugin instructions below.\n\n';
+    for (const p of pluginData) {
+      if (p.keywords.length) {
+        block += `- **${p.name}** (${p.description}): ${p.keywords.join(', ')}\n`;
+      }
+    }
+    for (const p of pluginData) {
+      if (p.instructions) {
+        block += '\n---\n\n';
+        block += `### Plugin: ${p.name}\n\n`;
+        block += p.instructions + '\n';
+      }
+    }
+  }
+
+  // Write to all AI instruction files using markers
+  const instructionFiles = [
+    path.join(repoRoot, 'CLAUDE.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+    path.join(repoRoot, 'GEMINI.md'),
+    path.join(repoRoot, '.github', 'copilot-instructions.md'),
+  ];
+  const START = '<!-- PLUGIN_INSTRUCTIONS_START -->';
+  const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
+  for (const file of instructionFiles) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      let content = fs.readFileSync(file, 'utf8');
+      const startIdx = content.indexOf(START);
+      const endIdx = content.indexOf(END);
+      if (startIdx === -1 || endIdx === -1) continue;
+      const before = content.substring(0, startIdx + START.length);
+      const after = content.substring(endIdx);
+      content = before + '\n' + block + '\n' + after;
+      fs.writeFileSync(file, content, 'utf8');
+    } catch (_) {}
+  }
+}
+
+// ── Load plugins ─────────────────────────────────────────────────────────────
+loadedPlugins = loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints });
+if (loadedPlugins.length) console.log(`  Loaded ${loadedPlugins.length} plugin(s)`);
+writePluginHints();
+
 // ── Start ───────────────────────────────────────────────────────────────────
 function startServer() {
   server.on('error', (err) => {
@@ -2462,4 +2604,4 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-module.exports = { server, startServer, addRoute };
+module.exports = { server, startServer, addRoute, loadedPlugins };

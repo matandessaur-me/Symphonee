@@ -1,6 +1,8 @@
 node_modules/
 dist/
 config/config.json
+dashboard/plugins/*
+!dashboard/plugins/sdk/
 notes/
 .ai-workspace/
 .claude/

@@ -65,6 +65,13 @@ if (!gotLock) {
       res.end(JSON.stringify({ count: displays.length }));
     });
 
+    // ── Restart app (relaunch Electron) ───────────────────────────────
+    addRoute('POST', '/api/restart-app', (req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      setTimeout(() => { app.relaunch(); app.exit(0); }, 200);
+    });
+
     // ── Browse for folder (native OS dialog) ────────────────────────────
     addRoute('POST', '/api/browse-folder', async (req, res) => {
       if (!win) {

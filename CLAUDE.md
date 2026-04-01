@@ -185,6 +185,7 @@ You can control the dashboard UI. **Use these intelligently based on context** �
 | POST | `/api/ui/refresh-workitems` | Refresh work items list. Body: `{}` |
 | POST | `/api/ui/view-activity` | Open the Activity Timeline view. Body: `{}` |
 | POST | `/api/ui/view-pr` | Open a pull request. Body: `{ repo: "RepoName", number: 123 }` (number is optional — opens PR list if omitted) |
+| POST | `/api/ui/view-plugin` | Open a plugin tab. Body: `{ plugin: "pluginId", message: { type: "action", ... } }` (message is optional -- forwarded to the plugin iframe via postMessage) |
 | GET | `/api/ui/context` | Get current dashboard state: selected iteration, active repo, activeRepoPath |
 
 **Important: The Board and Backlog are a single tab called "Backlog".** The Backlog tab has two views: List (default) and Board. Use `{ tab: "backlog" }` to navigate there. If you send `{ tab: "board" }` it will automatically switch to the backlog tab with board view active. The Pull Requests tab is only visible when a GitHub PAT is configured.
@@ -393,6 +394,24 @@ powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Push-AndPR
 
 You can also use `New-PullRequest.ps1` directly if you need more control over the PR title and description.
 
+## Plugin System
+
+DevOps Pilot supports plugins that add sidebar actions, AI actions, center tabs, intel panels, and API routes. Plugins live in `dashboard/plugins/` and are loaded on startup.
+
+**CRITICAL: Check for plugin instructions.** Plugins may provide additional AI instructions. Always fetch them at the start of a session:
+```bash
+curl -s http://127.0.0.1:3800/api/plugins/instructions
+```
+This returns markdown instructions from all active plugins describing their API routes and capabilities. Follow these instructions when the user asks you to work with plugin features.
+
+**Available plugin endpoints:**
+```bash
+# List all loaded plugins
+curl -s http://127.0.0.1:3800/api/plugins
+```
+
+Plugin API routes are namespaced under `/api/plugins/<plugin-id>/`. Check the plugin instructions for specific routes.
+
 ## Important Notes
 
 - Work item types: User Story, Bug, Task, Feature, Epic
@@ -407,3 +426,6 @@ You can also use `New-PullRequest.ps1` directly if you need more control over th
 - **NEVER use `az`** — the app's REST API handles everything
 - **All repos are on GitHub**, not Azure DevOps. Azure DevOps is only for work item tracking.
 - **NEVER use backslash paths** in bash — always use forward slashes (`./scripts/` not `.\scripts\`)
+
+<!-- PLUGIN_INSTRUCTIONS_START -->
+<!-- PLUGIN_INSTRUCTIONS_END -->
