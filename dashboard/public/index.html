@@ -2318,6 +2318,11 @@
 
         <!-- Plugins Tab -->
         <div class="settings-tab" id="settingsTab-plugins">
+          <div style="display:flex;align-items:center;margin-bottom:12px;">
+            <div style="font-size:12px;color:var(--subtext0);">Drop plugin folders into <code style="background:var(--surface0);padding:1px 6px;border-radius:3px;font-size:11px;">dashboard/plugins/</code> and restart</div>
+            <div style="flex:1;"></div>
+            <button class="modal-btn" onclick="installPluginPrompt()" style="font-size:11px;padding:5px 12px;">Install Plugin</button>
+          </div>
           <div id="pluginSettingsContainer"><div style="color:var(--subtext0);padding:12px;">No plugins installed.</div></div>
         </div>
 
@@ -8653,6 +8658,18 @@ function switchPluginSettingsTab(pluginId, btn) {
   btn.classList.add('active');
   var panel = document.getElementById('ps_' + pluginId);
   if (panel) panel.style.display = '';
+}
+
+function installPluginPrompt() {
+  var folderPath = prompt('Enter the full path to the plugin folder:');
+  if (!folderPath) return;
+  fetch('/api/plugins/install', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: folderPath.trim() })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.ok) { toast('Plugin "' + data.name + '" installed. Restart to activate.', 'success'); }
+    else { toast(data.error || 'Install failed', 'error'); }
+  }).catch(function() { toast('Install failed', 'error'); });
 }
 
 // Save plugin settings (called from saveSettings)

@@ -148,7 +148,69 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json }) {
     res.end(sections.join('\n\n---\n\n'));
   });
 
+  // POST /api/plugins/install -- install a plugin from a local folder path
+  addRoute('POST', '/api/plugins/install', async (req, res) => {
+    try {
+      const body = await new Promise((resolve, reject) => {
+        let d = '';
+        req.on('data', c => { d += c; });
+        req.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
+        req.on('error', reject);
+      });
+      const sourcePath = body.path;
+      if (!sourcePath) { json(res, { error: 'path required' }, 400); return; }
+      if (!fs.existsSync(sourcePath)) { json(res, { error: 'Folder not found: ' + sourcePath }, 404); return; }
+      const manifestPath = path.join(sourcePath, 'plugin.json');
+      if (!fs.existsSync(manifestPath)) { json(res, { error: 'No plugin.json found in that folder' }, 400); return; }
+
+      let manifest;
+      try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); }
+      catch (_) { json(res, { error: 'Invalid plugin.json' }, 400); return; }
+
+      if (!manifest.id || !manifest.name) { json(res, { error: 'plugin.json missing id or name' }, 400); return; }
+
+      const destDir = path.join(pluginsDir, manifest.id);
+      if (fs.existsSync(destDir)) { json(res, { error: 'Plugin "' + manifest.id + '" already installed' }, 409); return; }
+
+      // Copy the folder recursively
+      copyDirSync(sourcePath, destDir);
+      json(res, { ok: true, id: manifest.id, name: manifest.name, message: 'Installed. Restart app to activate.' });
+    } catch (e) { json(res, { error: e.message }, 500); }
+  });
+
+  // DELETE /api/plugins/uninstall -- remove a plugin by id
+  addRoute('POST', '/api/plugins/uninstall', async (req, res) => {
+    try {
+      const body = await new Promise((resolve, reject) => {
+        let d = '';
+        req.on('data', c => { d += c; });
+        req.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
+        req.on('error', reject);
+      });
+      const pluginId = body.id;
+      if (!pluginId) { json(res, { error: 'id required' }, 400); return; }
+      if (pluginId === 'sdk') { json(res, { error: 'Cannot uninstall SDK' }, 400); return; }
+      const pluginDir = path.join(pluginsDir, pluginId);
+      if (!fs.existsSync(pluginDir)) { json(res, { error: 'Plugin not found' }, 404); return; }
+
+      fs.rmSync(pluginDir, { recursive: true, force: true });
+      json(res, { ok: true, message: 'Uninstalled. Restart app to apply.' });
+    } catch (e) { json(res, { error: e.message }, 500); }
+  });
+
   return plugins;
+}
+
+// Recursive directory copy
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) { copyDirSync(srcPath, destPath); }
+    else { fs.copyFileSync(srcPath, destPath); }
+  }
 }
 
 module.exports = { loadPlugins };
