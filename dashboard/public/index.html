@@ -8048,6 +8048,8 @@ function closeCmdPalette() {
   document.getElementById('cmdPalette').classList.remove('open');
 }
 
+var _cmdSearchTimer = null;
+
 function filterCmdPalette() {
   const q = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
   const all = getCmdActions();
@@ -8070,6 +8072,55 @@ function filterCmdPalette() {
 
   _cmdSelectedIdx = 0;
   renderCmdPalette();
+
+  // Live search plugins when query is 3+ chars and few plugin results
+  clearTimeout(_cmdSearchTimer);
+  if (q.length >= 3) {
+    var pluginHits = _cmdFiltered.filter(a => a.category === 'Wrike' || a.category === 'Builder.io').length;
+    if (pluginHits < 3) {
+      _cmdSearchTimer = setTimeout(function() { liveSearchPlugins(q); }, 300);
+    }
+  }
+}
+
+async function liveSearchPlugins(q) {
+  if (!_loadedPlugins) return;
+  var currentQ = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
+  if (currentQ !== q) return; // user typed something else
+
+  var newItems = [];
+
+  // Wrike live search
+  if (_loadedPlugins.some(function(p) { return p.id === 'wrike'; })) {
+    try {
+      var tasks = await (await fetch('/api/plugins/wrike/tasks/search?q=' + encodeURIComponent(q) + '&limit=10')).json();
+      if (Array.isArray(tasks)) {
+        var existing = new Set(_cmdFiltered.map(a => a.label));
+        tasks.forEach(function(t) {
+          if (!existing.has(t.title)) {
+            newItems.push({
+              label: t.title,
+              icon: 'check-square',
+              action: function() {
+                switchTab('plugin-wrike-board');
+                var iframes = document.querySelectorAll('iframe[data-plugin-id="wrike"]');
+                iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin); });
+              },
+              category: 'Wrike',
+            });
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  if (newItems.length) {
+    // Re-check the query hasn't changed
+    currentQ = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
+    if (currentQ !== q) return;
+    _cmdFiltered = _cmdFiltered.concat(newItems);
+    renderCmdPalette();
+  }
 }
 
 function renderCmdPalette() {
