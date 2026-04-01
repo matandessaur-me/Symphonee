@@ -381,4 +381,1445 @@ You can also use `New-PullRequest.ps1` directly if you need more control over th
 - **All repos are on GitHub**, not Azure DevOps. Azure DevOps is only for work item tracking.
 
 <!-- PLUGIN_INSTRUCTIONS_START -->
+
+## Installed Plugins
+
+The following plugins are installed in DevOps Pilot. They provide dedicated API endpoints and workflows -- do NOT try to handle these tasks with generic code or by searching the repo.
+
+### IMPORTANT: Always Ask Before Using a Plugin
+
+When the user's request matches any of the keywords below, **ASK the user if they want to use the plugin** before proceeding. For example: "Would you like to use the Builder.io plugin for this?"
+
+Do NOT silently use a plugin. Do NOT ignore plugins and search the repo instead. Ask first, then use the plugin instructions below.
+
+- **Builder.io** (Manage Builder.io models, schemas, and content entries with AI-powered actions): builder.io, builderio, builder model, builder content, builder space, landing page, page builder, visual editor, cms content, content model
+- **Dependency Inspector** (Scan repos for vulnerable, outdated, and unlicensed dependencies with health scoring): dependencies, packages, npm, nuget, vulnerabilities, outdated, license, audit, security, CVE
+- **Environment Manager** (Manage .env files across repos -- compare environments, detect secrets, find missing variables): env, environment, dotenv, .env, secrets, config, variables, environment variables, API keys, credentials
+- **GA4 & GTM Analytics** (Google Analytics 4 and Tag Manager dashboard with AI-powered tag audits and event tracking): ga4, gtm, google analytics, tag manager, analytics, conversion, tracking, events, tags, triggers
+- **Release Manager** (Track ADO pipelines, generate release notes from work items and commits, monitor pipeline health): release, pipeline, build, deploy, changelog, release notes, CI/CD, pipeline health
+- **Sentry Error Tracker** (Monitor application errors via Sentry -- view issues, stack traces, trends, and create work items from errors): sentry, error, bug, crash, exception, stack trace, error tracking, monitoring, issues
+- **Slack Bridge** (Read Slack channels, reply to threads, and post messages without leaving DevOps Pilot): slack, message, channel, chat, notification, standup, thread
+- **Teams Bridge** (Read Microsoft Teams channels, reply to threads, and post messages without leaving DevOps Pilot): teams, microsoft teams, message, channel, chat, notification, standup, thread
+- **Wrike** (Manage Wrike tasks, projects, and sprints with AI-powered actions): wrike, task management, project board, sprint board
+
+---
+
+### Plugin: Builder.io
+
+## Builder.io Plugin -- AI Instructions
+
+You have access to a Builder.io management plugin via the DevOps Pilot API. This lets you manage Builder.io models (schemas) and content entries directly.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/builderio/`
+
+### IMPORTANT: Start with Summaries
+
+**Always use the summary endpoints first** -- they return pre-formatted plain text that is easy to read without jq or piping:
+
+```bash
+# Get a full overview of all models, schemas, and content counts
+curl -s http://127.0.0.1:3800/api/plugins/builderio/summary
+
+# Get detailed summary of a specific model (schema + all entries with data previews)
+curl -s http://127.0.0.1:3800/api/plugins/builderio/summary/MODEL_NAME
+```
+
+The summary endpoints return **plain text**, not JSON. Use them to understand the space before doing any mutations. Only use the JSON endpoints when you need to create, update, or delete content.
+
+### Configuration
+
+```bash
+# Check if Builder.io is configured
+curl -s http://127.0.0.1:3800/api/plugins/builderio/config
+
+# Save API keys (only needed once)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/builderio/config \
+  -H "Content-Type: application/json" \
+  -d '{"privateKey":"bpk-xxx","publicKey":"xxx"}'
+
+# Test connection
+curl -s http://127.0.0.1:3800/api/plugins/builderio/test
+```
+
+### Model Operations (Schemas)
+
+Models define the structure (schema) of content in Builder.io. Each model has a name, kind, and fields array.
+
+```bash
+# List all models (includes field definitions)
+curl -s http://127.0.0.1:3800/api/plugins/builderio/models
+
+# Get a specific model by ID
+curl -s http://127.0.0.1:3800/api/plugins/builderio/models/MODEL_ID
+
+# Create a model
+curl -s -X POST http://127.0.0.1:3800/api/plugins/builderio/models \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "blog-post",
+    "kind": "data",
+    "fields": [
+      { "name": "title", "type": "string", "required": true },
+      { "name": "content", "type": "richText" },
+      { "name": "author", "type": "string" },
+      { "name": "publishDate", "type": "date" },
+      { "name": "image", "type": "file" },
+      { "name": "tags", "type": "list", "subType": "string" }
+    ]
+  }'
+
+# Update a model's fields (name and kind are immutable)
+curl -s -X PATCH http://127.0.0.1:3800/api/plugins/builderio/models/MODEL_ID \
+  -H "Content-Type: application/json" \
+  -d '{"fields": [...]}'
+
+# Delete a model
+curl -s -X DELETE http://127.0.0.1:3800/api/plugins/builderio/models/MODEL_ID
+```
+
+**Model kinds**: `data` (structured data), `page` (page models), `component` (reusable components), `section` (page sections)
+
+**Field types**: `string`, `text`, `richText`, `number`, `boolean`, `date`, `file`, `reference`, `list`, `object`, `color`, `url`, `email`
+
+**Field structure**:
+```json
+{
+  "name": "fieldName",
+  "type": "string",
+  "required": true,
+  "defaultValue": "default",
+  "helperText": "Description shown to editors",
+  "subType": "string",
+  "subFields": [],
+  "model": "referenced-model-name"
+}
+```
+
+- Use `subType` with `list` fields to specify the list item type
+- Use `subFields` with `object` fields for nested structures
+- Use `model` with `reference` fields to point to another model
+
+### Content Operations
+
+Content entries are instances of a model. Each has a name, data object, and published status.
+
+```bash
+# List content for a model (paginated)
+curl -s "http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME?limit=100&offset=0"
+
+# Get a specific content entry
+curl -s http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME/CONTENT_ID
+
+# Create content
+curl -s -X POST http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Blog Post",
+    "data": {
+      "title": "Hello World",
+      "content": "<p>Post content here</p>",
+      "author": "John Doe",
+      "publishDate": "2025-01-15",
+      "tags": ["news", "updates"]
+    },
+    "published": "draft"
+  }'
+
+# Update content (partial update)
+curl -s -X PATCH http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME/CONTENT_ID \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"title": "Updated Title"}, "published": "published"}'
+
+# Delete content
+curl -s -X DELETE http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME/CONTENT_ID
+```
+
+**Published states**: `draft`, `published`, `archived`
+
+### Bulk Operations
+
+```bash
+# Export all content from a model
+curl -s -X POST http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME/export
+
+# Import content entries
+curl -s -X POST http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME/import \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [
+      { "name": "Entry 1", "data": {...}, "published": "draft" },
+      { "name": "Entry 2", "data": {...}, "published": "draft" }
+    ]
+  }'
+
+# Bulk update multiple entries
+curl -s -X POST http://127.0.0.1:3800/api/plugins/builderio/content/MODEL_NAME/bulk-update \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [
+      { "id": "CONTENT_ID_1", "updates": { "published": "published" } },
+      { "id": "CONTENT_ID_2", "updates": { "data": { "status": "active" } } }
+    ]
+  }'
+```
+
+### Common Workflows
+
+**1. Schema Audit**: Fetch all models, analyze field definitions, check for missing required flags, inconsistent naming, missing helperText.
+
+**2. Content Generation**: Fetch a model's schema to understand the fields, then generate realistic content entries matching the field types and constraints.
+
+**3. Bulk Publishing**: Export all draft content, filter entries ready for publishing, then bulk-update their `published` field to `"published"`.
+
+**4. Schema Migration**: Fetch model, modify the fields array (add/remove/rename fields), then PATCH the model. Note: existing content may need updating to match the new schema.
+
+**5. Content Cloning**: Export content from one model, transform the data structure if needed, import into another model.
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. The AI should run them and then analyze the results.
+
+| Script | Description |
+|--------|-------------|
+| `Get-SpaceSummary.ps1` | Full overview of all models with content counts |
+| `Get-Models.ps1` | List all models with schema details |
+| `Get-ContentSummary.ps1 -Model "name"` | Content entries for a specific model with data previews |
+
+Run from bash:
+```bash
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/builderio/scripts/Get-SpaceSummary.ps1"
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/builderio/scripts/Get-ContentSummary.ps1 -Model 'blogs'"
+```
+
+### Opening in the Dashboard
+
+After creating, updating, or working with Builder.io content, **always offer to open it in the dashboard**. Use the view-plugin endpoint to switch to the Builder.io tab and navigate to a specific model:
+
+```bash
+# Open the Builder.io tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"builderio"}'
+
+# Open the Builder.io tab AND navigate to a specific model
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"builderio","message":{"type":"openModel","modelId":"MODEL_ID"}}'
+```
+
+After any create/update/delete operation, ask the user: "Want me to open this in the Builder.io dashboard?" Then navigate to the relevant model so they can view the entry, open it in Builder.io's visual editor, or inspect the JSON.
+
+### Important Notes
+
+- Model names are URL-safe identifiers (e.g., `blog-post`, `team-member`)
+- Model `name` and `kind` cannot be changed after creation -- only `fields` can be updated
+- Content `data` is a flexible JSON object -- it should match the model's field schema but Builder.io does not strictly enforce this
+- The `published` field controls visibility: only `"published"` entries are visible via the public Content API
+- Use `includeUnpublished: true` (automatically set by the plugin) to see drafts
+- Large content sets are paginated -- use `limit` and `offset` query params
+- When creating content, always include a `name` field for identification
+
+
+---
+
+### Plugin: Dependency Inspector
+
+## Dependency Inspector Plugin -- AI Instructions
+
+You have access to a Dependency Inspector plugin via the DevOps Pilot API. This scans all configured repos for npm/NuGet dependency health -- vulnerabilities, outdated packages, license issues, and health scores.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/dependency-inspector/`
+
+### IMPORTANT: Start with the Summary
+
+**Always use the summary endpoint first** -- it returns pre-formatted plain text:
+
+```bash
+# Get a full overview of all repos (health, packages, vulns, outdated)
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/summary
+```
+
+If repos have not been scanned yet, run a full scan first:
+
+```bash
+# Scan all configured repos (reads package.json, queries npm registry)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/dependency-inspector/scan-all
+```
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. The AI should run them instead of using curl.
+
+| Script | Description |
+|--------|-------------|
+| `Get-DependencyReport.ps1` | All repos with health scores and package counts |
+| `Get-Vulnerabilities.ps1 -Repo "name"` | Vulnerabilities for a specific repo |
+| `Get-Outdated.ps1 -Repo "name"` | Outdated packages grouped by severity |
+| `Start-ScanAll.ps1` | Scan all repos and show results |
+
+Run from bash:
+```bash
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/dependency-inspector/scripts/Get-DependencyReport.ps1"
+# With parameters:
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/dependency-inspector/scripts/Get-Vulnerabilities.ps1 -Repo 'My Website'"
+```
+
+### Scanning
+
+Scanning reads `package.json`, `package-lock.json`, and `.csproj` files from disk, then queries the npm registry for latest versions and the npm audit API for known vulnerabilities.
+
+```bash
+# Scan all repos at once
+curl -s -X POST http://127.0.0.1:3800/api/plugins/dependency-inspector/scan-all
+
+# Scan a specific repo (use the configured repo name, URL-encoded)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/dependency-inspector/repos/My%20Website/scan
+```
+
+### Repo Overview
+
+```bash
+# List all repos with health scores and counts (uses cached scan data)
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/repos
+```
+
+### Per-Repo Details
+
+```bash
+# List all packages in a repo (name, installed version, latest version, license, update type)
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/repos/My%20Website/packages
+
+# List only outdated packages
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/repos/My%20Website/outdated
+
+# List known vulnerabilities
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/repos/My%20Website/vulnerabilities
+
+# List package licenses (flags non-whitelisted licenses)
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/repos/My%20Website/licenses
+
+# Get computed health score breakdown
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/repos/My%20Website/health
+```
+
+### Cross-Repo Analysis
+
+```bash
+# Find packages used at different versions across repos
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/duplicates
+```
+
+### Configuration
+
+```bash
+# Get current config
+curl -s http://127.0.0.1:3800/api/plugins/dependency-inspector/config
+
+# Update config (custom registry, license whitelist)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/dependency-inspector/config \
+  -H "Content-Type: application/json" \
+  -d '{"npmRegistryUrl":"https://registry.npmjs.org","licenseWhitelist":"MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD"}'
+```
+
+### Common Workflows
+
+**1. Full Audit**: Scan all repos, then fetch the summary. Report health scores, list critical vulnerabilities, flag non-compliant licenses.
+
+**2. Find Vulnerabilities**: Scan a repo, then GET its `/vulnerabilities` endpoint. For each vulnerability, show the severity, affected package, and recommended fix.
+
+**3. Generate Update Plan**: Scan a repo, GET `/outdated`, sort by update type (major first). For each outdated package, show the installed vs latest version and what type of update it is (major/minor/patch). Save as a note.
+
+**4. License Check**: Scan a repo, GET `/licenses`, filter to non-allowed licenses. Report which packages have copyleft or unknown licenses.
+
+**5. Duplicate Detection**: After scanning multiple repos, GET `/duplicates` to find version conflicts. Recommend which version to standardize on.
+
+### Health Score
+
+The health score (0-100) is computed based on:
+- **Vulnerabilities**: -15 per critical, -10 per high, -5 per moderate, -2 per low
+- **Outdated packages**: Up to -20 based on outdated percentage, plus -2 per major outdated package
+- **License issues**: -3 per non-whitelisted license
+- **Deprecated packages**: -5 per deprecated package
+
+Score ranges: 80-100 (good/green), 50-79 (warning/yellow), 0-49 (critical/red)
+
+### Opening in the Dashboard
+
+After scanning or analyzing dependencies, offer to open the Dependencies tab:
+
+```bash
+# Open the Dependencies tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"dependency-inspector"}'
+```
+
+### Important Notes
+
+- Repos must be scanned before per-repo endpoints return data
+- Scan results are cached in memory for 5 minutes
+- npm registry queries are cached for 10 minutes
+- The plugin reads files from disk -- the repo must exist at the configured path
+- NuGet packages are detected from `.csproj` files (PackageReference elements)
+- Vulnerability data comes from the npm audit bulk advisory API
+- License data is read from local `node_modules/` first, then falls back to the npm registry
+
+
+---
+
+### Plugin: Environment Manager
+
+## Environment Manager Plugin -- AI Instructions
+
+You have access to an Environment Manager plugin via the DevOps Pilot API. This lets you scan repos for .env files, compare environments, detect secrets, find missing variables, and generate templates.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/env-manager/`
+
+### Start with the Summary
+
+```bash
+# Get a plain-text overview of all repos and their env files
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/summary
+```
+
+The summary endpoint returns **plain text**, not JSON. Use it to get a quick overview before doing specific queries.
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. The AI should run them instead of using curl.
+
+| Script | Description |
+|--------|-------------|
+| `Get-EnvSummary.ps1` | Full overview of all repos and env files |
+| `Get-CrossRepoAnalysis.ps1` | Shared variables and secrets across repos |
+| `Start-EnvScan.ps1` | Scan all repos for env files |
+| `Get-Secrets.ps1 -Repo "name"` | Detected secrets in a specific repo |
+
+Run from bash:
+```bash
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/env-manager/scripts/Get-EnvSummary.ps1"
+# With parameters:
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/env-manager/scripts/Get-Secrets.ps1 -Repo 'My Website'"
+```
+
+### Scanning
+
+```bash
+# Scan all repos at once
+curl -s -X POST http://127.0.0.1:3800/api/plugins/env-manager/scan-all
+
+# Scan a specific repo
+curl -s -X POST http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/scan
+```
+
+Scanning reads .env files from disk, parses variables, checks .gitignore, and scans source code for env var references. Results are cached in memory until the next scan.
+
+### Listing Repos
+
+```bash
+# List all repos with env file counts and scan status
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/repos
+```
+
+### Env Files in a Repo
+
+```bash
+# List env files found in a repo
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/files
+```
+
+### Variable Inventory
+
+```bash
+# All variables across all env files in a repo, with presence/absence per file
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/variables
+```
+
+Secret values are masked by default (first 2 chars + asterisks). The response includes `rawValue` for each entry if you need the full value.
+
+### Environment Diff
+
+```bash
+# Compare two env files side by side
+curl -s "http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/diff?file1=.env.development&file2=.env.production"
+```
+
+Returns an array of diffs with status: `same`, `different`, `only-left`, `only-right`.
+
+### Secret Detection
+
+```bash
+# Detect secrets in env files and leaked secrets in source code
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/secrets
+```
+
+Returns `envSecrets` (secret-pattern keys found in env files with values) and `leakedSecrets` (hardcoded secret-like strings found in source code).
+
+### Missing Variables
+
+```bash
+# Variables used in code (process.env.XXX) but not defined in any .env file
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/missing
+```
+
+### Generate .env.example Template
+
+```bash
+# Generate a template with keys from all env files, secret values stripped
+curl -s -X POST http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/template
+```
+
+Returns the template content as a string. Secret values are removed, non-secret values are kept as defaults.
+
+### Gitignore Check
+
+```bash
+# Check if env files are properly gitignored
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/repos/My%20Website/gitignore-check
+```
+
+Returns status for each env file: whether it is gitignored, whether it should be, and whether it is OK.
+
+### Configuration
+
+```bash
+# Get current config (secret patterns, scan extensions)
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/config
+
+# Update config
+curl -s -X POST http://127.0.0.1:3800/api/plugins/env-manager/config \
+  -H "Content-Type: application/json" \
+  -d '{"secretPatterns":"PASSWORD,SECRET,TOKEN,KEY,API_KEY,PRIVATE,CREDENTIAL","scanExtensions":".js,.ts,.jsx,.tsx,.cs,.py"}'
+```
+
+### Opening in the Dashboard
+
+```bash
+# Open the Environment Manager tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"env-manager"}'
+```
+
+### Cross-Repo Analysis
+
+```bash
+# Get cross-repo variable analysis (shared vars, secrets summary)
+curl -s http://127.0.0.1:3800/api/plugins/env-manager/cross-repo
+```
+
+Returns:
+- `shared` -- variables used in 2+ repos, with match status (same value or different)
+- `secretsSummary` -- secrets across repos with gitignore status
+
+The plugin auto-scans all repos on first load and shows cross-repo analysis automatically. No manual input needed.
+
+### Common Workflows
+
+**1. Quick audit**: Run `scan-all`, then check the summary for any warnings (ungitignored env files, missing variables, detected secrets).
+
+**2. Environment comparison**: Use the diff endpoint to compare .env.development vs .env.production and identify missing or different values.
+
+**3. Onboarding new developer**: Generate a template with the template endpoint, then share the .env.example file.
+
+**4. Security check**: Run the secrets endpoint to find hardcoded secrets in source code and verify all .env files with real values are gitignored.
+
+**5. Missing variable hunt**: Use the missing endpoint to find variables referenced in code but not defined in any .env file -- these will cause runtime errors.
+
+
+---
+
+### Plugin: GA4 & GTM Analytics
+
+## GA4 & GTM Analytics Plugin -- AI Instructions
+
+You have access to a Google Analytics 4 and Google Tag Manager plugin via the DevOps Pilot API. This lets you audit GTM tags, analyze GA4 events, and get health scores for your tracking setup.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/ga4-gtm/`
+
+### IMPORTANT: Start with the Summary
+
+**Always use the summary endpoint first** -- it returns pre-formatted plain text that is easy to read:
+
+```bash
+# Get a full overview of GTM container and GA4 property
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/summary
+```
+
+The summary returns tag counts, health score, findings, GA4 events, and conversion data in plain text. Use this to understand the setup before doing targeted queries.
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. The AI should run them instead of using curl.
+
+| Script | Description |
+|--------|-------------|
+| `Get-ContainerSummary.ps1` | Full GTM container and GA4 property overview |
+| `Get-TagAudit.ps1` | Health score, dormant tags, unused variables, findings |
+| `Get-EventReport.ps1` | GA4 events grouped by category with counts |
+| `Get-ConversionReport.ps1` | Conversion events with volumes |
+
+Run from bash:
+```bash
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/ga4-gtm/scripts/Get-ContainerSummary.ps1"
+# With parameters:
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/ga4-gtm/scripts/Get-TagAudit.ps1"
+```
+
+### Setup
+
+The plugin uses Google OAuth2 (user consent flow). Users sign in with their Google account through the browser.
+
+1. Create an OAuth 2.0 Client ID in Google Cloud Console (APIs & Services > Credentials)
+2. Add `http://127.0.0.1:3800/api/plugins/ga4-gtm/auth/callback` as an authorized redirect URI
+3. In DevOps Pilot Settings > Plugins, enter the Client ID, Client Secret, GA4 Property ID, and GTM Account/Container IDs
+4. Click "Sign in with Google" in the Analytics tab
+
+### Configuration & Auth
+
+```bash
+# Check if the plugin is configured and connected
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/config
+
+# Check auth status (connected, email)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/auth/status
+
+# Start OAuth flow (returns auth URL to open in browser)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/auth/start
+
+# Disconnect Google account
+curl -s -X POST http://127.0.0.1:3800/api/plugins/ga4-gtm/auth/disconnect
+
+# Test connection (validates tokens and returns container/property names)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/test
+```
+
+### GTM Tag Operations
+
+```bash
+# List all GTM tags (includes status, triggers, type)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/tags
+
+# Get a specific tag by ID (full detail with parameters)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/tags/TAG_ID
+
+# Create a new tag (POST with GTM tag JSON body)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/tags \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My Tag","type":"gaawc","parameter":[{"type":"template","key":"eventName","value":"my_event"}],"firingTriggerId":["TRIGGER_ID"]}'
+
+# List all triggers
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/triggers
+
+# List all variables
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/variables
+```
+
+Tag statuses:
+- **Active** -- has firing triggers and is not paused
+- **Paused** -- manually paused by a user
+- **Dormant** -- has no firing triggers (will never fire)
+
+### GA4 Analytics
+
+```bash
+# Get GA4 property info and data streams
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/ga4/properties
+
+# Get event counts (default: last 7 days)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/ga4/events
+
+# Get event counts for a custom time range
+curl -s "http://127.0.0.1:3800/api/plugins/ga4-gtm/ga4/events?days=30"
+
+# Get conversion events (definitions + counts from last 30 days)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/ga4/conversions
+```
+
+Event categories:
+- **Auto-collected** -- page_view, scroll, click, session_start, first_visit, etc.
+- **Recommended** -- GA4 recommended events like purchase, add_to_cart, sign_up, generate_lead
+- **Custom** -- any event not in the auto-collected or recommended lists
+
+### Health & Audit
+
+```bash
+# Get health score with findings (JSON)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/health
+
+# Get full audit data (tags, triggers, variables, health, events, recommendations)
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/audit
+```
+
+The health endpoint returns:
+- `score` -- 0-100 health score
+- `findings` -- array of issues with severity (ok/info/warning/error)
+- `unusedVariables` -- variables not referenced by any tag or trigger
+- `dormantTags` -- tags with no firing triggers
+- `missingEvents` -- recommended GA4 events not being tracked
+
+The audit endpoint returns everything from health plus full tag/trigger/variable details and top events.
+
+### Common Workflows
+
+**1. Full Tag Audit**: Fetch `/audit`, analyze tag health, identify dormant tags, unused variables, and duplicate names. Save findings as a note.
+
+**2. Event Coverage Analysis**: Fetch `/ga4/events`, compare against recommended events from `/health` (missingEvents), recommend which events to add and why.
+
+**3. Conversion Optimization**: Fetch `/ga4/conversions`, analyze which conversion events have low volume, suggest improvements to tracking.
+
+**4. Container Cleanup**: Fetch `/health`, list all unused variables and dormant tags, recommend which to remove.
+
+**5. Tracking Health Check**: Fetch `/summary` for a quick plain-text overview, then dive into specific areas that need attention.
+
+### Opening in the Dashboard
+
+After analyzing data, offer to open the plugin tab:
+
+```bash
+# Open the Analytics dashboard tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"ga4-gtm"}'
+```
+
+### GTM Write Operations (Create Tags, Triggers, Variables)
+
+The plugin supports creating GTM tags, triggers, and variables, and publishing changes.
+
+```bash
+# Create a trigger
+curl -s -X POST http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/triggers \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Click - Outbound links","type":"linkClick","filter":[{"type":"contains","parameter":[{"type":"template","key":"arg0","value":"{{Click URL}}"},{"type":"template","key":"arg1","value":"bathfitter.com"}],"negate":true}]}'
+
+# Create a variable
+curl -s -X POST http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/variables \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My Variable","type":"v","parameter":[{"type":"template","key":"name","value":"dataLayer.myVar"}]}'
+
+# List workspaces
+curl -s http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/workspaces
+
+# Publish the current workspace (makes all changes live)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/ga4-gtm/gtm/publish
+```
+
+**IMPORTANT:** Always ask the user before creating tags or publishing. Creating a tag adds it to the workspace; publishing makes it live on the website.
+
+**GTM tag types:** `gaawc` (GA4 Event), `gaawe` (GA4 Config), `html` (Custom HTML), `img` (Custom Image), `awct` (Google Ads Conversion), `gclidw` (Google Ads Remarketing), `sp` (Google Ads Conversion Linker)
+
+### Important Notes
+
+- The plugin can read AND write to GTM (create tags, triggers, variables, publish)
+- The plugin uses Google OAuth2 for authentication -- users sign in with their Google account
+- Access tokens are cached for up to 1 hour
+- GA4 event data comes from the Data API (runReport) and may have a 24-48 hour delay
+- The health score is computed locally based on tag/trigger/variable relationships and event coverage
+- Container size is estimated (not exact) based on tag/trigger/variable counts
+
+
+---
+
+### Plugin: Release Manager
+
+## Release Manager Plugin -- AI Instructions
+
+You have access to a Release Manager plugin that tracks Azure DevOps build/release pipelines, generates release notes from resolved work items, and monitors pipeline health.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/release-manager/`
+
+### Start with the Summary
+
+```bash
+# Get a plain-text overview of all pipelines with latest status and unreleased items
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/summary
+```
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. The AI should run them instead of using curl.
+
+| Script | Description |
+|--------|-------------|
+| `Get-PipelineStatus.ps1` | All pipelines with latest run status |
+| `Get-PipelineHealth.ps1 -PipelineId 123` | Pipeline success rate and trends |
+| `Get-UnreleasedItems.ps1` | Resolved work items not yet released (optional -PipelineId) |
+| `New-ReleaseNotes.ps1 -PipelineId 123 -FromRunId 456 -ToRunId 789` | Generate release notes |
+
+Run from bash:
+```bash
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/release-manager/scripts/Get-PipelineStatus.ps1"
+# With parameters:
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/release-manager/scripts/Get-PipelineHealth.ps1 -PipelineId 123"
+```
+
+### Configuration
+
+```bash
+# Check if plugin is ready (validates ADO connection)
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/test
+
+# Get plugin config
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/config
+
+# Save plugin config
+curl -s -X POST http://127.0.0.1:3800/api/plugins/release-manager/config \
+  -H "Content-Type: application/json" \
+  -d '{"defaultPipelineId":"42","conventionalCommits":"true"}'
+```
+
+### Pipelines
+
+```bash
+# List all pipelines with their latest run status
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/pipelines
+
+# List runs for a specific pipeline (default 30, use $top to control)
+curl -s "http://127.0.0.1:3800/api/plugins/release-manager/pipelines/42/runs?\$top=20"
+
+# Get detailed info for a specific run (stages, changes, work items)
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/pipelines/42/runs/1234
+
+# Get pipeline health stats (success rate, avg duration, trend)
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/pipelines/42/health
+```
+
+### Build Details
+
+```bash
+# Get commits associated with a build
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/builds/1234/changes
+
+# Get work items associated with a build
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/builds/1234/workitems
+```
+
+### Release Notes
+
+```bash
+# Generate release notes between two pipeline runs
+# Collects all work items and commits between fromRunId and toRunId
+curl -s -X POST http://127.0.0.1:3800/api/plugins/release-manager/generate-notes \
+  -H "Content-Type: application/json" \
+  -d '{"pipelineId":"42","fromRunId":"100","toRunId":"128"}'
+```
+
+The response includes a `markdown` field with formatted release notes grouped by work item type (Features, Bugs, Tasks) and commits (optionally grouped by conventional commit type).
+
+### Unreleased Work Items
+
+```bash
+# Get resolved work items since the last successful pipeline run
+curl -s http://127.0.0.1:3800/api/plugins/release-manager/unreleased
+
+# For a specific pipeline
+curl -s "http://127.0.0.1:3800/api/plugins/release-manager/unreleased?pipelineId=42"
+```
+
+### Changelog
+
+```bash
+# Generate a changelog from resolved/closed work items in an iteration
+curl -s -X POST http://127.0.0.1:3800/api/plugins/release-manager/changelog \
+  -H "Content-Type: application/json" \
+  -d '{"iterationPath":"MyProject\\Sprint 5"}'
+
+# Or by date range
+curl -s -X POST http://127.0.0.1:3800/api/plugins/release-manager/changelog \
+  -H "Content-Type: application/json" \
+  -d '{"fromDate":"2025-01-01","toDate":"2025-01-31"}'
+```
+
+### Common Workflows
+
+**1. Pipeline status check**: Fetch `/pipelines` to see all pipelines and their latest run status. Use `/pipelines/{id}/health` for detailed health metrics.
+
+**2. Generate release notes**: First list runs with `/pipelines/{id}/runs`, pick a "from" run and a "to" run, then POST to `/generate-notes`. Save the markdown as a DevOps Pilot note.
+
+**3. Pre-release checklist**: Check `/unreleased` to see what resolved work items have not yet been deployed. Review and confirm before triggering a release.
+
+**4. Sprint changelog**: POST to `/changelog` with the iteration path to generate a changelog of all completed work in a sprint.
+
+**5. Failed build investigation**: Use `/pipelines/{id}/runs` to find failed runs, then `/pipelines/{id}/runs/{runId}` to see stages, associated changes, and work items.
+
+### Opening in the Dashboard
+
+```bash
+# Open the Release Manager tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"release-manager"}'
+```
+
+### Important Notes
+
+- This plugin uses the Azure DevOps Pipelines/Builds API -- NOT GitHub Releases
+- GitHub is only used for code repos and PRs, not releases
+- The ADO PAT must have Build (read) and Work Items (read) permissions
+- Pipeline IDs correspond to ADO build definition IDs
+- Conventional commit parsing groups commits by prefix (feat, fix, chore, etc.)
+- The summary endpoint returns plain text, all other endpoints return JSON
+
+
+---
+
+### Plugin: Sentry Error Tracker
+
+## Sentry Error Tracker Plugin -- AI Instructions
+
+You have access to a Sentry error tracking plugin via the DevOps Pilot API. This lets you monitor application errors, view stack traces, analyze error trends, and create Azure DevOps work items from Sentry issues.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/sentry/`
+
+### IMPORTANT: Start with the Summary
+
+**Always use the summary endpoint first** -- it returns pre-formatted plain text:
+
+```bash
+# Get a full overview of all projects, top issues, and error trends
+curl -s http://127.0.0.1:3800/api/plugins/sentry/summary
+```
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. The AI should run them instead of using curl.
+
+| Script | Description |
+|--------|-------------|
+| `Get-ErrorSummary.ps1` | Overview of all projects and top issues |
+| `Get-TopIssues.ps1` | Top issues by frequency (optional -Project "slug") |
+| `Get-IssueDetail.ps1 -IssueId "123"` | Full issue detail with stack trace |
+| `New-BugFromIssue.ps1 -IssueId "123"` | Create ADO bug from Sentry issue |
+
+Run from bash:
+```bash
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/sentry/scripts/Get-ErrorSummary.ps1"
+# With parameters:
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/sentry/scripts/Get-IssueDetail.ps1 -IssueId '123'"
+```
+
+### Configuration
+
+```bash
+# Check if Sentry is configured
+curl -s http://127.0.0.1:3800/api/plugins/sentry/config
+
+# Save credentials (only needed once)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/sentry/config \
+  -H "Content-Type: application/json" \
+  -d '{"authToken":"sntrys_xxx","organization":"my-org","defaultProject":"my-project"}'
+
+# Test connection
+curl -s http://127.0.0.1:3800/api/plugins/sentry/test
+```
+
+### Projects
+
+```bash
+# List all Sentry projects in the organization
+curl -s http://127.0.0.1:3800/api/plugins/sentry/projects
+```
+
+### Issues
+
+```bash
+# List unresolved issues for a project (sorted by frequency)
+curl -s "http://127.0.0.1:3800/api/plugins/sentry/issues?project=my-project&query=is:unresolved&sort=freq"
+
+# Search issues
+curl -s "http://127.0.0.1:3800/api/plugins/sentry/issues?project=my-project&query=TypeError"
+
+# Get full issue detail with stack trace
+curl -s http://127.0.0.1:3800/api/plugins/sentry/issues/123456789
+
+# Get events for an issue
+curl -s http://127.0.0.1:3800/api/plugins/sentry/issues/123456789/events
+```
+
+### Issue Actions
+
+```bash
+# Resolve an issue
+curl -s -X POST http://127.0.0.1:3800/api/plugins/sentry/issues/123456789/resolve
+
+# Ignore an issue
+curl -s -X POST http://127.0.0.1:3800/api/plugins/sentry/issues/123456789/ignore
+
+# Create an Azure DevOps Bug from a Sentry issue
+curl -s -X POST http://127.0.0.1:3800/api/plugins/sentry/issues/123456789/create-workitem \
+  -H "Content-Type: application/json" \
+  -d '{"priority": 2}'
+```
+
+The create-workitem endpoint automatically:
+- Sets the title to "[Sentry] <error title>"
+- Populates the description with error details, stack trace, and a link to Sentry
+- Creates a Bug-type work item with the "sentry" tag
+
+### Error Stats
+
+```bash
+# Get error counts over the last 24 hours (hourly resolution)
+curl -s "http://127.0.0.1:3800/api/plugins/sentry/stats?project=my-project&stat=received&resolution=1h&range=24h"
+
+# Get error counts over the last 7 days (daily resolution)
+curl -s "http://127.0.0.1:3800/api/plugins/sentry/stats?project=my-project&stat=received&resolution=1d&range=7d"
+
+# Get error counts over the last 30 days
+curl -s "http://127.0.0.1:3800/api/plugins/sentry/stats?project=my-project&stat=received&resolution=1d&range=30d"
+```
+
+Stats response is an array of `[timestamp, count]` pairs.
+
+### Common Workflows
+
+**1. Error Triage**: Fetch the summary, review top unresolved issues, get detail on the worst offenders, create ADO bugs for the ones that need fixing.
+
+**2. Regression Detection**: List issues sorted by date, look for newly appearing errors, check if they correlate with recent deployments.
+
+**3. Error Analysis**: Get issue detail with stack trace, analyze the root cause, suggest a fix, then create a work item for the team.
+
+**4. Bulk Bug Creation**: List top unresolved issues, create ADO bugs for each one. Always ask the user for confirmation before creating work items.
+
+**5. Status Report**: Use the summary endpoint to get a quick overview, include error trend data in standup summaries or sprint reports.
+
+### Important Notes
+
+- The `project` parameter uses the project slug (URL-safe name from Sentry)
+- Issue IDs are numeric strings from Sentry
+- The `query` parameter supports Sentry search syntax (e.g., `is:unresolved`, `TypeError`, `level:error`)
+- Sort options: `freq` (frequency), `date` (last seen), `new` (first seen), `priority`
+- Creating work items calls the DevOps Pilot API internally -- the work item appears in Azure DevOps
+- Always ask the user for permission before resolving, ignoring, or creating work items from issues
+
+### Opening in the Dashboard
+
+After working with Sentry issues, offer to open the Sentry tab:
+
+```bash
+# Open the Sentry tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"sentry"}'
+```
+
+
+---
+
+### Plugin: Slack Bridge
+
+## Slack Bridge Plugin -- AI Instructions
+
+You have access to a Slack integration plugin via the DevOps Pilot API. This lets you read channels, reply to threads, and post messages from the terminal.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/slack/`
+
+### IMPORTANT: Start with the Summary
+
+**Always use the summary endpoint first** -- it returns pre-formatted plain text:
+
+```bash
+# Get workspace overview (team name, channel list, counts)
+curl -s http://127.0.0.1:3800/api/plugins/slack/summary
+```
+
+### IMPORTANT: Ask Permission Before Sending
+
+**You MUST ask the user for permission before sending any message to Slack.** This includes:
+- Posting messages to channels
+- Replying in threads
+- Adding reactions
+
+Read operations (listing channels, reading messages, searching) do NOT require permission.
+
+### Configuration
+
+```bash
+# Check if Slack is configured
+curl -s http://127.0.0.1:3800/api/plugins/slack/config
+
+# Test connection
+curl -s http://127.0.0.1:3800/api/plugins/slack/test
+```
+
+### Channels
+
+```bash
+# List all channels (public, private, DMs)
+curl -s http://127.0.0.1:3800/api/plugins/slack/channels
+
+# Get channel details
+curl -s http://127.0.0.1:3800/api/plugins/slack/channels/CHANNEL_ID
+```
+
+### Messages
+
+```bash
+# Read recent messages in a channel (default 30, max 100)
+curl -s "http://127.0.0.1:3800/api/plugins/slack/channels/CHANNEL_ID/messages?limit=30"
+
+# Read thread replies
+curl -s http://127.0.0.1:3800/api/plugins/slack/channels/CHANNEL_ID/thread/THREAD_TS
+
+# Send a message (REQUIRES USER PERMISSION)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/slack/messages/send \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"CHANNEL_ID","text":"Hello from DevOps Pilot"}'
+
+# Reply in a thread (REQUIRES USER PERMISSION)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/slack/messages/send \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"CHANNEL_ID","text":"Thread reply","threadTs":"1234567890.123456"}'
+
+# Add a reaction (REQUIRES USER PERMISSION)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/slack/messages/react \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"CHANNEL_ID","timestamp":"1234567890.123456","name":"thumbsup"}'
+
+# Search messages (requires xoxp- user token with search:read scope)
+curl -s "http://127.0.0.1:3800/api/plugins/slack/messages/search?query=deployment"
+```
+
+### Users
+
+```bash
+# List workspace members
+curl -s http://127.0.0.1:3800/api/plugins/slack/users
+
+# Get user details
+curl -s http://127.0.0.1:3800/api/plugins/slack/users/USER_ID
+```
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. Always prefer these over raw curl calls.
+
+| Script | Description | Example (bash) |
+|--------|-------------|----------------|
+| `Get-Channels.ps1` | List channels with member counts | `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/slack/scripts/Get-Channels.ps1"` |
+| `Get-RecentMessages.ps1` | Recent messages in a channel | `powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/slack/scripts/Get-RecentMessages.ps1 -Channel 'general'"` |
+| `Send-Message.ps1` | Send a message to a channel | `powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/slack/scripts/Send-Message.ps1 -Channel 'general' -Message 'Hello'"` |
+| `Get-SlackSummary.ps1` | Workspace overview | `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/slack/scripts/Get-SlackSummary.ps1"` |
+
+### Common Workflows
+
+**1. Post Standup Summary to Slack**: Gather ADO work items with `Get-SprintStatus.ps1`, draft a standup summary, then ask the user if they want to post it to a specific Slack channel. Use the `/messages/send` endpoint to post.
+
+**2. Share PR Status**: Fetch open PRs from `/api/github/pulls`, summarize them, ask permission, then post to a channel.
+
+**3. Summarize a Channel**: Fetch recent messages from a channel, analyze the discussion, and present key points to the user.
+
+**4. Search for Context**: Before starting work on a task, search Slack for related discussions using the search endpoint (requires user token).
+
+### Opening in the Dashboard
+
+After working with Slack, offer to open the Slack tab:
+
+```bash
+# Open the Slack tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"slack"}'
+```
+
+### Important Notes
+
+- Bot tokens (xoxb-) can read channels and post messages but CANNOT search. Search requires a user token (xoxp-) with the search:read scope.
+- Channel and user lists are cached (60s for channels, 5min for users). Data may be slightly stale.
+- The bot can only access channels it has been invited to. If a channel is missing, the user needs to invite the bot.
+- Message timestamps (ts) are used as unique identifiers in Slack. They look like "1234567890.123456".
+- Thread replies use the parent message's ts as `threadTs`.
+- AB# references in messages are detected and can be linked to Azure DevOps work items.
+
+
+---
+
+### Plugin: Teams Bridge
+
+## Teams Bridge Plugin -- AI Instructions
+
+You have access to a Microsoft Teams integration plugin via the DevOps Pilot API. This lets you read channels, reply to threads, and post messages -- all without leaving DevOps Pilot.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/teams/`
+
+### IMPORTANT: Start with the Summary
+
+**Always use the summary endpoint first** -- it returns pre-formatted plain text:
+
+```bash
+# Get a full overview of the user's teams, channels, and chats
+curl -s http://127.0.0.1:3800/api/plugins/teams/summary
+```
+
+### IMPORTANT: Ask Before Sending
+
+**You MUST ask the user for permission before sending any message to Teams.** Never auto-post. Always show the draft and wait for confirmation.
+
+### Pre-Made Scripts
+
+These scripts run instantly and provide formatted output. **Always prefer these over raw curl calls.**
+
+| Script | Description | Example (from bash) |
+|--------|-------------|---------------------|
+| `Get-TeamsSummary.ps1` | Full overview -- teams, channels, chats | `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/teams/scripts/Get-TeamsSummary.ps1"` |
+| `Get-Channels.ps1` | List all teams and channels with IDs | `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./dashboard/plugins/teams/scripts/Get-Channels.ps1"` |
+| `Get-RecentMessages.ps1` | Fetch recent messages from a channel | `powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/teams/scripts/Get-RecentMessages.ps1 -TeamId 'TEAM_ID' -ChannelId 'CHANNEL_ID'"` |
+| `Send-Message.ps1` | Send a message to a channel | `powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./dashboard/plugins/teams/scripts/Send-Message.ps1 -TeamId 'TEAM_ID' -ChannelId 'CHANNEL_ID' -Message 'Hello from DevOps Pilot'"` |
+
+### Setup Instructions
+
+The plugin uses OAuth2 delegated flow with Microsoft Graph API. To set up:
+
+1. Go to **Azure Portal** > App registrations > New registration
+2. Set redirect URI to `http://127.0.0.1:3800/api/plugins/teams/auth/callback` (type: Web)
+3. Under **API permissions**, add delegated permissions: User.Read, Team.ReadBasic.All, Channel.ReadBasic.All, ChannelMessage.Read.All, ChannelMessage.Send, Chat.ReadWrite, ChatMessage.Send
+4. Under **Certificates & secrets**, create a new client secret
+5. Copy the Application (Client) ID and the client secret value
+6. In DevOps Pilot, go to **Settings > Plugins > Teams Bridge** and paste both values
+7. Click **Sign in with Microsoft** in the Teams tab
+
+### Configuration
+
+```bash
+# Check connection status
+curl -s http://127.0.0.1:3800/api/plugins/teams/auth/status
+
+# Test connection
+curl -s http://127.0.0.1:3800/api/plugins/teams/test
+```
+
+### Teams & Channels
+
+```bash
+# List joined teams
+curl -s http://127.0.0.1:3800/api/plugins/teams/teams
+
+# List channels in a team
+curl -s http://127.0.0.1:3800/api/plugins/teams/teams/TEAM_ID/channels
+```
+
+### Messages
+
+```bash
+# Get channel messages (default: 30)
+curl -s "http://127.0.0.1:3800/api/plugins/teams/channels/TEAM_ID/CHANNEL_ID/messages?top=30"
+
+# Get thread replies
+curl -s http://127.0.0.1:3800/api/plugins/teams/channels/TEAM_ID/CHANNEL_ID/messages/MESSAGE_ID/replies
+
+# Send a message to a channel (REQUIRES USER PERMISSION)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/teams/messages/send \
+  -H "Content-Type: application/json" \
+  -d '{"teamId":"TEAM_ID","channelId":"CHANNEL_ID","text":"Hello from DevOps Pilot"}'
+
+# Reply to a thread (REQUIRES USER PERMISSION)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/teams/messages/send \
+  -H "Content-Type: application/json" \
+  -d '{"teamId":"TEAM_ID","channelId":"CHANNEL_ID","messageId":"MESSAGE_ID","text":"Reply text"}'
+```
+
+### Chats (1:1 and Group)
+
+```bash
+# List chats
+curl -s http://127.0.0.1:3800/api/plugins/teams/chats
+
+# Get chat messages
+curl -s "http://127.0.0.1:3800/api/plugins/teams/chats/CHAT_ID/messages?top=30"
+
+# Send a chat message (REQUIRES USER PERMISSION)
+curl -s -X POST http://127.0.0.1:3800/api/plugins/teams/chats/CHAT_ID/send \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello"}'
+```
+
+### Users
+
+```bash
+# List known team members (cached from team membership)
+curl -s http://127.0.0.1:3800/api/plugins/teams/users
+```
+
+### Common Workflows
+
+**1. Post Standup to Teams**: Run `Get-StandupSummary.ps1` to get the ADO standup, format it for Teams, ask the user to confirm, then post using `/messages/send`.
+
+**2. Share PR Status**: Fetch open PRs from `/api/github/pulls`, format a summary, ask the user to confirm, then post to the selected channel.
+
+**3. Summarize Channel**: Fetch recent messages using `Get-RecentMessages.ps1`, analyze key topics, decisions, and action items, and present a concise summary.
+
+**4. Search for AB# References**: Fetch recent messages and look for AB#NNNNN patterns. Cross-reference with Azure DevOps work items for context.
+
+**5. Draft and Send**: When the user asks to send a message, always draft it first, show the draft, wait for approval, then send.
+
+### Navigation
+
+After posting a message or working with Teams, offer to open the Teams tab:
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"teams"}'
+```
+
+
+---
+
+### Plugin: Wrike
+
+## Wrike Plugin -- AI Instructions
+
+You have access to a Wrike project management plugin via the DevOps Pilot API. This lets you manage Wrike tasks, spaces, and projects.
+
+**All routes are at** `http://127.0.0.1:3800/api/plugins/wrike/`
+
+### Start with the Summary
+
+```bash
+# Get a plain-text overview of the workspace (spaces, workflows, recent tasks)
+curl -s http://127.0.0.1:3800/api/plugins/wrike/summary
+```
+
+### Spaces & Projects
+
+```bash
+# List all spaces
+curl -s http://127.0.0.1:3800/api/plugins/wrike/spaces
+
+# List projects in a space
+curl -s "http://127.0.0.1:3800/api/plugins/wrike/projects?spaceId=SPACE_ID"
+
+# List folders in a space
+curl -s "http://127.0.0.1:3800/api/plugins/wrike/folders?spaceId=SPACE_ID"
+```
+
+### Tasks
+
+```bash
+# List MY tasks (assigned to the current user)
+curl -s http://127.0.0.1:3800/api/plugins/wrike/tasks/mine
+
+# List all tasks (most recent first, includes status, importance, dates)
+curl -s http://127.0.0.1:3800/api/plugins/wrike/tasks
+
+# List tasks in a specific space
+curl -s "http://127.0.0.1:3800/api/plugins/wrike/tasks?spaceId=SPACE_ID"
+
+# List tasks in a specific folder/project
+curl -s "http://127.0.0.1:3800/api/plugins/wrike/tasks?folderId=FOLDER_ID"
+
+# Filter by status
+curl -s "http://127.0.0.1:3800/api/plugins/wrike/tasks?status=Active"
+
+# Get a specific task (full details with description)
+curl -s http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID
+
+# Create a task in a folder
+curl -s -X POST http://127.0.0.1:3800/api/plugins/wrike/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"folderId":"FOLDER_ID","title":"Task title","description":"Details","importance":"High","dates":{"due":"2025-12-31"}}'
+
+# Update a task
+curl -s -X PUT http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Updated title","status":"Completed"}'
+
+# Delete a task
+curl -s -X DELETE http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID
+```
+
+### Task Fields
+
+- **status**: Active, Completed, Deferred, Cancelled
+- **importance**: High, Normal, Low
+- **dates**: `{ "start": "YYYY-MM-DD", "due": "YYYY-MM-DD" }`
+- **description**: HTML string
+- **title**: Plain text
+
+### Comments
+
+```bash
+# List comments on a task
+curl -s http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID/comments
+
+# Add a comment
+curl -s -X POST http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID/comments \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Comment text here"}'
+```
+
+### Custom Fields
+
+```bash
+# List all custom field definitions (types, options for dropdowns)
+curl -s http://127.0.0.1:3800/api/plugins/wrike/customfields
+
+# Update custom fields on a task
+curl -s -X PUT http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID \
+  -H "Content-Type: application/json" \
+  -d '{"customFields": [{"id":"FIELD_ID","value":"new_value"}]}'
+```
+
+### Approvals
+
+```bash
+# Get approvals for a specific task
+curl -s http://127.0.0.1:3800/api/plugins/wrike/tasks/TASK_ID/approvals
+```
+
+Approval statuses: Pending, Approved, Rejected. Each has decisions from approvers.
+
+### Blueprints (Templates)
+
+```bash
+# List task blueprints
+curl -s http://127.0.0.1:3800/api/plugins/wrike/blueprints/tasks
+
+# List folder/project blueprints
+curl -s http://127.0.0.1:3800/api/plugins/wrike/blueprints/folders
+```
+
+### Contacts & Workflows
+
+```bash
+# List team members
+curl -s http://127.0.0.1:3800/api/plugins/wrike/contacts
+
+# List workflows and their statuses
+curl -s http://127.0.0.1:3800/api/plugins/wrike/workflows
+
+# Recent comments across all tasks (for notifications)
+curl -s http://127.0.0.1:3800/api/plugins/wrike/comments/recent
+```
+
+### Opening in the Dashboard
+
+After creating, updating, or working with Wrike tasks, **always offer to open the Wrike tab in the dashboard**:
+
+```bash
+# Open the Wrike tab
+curl -s -X POST http://127.0.0.1:3800/api/ui/view-plugin \
+  -H "Content-Type: application/json" \
+  -d '{"plugin":"wrike"}'
+```
+
+After any create/update/delete operation, ask the user: "Want me to open the Wrike dashboard?"
+
+### ADO-Wrike Sync
+
+To sync a Wrike task to Azure DevOps:
+1. Fetch the Wrike task details
+2. Create an ADO work item with the same title and description
+3. Include the Wrike permalink in the ADO description for cross-reference
+4. Always ask the user for confirmation before creating
+
+```bash
+# Example: create ADO work item from Wrike task
+curl -s -X POST http://127.0.0.1:3800/api/workitems/create \
+  -H "Content-Type: application/json" \
+  -d '{"type":"Task","title":"[Wrike] Task Title","description":"Synced from Wrike: https://www.wrike.com/open.htm?id=...","priority":2}'
+```
+
+
 <!-- PLUGIN_INSTRUCTIONS_END -->

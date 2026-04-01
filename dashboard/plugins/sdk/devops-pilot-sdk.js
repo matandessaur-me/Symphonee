@@ -84,6 +84,7 @@
     // Navigation
     switchTab: function (tab) { postToHost({ type: 'switchTab', tab: tab }); },
     viewWorkItem: function (id) { postToHost({ type: 'viewWorkItem', id: id }); },
+    openSettings: function (tab) { postToHost({ type: 'openSettings', tab: tab || 'plugins' }); },
 
     // AI
     askAi: function (prompt) { postToHost({ type: 'askAi', prompt: prompt }); },

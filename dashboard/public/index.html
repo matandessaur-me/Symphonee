@@ -91,7 +91,7 @@
     .header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 0 20px; padding-right: 140px;
-      background: var(--mantle); border-bottom: 1px solid var(--surface0); z-index: 10;
+      background: var(--mantle); border-bottom: 1px solid var(--surface0); z-index: 20;
     }
     .header-left { display: flex; align-items: center; gap: 8px; }
     .header-logo { width: 28px; height: 28px; border-radius: 6px; }
@@ -220,22 +220,86 @@
       display: grid;
       grid-template-rows: var(--term-bar-h) 1fr;
       overflow: hidden;
+      min-width: 0;
     }
 
     /* ── Tab bar ───────────────────────────────────────────────────────────── */
     .tab-bar {
       display: flex; align-items: center; gap: 0;
-      height: var(--term-bar-h); padding: 0 8px;
+      height: var(--term-bar-h); padding: 0 0 0 4px;
       background: var(--mantle); border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+      min-width: 0; overflow: visible; position: relative; z-index: 10;
     }
+    .tab-bar-scroll {
+      display: flex; align-items: center; gap: 0; flex: 1; min-width: 0;
+      overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    }
+    .tab-bar-scroll::-webkit-scrollbar { display: none; }
     .tab-btn {
-      padding: 8px 14px; background: transparent; border: none;
+      display: inline-flex; align-items: center; gap: 0;
+      padding: 0 14px; height: 100%; background: transparent; border: none;
       color: var(--subtext0); font: 12px var(--font-ui); cursor: pointer;
-      border-bottom: 2px solid transparent; transition: all 0.12s;
+      transition: all 0.12s;
+      white-space: nowrap; flex-shrink: 0;
     }
     .tab-btn:hover { color: var(--text); }
-    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-    .tab-bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .tab-btn.active { color: var(--accent); font-weight: 600; }
+    .tab-btn .tab-close {
+      display: none; margin-left: 8px; padding: 0;
+      font-size: 16px; line-height: 1; color: var(--overlay1);
+      cursor: pointer; background: none; border: none;
+    }
+    .tab-btn .tab-close:hover { color: var(--red); }
+    .tab-btn.closable:hover .tab-close { display: flex; align-items: center; }
+    .tab-bar-middle { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+    .tab-scroll-arrow {
+      display: none; align-items: center; justify-content: center;
+      position: absolute; top: 0; bottom: 0; width: 24px; z-index: 3;
+      background: linear-gradient(to right, var(--mantle) 70%, transparent);
+      border: none; color: var(--overlay1); cursor: pointer;
+      transition: color 0.12s; padding: 0;
+    }
+    .tab-scroll-arrow svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .tab-scroll-arrow:hover { color: var(--text); }
+    .tab-scroll-arrow.visible { display: flex; }
+    .tab-scroll-arrow.left { left: 0; }
+    .tab-scroll-arrow.right {
+      right: 0;
+      background: linear-gradient(to left, var(--mantle) 70%, transparent);
+    }
+    .tab-btn.closable .tab-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-right: 6px;
+    }
+    .tab-open-wrap {
+      position: relative; flex-shrink: 0; display: flex; align-items: center;
+      margin: 0 12px; border-left: 1px solid var(--surface0); padding-left: 12px;
+    }
+    .tab-open-btn {
+      padding: 4px 10px; background: transparent; border: 1px solid var(--surface1);
+      border-radius: var(--radius); color: var(--subtext1); font: 11px var(--font-ui);
+      cursor: pointer; display: flex; align-items: center; gap: 4px;
+      transition: all 0.12s; line-height: 1;
+    }
+    .tab-open-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--surface0); }
+    .tab-open-menu {
+      display: none; position: absolute; top: 100%; right: 0; z-index: 99999; min-width: 200px;
+      background: var(--base); border: 1px solid var(--overlay0); border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 4px 0; margin-top: 4px;
+    }
+    .tab-open-menu.open { display: block; }
+    .tab-open-item {
+      display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 14px;
+      background: none; border: none; color: var(--text); font: 12px var(--font-ui);
+      cursor: pointer; text-align: left;
+    }
+    .tab-open-item:hover { background: var(--surface0); color: var(--accent); }
+    .tab-open-item .tab-open-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    .tab-open-item .tab-open-check {
+      font-size: 11px; color: var(--green); margin-left: auto; flex-shrink: 0;
+    }
+    .tab-bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .cmd-trigger {
       display: flex; align-items: center; gap: 8px; padding: 4px 12px;
       background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
@@ -270,7 +334,7 @@
       display: flex; align-items: center; gap: 4px;
       padding: 0 14px; height: 100%; background: transparent; border: none;
       color: var(--subtext0); font: 12px var(--font-ui); cursor: pointer;
-      border-bottom: 2px solid transparent; transition: all 0.12s;
+      transition: all 0.12s;
     }
     .term-tab:hover { color: var(--text); }
     .term-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
@@ -625,7 +689,7 @@
     .files-stab {
       flex: 1; padding: 7px 0; background: transparent; border: none;
       color: var(--subtext0); font: 11px var(--font-ui); cursor: pointer;
-      border-bottom: 2px solid transparent; transition: all 0.12s; text-align: center;
+      transition: all 0.12s; text-align: center;
     }
     .files-stab:hover { color: var(--text); }
     .files-stab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
@@ -799,7 +863,7 @@
     .tab-panel#panel-prs.active { display: flex; }
     .prs-container { display: flex; width: 100%; height: 100%; }
     .prs-sidebar {
-      width: 300px; flex-shrink: 0; background: var(--mantle);
+      width: 320px; flex-shrink: 0; background: var(--mantle);
       border-right: 1px solid var(--surface0); display: flex; flex-direction: column;
     }
     .prs-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -1093,14 +1157,23 @@
     }
     .intel-tabs {
       display: flex; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+      overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
     }
+    .intel-tabs::-webkit-scrollbar { display: none; }
     .intel-tab {
-      flex: 1; padding: 10px 8px; background: transparent; border: none;
+      flex: 0 0 auto; padding: 10px 8px; background: transparent; border: none;
       color: var(--subtext0); font: 11px var(--font-ui); cursor: pointer;
-      border-bottom: 2px solid transparent; transition: all 0.12s; text-align: center;
+      transition: all 0.12s; text-align: center;
+      white-space: nowrap; position: relative;
     }
     .intel-tab:hover { color: var(--text); }
     .intel-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .intel-tab .tab-close {
+      display: none; margin-left: 4px; padding: 0 2px; font-size: 12px; line-height: 1;
+      color: var(--overlay1); cursor: pointer; vertical-align: middle;
+    }
+    .intel-tab .tab-close:hover { color: var(--red); }
+    .intel-tab.closable:hover .tab-close { display: inline; }
     .intel-panel { display: none; flex: 1; overflow-y: auto; padding: 12px; }
     .intel-panel.active { display: block; }
     #ipanel-activity { flex-direction: column; padding: 0; }
@@ -1789,18 +1862,23 @@
   <!-- ─── Center Panel ─────────────────────────────────────────────────── -->
   <div class="center">
     <div class="tab-bar">
-      <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
-      <button class="tab-btn" data-tab="backlog" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
-      <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
-      <button class="tab-btn" data-tab="activity" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
-      <button class="tab-btn" data-tab="prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
-      <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
-      <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
-      <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
-      <div class="tab-bar-right">
-        <span class="tab-bar-status" id="termStatus"></span>
-        <button class="tab-bar-btn" onclick="toggleAi()" id="aiBtn">Launch AI</button>
-        <button class="tab-bar-btn" onclick="restartShell()">Restart Shell</button>
+      <div class="tab-bar-middle">
+        <button class="tab-scroll-arrow left" id="tabScrollLeft" onclick="scrollTabs(-200)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <div class="tab-bar-scroll" id="tabBarScroll">
+          <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
+          <button class="tab-btn" data-tab="backlog" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
+          <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
+          <button class="tab-btn" data-tab="activity" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
+          <button class="tab-btn" data-tab="prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
+          <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
+          <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
+          <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
+        </div>
+        <button class="tab-scroll-arrow right" id="tabScrollRight" onclick="scrollTabs(200)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+      <div class="tab-open-wrap" id="tabOpenWrap">
+        <button class="tab-bar-btn" onclick="toggleOpenTabMenu()" title="Open a plugin tab">+ Open Tab</button>
+        <div class="tab-open-menu" id="tabOpenMenu"></div>
       </div>
     </div>
 
@@ -1809,6 +1887,10 @@
       <div class="term-tabs" id="termTabs">
         <div class="term-tab active" data-term="main" onclick="switchTerminal('main')" id="mainTermTab">Shell 1</div>
         <button class="term-tab-add" onclick="addTerminal()" title="New terminal">+</button>
+        <div style="flex:1;"></div>
+        <span class="tab-bar-status" id="termStatus" style="margin-right:4px;"></span>
+        <button class="tab-bar-btn" onclick="toggleAi()" id="aiBtn" style="margin-right:4px;">Launch AI</button>
+        <button class="tab-bar-btn" onclick="restartShell()">Restart Shell</button>
       </div>
       <div class="term-containers" id="termContainers">
         <div class="term-instance active" id="term-main"></div>
@@ -2017,14 +2099,14 @@
     <div class="tab-panel" id="panel-prs">
       <div class="prs-container">
         <div class="prs-sidebar">
-          <div style="padding:0 8px;height:38px;display:flex;align-items:center;border-bottom:1px solid var(--surface0);gap:6px;">
+          <div style="padding:0 8px 0 8px;height:38px;display:flex;align-items:center;border-bottom:1px solid var(--surface0);gap:6px;">
             <select class="view-filter" id="prsRepoSelect" onchange="loadPRs()" style="flex:1;font-weight:600;color:var(--text);"></select>
             <select class="view-filter" id="prsStateSelect" onchange="loadPRs()" style="width:80px;">
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               <option value="all">All</option>
             </select>
-            <button class="tab-bar-btn" onclick="loadPRs()" title="Refresh" style="padding:4px 6px;display:flex;align-items:center;justify-content:center;"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i></button>
+            <button class="tab-bar-btn" onclick="loadPRs()" title="Refresh" style="width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i></button>
           </div>
           <div id="prsList" style="overflow-y:auto;flex:1;">
             <div class="empty-state" style="padding:20px;"><div class="empty-state-text">Select a repository</div></div>
@@ -2136,6 +2218,10 @@
       <button class="intel-tab active" data-itab="activity" onclick="switchIntelTab('activity')">Activity</button>
       <button class="intel-tab" data-itab="team" onclick="switchIntelTab('team')">Team</button>
       <button class="intel-tab" data-itab="gitlog" onclick="switchIntelTab('gitlog')">Git Log</button>
+      <div class="tab-open-wrap" id="intelReopenWrap" style="display:none;flex-shrink:0;">
+        <button class="tab-open-btn" onclick="toggleIntelReopenMenu()" title="Open closed panels" style="font-size:12px;padding:4px 6px;width:22px;height:22px;margin-top:6px;">+</button>
+        <div class="tab-open-menu" id="intelReopenMenu"></div>
+      </div>
     </div>
 
     <!-- Activity Panel -->
@@ -5281,6 +5367,9 @@ function switchTab(tab, preserveSearch) {
     }
   });
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `panel-${tab}`));
+  // Scroll active tab into view if overflowed
+  var activeBtn = document.querySelector('.tab-btn[data-tab="' + tab + '"]');
+  if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); }
   if (tab === 'backlog') {
     if (!preserveSearch) { const s = document.getElementById('backlogSearch'); if (s) s.value = ''; }
@@ -5373,18 +5462,13 @@ function handleUiAction(msg) {
   }
   // Open a plugin tab and optionally send a message to its iframe
   if (msg.action === 'view-plugin' && msg.plugin) {
-    var tabPrefix = 'plugin-' + msg.plugin + '-';
-    // Find the first tab for this plugin
-    var pluginPanel = document.querySelector('.tab-panel[id^="panel-' + tabPrefix + '"]');
-    if (pluginPanel) {
-      switchTab(pluginPanel.id.replace('panel-', ''));
-      // Forward any extra data to the plugin iframe via postMessage
-      if (msg.message) {
-        setTimeout(function() {
-          var iframes = document.querySelectorAll('iframe[data-plugin-id="' + msg.plugin + '"]');
-          iframes.forEach(function(f) { f.contentWindow.postMessage(Object.assign({ __devopsPilot: true }, msg.message), location.origin); });
-        }, 300);
-      }
+    ensurePluginTabOpen(msg.plugin);
+    // Forward any extra data to the plugin iframe via postMessage
+    if (msg.message) {
+      setTimeout(function() {
+        var iframes = document.querySelectorAll('iframe[data-plugin-id="' + msg.plugin + '"]');
+        iframes.forEach(function(f) { f.contentWindow.postMessage(Object.assign({ __devopsPilot: true }, msg.message), location.origin); });
+      }, 300);
     }
   }
 }
@@ -8046,7 +8130,7 @@ function getCmdActions() {
         actions.push({
           label: 'Go to ' + (t.label || p.name),
           icon: t.icon || p.icon || 'puzzle',
-          action: () => switchTab('plugin-' + p.id + '-' + t.id),
+          action: () => openPluginTab('plugin-' + p.id + '-' + t.id),
           category: 'Plugin',
         });
       }
@@ -8079,7 +8163,7 @@ async function loadPluginCmdItems() {
               label: t.title,
               icon: 'check-square',
               action: () => {
-                switchTab('plugin-wrike-board');
+                openPluginTab('plugin-wrike-board');
                 var iframes = document.querySelectorAll('iframe[data-plugin-id="wrike"]');
                 iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin); });
               },
@@ -8100,7 +8184,7 @@ async function loadPluginCmdItems() {
               label: displayName + ' (' + m.kind + ', ' + m.fieldCount + ' fields)',
               icon: 'blocks',
               action: () => {
-                switchTab('plugin-builderio-manager');
+                openPluginTab('plugin-builderio-manager');
                 var iframes = document.querySelectorAll('iframe[data-plugin-id="builderio"]');
                 iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'openModel', modelId: m.id }, location.origin); });
               },
@@ -8181,7 +8265,7 @@ async function liveSearchPlugins(q) {
               label: t.title,
               icon: 'check-square',
               action: function() {
-                switchTab('plugin-wrike-board');
+                openPluginTab('plugin-wrike-board');
                 var iframes = document.querySelectorAll('iframe[data-plugin-id="wrike"]');
                 iframes.forEach(function(f) { f.contentWindow.postMessage({ __devopsPilot: true, type: 'viewTask', taskId: t.id }, location.origin); });
               },
@@ -8467,6 +8551,9 @@ window.addEventListener('message', function (event) {
     case 'viewWorkItem':
       viewWorkItem(msg.id);
       break;
+    case 'openSettings':
+      openSettings(msg.tab || 'plugins');
+      break;
   }
 });
 
@@ -8556,17 +8643,40 @@ function injectSidebarSection(plugin, section) {
 
 // Inject a center tab with iframe panel
 function injectCenterTab(plugin, tab) {
-  var tabBar = document.querySelector('.tab-bar');
-  var rightSection = tabBar.querySelector('.tab-bar-right');
+  var scrollContainer = document.querySelector('.tab-bar-scroll');
   var tabId = 'plugin-' + plugin.id + '-' + tab.id;
 
   var btn = document.createElement('button');
-  btn.className = 'tab-btn';
+  btn.className = 'tab-btn closable';
   btn.dataset.tab = tabId;
-  btn.textContent = tab.label;
+  btn.dataset.pluginId = plugin.id;
+  btn.title = tab.label;
   if (plugin.tint) btn.dataset.tint = plugin.tint;
+
+  // Colored dot for plugin identity
+  var dot = document.createElement('span');
+  dot.className = 'tab-dot';
+  dot.style.background = plugin.tint ? 'rgb(' + plugin.tint + ')' : 'var(--accent)';
+  btn.appendChild(dot);
+
+  // Full label always shown
+  var labelSpan = document.createElement('span');
+  labelSpan.textContent = tab.label;
+  btn.appendChild(labelSpan);
+
+  var closeSpan = document.createElement('span');
+  closeSpan.className = 'tab-close';
+  closeSpan.innerHTML = '&#215;';
+  closeSpan.onclick = function (e) {
+    e.stopPropagation();
+    closePluginTab(tabId);
+  };
+  btn.appendChild(closeSpan);
+
   btn.onclick = function () { switchTab(tabId); };
-  tabBar.insertBefore(btn, rightSection);
+  scrollContainer.appendChild(btn);
+  saveOpenTabs();
+  checkTabBarOverflow();
 
   var panel = document.createElement('div');
   panel.className = 'tab-panel';
@@ -8579,16 +8689,185 @@ function injectCenterTab(plugin, tab) {
   document.querySelector('.center').appendChild(panel);
 }
 
+// Registry of all available plugin center tabs (populated on startup, never injected automatically)
+var pluginTabRegistry = [];
+
+function registerPluginTab(plugin, tabDef) {
+  var tabId = 'plugin-' + plugin.id + '-' + tabDef.id;
+  if (!pluginTabRegistry.some(function(r) { return r.tabId === tabId; })) {
+    pluginTabRegistry.push({ tabId: tabId, label: tabDef.label, plugin: plugin, tabDef: tabDef });
+  }
+}
+
+function isPluginTabOpen(tabId) {
+  return !!document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+}
+
+function closePluginTab(tabId) {
+  var btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+  var panel = document.getElementById('panel-' + tabId);
+  var wasActive = btn && btn.classList.contains('active');
+  if (btn) btn.remove();
+  if (panel) panel.remove();
+  if (wasActive) switchTab('terminal');
+  saveOpenTabs();
+  checkTabBarOverflow();
+}
+
+// Scroll arrows for tab bar overflow
+function scrollTabs(delta) {
+  var el = document.getElementById('tabBarScroll');
+  if (el) el.scrollBy({ left: delta, behavior: 'smooth' });
+}
+
+function updateScrollArrows() {
+  var el = document.getElementById('tabBarScroll');
+  var left = document.getElementById('tabScrollLeft');
+  var right = document.getElementById('tabScrollRight');
+  if (!el || !left || !right) return;
+  var canScrollLeft = el.scrollLeft > 2;
+  var canScrollRight = el.scrollLeft < (el.scrollWidth - el.clientWidth - 2);
+  left.classList.toggle('visible', canScrollLeft);
+  right.classList.toggle('visible', canScrollRight);
+}
+
+// Check arrows on scroll, resize, and after tab changes
+(function() {
+  var el = document.getElementById('tabBarScroll');
+  if (el) {
+    el.addEventListener('scroll', updateScrollArrows);
+    new ResizeObserver(updateScrollArrows).observe(el);
+  }
+})();
+
+function checkTabBarOverflow() {
+  updateScrollArrows();
+}
+
+// Open a plugin tab by tabId (injects it if not already open, then switches to it)
+function openPluginTab(tabId) {
+  if (isPluginTabOpen(tabId)) {
+    switchTab(tabId);
+    return;
+  }
+  var entry = pluginTabRegistry.find(function(r) { return r.tabId === tabId; });
+  if (entry) {
+    injectCenterTab(entry.plugin, entry.tabDef);
+    switchTab(tabId);
+  }
+}
+
+// Open a plugin's first center tab by plugin ID (used by view-plugin, command palette, AI)
+function ensurePluginTabOpen(pluginId) {
+  var tabPrefix = 'plugin-' + pluginId + '-';
+  // Already open? Just switch.
+  var existing = document.querySelector('.tab-btn[data-tab^="' + tabPrefix + '"]');
+  if (existing) {
+    switchTab(existing.dataset.tab);
+    return existing.dataset.tab;
+  }
+  // Find in registry and open the first tab for this plugin
+  var entry = pluginTabRegistry.find(function(r) { return r.tabId.indexOf(tabPrefix) === 0; });
+  if (entry) {
+    injectCenterTab(entry.plugin, entry.tabDef);
+    switchTab(entry.tabId);
+    return entry.tabId;
+  }
+  return null;
+}
+
+function toggleOpenTabMenu() {
+  var menu = document.getElementById('tabOpenMenu');
+  var isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open', !isOpen);
+  if (!isOpen) {
+    menu.innerHTML = '';
+    for (var i = 0; i < pluginTabRegistry.length; i++) {
+      (function(entry) {
+        var open = isPluginTabOpen(entry.tabId);
+        var item = document.createElement('button');
+        item.className = 'tab-open-item';
+        var dot = document.createElement('span');
+        dot.className = 'tab-open-dot';
+        dot.style.background = entry.plugin.tint ? 'rgb(' + entry.plugin.tint + ')' : 'var(--accent)';
+        item.appendChild(dot);
+        var lbl = document.createElement('span');
+        lbl.textContent = entry.label;
+        item.appendChild(lbl);
+        if (open) {
+          var check = document.createElement('span');
+          check.className = 'tab-open-check';
+          check.textContent = 'open';
+          item.appendChild(check);
+        }
+        item.onclick = function() {
+          if (open) { switchTab(entry.tabId); } else { openPluginTab(entry.tabId); }
+          menu.classList.remove('open');
+        };
+        menu.appendChild(item);
+      })(pluginTabRegistry[i]);
+    }
+    if (pluginTabRegistry.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'padding:10px 14px;font-size:12px;color:var(--subtext0);';
+      empty.textContent = 'No plugins installed';
+      menu.appendChild(empty);
+    }
+  }
+}
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('tabOpenMenu');
+  var wrap = document.getElementById('tabOpenWrap');
+  if (menu && wrap && !wrap.contains(e.target)) menu.classList.remove('open');
+});
+
+// -- Persist open plugin tabs in localStorage ---------------------------------
+function saveOpenTabs() {
+  var open = [];
+  document.querySelectorAll('.tab-btn.closable').forEach(function(btn) {
+    if (btn.dataset.tab) open.push(btn.dataset.tab);
+  });
+  try { localStorage.setItem('devops-pilot-open-tabs', JSON.stringify(open)); } catch (_) {}
+}
+
+function restoreOpenTabs() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('devops-pilot-open-tabs') || '[]');
+    for (var i = 0; i < saved.length; i++) {
+      var tabId = saved[i];
+      if (!isPluginTabOpen(tabId)) {
+        var entry = pluginTabRegistry.find(function(r) { return r.tabId === tabId; });
+        if (entry) injectCenterTab(entry.plugin, entry.tabDef);
+      }
+    }
+  } catch (_) {}
+  checkTabBarOverflow();
+}
+
 // Inject a right-side intel panel with iframe
 function injectIntelPanel(plugin, ip) {
   var tabBar = document.querySelector('.intel-tabs');
   var panelId = 'plugin-' + plugin.id + '-' + ip.id;
 
   var btn = document.createElement('button');
-  btn.className = 'intel-tab';
+  btn.className = 'intel-tab closable';
   btn.dataset.itab = panelId;
-  btn.textContent = ip.label;
+  btn.dataset.pluginId = plugin.id;
   if (plugin.tint) btn.dataset.tint = plugin.tint;
+
+  var label = document.createTextNode(ip.label);
+  btn.appendChild(label);
+
+  var closeSpan = document.createElement('span');
+  closeSpan.className = 'tab-close';
+  closeSpan.innerHTML = '&#215;';
+  closeSpan.onclick = function (e) {
+    e.stopPropagation();
+    closeIntelPanel(panelId);
+  };
+  btn.appendChild(closeSpan);
+
   btn.onclick = function () { switchIntelTab(panelId); };
   tabBar.appendChild(btn);
 
@@ -8602,6 +8881,65 @@ function injectIntelPanel(plugin, ip) {
     (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
   document.querySelector('.intel').appendChild(panel);
 }
+
+var closedIntelPanels = [];
+
+function closeIntelPanel(panelId) {
+  var btn = document.querySelector('.intel-tab[data-itab="' + panelId + '"]');
+  var panel = document.getElementById('ipanel-' + panelId);
+  var wasActive = btn && btn.classList.contains('active');
+  var pluginId = btn ? btn.dataset.pluginId : null;
+  if (pluginId) {
+    var plugin = _loadedPlugins.find(function(p) { return p.id === pluginId; });
+    if (plugin && plugin.contributions && plugin.contributions.intelPanels) {
+      var ipDef = plugin.contributions.intelPanels.find(function(ip) {
+        return 'plugin-' + pluginId + '-' + ip.id === panelId;
+      });
+      if (ipDef && !closedIntelPanels.some(function(c) { return c.panelId === panelId; })) {
+        closedIntelPanels.push({ panelId: panelId, label: ipDef.label, plugin: plugin, ipDef: ipDef });
+      }
+    }
+  }
+  if (btn) btn.remove();
+  if (panel) panel.remove();
+  if (wasActive) switchIntelTab('activity');
+  updateIntelReopenButton();
+}
+
+function updateIntelReopenButton() {
+  var wrap = document.getElementById('intelReopenWrap');
+  if (wrap) wrap.style.display = closedIntelPanels.length > 0 ? 'inline-block' : 'none';
+}
+
+function toggleIntelReopenMenu() {
+  var menu = document.getElementById('intelReopenMenu');
+  var isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open', !isOpen);
+  if (!isOpen) {
+    menu.innerHTML = '';
+    for (var i = 0; i < closedIntelPanels.length; i++) {
+      (function(entry) {
+        var item = document.createElement('button');
+        item.className = 'tab-open-item';
+        item.textContent = entry.label;
+        item.onclick = function() {
+          injectIntelPanel(entry.plugin, entry.ipDef);
+          closedIntelPanels = closedIntelPanels.filter(function(c) { return c.panelId !== entry.panelId; });
+          updateIntelReopenButton();
+          switchIntelTab(entry.panelId);
+          menu.classList.remove('open');
+        };
+        menu.appendChild(item);
+      })(closedIntelPanels[i]);
+    }
+  }
+}
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('intelReopenMenu');
+  var wrap = document.getElementById('intelReopenWrap');
+  if (menu && wrap && !wrap.contains(e.target)) menu.classList.remove('open');
+});
 
 // Store context menu items for later use
 var pluginContextMenuItems = [];
@@ -8630,10 +8968,13 @@ var _loadedPlugins = [];
       if (c.sidebarActions) c.sidebarActions.forEach(function (a) { injectSidebarAction(p, a); });
       if (c.aiActions) c.aiActions.forEach(function (a) { injectAiAction(p, a); });
       if (c.sidebarSections) c.sidebarSections.forEach(function (s) { injectSidebarSection(p, s); });
-      if (c.centerTabs) c.centerTabs.forEach(function (t) { injectCenterTab(p, t); });
+      if (c.centerTabs) c.centerTabs.forEach(function (t) { registerPluginTab(p, t); });
       if (c.intelPanels) c.intelPanels.forEach(function (ip) { injectIntelPanel(p, ip); });
       if (c.contextMenuItems) c.contextMenuItems.forEach(function (m) { registerContextMenuItem(p, m); });
     }
+
+    // Restore previously open plugin tabs from localStorage
+    restoreOpenTabs();
 
     renderPluginSettings(plugins);
   }
@@ -8688,6 +9029,10 @@ function renderPluginSettings(plugins) {
       }
       nav += '</div>';
     }
+    // Delete button
+    nav += '<div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--surface0);">';
+    nav += '<button class="btn" style="color:var(--red);border-color:var(--red);font-size:11px;" onclick="uninstallPlugin(\'' + p.id + '\',\'' + (p.name || p.id).replace(/'/g, "\\'") + '\')">Uninstall ' + (p.name || p.id) + '</button>';
+    nav += '</div>';
     nav += '</div>';
   }
   nav += '</div></div>';
@@ -8856,6 +9201,25 @@ async function installPluginPrompt() {
 }
 
 // Save plugin settings (called from saveSettings)
+async function uninstallPlugin(id, name) {
+  if (!confirm('Uninstall "' + name + '"? This will delete the plugin folder. You will need to restart the app.')) return;
+  try {
+    var res = await fetch('/api/plugins/uninstall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    var data = await res.json();
+    if (data.ok) {
+      toast(name + ' uninstalled. Restart the app to apply.', 'success');
+    } else {
+      toast('Failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+  }
+}
+
 async function savePluginSettings() {
   var inputs = document.querySelectorAll('.plugin-setting-input');
   var byPlugin = {};
