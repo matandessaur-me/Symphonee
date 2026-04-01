@@ -55,7 +55,7 @@
       for (var i = 0; i < iframes.length; i++) {
         if (iframes[i].contentWindow === window && iframes[i].dataset.tint) {
           var rgb = iframes[i].dataset.tint;
-          tintCss = ':root { --plugin-tint: ' + rgb + '; }'
+          tintCss = ':root { --plugin-tint: ' + rgb + '; --accent: rgb(' + rgb + '); }'
             + ' body { border-top: 2px solid rgba(' + rgb + ', 0.35); }';
           break;
         }
