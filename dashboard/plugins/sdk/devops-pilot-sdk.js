@@ -55,18 +55,8 @@
       for (var i = 0; i < iframes.length; i++) {
         if (iframes[i].contentWindow === window && iframes[i].dataset.tint) {
           var rgb = iframes[i].dataset.tint;
-          var t = 'rgb(' + rgb + ')';
           tintCss = ':root { --plugin-tint: ' + rgb + '; }'
-            + ' body { background: color-mix(in srgb, var(--base) 98%, ' + t + ' 2%); }'
-            + ' .toolbar, .filter-bar, .sidebar, .sidebar-hdr, .conn-bar, .back-bar, .detail-toolbar, .editor-toolbar, .top-bar, .hdr {'
-            + '   background: color-mix(in srgb, var(--mantle) 97%, ' + t + ' 3%); }'
-            + ' .board-col { background: color-mix(in srgb, var(--crust) 97%, ' + t + ' 3%); }'
-            + ' .board-card, .stat, .action-card, .detail-actions, .comment, .schema-box, .picker-modal, .setup {'
-            + '   background: color-mix(in srgb, var(--surface0) 97%, ' + t + ' 3%); }'
-            + ' .board-card:hover, .action-card:hover, .task-row:hover, .list-row:hover, .picker-item:hover, .tree-item:hover {'
-            + '   background: color-mix(in srgb, var(--surface0) 95%, ' + t + ' 5%); }'
-            + ' .fbtn.active, .dbtn.primary, .btn.primary {'
-            + '   background: color-mix(in srgb, var(--accent) 88%, ' + t + ' 12%); }';
+            + ' body { border-top: 2px solid rgba(' + rgb + ', 0.35); }';
           break;
         }
       }
