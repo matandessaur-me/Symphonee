@@ -5228,7 +5228,20 @@ function runScript(action) {
 
 // ── Tab Switching ───────────────────────────────────────────────────────
 function switchTab(tab, preserveSearch) {
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.tab-btn').forEach(el => {
+    var isActive = el.dataset.tab === tab;
+    el.classList.toggle('active', isActive);
+    // Plugin tint: color active tab text + border, clear inactive
+    if (el.dataset.tint) {
+      if (isActive) {
+        el.style.color = 'rgb(' + el.dataset.tint + ')';
+        el.style.borderBottomColor = 'rgb(' + el.dataset.tint + ')';
+      } else {
+        el.style.color = '';
+        el.style.borderBottomColor = '';
+      }
+    }
+  });
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `panel-${tab}`));
   if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); }
   if (tab === 'backlog') {
@@ -5242,7 +5255,19 @@ function switchTab(tab, preserveSearch) {
 }
 
 function switchIntelTab(tab) {
-  document.querySelectorAll('.intel-tab').forEach(el => el.classList.toggle('active', el.dataset.itab === tab));
+  document.querySelectorAll('.intel-tab').forEach(el => {
+    var isActive = el.dataset.itab === tab;
+    el.classList.toggle('active', isActive);
+    if (el.dataset.tint) {
+      if (isActive) {
+        el.style.color = 'rgb(' + el.dataset.tint + ')';
+        el.style.borderBottomColor = 'rgb(' + el.dataset.tint + ')';
+      } else {
+        el.style.color = '';
+        el.style.borderBottomColor = '';
+      }
+    }
+  });
   document.querySelectorAll('.intel-panel').forEach(el => el.classList.toggle('active', el.id === `ipanel-${tab}`));
   if (tab === 'velocity') loadVelocity();
   if (tab === 'team') loadTeamMembers();
@@ -8485,7 +8510,7 @@ function injectCenterTab(plugin, tab) {
   btn.className = 'tab-btn';
   btn.dataset.tab = tabId;
   btn.textContent = tab.label;
-  if (plugin.tint) btn.style.cssText = 'border-bottom: 2px solid rgba(' + plugin.tint + ', 0.4);';
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
   btn.onclick = function () { switchTab(tabId); };
   tabBar.insertBefore(btn, rightSection);
 
@@ -8509,7 +8534,7 @@ function injectIntelPanel(plugin, ip) {
   btn.className = 'intel-tab';
   btn.dataset.itab = panelId;
   btn.textContent = ip.label;
-  if (plugin.tint) btn.style.cssText = 'border-bottom: 2px solid rgba(' + plugin.tint + ', 0.4);';
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
   btn.onclick = function () { switchIntelTab(panelId); };
   tabBar.appendChild(btn);
 
