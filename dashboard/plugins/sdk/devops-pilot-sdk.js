@@ -45,7 +45,31 @@
       return v + ': ' + computed.getPropertyValue(v);
     }).join('; ');
     var style = document.createElement('style');
-    style.textContent = ':root { ' + css + ' } body { font-family: var(--font-ui); color: var(--text); background: var(--base); margin: 0; }';
+    var baseCss = ':root { ' + css + ' } body { font-family: var(--font-ui); color: var(--text); background: var(--base); margin: 0; }';
+
+    // Plugin tint: read from the iframe's data-tint attribute
+    // Applies a subtle colored overlay to all background colors
+    var tintCss = '';
+    try {
+      var iframes = window.parent.document.querySelectorAll('iframe[data-plugin-id]');
+      for (var i = 0; i < iframes.length; i++) {
+        if (iframes[i].contentWindow === window && iframes[i].dataset.tint) {
+          var rgb = iframes[i].dataset.tint;
+          tintCss = ':root { --plugin-tint: ' + rgb + '; }'
+            + ' body { background: color-mix(in srgb, var(--base) 95%, rgb(' + rgb + ') 5%); }'
+            + ' .toolbar, .filter-bar, .sidebar, .sidebar-hdr, .conn-bar, .back-bar, .detail-toolbar, .editor-toolbar, .top-bar {'
+            + '   background: color-mix(in srgb, var(--mantle) 93%, rgb(' + rgb + ') 7%); }'
+            + ' .board-col { background: color-mix(in srgb, var(--crust) 93%, rgb(' + rgb + ') 7%); }'
+            + ' .board-card, .stat, .action-card, .detail-actions, .comment, .schema-box, .picker-modal {'
+            + '   background: color-mix(in srgb, var(--surface0) 94%, rgb(' + rgb + ') 6%); }'
+            + ' .board-card:hover, .action-card:hover, .task-row:hover, .list-row:hover, .picker-item:hover {'
+            + '   background: color-mix(in srgb, var(--surface0) 88%, rgb(' + rgb + ') 12%); }';
+          break;
+        }
+      }
+    } catch (_) {}
+
+    style.textContent = baseCss + tintCss;
     document.head.appendChild(style);
   } catch (_) {
     // Silently fail if cross-origin

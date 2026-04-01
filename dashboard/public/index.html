@@ -8493,7 +8493,8 @@ function injectCenterTab(plugin, tab) {
   panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
     'style="width:100%;height:100%;border:none;" ' +
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
-    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"></iframe>';
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
   document.querySelector('.center').appendChild(panel);
 }
 
@@ -8515,7 +8516,8 @@ function injectIntelPanel(plugin, ip) {
   panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + ip.html + '" ' +
     'style="width:100%;height:100%;border:none;" ' +
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
-    'data-plugin-id="' + plugin.id + '" data-tab-id="' + ip.id + '"></iframe>';
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + ip.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
   document.querySelector('.intel').appendChild(panel);
 }
 
