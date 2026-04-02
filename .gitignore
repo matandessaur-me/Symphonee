@@ -11,3 +11,7 @@ temp-*.ps1
 dashboard/public/icon.ico
 dashboard/public/icon.png
 package-lock.json
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.github/copilot-instructions.md

@@ -2630,26 +2630,26 @@ function writePluginHints() {
     block += '```bash\ncurl -s http://127.0.0.1:3800/api/plugins/instructions\n```\n';
   }
 
-  // Write to all AI instruction files using markers
-  const instructionFiles = [
-    path.join(repoRoot, 'CLAUDE.md'),
-    path.join(repoRoot, 'AGENTS.md'),
-    path.join(repoRoot, 'GEMINI.md'),
-    path.join(repoRoot, '.github', 'copilot-instructions.md'),
+  // Generate final instruction files from .base.md templates + plugin hints
+  const templateFiles = [
+    { base: path.join(repoRoot, 'CLAUDE.base.md'), out: path.join(repoRoot, 'CLAUDE.md') },
+    { base: path.join(repoRoot, 'AGENTS.base.md'), out: path.join(repoRoot, 'AGENTS.md') },
+    { base: path.join(repoRoot, 'GEMINI.base.md'), out: path.join(repoRoot, 'GEMINI.md') },
+    { base: path.join(repoRoot, '.github', 'copilot-instructions.base.md'), out: path.join(repoRoot, '.github', 'copilot-instructions.md') },
   ];
   const START = '<!-- PLUGIN_INSTRUCTIONS_START -->';
   const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
-  for (const file of instructionFiles) {
+  for (const { base, out } of templateFiles) {
     try {
-      if (!fs.existsSync(file)) continue;
-      let content = fs.readFileSync(file, 'utf8');
+      if (!fs.existsSync(base)) continue;
+      let content = fs.readFileSync(base, 'utf8');
       const startIdx = content.indexOf(START);
       const endIdx = content.indexOf(END);
       if (startIdx === -1 || endIdx === -1) continue;
       const before = content.substring(0, startIdx + START.length);
       const after = content.substring(endIdx);
       content = before + '\n' + block + '\n' + after;
-      atomicWriteSync(file, content);
+      atomicWriteSync(out, content);
     } catch (_) {}
   }
 }

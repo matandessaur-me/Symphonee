@@ -428,28 +428,4 @@ Plugin API routes are namespaced under `/api/plugins/<plugin-id>/`. Check the pl
 - **NEVER use backslash paths** in bash — always use forward slashes (`./scripts/` not `.\scripts\`)
 
 <!-- PLUGIN_INSTRUCTIONS_START -->
-
-## Installed Plugins
-
-The following plugins are installed. **Do NOT embed full plugin instructions here** -- they are loaded dynamically.
-
-### IMPORTANT: Always Ask Before Using a Plugin
-
-When the user's request matches any of the keywords below, **ASK the user if they want to use the plugin** before proceeding.
-
-Do NOT silently use a plugin. Ask first, then fetch the plugin's instructions via `curl -s http://127.0.0.1:3800/api/plugins/instructions` to learn its API routes and capabilities.
-
-- **Builder.io** (Manage Builder.io models, schemas, and content entries): builder.io, builderio, builder model, builder content, builder space, landing page, page builder, visual editor, cms content, content model
-- **Dependency Inspector** (Scan repos for vulnerable, outdated, and unlicensed dependencies): dependencies, packages, npm, nuget, vulnerabilities, outdated, license, audit, security, CVE
-- **Environment Manager** (Manage .env files across repos): env, environment, dotenv, .env, secrets, config, variables, environment variables, API keys, credentials
-- **GA4 & GTM Analytics** (Google Analytics 4 and Tag Manager dashboard): ga4, gtm, google analytics, tag manager, analytics, conversion, tracking, events, tags, triggers
-- **Release Manager** (Track ADO pipelines, generate release notes): release, pipeline, build, deploy, changelog, release notes, CI/CD, pipeline health
-- **Sentry Error Tracker** (Monitor application errors via Sentry): sentry, error, bug, crash, exception, stack trace, error tracking, monitoring, issues
-- **Wrike** (Manage Wrike tasks, projects, and sprints): wrike, task management, project board, sprint board
-
-To get detailed plugin instructions (API routes, scripts, workflows), run:
-```bash
-curl -s http://127.0.0.1:3800/api/plugins/instructions
-```
-
 <!-- PLUGIN_INSTRUCTIONS_END -->
