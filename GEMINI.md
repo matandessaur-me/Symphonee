@@ -44,6 +44,7 @@ You are running inside a PowerShell terminal with access to:
 4. **NEVER use Invoke-RestMethod inline** with `$_` or pipeline variables — bash eats `$_`. Always put complex queries in a `.ps1` file first.
 5. **All scripts run with** `-ExecutionPolicy Bypass -NoProfile` already set.
 6. **Clean up after yourself** — when done with temp files in `.ai-workspace\`, delete them.
+7. **This is Windows.** NEVER use `/dev/stdin`, `/dev/null`, `/tmp/`, or any Unix-only paths. For temp files, use `.ai-workspace\`. For piping JSON to node, write to a file first then read it -- do NOT use `/dev/stdin`.
 
 ## CRITICAL: Speed Rules
 
