@@ -80,8 +80,12 @@ function gitAsync(repoPath, cmd, opts = {}) {
       if (code === 0) {
         resolve(stdout.trim());
       } else {
-        // Return stdout content even on non-zero exit (some git commands use stderr for info)
-        resolve((stdout || stderr || '').trim());
+        const msg = (stderr || stdout || '').trim();
+        const err = new Error(`git ${cmd} exited with code ${code}: ${msg}`);
+        err.exitCode = code;
+        err.stdout = stdout.trim();
+        err.stderr = stderr.trim();
+        reject(err);
       }
     });
 

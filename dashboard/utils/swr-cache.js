@@ -132,27 +132,31 @@ class SWRCache {
     // Don't start another background fetch if one is already running
     if (this._inflight.has(key)) return;
 
-    const promise = fetcher().then(newData => {
-      this._cache.set(key, { data: newData, ts: Date.now() });
-      this._inflight.delete(key);
+    const promise = Promise.resolve()
+      .then(() => fetcher())
+      .then(newData => {
+        this._cache.set(key, { data: newData, ts: Date.now() });
 
-      // Notify if data changed (simple JSON comparison)
-      if (this.onRevalidate) {
-        try {
-          const oldJson = JSON.stringify(oldData);
-          const newJson = JSON.stringify(newData);
-          if (oldJson !== newJson) {
+        // Notify if data changed (simple JSON comparison)
+        if (this.onRevalidate) {
+          try {
+            const oldJson = JSON.stringify(oldData);
+            const newJson = JSON.stringify(newData);
+            if (oldJson !== newJson) {
+              this.onRevalidate(key, newData);
+            }
+          } catch (_) {
+            // If comparison fails, always notify
             this.onRevalidate(key, newData);
           }
-        } catch (_) {
-          // If comparison fails, always notify
-          this.onRevalidate(key, newData);
         }
-      }
-    }).catch(() => {
-      this._inflight.delete(key);
-      // Silent fail on background revalidation -- stale data stays
-    });
+      })
+      .catch(() => {
+        // Silent fail on background revalidation -- stale data stays
+      })
+      .finally(() => {
+        this._inflight.delete(key);
+      });
 
     this._inflight.set(key, promise);
   }

@@ -351,6 +351,7 @@
     .task-pill.running { border-color: var(--accent); color: var(--text); }
     .task-pill.done { border-color: var(--green); color: var(--green); }
     .task-pill.error { border-color: var(--red); color: var(--red); }
+    .task-pill.warning { border-color: var(--yellow, #f59e0b); color: var(--yellow, #f59e0b); }
     .task-pill-spinner {
       width: 12px; height: 12px; border: 2px solid var(--overlay0);
       border-top-color: var(--accent); border-radius: 50%;
@@ -2743,6 +2744,7 @@ let workItems = [];
 let hasMoreClosed = false;
 let totalClosedCount = 0;
 let closedItemsLimit = 10;
+let _activeWiCacheKey = '';
 let currentWiDetail = null;
 let configData = {};
 let lastCols = 0, lastRows = 0;
@@ -3057,7 +3059,7 @@ requestAnimationFrame(fitTerminalNow);
           handleUiAction(msg);
           break;
         case 'cache-updated':
-          handleCacheUpdated(msg.cache, msg.data);
+          handleCacheUpdated(msg.cache, msg.data, msg.key);
           break;
         case 'git-changed':
           handleGitChanged(msg.repo, msg.branch);
@@ -3112,11 +3114,10 @@ function renderTaskPills() {
   container.innerHTML = [..._bgTasks.entries()].map(([id, t]) => {
     const elapsed = ((t.endTime || Date.now()) - t.startTime) / 1000;
     const elapsedStr = elapsed < 60 ? Math.round(elapsed) + 's' : Math.round(elapsed / 60) + 'm';
+    const iconName = t.icon || (t.status === 'done' ? 'check' : t.status === 'warning' ? 'alert-triangle' : 'x');
     const statusIcon = t.status === 'running'
       ? '<div class="task-pill-spinner"></div>'
-      : t.status === 'done'
-        ? '<i data-lucide="check" class="task-pill-icon"></i>'
-        : '<i data-lucide="x" class="task-pill-icon"></i>';
+      : `<i data-lucide="${iconName}" class="task-pill-icon"></i>`;
     return `<div class="task-pill ${t.status}" data-id="${id}">${statusIcon} ${esc(t.label)} <span class="task-pill-elapsed">${elapsedStr}</span></div>`;
   }).join('');
 
@@ -3131,8 +3132,10 @@ setInterval(() => {
 }, 1000);
 
 // ── Background cache refresh ─────────────────────────────────────────────
-function handleCacheUpdated(cacheName, data) {
+function handleCacheUpdated(cacheName, data, key) {
   if (cacheName === 'workitems') {
+    // Only apply if the broadcast key matches the active query
+    if (key && _activeWiCacheKey && key !== _activeWiCacheKey) return;
     if (Array.isArray(data)) {
       workItems = data;
     } else if (data && data.items) {
@@ -5770,6 +5773,9 @@ async function loadWorkItems(refresh = false) {
   if (area) params.set('area', area);
   if (refresh) params.set('refresh', '1');
   params.set('closedTop', String(closedItemsLimit));
+  // Track the active query key so SWR broadcasts can be matched
+  const keyIter = iteration || '';
+  _activeWiCacheKey = 'wi:' + `${keyIter}||||${area}|ct${closedItemsLimit}`;
   const taskId = addBackgroundTask('wi-load-' + Date.now(), 'Loading work items', 'list-checks');
 
   try {

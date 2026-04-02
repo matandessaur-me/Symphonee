@@ -14,7 +14,7 @@ const { exec, execSync } = require('child_process');
 // ── New utility modules ────────────────────────────────────────────────────
 const { gitAsync, gitSync } = require('./utils/git-async');
 const { SWRCache } = require('./utils/swr-cache');
-const { atomicWriteSync, createDebouncedWriter } = require('./utils/atomic-write');
+const { atomicWriteSync } = require('./utils/atomic-write');
 const { BusyGuard } = require('./utils/busy-guard');
 
 const PORT = 3800;
@@ -640,7 +640,7 @@ const TEAM_AREAS_TTL = 600000; // 10 min
 const AREAS_CACHE_TTL = 600000; // 10 min
 
 const swrIterations = new SWRCache({ staleTTL: 60000, maxAge: 300000, onRevalidate: (key, data) => broadcast({ type: 'cache-updated', cache: 'iterations', data }) });
-const swrWorkItems = new SWRCache({ staleTTL: 15000, maxAge: 60000, onRevalidate: (key, data) => broadcast({ type: 'cache-updated', cache: 'workitems', data }) });
+const swrWorkItems = new SWRCache({ staleTTL: 15000, maxAge: 60000, onRevalidate: (key, data) => broadcast({ type: 'cache-updated', cache: 'workitems', key, data }) });
 const swrTeamAreas = new SWRCache({ staleTTL: 300000, maxAge: 600000 });
 const swrAreas = new SWRCache({ staleTTL: 300000, maxAge: 600000 });
 const swrGit = new SWRCache({ staleTTL: 10000, maxAge: 60000 });        // git branches/status (10s fresh, 60s max)
@@ -649,9 +649,6 @@ const swrPlugins = new SWRCache({ staleTTL: 30000, maxAge: 300000 });   // gener
 
 // ── Busy Guards ─────────────────────────────────────────────────────────────
 const guard = new BusyGuard();
-
-// ── Debounced Writer (for config saves) ─────────────────────────────────────
-const debouncedConfigWrite = createDebouncedWriter(1000);
 
 // ── Get team area paths (SWR cached) ────────────────────────────────────────
 async function getTeamAreaPaths() {
@@ -936,7 +933,7 @@ async function handleUpdateWorkItem(id, req, res) {
 
     const result = await adoRequest('PATCH', `/wit/workitems/${id}?api-version=7.1`, patchDoc, 'application/json-patch+json');
     workItemsCache = { data: null, ts: 0 };
-    swrWorkItems.invalidate('workitems');
+    swrWorkItems.invalidate('wi:');
     broadcast({ type: 'ui-action', action: 'refresh-workitems' });
     json(res, { ok: true, id: result.id });
   } catch (e) {
@@ -958,7 +955,7 @@ async function handleWorkItemState(id, req, res) {
       'application/json-patch+json'
     );
     workItemsCache = { data: null, ts: 0 };
-    swrWorkItems.invalidate('workitems');
+    swrWorkItems.invalidate('wi:');
     broadcast({ type: 'ui-action', action: 'refresh-workitems' });
     json(res, { ok: true, id: result.id, state: result.fields['System.State'] });
   } catch (e) {
@@ -1995,11 +1992,12 @@ async function handleGitCheckout(req, res) {
       const result = await gitAsync(repoPath, `checkout ${body.branch}`);
       const current = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
 
-      // Pull latest changes after switching
+      // Pull latest changes after switching (best-effort, don't fail the checkout)
       let pullMsg = '';
-      const pullResult = await gitAsync(repoPath, 'pull', { timeout: 30000 });
-      if (pullResult && !pullResult.includes('error') && !pullResult.includes('fatal')) {
-        pullMsg = pullResult;
+      try {
+        pullMsg = await gitAsync(repoPath, 'pull', { timeout: 30000 });
+      } catch (_) {
+        // Pull failed -- checkout still succeeded, continue
       }
 
       // Notify UI of branch change
@@ -2042,8 +2040,13 @@ async function handleGitPush(req, res) {
       const branch = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
       await gitAsync(repoPath, 'fetch --prune', { timeout: 30000 });
 
-      const behind = await gitAsync(repoPath, `rev-list --count HEAD..origin/${branch}`);
-      const behindCount = parseInt(behind, 10);
+      let behindCount = 0;
+      try {
+        const behind = await gitAsync(repoPath, `rev-list --count HEAD..origin/${branch}`);
+        behindCount = parseInt(behind, 10) || 0;
+      } catch (_) {
+        // Remote branch doesn't exist yet -- not behind, safe to push
+      }
       if (behindCount > 0) {
         throw Object.assign(
           new Error(`Your branch is ${behindCount} commit(s) behind origin/${branch}. Pull first, then push.`),

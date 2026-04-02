@@ -46,18 +46,23 @@ class BusyGuard {
       throw new Error(`Resource busy: ${current}. Please wait before trying again.`);
     }
 
+    const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     this._locks.set(resource, {
       operation,
       startTime: Date.now(),
       timeout: timeoutMs,
+      token,
     });
 
-    // Return a release function
+    // Return a release function that only deletes if the token still matches
     let released = false;
     return () => {
       if (!released) {
         released = true;
-        this._locks.delete(resource);
+        const current = this._locks.get(resource);
+        if (current && current.token === token) {
+          this._locks.delete(resource);
+        }
       }
     };
   }
