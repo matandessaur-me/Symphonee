@@ -5,7 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+let _writeSeq = 0;
 
 /**
  * Write data to a file atomically.
@@ -19,12 +19,11 @@ function atomicWriteSync(filePath, content, encoding = 'utf8') {
   fs.mkdirSync(dir, { recursive: true });
 
   // Write to temp file in same directory (same filesystem = atomic rename)
-  const tmpFile = filePath + '.tmp.' + process.pid;
+  const tmpFile = filePath + '.tmp.' + process.pid + '.' + (++_writeSeq);
   try {
     fs.writeFileSync(tmpFile, content, encoding);
     fs.renameSync(tmpFile, filePath);
   } catch (err) {
-    // Clean up temp file on error
     try { fs.unlinkSync(tmpFile); } catch (_) {}
     throw err;
   }
@@ -37,7 +36,7 @@ async function atomicWriteAsync(filePath, content, encoding = 'utf8') {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
 
-  const tmpFile = filePath + '.tmp.' + process.pid;
+  const tmpFile = filePath + '.tmp.' + process.pid + '.' + (++_writeSeq);
   try {
     await fs.promises.writeFile(tmpFile, content, encoding);
     await fs.promises.rename(tmpFile, filePath);

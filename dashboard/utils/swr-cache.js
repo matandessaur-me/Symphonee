@@ -112,7 +112,7 @@ class SWRCache {
       return this._inflight.get(key);
     }
 
-    const promise = fetcher().then(data => {
+    const promise = Promise.resolve().then(() => fetcher()).then(data => {
       this._cache.set(key, { data, ts: Date.now() });
       this._inflight.delete(key);
       return data;

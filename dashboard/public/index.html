@@ -5484,19 +5484,7 @@ function stopAi() {
 
 async function checkResumeAvailable() {
   const btn = document.getElementById('resumeBtn');
-  if (!btn) return;
-  try {
-    const r = await fetch('/api/agents/detect?term=main');
-    const data = await r.json();
-    if (data.resumeCommand && !aiLaunched) {
-      btn.style.display = '';
-      btn.dataset.cmd = data.resumeCommand;
-    } else {
-      btn.style.display = 'none';
-    }
-  } catch (_) {
-    btn.style.display = 'none';
-  }
+  if (btn) btn.style.display = 'none';
 }
 
 function resumeAiSession() {
@@ -8236,7 +8224,7 @@ function toast(msg, type = 'info') {
   // Route all toasts through the floating task pill system
   const id = 'toast-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
   const icon = type === 'success' ? 'check' : type === 'error' ? 'alert-circle' : type === 'warning' ? 'alert-triangle' : 'info';
-  const status = type === 'success' ? 'done' : type === 'error' ? 'error' : 'done';
+  const status = type === 'success' ? 'done' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'done';
   _bgTasks.set(id, { label: msg, status, startTime: Date.now(), endTime: Date.now(), icon });
   renderTaskPills();
   // Auto-remove after 3.5s with animation

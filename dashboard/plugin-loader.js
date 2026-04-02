@@ -84,11 +84,11 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
             let loaded = false;
             addRoute('__PREFIX__', prefix, (req, res, url, subpath) => {
               if (!loaded) {
-                loaded = true;
                 const startMs = Date.now();
                 try {
                   const registerRoutes = require(routesFile);
                   registerRoutes(pluginCtx);
+                  loaded = true;
                   console.log(`    Lazy-loaded routes for ${manifest.id} (${Date.now() - startMs}ms)`);
                 } catch (e) {
                   console.warn(`    Lazy-load failed for ${manifest.id}: ${e.message}`);

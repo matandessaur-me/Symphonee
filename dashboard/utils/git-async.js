@@ -4,7 +4,6 @@
  * Includes timeout guards, busy locks, and streaming support.
  */
 const { spawn } = require('child_process');
-const path = require('path');
 
 // ── Busy locks per repo (prevents concurrent git ops on same repo) ──────────
 const busyRepos = new Map(); // repoPath -> { operation, startTime }

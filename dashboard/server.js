@@ -903,10 +903,11 @@ async function handleWorkItemDetail(id, res) {
 
 // ── Update Work Item (with busy guard) ──────────────────────────────────────
 async function handleUpdateWorkItem(id, req, res) {
+  if (guard.isBusy(`workitem:${id}`)) {
+    return json(res, { error: `Work item ${id} update already in progress. Please wait.` }, 409);
+  }
+  const release = guard.acquire(`workitem:${id}`, `Updating work item ${id}`);
   try {
-    if (guard.isBusy(`workitem:${id}`)) {
-      return json(res, { error: `Work item ${id} update already in progress. Please wait.` }, 409);
-    }
     const body = await readBody(req);
     const patchDoc = [];
 
@@ -935,10 +936,13 @@ async function handleUpdateWorkItem(id, req, res) {
 
     const result = await adoRequest('PATCH', `/wit/workitems/${id}?api-version=7.1`, patchDoc, 'application/json-patch+json');
     workItemsCache = { data: null, ts: 0 };
+    swrWorkItems.invalidate('workitems');
     broadcast({ type: 'ui-action', action: 'refresh-workitems' });
     json(res, { ok: true, id: result.id });
   } catch (e) {
     json(res, { error: e.message }, 502);
+  } finally {
+    release();
   }
 }
 
@@ -954,6 +958,7 @@ async function handleWorkItemState(id, req, res) {
       'application/json-patch+json'
     );
     workItemsCache = { data: null, ts: 0 };
+    swrWorkItems.invalidate('workitems');
     broadcast({ type: 'ui-action', action: 'refresh-workitems' });
     json(res, { ok: true, id: result.id, state: result.fields['System.State'] });
   } catch (e) {
@@ -1924,13 +1929,18 @@ async function handleGitBranches(url, res) {
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-  const data = await swrGit.get('branches:' + repoPath, async () => {
-    const current = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
-    const output = await gitAsync(repoPath, 'branch --format="%(refname:short)"');
-    const branches = output ? output.split('\n').filter(Boolean) : [];
-    return { current, branches };
-  });
-  json(res, data);
+  try {
+    const data = await swrGit.get('branches:' + repoPath, async () => {
+      const current = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+      const output = await gitAsync(repoPath, 'branch --format="%(refname:short)"');
+      const branches = output ? output.split('\n').filter(Boolean) : [];
+      return { current, branches };
+    });
+    json(res, data);
+  } catch (err) {
+    console.error('handleGitBranches error:', err.message);
+    json(res, { error: 'Failed to list branches' }, 500);
+  }
 }
 
 function handleGitLog(url, res) {
