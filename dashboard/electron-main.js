@@ -119,6 +119,52 @@ if (!gotLock) {
       res.end(JSON.stringify({ count: displays.length }));
     });
 
+    // ── Check for updates (git fetch + compare) ───────────────────────
+    addRoute('GET', '/api/check-updates', (req, res) => {
+      const { execSync } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..');
+      try {
+        // Fetch latest from origin (quiet, no output)
+        execSync('git fetch origin', { cwd: repoRoot, encoding: 'utf8', timeout: 15000 });
+        // Get current branch
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot, encoding: 'utf8' }).trim();
+        // Check if remote tracking branch exists
+        let remoteBranch;
+        try {
+          remoteBranch = execSync(`git rev-parse --abbrev-ref ${branch}@{upstream}`, { cwd: repoRoot, encoding: 'utf8' }).trim();
+        } catch (_) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ updateAvailable: false, reason: 'no-upstream' }));
+        }
+        // Count commits behind
+        const behind = execSync(`git rev-list --count HEAD..${remoteBranch}`, { cwd: repoRoot, encoding: 'utf8' }).trim();
+        const behindCount = parseInt(behind, 10) || 0;
+        // Get short summary of what's new
+        let summary = '';
+        if (behindCount > 0) {
+          summary = execSync(`git log --oneline HEAD..${remoteBranch}`, { cwd: repoRoot, encoding: 'utf8' }).trim();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ updateAvailable: behindCount > 0, behind: behindCount, branch, summary }));
+      } catch (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ updateAvailable: false, error: err.message }));
+      }
+    });
+
+    // ── Apply update (pull + install + relaunch) ─────────────────────
+    addRoute('POST', '/api/update-app', (req, res) => {
+      const { exec } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, status: 'updating' }));
+      // Run pull + install, then relaunch
+      exec('git pull && npm install', { cwd: repoRoot, timeout: 120000 }, (err) => {
+        // Relaunch regardless -- if npm install fails the old code is still fine
+        setTimeout(() => { app.relaunch(); app.exit(0); }, 500);
+      });
+    });
+
     // ── Restart app (relaunch Electron) ───────────────────────────────
     addRoute('POST', '/api/restart-app', (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });

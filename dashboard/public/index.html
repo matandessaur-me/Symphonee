@@ -1949,6 +1949,10 @@
         <i data-lucide="settings" style="width:13px;height:13px;flex-shrink:0"></i>
         <span id="projectLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Not configured</span>
       </button>
+      <button id="updateBtn" onclick="applyUpdate()" title="Update available" style="display:none;align-items:center;gap:6px;margin:4px 10px;padding:8px 10px;width:calc(100% - 20px);background:var(--green);border:1px solid transparent;border-radius:var(--radius);color:var(--base);font:11px var(--font-ui);font-weight:600;cursor:pointer;justify-content:center;transition:all 0.12s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+        <i data-lucide="download" style="width:13px;height:13px;flex-shrink:0"></i>
+        <span>Update available</span>
+      </button>
     </div>
   </aside>
 
@@ -5584,6 +5588,35 @@ async function restartApp() {
     await fetch('/api/restart-app', { method: 'POST' });
   } catch (_) { /* connection drops as app restarts */ }
 }
+
+// ── App update ────────────────────────────────────────────────────────────
+async function checkForUpdates() {
+  try {
+    const res = await fetch('/api/check-updates');
+    const data = await res.json();
+    const btn = document.getElementById('updateBtn');
+    if (data.updateAvailable && btn) {
+      btn.style.display = 'flex';
+      btn.title = data.behind + ' new commit' + (data.behind > 1 ? 's' : '') + ' available';
+    }
+  } catch (_) { /* not in Electron or network error */ }
+}
+
+async function applyUpdate() {
+  const btn = document.getElementById('updateBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.querySelector('span').textContent = 'Updating...';
+  btn.style.opacity = '0.7';
+  btn.style.cursor = 'wait';
+  toast('Updating DevOps Pilot -- the app will restart shortly...', 'info');
+  try {
+    await fetch('/api/update-app', { method: 'POST' });
+  } catch (_) { /* connection drops as app restarts */ }
+}
+
+// Check for updates on startup (delayed so it doesn't slow down load)
+setTimeout(checkForUpdates, 5000);
 
 function restartShell() {
   aiLaunched = false;
