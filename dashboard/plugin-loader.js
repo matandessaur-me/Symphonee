@@ -97,6 +97,12 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
                   return;
                 }
               }
+              // Handle requests to the exact prefix (no trailing slash) by redirecting
+              if (!subpath || subpath === '') {
+                res.writeHead(302, { Location: prefix + '/' });
+                res.end();
+                return true;
+              }
               return false; // Fall through to newly registered routes
             });
           } else {

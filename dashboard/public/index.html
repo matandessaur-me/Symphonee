@@ -352,6 +352,7 @@
     .task-pill.done { border-color: var(--green); color: var(--green); }
     .task-pill.error { border-color: var(--red); color: var(--red); }
     .task-pill.warning { border-color: var(--yellow, #f59e0b); color: var(--yellow, #f59e0b); }
+    .task-pill.info { border-color: var(--accent); color: var(--text-dim); }
     .task-pill-spinner {
       width: 12px; height: 12px; border: 2px solid var(--overlay0);
       border-top-color: var(--accent); border-radius: 50%;
@@ -3114,7 +3115,7 @@ function renderTaskPills() {
   container.innerHTML = [..._bgTasks.entries()].map(([id, t]) => {
     const elapsed = ((t.endTime || Date.now()) - t.startTime) / 1000;
     const elapsedStr = elapsed < 60 ? Math.round(elapsed) + 's' : Math.round(elapsed / 60) + 'm';
-    const iconName = t.icon || (t.status === 'done' ? 'check' : t.status === 'warning' ? 'alert-triangle' : 'x');
+    const iconName = t.icon || (t.status === 'done' ? 'check' : t.status === 'warning' ? 'alert-triangle' : t.status === 'info' ? 'info' : 'x');
     const statusIcon = t.status === 'running'
       ? '<div class="task-pill-spinner"></div>'
       : `<i data-lucide="${iconName}" class="task-pill-icon"></i>`;
@@ -8230,7 +8231,7 @@ function toast(msg, type = 'info') {
   // Route all toasts through the floating task pill system
   const id = 'toast-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
   const icon = type === 'success' ? 'check' : type === 'error' ? 'alert-circle' : type === 'warning' ? 'alert-triangle' : 'info';
-  const status = type === 'success' ? 'done' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'done';
+  const status = type === 'success' ? 'done' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info';
   _bgTasks.set(id, { label: msg, status, startTime: Date.now(), endTime: Date.now(), icon });
   renderTaskPills();
   // Auto-remove after 3.5s with animation

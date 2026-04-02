@@ -54,8 +54,8 @@ class SWRCache {
       return entry.data;
     }
 
-    // Too old: wait for fresh data
-    return this._fetchAndStore(key, fetcher);
+    // Too old: wait for fresh data (don't fall back to stale on error)
+    return this._fetchAndStore(key, fetcher, false);
   }
 
   /**
@@ -106,7 +106,7 @@ class SWRCache {
 
   // ── Internal ───────────────────────────────────────────────────────────────
 
-  async _fetchAndStore(key, fetcher) {
+  async _fetchAndStore(key, fetcher, allowStale = true) {
     // Deduplicate: if there's already an in-flight request for this key, wait for it
     if (this._inflight.has(key)) {
       return this._inflight.get(key);
@@ -118,9 +118,11 @@ class SWRCache {
       return data;
     }).catch(err => {
       this._inflight.delete(key);
-      // On error, return stale data if available
-      const stale = this._cache.get(key);
-      if (stale) return stale.data;
+      // On error, return stale data if within maxAge window
+      if (allowStale) {
+        const stale = this._cache.get(key);
+        if (stale) return stale.data;
+      }
       throw err;
     });
 

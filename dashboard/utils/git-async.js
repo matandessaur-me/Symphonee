@@ -57,7 +57,6 @@ function gitAsync(repoPath, cmd, opts = {}) {
 
     const args = ['-C', repoPath, ...parseArgs(cmd)];
     const proc = spawn('git', args, {
-      timeout,
       windowsHide: true,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });

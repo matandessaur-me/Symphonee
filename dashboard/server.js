@@ -900,46 +900,43 @@ async function handleWorkItemDetail(id, res) {
 
 // ── Update Work Item (with busy guard) ──────────────────────────────────────
 async function handleUpdateWorkItem(id, req, res) {
-  if (guard.isBusy(`workitem:${id}`)) {
-    return json(res, { error: `Work item ${id} update already in progress. Please wait.` }, 409);
-  }
-  const release = guard.acquire(`workitem:${id}`, `Updating work item ${id}`);
   try {
-    const body = await readBody(req);
-    const patchDoc = [];
+    await guard.run(`workitem:${id}`, `Updating work item ${id}`, async () => {
+      const body = await readBody(req);
+      const patchDoc = [];
 
-    const fieldMap = {
-      title: '/fields/System.Title',
-      description: '/fields/System.Description',
-      state: '/fields/System.State',
-      assignedTo: '/fields/System.AssignedTo',
-      priority: '/fields/Microsoft.VSTS.Common.Priority',
-      tags: '/fields/System.Tags',
-      iterationPath: '/fields/System.IterationPath',
-      areaPath: '/fields/System.AreaPath',
-      storyPoints: '/fields/Microsoft.VSTS.Scheduling.StoryPoints',
-      acceptanceCriteria: '/fields/Microsoft.VSTS.Common.AcceptanceCriteria',
-    };
+      const fieldMap = {
+        title: '/fields/System.Title',
+        description: '/fields/System.Description',
+        state: '/fields/System.State',
+        assignedTo: '/fields/System.AssignedTo',
+        priority: '/fields/Microsoft.VSTS.Common.Priority',
+        tags: '/fields/System.Tags',
+        iterationPath: '/fields/System.IterationPath',
+        areaPath: '/fields/System.AreaPath',
+        storyPoints: '/fields/Microsoft.VSTS.Scheduling.StoryPoints',
+        acceptanceCriteria: '/fields/Microsoft.VSTS.Common.AcceptanceCriteria',
+      };
 
-    const textFields = ['title', 'description', 'tags', 'acceptanceCriteria'];
-    for (const [key, path] of Object.entries(fieldMap)) {
-      if (body[key] !== undefined) {
-        const val = textFields.includes(key) ? sanitizeText(body[key]) : body[key];
-        patchDoc.push({ op: 'replace', path, value: val });
+      const textFields = ['title', 'description', 'tags', 'acceptanceCriteria'];
+      for (const [key, path] of Object.entries(fieldMap)) {
+        if (body[key] !== undefined) {
+          const val = textFields.includes(key) ? sanitizeText(body[key]) : body[key];
+          patchDoc.push({ op: 'replace', path, value: val });
+        }
       }
-    }
 
-    if (patchDoc.length === 0) return json(res, { error: 'No fields to update' }, 400);
+      if (patchDoc.length === 0) return json(res, { error: 'No fields to update' }, 400);
 
-    const result = await adoRequest('PATCH', `/wit/workitems/${id}?api-version=7.1`, patchDoc, 'application/json-patch+json');
-    workItemsCache = { data: null, ts: 0 };
-    swrWorkItems.invalidate('wi:');
-    broadcast({ type: 'ui-action', action: 'refresh-workitems' });
-    json(res, { ok: true, id: result.id });
+      const result = await adoRequest('PATCH', `/wit/workitems/${id}?api-version=7.1`, patchDoc, 'application/json-patch+json');
+      workItemsCache = { data: null, ts: 0 };
+      swrWorkItems.invalidate('wi:');
+      broadcast({ type: 'ui-action', action: 'refresh-workitems' });
+      json(res, { ok: true, id: result.id });
+    });
   } catch (e) {
-    json(res, { error: e.message }, 502);
-  } finally {
-    release();
+    const status = e.message.includes('busy') ? 409 : 502;
+    json(res, { error: e.message }, status);
   }
 }
 
