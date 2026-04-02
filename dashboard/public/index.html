@@ -221,6 +221,7 @@
       grid-template-rows: var(--term-bar-h) 1fr;
       overflow: hidden;
       min-width: 0;
+      position: relative;
     }
 
     /* ── Tab bar ───────────────────────────────────────────────────────────── */
@@ -312,6 +313,76 @@
       border-radius: 3px; padding: 1px 5px; color: var(--subtext0);
     }
     .tab-bar-status { font-size: 11px; color: var(--subtext0); margin-right: 8px; }
+
+    /* ── Background Refresh Flash (board/backlog) ──────────────────────── */
+    @keyframes refreshFlash {
+      0% { box-shadow: inset 0 0 0 1px var(--accent); }
+      100% { box-shadow: inset 0 0 0 0px transparent; }
+    }
+    .refresh-flash { animation: refreshFlash 1.2s ease-out; }
+    .refresh-indicator {
+      display: none; align-items: center; gap: 6px;
+      padding: 4px 12px; background: var(--surface0); border: 1px solid var(--accent);
+      border-radius: var(--radius); font: 11px var(--font-ui); color: var(--accent);
+      position: absolute; top: 8px; right: 8px; z-index: 5;
+      animation: fadeInOut 2s ease forwards;
+    }
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(-4px); }
+      15% { opacity: 1; transform: translateY(0); }
+      80% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    /* ── Background Task Pills (floating, bottom-right) ──────────────── */
+    .task-float {
+      position: absolute; bottom: 14px; right: 14px; z-index: 10;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+      pointer-events: none;
+    }
+    .task-float:empty { display: none; }
+    .task-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 16px; background: var(--surface1); border: 1px solid var(--overlay0);
+      border-radius: 20px; font: 11px/1 var(--font-ui); color: var(--text);
+      pointer-events: auto; backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35); transition: all 0.3s ease;
+    }
+    .task-pill.running { border-color: var(--accent); color: var(--text); }
+    .task-pill.done { border-color: var(--green); color: var(--green); }
+    .task-pill.error { border-color: var(--red); color: var(--red); }
+    .task-pill.warning { border-color: var(--yellow, #f59e0b); color: var(--yellow, #f59e0b); }
+    .task-pill.info { border-color: var(--accent); color: var(--text-dim); }
+    .task-pill-spinner {
+      width: 12px; height: 12px; border: 2px solid var(--overlay0);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.6s linear infinite; flex-shrink: 0;
+    }
+    .task-pill-icon { width: 12px; height: 12px; flex-shrink: 0; }
+    .task-pill-elapsed { color: var(--subtext0); font-size: 10px; font-variant-numeric: tabular-nums; }
+    @keyframes pillIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.92); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes pillOut {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(10px) scale(0.92); }
+    }
+    .task-pill { animation: pillIn 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+    .task-pill.leaving { animation: pillOut 0.25s ease forwards; }
+
+    /* ── Busy Indicator on Git Buttons ──────────────────────────────────── */
+    .git-action-btn.busy {
+      opacity: 0.5; pointer-events: none; position: relative;
+    }
+    .git-action-btn.busy::after {
+      content: ''; position: absolute; right: 8px; top: 50%; margin-top: -6px;
+      width: 12px; height: 12px; border: 2px solid var(--subtext0);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .tab-bar-btn {
       padding: 4px 10px; background: transparent; border: 1px solid var(--surface1);
       border-radius: var(--radius); color: var(--subtext1); font: 11px var(--font-ui);
@@ -1049,6 +1120,28 @@
     }
     .pr-tl-commit-sha { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
     .pr-tl-commit-msg { color: var(--subtext1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pr-tl-review-comments { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .pr-tl-review-comment {
+      background: var(--surface0); border-radius: var(--radius); border: 1px solid var(--surface1);
+      overflow: hidden;
+    }
+    .pr-tl-review-comment-file {
+      display: flex; align-items: center; gap: 4px;
+      padding: 6px 10px; font-size: 11px; font-family: var(--font-mono);
+      color: var(--accent); background: var(--mantle); border-bottom: 1px solid var(--surface1);
+    }
+    .pr-tl-review-comment-file svg { width: 12px; height: 12px; flex-shrink: 0; }
+    .pr-tl-review-comment-file-inline {
+      font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+    }
+    .pr-tl-review-comment-hunk {
+      border-bottom: 1px solid var(--surface1);
+    }
+    .pr-tl-review-comment-hunk pre {
+      margin: 0; padding: 6px 10px; font-size: 11px; line-height: 1.5;
+      background: var(--mantle); color: var(--subtext0); overflow-x: auto;
+      border-radius: 0;
+    }
     /* PR Comment Modal */
     .pr-comment-modal {
       display: none; position: fixed; inset: 0; z-index: 300;
@@ -1604,7 +1697,7 @@
     .tl-daily-label { font-size: 9px; color: var(--subtext0); white-space: nowrap; }
 
     /* ── Toast notifications ──────────────────────────────────────────────── */
-    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
+    .toast-container { display: none; } /* Replaced by floating task pills */
     .toast {
       padding: 10px 16px; border-radius: var(--radius); font-size: 12px;
       color: var(--text); background: var(--surface0); border: 1px solid var(--surface1);
@@ -1856,6 +1949,10 @@
         <i data-lucide="settings" style="width:13px;height:13px;flex-shrink:0"></i>
         <span id="projectLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Not configured</span>
       </button>
+      <button id="updateBtn" onclick="applyUpdate()" title="Update available" style="display:none;align-items:center;gap:6px;margin:4px 10px;padding:8px 10px;width:calc(100% - 20px);background:var(--green);border:1px solid transparent;border-radius:var(--radius);color:var(--base);font:11px var(--font-ui);font-weight:600;cursor:pointer;justify-content:center;transition:all 0.12s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+        <i data-lucide="download" style="width:13px;height:13px;flex-shrink:0"></i>
+        <span>Update available</span>
+      </button>
     </div>
   </aside>
 
@@ -1889,6 +1986,7 @@
         <button class="term-tab-add" onclick="addTerminal()" title="New terminal">+</button>
         <div style="flex:1;"></div>
         <span class="tab-bar-status" id="termStatus" style="margin-right:4px;"></span>
+        <button class="tab-bar-btn" onclick="resumeAiSession()" id="resumeBtn" style="margin-right:4px; display:none;" title="Resume the last AI session">Resume Session</button>
         <button class="tab-bar-btn" onclick="toggleAi()" id="aiBtn" style="margin-right:4px;">Launch AI</button>
         <button class="tab-bar-btn" onclick="restartShell()">Restart Shell</button>
       </div>
@@ -2210,6 +2308,8 @@
         </div>
       </div>
     </div>
+    <!-- ─── Background Task Pills (floating, bottom-right) ─────────────── -->
+    <div class="task-float" id="taskPillsBar"></div>
   </div>
 
   <!-- ─── Intelligence Panel ──────────────────────────────────────────── -->
@@ -2652,9 +2752,9 @@
 // ── CLI config ──────────────────────────────────────────────────────────
 const CLI_CONFIG = {
   claude:  { cmd: 'claude',  label: 'Claude Code',  theme: 'claude'  },
-  gemini:  { cmd: 'gemini',  label: 'Gemini CLI',   theme: 'gemini'  },
-  copilot: { cmd: 'copilot', label: 'Copilot CLI',  theme: 'copilot' },
-  codex:   { cmd: 'codex',   label: 'Codex CLI',    theme: 'codex'   },
+  gemini:  { cmd: 'gemini',            label: 'Gemini CLI',   theme: 'gemini'  },
+  copilot: { cmd: 'copilot',           label: 'Copilot CLI',  theme: 'copilot' },
+  codex:   { cmd: 'codex',             label: 'Codex CLI',    theme: 'codex'   },
 };
 
 const TERM_THEMES = {
@@ -2671,6 +2771,7 @@ let workItems = [];
 let hasMoreClosed = false;
 let totalClosedCount = 0;
 let closedItemsLimit = 10;
+let _activeWiCacheKey = '';
 let currentWiDetail = null;
 let configData = {};
 let lastCols = 0, lastRows = 0;
@@ -2797,7 +2898,10 @@ function switchTerminal(termId) {
   document.querySelectorAll('.term-instance').forEach(el => el.classList.toggle('active', el.id === `term-${termId}`));
   const inst = termInstances.get(termId);
   if (inst) {
-    requestAnimationFrame(() => {
+    // Double-rAF: first frame applies CSS layout, second frame guarantees
+    // the container has its final dimensions before we fit the terminal.
+    // Without this, newly-created tabs get fit() with 0x0 container size.
+    requestAnimationFrame(() => { requestAnimationFrame(() => {
       try {
         inst.fitAddon.fit();
         // Always send resize to server so the PTY matches xterm dimensions
@@ -2808,7 +2912,7 @@ function switchTerminal(termId) {
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', termId, cols, rows }));
       } catch (_) {}
       inst.term.focus();
-    });
+    }); });
   }
 }
 
@@ -2843,13 +2947,15 @@ function addTerminal(label, cwd) {
   termCounter++;
   const termId = `term-${termCounter}`;
   const name = label || `Shell ${getNextShellNumber()}`;
+  // Capture known-good dimensions from the current active terminal BEFORE
+  // switching, because the new terminal hasn't been laid out yet.
+  const cols = lastCols || 80;
+  const rows = lastRows || 24;
   createTermInstance(termId, name);
   switchTerminal(termId);
-  // Tell server to create PTY with correct dimensions from the fitted xterm
+  // Create server PTY with the known-good dimensions; switchTerminal's
+  // double-rAF will fit() the xterm and send a resize once layout is done.
   if (ws && ws.readyState === 1) {
-    const inst = termInstances.get(termId);
-    const cols = inst ? inst.term.cols : lastCols;
-    const rows = inst ? inst.term.rows : lastRows;
     ws.send(JSON.stringify({ type: 'create-term', termId, cwd, cols, rows }));
   }
   return termId;
@@ -2984,6 +3090,12 @@ requestAnimationFrame(fitTerminalNow);
         case 'ui-action':
           handleUiAction(msg);
           break;
+        case 'cache-updated':
+          handleCacheUpdated(msg.cache, msg.data, msg.key);
+          break;
+        case 'git-changed':
+          handleGitChanged(msg.repo, msg.branch);
+          break;
       }
     };
 
@@ -2993,6 +3105,89 @@ requestAnimationFrame(fitTerminalNow);
       reconnectTimer = setTimeout(connect, 2500);
     };
   }
+
+// ── Background Task Pills System ────────────────────────────────────────
+// Shows running operations as small pills at the bottom of the center panel.
+// Inspired by Claude Code's polymorphic task system.
+
+const _bgTasks = new Map(); // id -> { label, status, startTime, icon }
+let _taskPillsTimer = null;
+
+function addBackgroundTask(id, label, icon) {
+  _bgTasks.set(id, { label, status: 'running', startTime: Date.now(), icon: icon || 'loader' });
+  renderTaskPills();
+  return id;
+}
+
+function completeBackgroundTask(id, success) {
+  const task = _bgTasks.get(id);
+  if (task) {
+    task.status = success !== false ? 'done' : 'error';
+    task.endTime = Date.now();
+    renderTaskPills();
+    // Animate out after 2s, then remove
+    setTimeout(() => {
+      const el = document.querySelector(`.task-pill[data-id="${id}"]`);
+      if (el) el.classList.add('leaving');
+      setTimeout(() => { _bgTasks.delete(id); renderTaskPills(); }, 300);
+    }, 2000);
+  }
+}
+
+function renderTaskPills() {
+  const container = document.getElementById('taskPillsBar');
+  if (!container) return;
+
+  if (_bgTasks.size === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = [..._bgTasks.entries()].map(([id, t]) => {
+    const elapsed = ((t.endTime || Date.now()) - t.startTime) / 1000;
+    const elapsedStr = elapsed < 60 ? Math.round(elapsed) + 's' : Math.round(elapsed / 60) + 'm';
+    const iconName = t.icon || (t.status === 'done' ? 'check' : t.status === 'warning' ? 'alert-triangle' : t.status === 'info' ? 'info' : 'x');
+    const statusIcon = t.status === 'running'
+      ? '<div class="task-pill-spinner"></div>'
+      : `<i data-lucide="${iconName}" class="task-pill-icon"></i>`;
+    return `<div class="task-pill ${t.status}" data-id="${id}">${statusIcon} ${esc(t.label)} <span class="task-pill-elapsed">${elapsedStr}</span></div>`;
+  }).join('');
+
+  try { lucide.createIcons({ nodes: [container] }); } catch (_) {}
+}
+
+// Update running task elapsed times
+setInterval(() => {
+  if (_bgTasks.size > 0 && [..._bgTasks.values()].some(t => t.status === 'running')) {
+    renderTaskPills();
+  }
+}, 1000);
+
+// ── Background cache refresh ─────────────────────────────────────────────
+function handleCacheUpdated(cacheName, data, key) {
+  if (cacheName === 'workitems') {
+    // Only apply if the broadcast key matches the active query
+    if (key && _activeWiCacheKey && key !== _activeWiCacheKey) return;
+    if (Array.isArray(data)) {
+      workItems = data;
+    } else if (data && data.items) {
+      workItems = data.items;
+      hasMoreClosed = data.hasMoreClosed || false;
+      totalClosedCount = data.totalClosed || 0;
+    }
+    renderBoard();
+    renderBacklog();
+  }
+}
+
+function handleGitChanged(repoName, branch) {
+  const gitModal = document.getElementById('gitModal');
+  if (gitModal && gitModal.style.display !== 'none') {
+    loadGitBranches();
+  }
+  const branchLabel = document.getElementById('gitCurrentBranch');
+  if (branchLabel && branch) branchLabel.textContent = branch;
+}
 
 // ── File Browser ────────────────────────────────────────────────────────
 let filesCurrentRepo = '';
@@ -3897,6 +4092,7 @@ async function loadGitBranches() {
   if (!repo) return;
   const list = document.getElementById('gitBranchList');
   list.innerHTML = '<div class="git-section-desc">Fetching branches...</div>';
+  const taskId = addBackgroundTask('git-fetch-' + Date.now(), 'Fetching branches', 'git-branch');
 
   try {
     // Fetch from remote first to get latest branches
@@ -3914,8 +4110,10 @@ async function loadGitBranches() {
     document.getElementById('gitCommitBranch').textContent = data.current;
     populateCompareDropdowns(data);
     renderGitBranches();
+    completeBackgroundTask(taskId, true);
   } catch (e) {
     list.innerHTML = `<div class="git-section-desc" style="color:var(--red);">${e.message}</div>`;
+    completeBackgroundTask(taskId, false);
   }
 }
 
@@ -4007,7 +4205,9 @@ async function doGitPull() {
   const btn = document.getElementById('gitPullBtn');
   const result = document.getElementById('gitPullResult');
   btn.disabled = true;
-  btn.textContent = 'Fetching & Pulling...';
+  btn.classList.add('busy');
+  btn.textContent = 'Pulling...';
+  const taskId = addBackgroundTask('git-pull-' + Date.now(), 'Pulling ' + repo, 'download');
   result.style.display = 'none';
 
   try {
@@ -4023,6 +4223,7 @@ async function doGitPull() {
     btn.textContent = 'Done';
     toast('Pull complete', 'success');
     document.getElementById('gitPullBranch').textContent = data.branch;
+    completeBackgroundTask(taskId, true);
   } catch (e) {
     result.textContent = e.message;
     result.className = 'git-action-result error';
@@ -4030,6 +4231,9 @@ async function doGitPull() {
     btn.textContent = 'Retry';
     btn.disabled = false;
     toast('Pull failed', 'error');
+    completeBackgroundTask(taskId, false);
+  } finally {
+    btn.classList.remove('busy');
   }
 }
 
@@ -4039,8 +4243,10 @@ async function doGitPush() {
   const btn = document.getElementById('gitPushBtn');
   const result = document.getElementById('gitPushResult');
   btn.disabled = true;
-  btn.textContent = 'Fetching & Pushing...';
+  btn.classList.add('busy');
+  btn.textContent = 'Pushing...';
   result.style.display = 'none';
+  const taskId = addBackgroundTask('git-push-' + Date.now(), 'Pushing ' + repo, 'upload');
 
   try {
     const res = await fetch('/api/git/push', {
@@ -4056,6 +4262,7 @@ async function doGitPush() {
         result.style.display = 'block';
         btn.textContent = 'Push';
         btn.disabled = false;
+        btn.classList.remove('busy');
         toast('Pull required before pushing', 'warning');
         return;
       }
@@ -4067,6 +4274,7 @@ async function doGitPush() {
     btn.textContent = 'Done';
     toast('Push complete', 'success');
     document.getElementById('gitPushBranch').textContent = data.branch;
+    completeBackgroundTask(taskId, true);
   } catch (e) {
     result.textContent = e.message;
     result.className = 'git-action-result error';
@@ -4074,6 +4282,9 @@ async function doGitPush() {
     btn.textContent = 'Retry';
     btn.disabled = false;
     toast('Push failed', 'error');
+    completeBackgroundTask(taskId, false);
+  } finally {
+    btn.classList.remove('busy');
   }
 }
 
@@ -4561,9 +4772,19 @@ function renderPRTimeline(events) {
         } else {
           html += `<div class="pr-tl-event"><strong>${esc(e.author)}</strong> ${label} ${timeAgo(e.createdAt)} <span class="pr-tl-review-badge pr-tl-review-${cls}">${esc(e.state)}</span></div>`;
         }
+        // Render inline review comments attached to this review
+        if (e.comments && e.comments.length) {
+          html += '<div class="pr-tl-review-comments">';
+          for (const c of e.comments) {
+            html += renderReviewComment(c);
+          }
+          html += '</div>';
+        }
         html += '</div></div>';
         return html;
       }
+      case 'review_comment':
+        return renderReviewCommentItem(e);
       case 'committed': {
         const sha = (e.sha || '').substring(0, 7);
         return renderTimelineEvent(_li('git-commit'), `<strong>${esc(e.author)}</strong> committed <span class="pr-tl-commit-sha">${sha}</span> <span class="pr-tl-commit-msg">${esc((e.message || '').split('\n')[0])}</span>`);
@@ -4590,6 +4811,38 @@ function renderPRTimeline(events) {
         return '';
     }
   }).join('');
+}
+
+function renderReviewComment(c) {
+  const fileLine = c.line ? `${esc(c.path)}:${c.line}` : esc(c.path);
+  let html = `<div class="pr-tl-review-comment">
+    <div class="pr-tl-review-comment-file">${_li('file')} ${fileLine}</div>`;
+  if (c.diffHunk) {
+    // Show last 3 lines of diff hunk for context
+    const hunkLines = c.diffHunk.split('\n').slice(-3).join('\n');
+    html += `<div class="pr-tl-review-comment-hunk"><pre>${esc(hunkLines)}</pre></div>`;
+  }
+  html += `<div class="pr-tl-comment-body">${c.bodyHtml ? renderHtmlBody(c.bodyHtml) : renderMarkdown(c.body)}</div>
+  </div>`;
+  return html;
+}
+
+function renderReviewCommentItem(e) {
+  const fileLine = e.line ? `${esc(e.path)}:${e.line}` : esc(e.path);
+  let html = `<div class="pr-tl-item">
+    <div class="pr-tl-avatar">${e.avatar ? `<img src="${esc(e.avatar)}" alt="">` : `<div class="pr-tl-avatar-icon">${_li('message-square')}</div>`}</div>
+    <div class="pr-tl-content">
+      <div class="pr-tl-comment-box">
+        <div class="pr-tl-comment-header"><strong>${esc(e.author)}</strong> commented on <span class="pr-tl-review-comment-file-inline">${fileLine}</span> ${timeAgo(e.createdAt)}</div>`;
+  if (e.diffHunk) {
+    const hunkLines = e.diffHunk.split('\n').slice(-3).join('\n');
+    html += `<div class="pr-tl-review-comment-hunk"><pre>${esc(hunkLines)}</pre></div>`;
+  }
+  html += `<div class="pr-tl-comment-body">${e.bodyHtml ? renderHtmlBody(e.bodyHtml) : renderMarkdown(e.body)}</div>
+      </div>
+    </div>
+  </div>`;
+  return html;
 }
 
 function selectPRFile(idx) {
@@ -5273,6 +5526,8 @@ function launchAi() {
     document.getElementById('termStatus').textContent = `${cfg.label} running`;
     document.getElementById('aiBtn').textContent = 'Stop AI';
     document.getElementById('mainTermTab').textContent = cfg.label;
+    document.getElementById('resumeBtn').style.display = 'none';
+
   }
 
   // If a restart is pending, wait for it
@@ -5300,6 +5555,27 @@ function stopAi() {
   document.getElementById('termStatus').textContent = 'Shell ready';
   document.getElementById('aiBtn').textContent = 'Launch AI';
   document.getElementById('mainTermTab').textContent = 'Shell 1';
+  // Check if a resume command is available for the main terminal
+  checkResumeAvailable();
+}
+
+async function checkResumeAvailable() {
+  const btn = document.getElementById('resumeBtn');
+  if (btn) btn.style.display = 'none';
+}
+
+function resumeAiSession() {
+  const btn = document.getElementById('resumeBtn');
+  const cmd = btn?.dataset.cmd;
+  if (!cmd) return;
+  switchTerminal('main');
+  sendCommand(cmd);
+  aiLaunched = true;
+  const cfg = CLI_CONFIG[activeCli];
+  document.getElementById('termStatus').textContent = `${cfg.label} running`;
+  document.getElementById('aiBtn').textContent = 'Stop AI';
+  document.getElementById('mainTermTab').textContent = cfg.label;
+  btn.style.display = 'none';
 }
 
 function sendCommand(cmd, termId) {
@@ -5313,11 +5589,41 @@ async function restartApp() {
   } catch (_) { /* connection drops as app restarts */ }
 }
 
+// ── App update ────────────────────────────────────────────────────────────
+async function checkForUpdates() {
+  try {
+    const res = await fetch('/api/check-updates');
+    const data = await res.json();
+    const btn = document.getElementById('updateBtn');
+    if (data.updateAvailable && btn) {
+      btn.style.display = 'flex';
+      btn.title = data.behind + ' new commit' + (data.behind > 1 ? 's' : '') + ' available';
+    }
+  } catch (_) { /* not in Electron or network error */ }
+}
+
+async function applyUpdate() {
+  const btn = document.getElementById('updateBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.querySelector('span').textContent = 'Updating...';
+  btn.style.opacity = '0.7';
+  btn.style.cursor = 'wait';
+  toast('Updating DevOps Pilot -- the app will restart shortly...', 'info');
+  try {
+    await fetch('/api/update-app', { method: 'POST' });
+  } catch (_) { /* connection drops as app restarts */ }
+}
+
+// Check for updates on startup (delayed so it doesn't slow down load)
+setTimeout(checkForUpdates, 5000);
+
 function restartShell() {
   aiLaunched = false;
   document.getElementById('termStatus').textContent = 'Restarting...';
   document.getElementById('aiBtn').textContent = 'Launch AI';
   document.getElementById('mainTermTab').textContent = 'Shell 1';
+  document.getElementById('resumeBtn').style.display = 'none';
   _shellReadyResolve = () => {};
   const inst = termInstances.get(activeTermId);
   const msg = JSON.stringify({ type: 'restart', termId: activeTermId, cols: inst?.term.cols || 80, rows: inst?.term.rows || 24 });
@@ -5570,6 +5876,10 @@ async function loadWorkItems(refresh = false) {
   if (area) params.set('area', area);
   if (refresh) params.set('refresh', '1');
   params.set('closedTop', String(closedItemsLimit));
+  // Track the active query key so SWR broadcasts can be matched
+  const keyIter = iteration || '';
+  _activeWiCacheKey = 'wi:' + `${keyIter}||||${area}|ct${closedItemsLimit}`;
+  const taskId = addBackgroundTask('wi-load-' + Date.now(), 'Loading work items', 'list-checks');
 
   try {
     const res = await fetch(`/api/workitems?${params}`);
@@ -5592,8 +5902,10 @@ async function loadWorkItems(refresh = false) {
     updateActivityFeed();
     // Re-render timeline if it's open
     if (document.getElementById('activityTabBtn').style.display !== 'none') renderTimeline();
+    completeBackgroundTask(taskId, true);
   } catch (e) {
     toast('Failed to load work items', 'error');
+    completeBackgroundTask(taskId, false);
   }
 }
 
@@ -8018,12 +8330,18 @@ function formatRelationType(rel) {
 }
 
 function toast(msg, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  const el = document.createElement('div');
-  el.className = `toast toast-${type}`;
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 4000);
+  // Route all toasts through the floating task pill system
+  const id = 'toast-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
+  const icon = type === 'success' ? 'check' : type === 'error' ? 'alert-circle' : type === 'warning' ? 'alert-triangle' : 'info';
+  const status = type === 'success' ? 'done' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info';
+  _bgTasks.set(id, { label: msg, status, startTime: Date.now(), endTime: Date.now(), icon });
+  renderTaskPills();
+  // Auto-remove after 3.5s with animation
+  setTimeout(() => {
+    const el = document.querySelector(`.task-pill[data-id="${id}"]`);
+    if (el) el.classList.add('leaving');
+    setTimeout(() => { _bgTasks.delete(id); renderTaskPills(); }, 300);
+  }, 3500);
 }
 
 // ── Re-focus terminal when window regains focus ─────────────────────────
@@ -8105,6 +8423,7 @@ function getCmdActions() {
     { label: 'Retrospective', icon: 'rotate-ccw', action: () => runScript('retro'), category: 'AI' },
     { label: 'Launch AI', icon: 'play', action: () => { if (!aiLaunched) launchAi(); switchTab('terminal'); }, category: 'AI' },
     { label: 'Stop AI', icon: 'square', action: () => { if (aiLaunched) stopAi(); }, category: 'AI' },
+    { label: 'Resume Session', icon: 'rotate-ccw', action: () => { resumeAiSession(); switchTab('terminal'); }, category: 'AI' },
     // Settings
     { label: 'Open Settings', icon: 'settings', action: () => openSettings(), category: 'Settings' },
   ];

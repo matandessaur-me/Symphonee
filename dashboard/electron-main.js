@@ -12,15 +12,69 @@ const HOST = '127.0.0.1';
 
 let win = null;
 
+function killZombiesAndRelaunch() {
+  if (process.platform !== 'win32') {
+    // Non-Windows: can't reliably detect/kill zombie processes, just quit
+    dialog.showErrorBox('DevOps Pilot', 'Another instance appears to be running but is unresponsive.\nPlease close it manually and try again.');
+    app.exit(1);
+    return;
+  }
+  const { execSync } = require('child_process');
+  const myPid = process.pid;
+  const exeName = path.basename(process.execPath);
+  let killed = false;
+  try {
+    const out = execSync(`tasklist /FI "IMAGENAME eq ${exeName}" /FO CSV /NH`, { encoding: 'utf8' });
+    const pids = [];
+    for (const line of out.trim().split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const m = trimmed.match(/^"[^"]+","(\d+)"/);
+      if (m) {
+        const pid = Number(m[1]);
+        if (pid && pid !== myPid) pids.push(String(pid));
+      }
+    }
+    if (pids.length) {
+      execSync(`taskkill /F ${pids.map(p => '/PID ' + p).join(' ')}`, { encoding: 'utf8' });
+      killed = true;
+    }
+  } catch (_) { /* best effort */ }
+  if (killed) {
+    setTimeout(() => { app.relaunch(); app.exit(0); }, 500);
+  } else {
+    dialog.showErrorBox('DevOps Pilot', 'Could not recover from a stale instance.\nPlease close any remaining DevOps Pilot processes and try again.');
+    app.exit(1);
+  }
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  console.log('Another instance is running — focusing it.');
-  app.quit();
+  const http = require('http');
+  const req = http.get(`http://${HOST}:${PORT}/api/ui/context`, { timeout: 2000 }, (res) => {
+    // Server is alive -- the real instance is running, just focus it
+    console.log('Another instance is running -- focusing it.');
+    res.resume();
+    res.on('end', () => { app.quit(); });
+  });
+  req.on('error', () => {
+    // Server not responding -- zombie processes, kill and relaunch
+    console.log('Stale instance detected -- killing zombies and relaunching...');
+    killZombiesAndRelaunch();
+  });
+  req.on('timeout', () => {
+    req.destroy();
+    console.log('Stale instance detected -- killing zombies and relaunching...');
+    killZombiesAndRelaunch();
+  });
 } else {
   app.on('second-instance', () => {
     if (win) {
       if (win.isMinimized()) win.restore();
+      win.show();
+      win.setAlwaysOnTop(true);
       win.focus();
+      win.setAlwaysOnTop(false);
     }
   });
 
@@ -63,6 +117,52 @@ if (!gotLock) {
       const displays = screen.getAllDisplays();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ count: displays.length }));
+    });
+
+    // ── Check for updates (git fetch + compare) ───────────────────────
+    addRoute('GET', '/api/check-updates', (req, res) => {
+      const { execSync } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..');
+      try {
+        // Fetch latest from origin (quiet, no output)
+        execSync('git fetch origin', { cwd: repoRoot, encoding: 'utf8', timeout: 15000 });
+        // Get current branch
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot, encoding: 'utf8' }).trim();
+        // Check if remote tracking branch exists
+        let remoteBranch;
+        try {
+          remoteBranch = execSync(`git rev-parse --abbrev-ref ${branch}@{upstream}`, { cwd: repoRoot, encoding: 'utf8' }).trim();
+        } catch (_) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ updateAvailable: false, reason: 'no-upstream' }));
+        }
+        // Count commits behind
+        const behind = execSync(`git rev-list --count HEAD..${remoteBranch}`, { cwd: repoRoot, encoding: 'utf8' }).trim();
+        const behindCount = parseInt(behind, 10) || 0;
+        // Get short summary of what's new
+        let summary = '';
+        if (behindCount > 0) {
+          summary = execSync(`git log --oneline HEAD..${remoteBranch}`, { cwd: repoRoot, encoding: 'utf8' }).trim();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ updateAvailable: behindCount > 0, behind: behindCount, branch, summary }));
+      } catch (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ updateAvailable: false, error: err.message }));
+      }
+    });
+
+    // ── Apply update (pull + install + relaunch) ─────────────────────
+    addRoute('POST', '/api/update-app', (req, res) => {
+      const { exec } = require('child_process');
+      const repoRoot = path.resolve(__dirname, '..');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, status: 'updating' }));
+      // Run pull + install, then relaunch
+      exec('git pull && npm install', { cwd: repoRoot, timeout: 120000 }, (err) => {
+        // Relaunch regardless -- if npm install fails the old code is still fine
+        setTimeout(() => { app.relaunch(); app.exit(0); }, 500);
+      });
     });
 
     // ── Restart app (relaunch Electron) ───────────────────────────────

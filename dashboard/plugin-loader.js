@@ -22,7 +22,7 @@ function checkActivation(manifest, getConfig) {
   return true;
 }
 
-function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints }) {
+function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints, swrCache }) {
   const plugins = [];
   if (!fs.existsSync(pluginsDir)) {
     fs.mkdirSync(pluginsDir, { recursive: true });
@@ -54,14 +54,11 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
       if (manifest.contributions && manifest.contributions.routes) {
         const routesFile = path.join(pluginDir, manifest.contributions.routes);
         if (fs.existsSync(routesFile)) {
-          const registerRoutes = require(routesFile);
           const prefix = `/api/plugins/${manifest.id}`;
-          registerRoutes({
+          const pluginCtx = {
             addRoute: (method, subpath, handler) => {
               addRoute(method, `${prefix}${subpath}`, handler);
             },
-            // Register a prefix handler -- matches any path under the plugin's API prefix.
-            // The handler receives (req, res, url, subpath) where subpath is the part after the prefix.
             addPrefixRoute: (handler) => {
               addRoute('__PREFIX__', prefix, handler);
             },
@@ -77,8 +74,43 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
               req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch (e) { reject(e); } });
               req.on('error', reject);
             }),
-          });
-          console.log(`    Routes registered for ${manifest.id}`);
+            // SWR cache for plugins -- use to cache expensive API calls
+            // Usage: ctx.cache.get('myKey', async () => fetchData(), { forceRefresh })
+            cache: swrCache || null,
+          };
+
+          // Lazy loading: if manifest declares lazyRoutes, defer route registration until first request
+          if (manifest.lazyRoutes) {
+            let loaded = false;
+            addRoute('__PREFIX__', prefix, (req, res, url, subpath) => {
+              if (!loaded) {
+                const startMs = Date.now();
+                try {
+                  const registerRoutes = require(routesFile);
+                  registerRoutes(pluginCtx);
+                  loaded = true;
+                  console.log(`    Lazy-loaded routes for ${manifest.id} (${Date.now() - startMs}ms)`);
+                } catch (e) {
+                  console.warn(`    Lazy-load failed for ${manifest.id}: ${e.message}`);
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Plugin failed to load: ' + e.message }));
+                  return;
+                }
+              }
+              // Handle requests to the exact prefix (no trailing slash) by redirecting
+              if (!subpath || subpath === '') {
+                res.writeHead(302, { Location: prefix + '/' });
+                res.end();
+                return true;
+              }
+              return false; // Fall through to newly registered routes
+            });
+          } else {
+            // Eager loading (default -- backward compatible)
+            const registerRoutes = require(routesFile);
+            registerRoutes(pluginCtx);
+          }
+          console.log(`    Routes ${manifest.lazyRoutes ? 'deferred' : 'registered'} for ${manifest.id}`);
         }
       }
 
