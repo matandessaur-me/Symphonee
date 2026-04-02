@@ -2894,7 +2894,10 @@ function switchTerminal(termId) {
   document.querySelectorAll('.term-instance').forEach(el => el.classList.toggle('active', el.id === `term-${termId}`));
   const inst = termInstances.get(termId);
   if (inst) {
-    requestAnimationFrame(() => {
+    // Double-rAF: first frame applies CSS layout, second frame guarantees
+    // the container has its final dimensions before we fit the terminal.
+    // Without this, newly-created tabs get fit() with 0x0 container size.
+    requestAnimationFrame(() => { requestAnimationFrame(() => {
       try {
         inst.fitAddon.fit();
         // Always send resize to server so the PTY matches xterm dimensions
@@ -2905,7 +2908,7 @@ function switchTerminal(termId) {
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', termId, cols, rows }));
       } catch (_) {}
       inst.term.focus();
-    });
+    }); });
   }
 }
 
@@ -2940,13 +2943,15 @@ function addTerminal(label, cwd) {
   termCounter++;
   const termId = `term-${termCounter}`;
   const name = label || `Shell ${getNextShellNumber()}`;
+  // Capture known-good dimensions from the current active terminal BEFORE
+  // switching, because the new terminal hasn't been laid out yet.
+  const cols = lastCols || 80;
+  const rows = lastRows || 24;
   createTermInstance(termId, name);
   switchTerminal(termId);
-  // Tell server to create PTY with correct dimensions from the fitted xterm
+  // Create server PTY with the known-good dimensions; switchTerminal's
+  // double-rAF will fit() the xterm and send a resize once layout is done.
   if (ws && ws.readyState === 1) {
-    const inst = termInstances.get(termId);
-    const cols = inst ? inst.term.cols : lastCols;
-    const rows = inst ? inst.term.rows : lastRows;
     ws.send(JSON.stringify({ type: 'create-term', termId, cwd, cols, rows }));
   }
   return termId;
