@@ -390,6 +390,7 @@ If the active repo uses a technology that matches a plugin (e.g., Builder.io, Sa
 - **NEVER use `az`**  - the app's REST API handles everything
 - **All repos are on GitHub**, not Azure DevOps. Azure DevOps is only for work item tracking.
 
+<!-- ORCHESTRATION_START -->
 ## Orchestrator: Automatic AI Dispatch
 
 You can dispatch tasks to other AI agents when they are better suited. Use the orchestrator API.
@@ -426,6 +427,7 @@ Body: { "cli": "gemini", "prompt": "Your specific task here", "visible": true, "
 - `POST /api/orchestrator/dispatch` -- Dispatch to a running AI. Body: `{ targetTermId, prompt, from? }`
 - `GET /api/orchestrator/task?id={id}` -- Check task status
 - `POST /api/orchestrator/message` -- Send message to inbox. Body: `{ to, from?, content }`
+<!-- ORCHESTRATION_END -->
 
 <!-- PLUGIN_INSTRUCTIONS_START -->
 <!-- PLUGIN_INSTRUCTIONS_END -->

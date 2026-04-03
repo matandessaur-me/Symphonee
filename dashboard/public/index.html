@@ -2186,7 +2186,7 @@
         <button class="tab-scroll-arrow left" id="tabScrollLeft" onclick="scrollTabs(-200)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
         <div class="tab-bar-scroll" id="tabBarScroll">
           <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
-          <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')">Orchestrator</button>
+          <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')" style="display:none;">Orchestrator</button>
           <button class="tab-btn" data-tab="backlog" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
           <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
           <button class="tab-btn" data-tab="activity" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
@@ -2920,6 +2920,16 @@
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
+            <div class="settings-section-title">AI Orchestration</div>
+            <div class="settings-section-desc">When enabled, the lead AI can automatically dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot). When disabled, the AI works alone without spawning other agents.</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="settingsOrchestrateMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
+                <span style="font-size:12px;color:var(--text);">Enable orchestration mode</span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-section">
             <div class="settings-section-title">GitHub</div>
             <div class="settings-section-desc">Connect to GitHub to view and review pull requests from the dashboard.</div>
             <div class="modal-field">
@@ -2940,7 +2950,7 @@
     </div>
     <div class="modal-actions">
       <button class="modal-btn" onclick="closeSettings()">Cancel</button>
-      <button class="modal-btn modal-btn-primary" onclick="saveSettings()">Save</button>
+      <button class="modal-btn modal-btn-primary" onclick="saveSettings()" id="settingsSaveBtn">Save</button>
     </div>
   </div>
 </div>
@@ -6740,6 +6750,7 @@ async function loadConfig(autoSelectSprint) {
     document.getElementById('sidebarAdoFixed').style.display = hasAdo ? '' : 'none';
     document.getElementById('sidebarAdoActions').style.display = hasAdo ? '' : 'none';
     document.getElementById('prsTabBtn').style.display = hasGh ? '' : 'none';
+    document.getElementById('orchestratorTabBtn').style.display = configData.OrchestrateMode === true ? '' : 'none';
     if (hasAdo) {
       loadTeams();
       loadAreas();
@@ -8359,6 +8370,7 @@ function openSettings(tab) {
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
   document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
+  document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
   document.getElementById('settingsDefaultCli').value = configData.DefaultCli || activeCli || 'claude';
   document.getElementById('settingsTeam').value = configData.DefaultTeam || '';
   // Initialize projects list from config
@@ -8605,6 +8617,16 @@ function repoAddGitHubClone(ctx) {
   _showGitHubPicker(ctx, 'clone');
 }
 
+// Track which settings require an app restart when changed
+function checkSettingsNeedRestart() {
+  const btn = document.getElementById('settingsSaveBtn');
+  if (!btn) return;
+  const orchChanged = document.getElementById('settingsOrchestrateMode').checked !== (configData.OrchestrateMode === true);
+  const needsRestart = orchChanged;
+  btn.textContent = needsRestart ? 'Save & Restart' : 'Save';
+  btn._needsRestart = needsRestart;
+}
+
 async function saveSettings() {
   const defaultCli = document.getElementById('settingsDefaultCli').value;
   const payload = {
@@ -8616,6 +8638,7 @@ async function saveSettings() {
     DefaultUser: document.getElementById('settingsUser').value.trim(),
     GitHubPAT: document.getElementById('settingsGitHubPAT').value.trim(),
     WhisperKey: document.getElementById('settingsWispr').value.trim(),
+    OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
     DefaultCli: defaultCli,
     Repos: configData.Repos || {},
   };
@@ -8630,14 +8653,19 @@ async function saveSettings() {
     // Also save plugin settings
     await savePluginSettings();
     if (data.ok) {
+      const needsRestart = document.getElementById('settingsSaveBtn')?._needsRestart;
+      if (needsRestart) {
+        closeSettings();
+        toast('Settings saved. Restarting...', 'success');
+        setTimeout(() => restartApp(), 500);
+        return;
+      }
       closeSettings();
       showLoading('Loading...');
       const minWait = new Promise(r => setTimeout(r, 4000));
-      // Apply default CLI selection
       if (defaultCli && defaultCli !== activeCli) {
         switchCli(defaultCli);
       }
-      // Force full reload — config changed, caches are stale
       document.getElementById('sprintSelect').innerHTML = '<option value="">All Iterations</option>';
       await loadConfig(true);
       loadVelocity();

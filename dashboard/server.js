@@ -2702,10 +2702,22 @@ function writePluginHints() {
   ];
   const START = '<!-- PLUGIN_INSTRUCTIONS_START -->';
   const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
+  const ORCH_START = '<!-- ORCHESTRATION_START -->';
+  const ORCH_END = '<!-- ORCHESTRATION_END -->';
+  const cfg = getConfig();
+  const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
   for (const { base, out } of templateFiles) {
     try {
       if (!fs.existsSync(base)) { console.warn(`  [writePluginHints] template not found: ${base}`); continue; }
       let content = fs.readFileSync(base, 'utf8');
+      // Strip orchestration section if disabled
+      if (!orchestrationEnabled) {
+        const orchStart = content.indexOf(ORCH_START);
+        const orchEnd = content.indexOf(ORCH_END);
+        if (orchStart !== -1 && orchEnd !== -1) {
+          content = content.substring(0, orchStart) + content.substring(orchEnd + ORCH_END.length);
+        }
+      }
       const startIdx = content.indexOf(START);
       const endIdx = content.indexOf(END);
       if (startIdx === -1 || endIdx === -1) { console.warn(`  [writePluginHints] markers not found in ${base}`); continue; }

@@ -481,6 +481,7 @@ curl -s "http://127.0.0.1:3800/api/orchestrator/inbox?termId=main&unread=1"
 - **Injecting into terminals, dispatching tasks, spawning headless processes** -- these actively control other terminals. Use them when the user asks you to coordinate with other AIs. Do NOT silently dispatch tasks without the user's knowledge.
 - The orchestrator UI tab shows all active agents and tasks. The user can monitor everything.
 
+<!-- ORCHESTRATION_START -->
 ### CRITICAL: You Are the Supervisor Agent
 
 You operate as a **Supervisor** in a multi-agent system. Other AI CLIs (Gemini, Codex, Grok, Copilot) are your **worker tools**. You invoke them through the orchestrator API the same way you'd call any tool. You do NOT paste text into terminals. The orchestrator handles all terminal mechanics for you.
@@ -590,6 +591,7 @@ curl -s -X POST http://127.0.0.1:3800/api/orchestrator/inject -H "Content-Type: 
 10. When done, show the diff: `Show-Diff.ps1 -Repo "RepoName"`
 
 **Do NOT ask the user "should I dispatch this?" Just do it.** The user wants to see the AIs working together automatically. If a CLI is not installed, silently skip it and do the work yourself.
+<!-- ORCHESTRATION_END -->
 
 ## Plugin System
 

@@ -869,23 +869,33 @@ class Orchestrator extends EventEmitter {
    */
   cleanup(maxAgeMs = 60 * 60 * 1000) {
     const now = Date.now();
-    let cleaned = 0;
     const forceAll = maxAgeMs === 0;
-    for (const [id, task] of this.tasks) {
-      // When force-cleaning (maxAgeMs=0), also cancel stuck running tasks
-      if (forceAll && (task.state === STATE.RUNNING || task.state === STATE.PENDING)) {
-        this.cancelTask(id);
-      }
-      if (task.state === STATE.RUNNING || task.state === STATE.PENDING) continue;
-      if (forceAll || now - (task.completedAt || task.createdAt) > maxAgeMs) {
-        if (task.resultFile) {
-          try { if (fs.existsSync(task.resultFile)) fs.unlinkSync(task.resultFile); } catch (_) {}
+
+    // Pass 1: cancel running/pending tasks if force-cleaning
+    if (forceAll) {
+      for (const [id, task] of this.tasks) {
+        if (task.state === STATE.RUNNING || task.state === STATE.PENDING) {
+          this.cancelTask(id);
         }
-        this.tasks.delete(id);
-        cleaned++;
       }
     }
-    return cleaned;
+
+    // Pass 2: delete all non-running tasks that match the age criteria
+    const toDelete = [];
+    for (const [id, task] of this.tasks) {
+      if (task.state === STATE.RUNNING || task.state === STATE.PENDING) continue;
+      if (forceAll || now - (task.completedAt || task.createdAt) > maxAgeMs) {
+        toDelete.push(id);
+      }
+    }
+    for (const id of toDelete) {
+      const task = this.tasks.get(id);
+      if (task && task.resultFile) {
+        try { if (fs.existsSync(task.resultFile)) fs.unlinkSync(task.resultFile); } catch (_) {}
+      }
+      this.tasks.delete(id);
+    }
+    return toDelete.length;
   }
 
   // ── Internals ────────────────────────────────────────────────────────────

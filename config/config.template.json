@@ -6,6 +6,7 @@
   "DefaultUser": "",
   "GitHubPAT": "",
   "WhisperKey": "",
+  "OrchestrateMode": false,
   "DefaultCli": "claude",
   "Repos": {},
   "ThemePreference": "claude"
