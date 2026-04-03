@@ -411,11 +411,11 @@ You can dispatch tasks to other AI agents when they are better suited. Use the o
 **How to dispatch:**
 ```
 POST /api/orchestrator/spawn
-Body: { "cli": "gemini", "prompt": "Your specific task here", "visible": true, "from": "main" }
+Body: { "cli": "gemini", "prompt": "Your specific task here", "from": "main" }
 ```
 
 **Rules:**
-1. Always use `visible: true` so the user sees the agent work
+1. **Always use headless pipe mode (the default).** Do NOT pass `"visible": true` unless you have asked the user for permission first. If you believe a task genuinely requires a visible PTY terminal (e.g., the CLI has no headless flag, the task requires interactive mid-session input, or you need to debug a failing worker), you MUST explain to the user why pipe mode is insufficient and get explicit approval before adding `"visible": true`. The Orchestrator tab already shows live output for headless tasks, so visibility alone is not a reason to use PTY.
 2. Always include `from` with your terminal ID
 3. Write clear prompts. The other AI has no project context.
 4. Dispatch multiple tasks in parallel when possible
