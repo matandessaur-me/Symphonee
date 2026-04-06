@@ -4,6 +4,29 @@
  * Includes timeout guards, busy locks, and streaming support.
  */
 const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// Resolve config path relative to this file: <repoRoot>/config/config.json
+const CONFIG_PATH = path.join(__dirname, '..', '..', 'config', 'config.json');
+
+function getGitHubPAT() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    return cfg && cfg.GitHubPAT ? String(cfg.GitHubPAT) : null;
+  } catch (_) { return null; }
+}
+
+// Returns git -c flags that inject the PAT as a Basic auth header for github.com
+// so network ops skip Git Credential Manager entirely.
+function githubAuthFlags() {
+  const pat = getGitHubPAT();
+  if (!pat) return [];
+  const basic = Buffer.from(`x-access-token:${pat}`).toString('base64');
+  return [
+    '-c', `http.https://github.com/.extraheader=AUTHORIZATION: Basic ${basic}`,
+  ];
+}
 
 // ── Busy locks per repo (prevents concurrent git ops on same repo) ──────────
 const busyRepos = new Map(); // repoPath -> { operation, startTime }
@@ -55,7 +78,7 @@ function gitAsync(repoPath, cmd, opts = {}) {
 
     if (lock) setBusy(repoPath, lockName);
 
-    const args = ['-C', repoPath, ...parseArgs(cmd)];
+    const args = [...githubAuthFlags(), '-C', repoPath, ...parseArgs(cmd)];
     const proc = spawn('git', args, {
       windowsHide: true,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -132,8 +155,10 @@ function parseArgs(cmd) {
  */
 function gitSync(repoPath, cmd, timeoutMs) {
   const { execSync } = require('child_process');
+  const authPrefix = githubAuthFlags().map(a => a.includes(' ') ? `"${a.replace(/"/g, '\\"')}"` : a).join(' ');
+  const prefix = authPrefix ? `${authPrefix} ` : '';
   try {
-    return execSync(`git -C "${repoPath}" ${cmd}`, {
+    return execSync(`git ${prefix}-C "${repoPath}" ${cmd}`, {
       encoding: 'utf8',
       timeout: timeoutMs || 10000,
       stdio: ['pipe', 'pipe', 'pipe'],

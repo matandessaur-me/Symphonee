@@ -18,10 +18,10 @@ if ($FilePath) {
 }
 if (!$Content) { Write-Host "`n  Error: Provide either -Content or -FilePath`n" -ForegroundColor Red; exit 1 }
 
-# Create note if it doesn't exist
-Invoke-RestMethod "$ApiBase/api/notes/create" -Method POST -ContentType 'application/json' -Body (@{ name = $Name } | ConvertTo-Json -Compress) -ErrorAction SilentlyContinue | Out-Null
-
-# Save content
+# Save content. The save endpoint creates the file atomically if it doesn't
+# exist. Do NOT call /api/notes/create first: its name sanitizer differs
+# from save's, which produces duplicate files when titles contain dots,
+# apostrophes, parens, etc.
 $body = @{ name = $Name; content = $Content } | ConvertTo-Json -Compress
 $result = Invoke-RestMethod "$ApiBase/api/notes/save" -Method POST -ContentType 'application/json' -Body $body
 

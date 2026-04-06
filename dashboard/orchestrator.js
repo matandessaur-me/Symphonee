@@ -35,26 +35,281 @@ const RESULT_POLL_MS = 500;
 // IMPORTANT: These flags were verified against each CLI's --help output on 2026-04-03.
 // If a CLI updates its interface, update the corresponding entry here.
 const HEADLESS_FLAGS = {
-  claude:  { cmd: 'claude',  args: ['-p', '--no-input'], promptMode: 'stdin' },                    // -p = print mode, reads prompt from stdin
+  claude:  { cmd: 'claude',  args: ['-p'], promptMode: 'stdin' },                                   // -p = print mode, reads prompt from stdin
   gemini:  { cmd: 'gemini',  args: [],                   promptMode: 'stdin' },                    // non-TTY pipes auto-trigger headless mode; no flags needed
   codex:   { cmd: 'codex',   args: ['exec'],             promptMode: 'stdin' },                    // exec subcommand, reads prompt from stdin
   copilot: { cmd: 'copilot', args: ['-p'],               promptMode: 'flag',  shell: false },      // -p <prompt>; shell:false so Node.js handles quoting
   grok:    { cmd: 'grok',    args: ['--print'],           promptMode: 'positional', shell: false }, // --print <prompt>; shell:false for safe quoting
 };
 
-// CLI launch commands, labels, and capabilities
-// All CLIs support pipe mode now via their respective headless flags
+// ── CLI Model & Flag Intelligence ───────────────────────────────────────────
+// The orchestrator and AI use this to spawn CLIs with optimal flags.
+// The AI should select model + flags based on task complexity and cost.
+// Grounded model availability per CLI and account type (researched 2026-04-05).
+// IMPORTANT: Update this when models change. The AI should check /api/orchestrator/cli-models
+// and never attempt a model that is not available for the user's account type.
+const CLI_MODELS = {
+  claude: {
+    // Auth: Anthropic API key (ANTHROPIC_API_KEY) or Claude Pro/Max subscription
+    // All models available with both auth methods
+    models: ['opus', 'sonnet', 'haiku'],
+    modelIds: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+    defaultModel: 'sonnet',
+    modelFlag: '--model',
+    effortFlag: '--effort',           // low, medium, high, max
+    effortValues: ['low', 'medium', 'high', 'max'],
+    permissionFlag: '--dangerously-skip-permissions',
+    autoPermission: true,
+    outputFormatFlag: '--output-format',
+    systemPromptFlag: '--append-system-prompt',
+    worktreeFlag: '--worktree',
+    extraHeadless: [],
+    notes: 'All models work with both API key and subscription auth.',
+  },
+  gemini: {
+    // Auth: Google account (free tier) or Gemini API key (GEMINI_API_KEY)
+    // FREE tier: flash and flash-lite ONLY. Pro requires API billing enabled.
+    models: ['flash', 'flash-lite'],
+    modelIds: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3-flash'],
+    paidModels: ['pro', 'gemini-2.5-pro', 'gemini-3-pro-preview', 'gemini-3.1-pro-preview'],
+    defaultModel: 'flash',
+    modelFlag: '-m',
+    effortFlag: null,
+    permissionFlag: '--approval-mode',
+    autoPermission: 'yolo',
+    outputFormatFlag: '-o',
+    systemPromptFlag: null,
+    worktreeFlag: '--worktree',
+    extraHeadless: [],
+    notes: 'Free tier: flash/flash-lite only. Pro models require API billing enabled on Google Cloud project.',
+  },
+  codex: {
+    // Auth: ChatGPT account (Plus/Pro/Business/Enterprise) or OpenAI API key (OPENAI_API_KEY)
+    // ChatGPT account: gpt-5.4, gpt-5.4-mini, gpt-5.3-codex-spark, gpt-5.1-codex family
+    // NOT supported with ChatGPT account: o3, o4-mini, gpt-4.1, gpt-4o
+    // API key: all models available
+    models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.1-codex'],
+    modelIds: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark', 'gpt-5.1-codex', 'gpt-5.1-codex-mini'],
+    apiKeyOnlyModels: ['o3', 'o4-mini', 'gpt-4.1'],
+    notSupported: ['gpt-4o'],
+    defaultModel: 'gpt-5.4',
+    modelFlag: '-m',
+    effortFlag: null,
+    permissionFlag: '--full-auto',
+    autoPermission: true,
+    outputFormatFlag: '--json',
+    systemPromptFlag: null,
+    worktreeFlag: null,
+    extraHeadless: [],
+    notes: 'ChatGPT account: gpt-5.x models only. o3/o4-mini/gpt-4.1 require an OpenAI API key. gpt-4o is not available in Codex at all.',
+  },
+  copilot: {
+    // Auth: GitHub account with Copilot Pro/Pro+/Business/Enterprise subscription
+    // Models from 3 providers: Anthropic, OpenAI, Google
+    // gpt-5-mini and gpt-4.1 do NOT consume premium requests (included free)
+    models: ['claude-sonnet-4.6', 'gpt-5.4', 'gpt-4.1', 'gpt-5-mini'],
+    modelIds: ['claude-opus-4.6', 'claude-sonnet-4.6', 'claude-haiku-4.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5-mini', 'gpt-4.1', 'gpt-5.3-codex', 'gemini-3-pro-preview'],
+    freeModels: ['gpt-5-mini', 'gpt-4.1'],
+    defaultModel: 'claude-sonnet-4.6',
+    modelFlag: '--model',
+    effortFlag: '--effort',
+    effortValues: ['low', 'medium', 'high', 'xhigh'],
+    permissionFlag: '--yolo',
+    autoPermission: true,
+    silentFlag: '--silent',
+    outputFormatFlag: '--output-format',
+    systemPromptFlag: null,
+    worktreeFlag: null,
+    extraHeadless: [],
+    notes: 'gpt-5-mini and gpt-4.1 are free (no premium requests). Claude/GPT-5.4/Gemini consume premium requests. Requires Copilot Pro+ for premium models.',
+  },
+  grok: {
+    // Auth: xAI API key (XAI_API_KEY) - requires credits loaded in xAI console
+    // All models require API key with credits
+    models: ['grok-4', 'grok-3', 'grok-3-mini-fast'],
+    modelIds: ['grok-4', 'grok-4-latest', 'grok-4.20', 'grok-3', 'grok-3-latest', 'grok-3-mini-fast', 'grok-code-fast-1', 'grok-4-1-fast-reasoning'],
+    defaultModel: 'grok-3-mini-fast',
+    modelFlag: '--model',
+    effortFlag: null,
+    permissionFlag: '--permission-mode',
+    autoPermission: 'full',
+    outputFormatFlag: '--output-format',
+    systemPromptFlag: null,
+    worktreeFlag: null,
+    extraHeadless: [],
+    notes: 'All models require xAI API key with loaded credits. grok-3-mini-fast is cheapest.',
+  },
+};
+
+// ── Provider Abstraction ─────────────────────────────────────────────────────
+// Formal interface per CLI: launch config, cost tier, status detection patterns.
+// Extends basic CLI_CONFIG with intelligence-level routing and idle detection.
 const CLI_CONFIG = {
-  claude:  { cmd: 'claude',  label: 'Claude Code', pipeMode: true },
-  gemini:  { cmd: 'gemini',  label: 'Gemini CLI',  pipeMode: true },
-  codex:   { cmd: 'codex',   label: 'Codex CLI',   pipeMode: true },
-  copilot: { cmd: 'copilot', label: 'Copilot CLI', pipeMode: true },
-  grok:    { cmd: 'grok',    label: 'Grok Code',   pipeMode: true },
+  claude:  { cmd: 'claude',  label: 'Claude Code', pipeMode: true, tier: 3, costRank: 5, idlePattern: /[❯>]\s*$/ },
+  gemini:  { cmd: 'gemini',  label: 'Gemini CLI',  pipeMode: true, tier: 2, costRank: 2, idlePattern: /[❯>$]\s*$/ },
+  codex:   { cmd: 'codex',   label: 'Codex CLI',   pipeMode: true, tier: 2, costRank: 3, idlePattern: /[❯>$]\s*$/ },
+  copilot: { cmd: 'copilot', label: 'Copilot CLI', pipeMode: true, tier: 1, costRank: 1, idlePattern: /[❯>]\s*$/ },
+  grok:    { cmd: 'grok',    label: 'Grok Code',   pipeMode: true, tier: 2, costRank: 2, idlePattern: /[❯>$]\s*$/ },
+};
+// tier: 1=basic, 2=mid, 3=premium (intelligence level)
+// costRank: 1=cheapest .. 5=most expensive
+
+// ── Cross-Model Escalation Chain ────────────────────────────────────────────
+// Defines the order to try CLIs when a task fails. Cheapest first, premium last.
+// The escalation chain is dynamic: it skips CLIs that are circuit-broken or not installed.
+const ESCALATION_ORDER = ['copilot', 'gemini', 'grok', 'codex', 'claude']; // cheapest to most capable
+
+// ── Concurrency Controls ────────────────────────────────────────────────────
+const MAX_CONCURRENT_SPAWNS = 5;    // max simultaneous headless tasks
+const SPAWN_STAGGER_MS = 200;       // delay between parallel spawns to prevent thundering herd
+
+// ── Circuit Breaker per CLI ──────────────────────────────────────────────────
+// Tracks failures per CLI provider. After N transient failures, the CLI is
+// disabled for a cooldown period to prevent wasting time on broken providers.
+const CIRCUIT_BREAKER_THRESHOLD = 3;     // failures before opening
+const CIRCUIT_BREAKER_COOLDOWN = 5 * 60 * 1000; // 5 min cooldown
+const CIRCUIT_BREAKER_HALF_OPEN_AFTER = 2 * 60 * 1000; // 2 min before trying one request
+
+class CircuitBreaker {
+  constructor() {
+    /** @type {Map<string, { state: 'closed'|'open'|'half-open', failures: number, lastFailure: number, lastSuccess: number }>} */
+    this.circuits = new Map();
+  }
+
+  _get(cli) {
+    if (!this.circuits.has(cli)) {
+      this.circuits.set(cli, { state: 'closed', failures: 0, lastFailure: 0, lastSuccess: 0 });
+    }
+    return this.circuits.get(cli);
+  }
+
+  /** Check if a CLI is available (circuit not open) */
+  isAvailable(cli) {
+    const c = this._get(cli);
+    if (c.state === 'closed') return true;
+    if (c.state === 'open') {
+      // Check if cooldown elapsed, transition to half-open
+      if (Date.now() - c.lastFailure > CIRCUIT_BREAKER_HALF_OPEN_AFTER) {
+        c.state = 'half-open';
+        return true; // allow one probe request
+      }
+      return false;
+    }
+    return true; // half-open: allow the probe
+  }
+
+  /** Record a success (resets the circuit) */
+  recordSuccess(cli) {
+    const c = this._get(cli);
+    c.state = 'closed';
+    c.failures = 0;
+    c.lastSuccess = Date.now();
+  }
+
+  /** Record a failure. Returns true if circuit just opened. */
+  recordFailure(cli, error) {
+    const c = this._get(cli);
+    // Classify error: only transient errors count toward the breaker
+    if (this._isPermanent(error)) return false;
+    c.failures++;
+    c.lastFailure = Date.now();
+    if (c.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+      c.state = 'open';
+      return true; // just opened
+    }
+    return false;
+  }
+
+  /** Get status of all circuits */
+  getStatus() {
+    const status = {};
+    for (const [cli, c] of this.circuits) {
+      status[cli] = { ...c };
+    }
+    return status;
+  }
+
+  /** Reset a specific CLI circuit */
+  reset(cli) {
+    this.circuits.delete(cli);
+  }
+
+  _isPermanent(error) {
+    if (!error) return false;
+    const msg = typeof error === 'string' ? error : (error.message || '');
+    // Auth, billing, not-installed errors are permanent (do not count toward breaker)
+    return /not installed|not found|not recognized|API key|not logged in|auth.*failed|invalid.*key|billing/i.test(msg);
+  }
+}
+
+// ── Error Classification ────────────────────────────────────────────────────
+// Structured error objects with recoverable/retryable flags
+function classifyError(error, cli) {
+  const msg = typeof error === 'string' ? error : (error.message || String(error));
+  const isTransient = /timeout|timed out|ECONNRESET|ECONNREFUSED|EPIPE|rate.?limit|429|500|502|503/i.test(msg);
+  const isPermanent = /not installed|not found|not recognized|API key|not logged in|auth.*failed|invalid.*key|billing|unexpected argument|bad flag/i.test(msg);
+  const isFlagError = /unexpected argument|unrecognized option|unknown (flag|option)|bad flag/i.test(msg);
+  const isModelError = /model.*not supported|not.*supported.*model|invalid.*model|unknown model|model.*not available|not supported when using.*account|requires.*api.?key/i.test(msg);
+
+  return {
+    message: msg,
+    cli,
+    transient: isTransient,
+    permanent: isPermanent || isModelError, // model errors are permanent for that CLI/model combo
+    flagError: isFlagError,
+    modelError: isModelError,
+    recoverable: !isPermanent && !isModelError,
+    retryable: isTransient && !isPermanent && !isModelError,
+    timestamp: Date.now(),
+  };
+}
+
+// ── Retry with Exponential Backoff ──────────────────────────────────────────
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 3000;
+
+function retryDelay(attempt) {
+  // Exponential backoff with jitter: base * 2^attempt + random(0..1000)
+  return RETRY_BASE_MS * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
+}
+
+// ── Quality Gates (State Machine) ───────────────────────────────────────────
+// Tasks can optionally go through quality gates: IMPLEMENT -> VALIDATE -> REVIEW -> DONE
+// Each gate is a blocking state transition. Failure triggers retry with fresh context.
+const QUALITY_GATES = {
+  IMPLEMENT: 'implement',
+  VALIDATE:  'validate',
+  REVIEW:    'review',
+  DONE:      'done',
+};
+
+// ── Result Scoring ──────────────────────────────────────────────────────────
+// Score a task result by quality signals (length, structure, completeness)
+function scoreResult(result) {
+  if (!result) return 0;
+  let score = 0;
+  score += Math.min(result.length / 500, 10);  // length (up to 10 points for 5KB+)
+  if (/```/.test(result)) score += 3;           // contains code blocks
+  if (/\n##?\s/.test(result)) score += 2;       // has headings (structured)
+  if (/\d+\.\s/.test(result)) score += 1;       // has numbered lists
+  if (/error|fail|cannot|unable/i.test(result)) score -= 3; // contains error language
+  if (result.length < 50) score -= 5;           // very short (likely failure)
+  return Math.max(0, score);
+}
+
+// ── Reaction System ─────────────────────────────────────────────────────────
+// Configurable per-event reactions: auto-send instructions, retry, escalate to human
+const DEFAULT_REACTIONS = {
+  'task-failed':    { action: 'retry',    maxRetries: 2, escalateAfterMs: 5 * 60 * 1000 },
+  'task-timeout':   { action: 'retry',    maxRetries: 1, escalateAfterMs: 3 * 60 * 1000 },
+  'agent-stale':    { action: 'nudge',    maxRetries: 3, escalateAfterMs: 10 * 60 * 1000 },
+  'circuit-open':   { action: 'escalate', maxRetries: 0, escalateAfterMs: 0 },
 };
 
 // ── Task states ──────────────────────────────────────────────────────────────
 const STATE = {
   PENDING:   'pending',
+  QUEUED:    'queued',      // waiting for dependencies
   RUNNING:   'running',
   COMPLETED: 'completed',
   FAILED:    'failed',
@@ -69,13 +324,16 @@ class Orchestrator extends EventEmitter {
    * @param {Map}      opts.terminals   — server.js terminals Map (termId -> {pty, cols, rows})
    * @param {Function} opts.broadcast   — server.js broadcast(msg) for WebSocket push
    * @param {string}   opts.workspaceDir — absolute path to .ai-workspace/orchestrator/
+   * @param {Function} opts.getConfig   — returns current config object
    */
-  constructor({ terminals, broadcast, workspaceDir, createTerminal }) {
+  constructor({ terminals, broadcast, workspaceDir, createTerminal, getConfig }) {
     super();
     this.terminals = terminals;
     this.broadcast = broadcast;
     this.workspaceDir = workspaceDir;
     this.createTerminal = createTerminal;
+    this.getConfig = getConfig || (() => ({}));
+    this.getLearnings = null; // set by mountOrchestrator after construction
 
     /** @type {Map<string, Task>} */
     this.tasks = new Map();
@@ -88,6 +346,15 @@ class Orchestrator extends EventEmitter {
 
     /** @type {boolean} Whether orchestration mode is active (at least one task running) */
     this.orchestrating = false;
+
+    /** @type {CircuitBreaker} per-CLI circuit breaker */
+    this.circuitBreaker = new CircuitBreaker();
+
+    /** @type {Map<string, number>} task heartbeat timestamps (taskId -> lastActivity) */
+    this.heartbeats = new Map();
+
+    /** @type {Map<string, Object>} task checkpoints (taskId -> { partial, attempt, timestamp }) */
+    this.checkpoints = new Map();
 
     // Ensure workspace directories exist
     for (const sub of ['tasks', 'results', 'inboxes']) {
@@ -105,7 +372,7 @@ class Orchestrator extends EventEmitter {
     try {
       const serializable = [];
       for (const [, task] of this.tasks) {
-        const { _proc, _timer, _pollInterval, ...safe } = task;
+        const { _proc, _timer, _pollInterval, _spawnOpts, _escalationChain, _escalationPrompt, _escalationCwd, _retryAttempt, ...safe } = task;
         serializable.push(safe);
       }
       fs.writeFileSync(this._tasksFile, JSON.stringify(serializable, null, 2));
@@ -119,8 +386,8 @@ class Orchestrator extends EventEmitter {
       const data = JSON.parse(fs.readFileSync(this._tasksFile, 'utf8'));
       if (!Array.isArray(data)) return;
       for (const t of data) {
-        // Running/pending tasks from a previous session are dead; mark them failed
-        if (t.state === STATE.RUNNING || t.state === STATE.PENDING) {
+        // Running/pending/queued tasks from a previous session are dead; mark them failed
+        if (t.state === STATE.RUNNING || t.state === STATE.PENDING || t.state === STATE.QUEUED) {
           t.state = STATE.FAILED;
           t.error = 'App was restarted while task was running';
           t.completedAt = t.completedAt || Date.now();
@@ -165,7 +432,8 @@ class Orchestrator extends EventEmitter {
     const t = this.terminals.get(termId);
     if (!t) return { ok: false, error: `Terminal "${termId}" not found` };
 
-    const payload = text.endsWith('\n') ? text : text + '\n';
+    // Use \r (carriage return) for terminal submission, not \n (line feed)
+    const payload = text.endsWith('\r') || text.endsWith('\n') ? text : text + '\r';
     t.pty.write(payload);
 
     this.broadcast({
@@ -186,17 +454,25 @@ class Orchestrator extends EventEmitter {
    * The prompt is sent via stdin and stdout is collected as the result.
    *
    * @param {Object} opts
-   * @param {string} opts.cli       — 'claude' | 'gemini' | 'codex' | 'copilot'
+   * @param {string} opts.cli       — 'claude' | 'gemini' | 'codex' | 'copilot' | 'grok'
    * @param {string} opts.prompt    — the prompt to send
    * @param {string} [opts.cwd]     — working directory
    * @param {number} [opts.timeout] — ms before killing (default 5 min)
    * @param {string} [opts.from]    — termId of the requesting agent
    * @param {string} [opts.taskId]  — tie to existing task
+   * @param {string} [opts.model]   — model override (e.g. 'opus', 'gpt-5.4', 'flash')
+   * @param {string} [opts.effort]  — effort level (e.g. 'low', 'high', 'max')
+   * @param {boolean} [opts.autoPermit] — auto-approve all permissions
    * @returns {Task}
    */
-  spawnHeadless({ cli, prompt, cwd, timeout, from, taskId }) {
+  spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, _retryAttempt = 0 }) {
     const cfg = HEADLESS_FLAGS[cli];
     if (!cfg) throw new Error(`Unknown CLI: "${cli}". Use: ${Object.keys(HEADLESS_FLAGS).join(', ')}`);
+
+    // Circuit breaker: check if CLI is available
+    if (!this.circuitBreaker.isAvailable(cli)) {
+      throw new Error(`CLI "${cli}" circuit breaker is OPEN (too many recent failures). Try again later or use a different CLI.`);
+    }
 
     // Verify CLI exists before spawning (fail fast instead of timing out)
     try {
@@ -212,11 +488,40 @@ class Orchestrator extends EventEmitter {
       cli,
       prompt,
       from: from || null,
-      timeout: timeout || TASK_TIMEOUT_MS,
+      timeout: 0,  // Never timeout — AI runs as long as it needs
     });
 
     // Build final args based on how this CLI expects the prompt
     const finalArgs = [...cfg.args];
+
+    // Inject model/effort/permission flags from CLI_MODELS intelligence
+    const cliMeta = CLI_MODELS[cli];
+    if (cliMeta) {
+      if (model && cliMeta.modelFlag) {
+        finalArgs.unshift(cliMeta.modelFlag, model);
+      }
+      if (effort && cliMeta.effortFlag) {
+        finalArgs.unshift(cliMeta.effortFlag, effort);
+      }
+      // Auto-permit: either explicit param or per-CLI YoloCliList setting
+      const yoloList = this.getConfig().YoloCliList || [];
+      const shouldYolo = autoPermit || yoloList.includes(cli);
+      if (shouldYolo && cliMeta.permissionFlag) {
+        if (typeof cliMeta.autoPermission === 'boolean') {
+          finalArgs.unshift(cliMeta.permissionFlag); // boolean flag like --full-auto, --yolo
+        } else {
+          finalArgs.unshift(cliMeta.permissionFlag, cliMeta.autoPermission);
+        }
+      }
+      // Inject behavioral guardrails for spawned Claude workers
+      if (cliMeta.systemPromptFlag) {
+        finalArgs.unshift(cliMeta.systemPromptFlag,
+          'You are a worker agent. NEVER use sleep commands. NEVER poll with curl in a loop. ' +
+          'Just do the task and output the result. Do not dispatch sub-tasks to other CLIs. ' +
+          'Do not call orchestrator APIs. Focus only on the task in the prompt.');
+      }
+    }
+
     if (cfg.promptMode === 'flag') {
       // Prompt is the value of the last flag (e.g. gemini -p "prompt", copilot -p "prompt")
       finalArgs.push(prompt);
@@ -227,10 +532,24 @@ class Orchestrator extends EventEmitter {
     // 'stdin' mode: prompt is written to proc.stdin below
 
     const useShell = cfg.shell !== undefined ? cfg.shell : true;
+    // Inject API keys from config as environment variables (unlocks additional models)
+    const spawnEnv = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' };
+    const aiKeys = this.getConfig().AiApiKeys || {};
+    const CLI_ENV_KEYS = {
+      claude:  ['ANTHROPIC_API_KEY'],
+      gemini:  ['GEMINI_API_KEY'],
+      codex:   ['OPENAI_API_KEY'],
+      copilot: [],  // uses GitHub auth, not API keys
+      grok:    ['XAI_API_KEY'],
+    };
+    for (const envKey of (CLI_ENV_KEYS[cli] || [])) {
+      if (aiKeys[envKey]) spawnEnv[envKey] = aiKeys[envKey];
+    }
+
     const proc = spawn(cfg.cmd, finalArgs, {
       cwd: cwd || process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+      env: spawnEnv,
       shell: useShell,
     });
 
@@ -254,6 +573,8 @@ class Orchestrator extends EventEmitter {
       if (stdout.length < MAX_HEADLESS_OUTPUT) {
         stdout += text;
       }
+      // Heartbeat: track last activity
+      this.heartbeats.set(task.id, Date.now());
       // Stream live output to frontend
       this.broadcast({
         type: 'orchestrator-event',
@@ -275,19 +596,72 @@ class Orchestrator extends EventEmitter {
       if (code === 0) {
         task.state = STATE.COMPLETED;
         task.result = stdout.trim();
+        this.circuitBreaker.recordSuccess(cli);
+        this.heartbeats.delete(task.id);
       } else {
         const errText = stderr.trim() || stdout.trim() || '';
-        // Detect CLI flag/argument errors (wrong flags, missing subcommands, etc.)
-        const isFlagError = /unexpected argument|unrecognized option|unknown (flag|option)|invalid option|bad flag|not a.*command/i.test(errText);
+        const classified = classifyError(errText || `Process exited with code ${code}`, cli);
+
+        // Save checkpoint for crash recovery (partial results)
+        if (stdout.trim()) {
+          this.checkpoints.set(task.id, {
+            partial: stdout.trim().substring(0, 4096),
+            attempt: _retryAttempt,
+            cli,
+            prompt: task.prompt,
+            timestamp: Date.now(),
+          });
+        }
+
+        // Circuit breaker: record failure
+        const circuitOpened = this.circuitBreaker.recordFailure(cli, errText);
+        if (circuitOpened) {
+          this.broadcast({ type: 'orchestrator-event', event: 'circuit-open', cli, timestamp: Date.now() });
+        }
+
+        // Retry with exponential backoff if error is retryable
+        if (classified.retryable && _retryAttempt < MAX_RETRIES) {
+          const delay = retryDelay(_retryAttempt);
+          task.state = STATE.PENDING;
+          task._retryAttempt = _retryAttempt + 1;
+          this.broadcast({ type: 'orchestrator-event', event: 'task-retry', taskId: task.id, attempt: _retryAttempt + 1, delay, timestamp: Date.now() });
+          setTimeout(() => {
+            try {
+              // Re-spawn with checkpoint context
+              const checkpoint = this.checkpoints.get(task.id);
+              const enhancedPrompt = checkpoint
+                ? `[Previous attempt partial result for context]:\n${checkpoint.partial.substring(0, 1000)}\n\n[Retry the task]:\n${prompt}`
+                : prompt;
+              const retryTask = this.spawnHeadless({ cli, prompt: enhancedPrompt, cwd, timeout, from, taskId: task.id, _retryAttempt: _retryAttempt + 1 });
+              // Merge retry into original task
+              Object.assign(task, { state: retryTask.state, _proc: retryTask._proc, startedAt: retryTask.startedAt });
+            } catch (e) {
+              task.state = STATE.FAILED;
+              task.error = `Retry failed: ${e.message}`;
+              task.completedAt = Date.now();
+              this._broadcastTaskUpdate(task);
+            }
+          }, delay);
+          return; // don't complete the task yet
+        }
+
         task.state = STATE.FAILED;
-        task.error = isFlagError
+        task.error = classified.flagError
           ? `CLI "${cli}" rejected flags ${JSON.stringify(finalArgs)}: ${errText.substring(0, 300)}. ` +
             `Update HEADLESS_FLAGS in orchestrator.js to match the CLI's current interface.`
           : errText || `Process exited with code ${code}`;
+        task.errorClassification = classified;
         task.result = stdout.trim();
+        this.heartbeats.delete(task.id);
+
+        // Try cross-model escalation before giving up
+        if (task._escalationChain && task._escalationChain.length && classified.recoverable) {
+          if (this._tryEscalate(task)) return; // escalated to next CLI
+        }
+
         // Auto-record failure in learnings
-        if (getLearnings) {
-          const lrn = getLearnings();
+        if (this.getLearnings) {
+          const lrn = this.getLearnings();
           if (lrn) lrn.recordFailure({ cli, args: finalArgs, error: task.error });
         }
       }
@@ -357,7 +731,7 @@ class Orchestrator extends EventEmitter {
       cli,
       prompt,
       from: from || null,
-      timeout: timeout || TASK_TIMEOUT_MS,
+      timeout: 0,  // Never timeout — AI runs as long as it needs
       targetTermId: termId,
     });
 
@@ -737,7 +1111,7 @@ class Orchestrator extends EventEmitter {
       targetTermId,
       prompt,
       from: from || null,
-      timeout: timeout || TASK_TIMEOUT_MS,
+      timeout: 0,  // Never timeout — AI runs as long as it needs
     });
 
     task.state = STATE.RUNNING;
@@ -988,6 +1362,425 @@ class Orchestrator extends EventEmitter {
     return { ok: true };
   }
 
+  // ── Dependency-Aware Task Queue (DAG) ─────────────────────────────────
+
+  /**
+   * Spawn a task that depends on other tasks completing first.
+   * The task stays in QUEUED state until all dependencies are met.
+   * @param {Object} opts - same as spawnHeadless plus:
+   * @param {string[]} opts.dependsOn - array of task IDs that must complete first
+   */
+  spawnWithDependencies({ dependsOn = [], ...opts }) {
+    const task = this._createTask({
+      type: 'headless',
+      cli: opts.cli,
+      prompt: opts.prompt,
+      from: opts.from || null,
+      timeout: 0,
+    });
+    task.dependsOn = dependsOn;
+    task.state = STATE.QUEUED;
+    task._spawnOpts = opts;
+
+    // Check if dependencies are already met
+    this._checkAndRelease(task);
+    this._broadcastTaskUpdate(task);
+    return this._serializeTask(task);
+  }
+
+  /** Check queued tasks and release those whose dependencies are met */
+  _checkAndRelease(task) {
+    if (task.state !== STATE.QUEUED || !task.dependsOn) return false;
+    const allMet = task.dependsOn.every(depId => {
+      const dep = this.tasks.get(depId);
+      return dep && dep.state === STATE.COMPLETED;
+    });
+    if (allMet) {
+      // Inject dependency results as context
+      const depResults = task.dependsOn.map(depId => {
+        const dep = this.tasks.get(depId);
+        return dep && dep.result ? `[Result from task ${depId}]: ${dep.result.substring(0, 500)}` : '';
+      }).filter(Boolean).join('\n\n');
+
+      const enhancedPrompt = depResults
+        ? `${depResults}\n\n[Your task]:\n${task._spawnOpts.prompt}`
+        : task._spawnOpts.prompt;
+
+      try {
+        const spawned = this.spawnHeadless({ ...task._spawnOpts, prompt: enhancedPrompt, taskId: task.id });
+        Object.assign(task, { state: spawned.state, _proc: spawned._proc, startedAt: spawned.startedAt });
+      } catch (e) {
+        task.state = STATE.FAILED;
+        task.error = `Failed to spawn after dependencies met: ${e.message}`;
+        task.completedAt = Date.now();
+        this._broadcastTaskUpdate(task);
+      }
+      delete task._spawnOpts;
+      return true;
+    }
+    return false;
+  }
+
+  /** Called after any task completes; checks if queued tasks can now run */
+  _releaseQueuedTasks() {
+    for (const [, task] of this.tasks) {
+      if (task.state === STATE.QUEUED) {
+        this._checkAndRelease(task);
+      }
+    }
+  }
+
+  // ── Synchronous Handoff ─────────────────────────────────────────────────
+
+  /**
+   * Blocking handoff: spawn a worker, wait for completion, return result.
+   * Returns a Promise that resolves with the task result.
+   * @param {Object} opts - same as spawnHeadless
+   * @param {number} [opts.handoffTimeout=300000] - max wait time (5 min default)
+   * @returns {Promise<{ok: boolean, result?: string, error?: string, taskId: string}>}
+   */
+  handoff(opts) {
+    return new Promise((resolve) => {
+      try {
+        const task = this.spawnHeadless(opts);
+        const maxWait = opts.handoffTimeout || 300000;
+        const startTime = Date.now();
+
+        const poll = setInterval(() => {
+          const current = this.tasks.get(task.id);
+          if (!current) {
+            clearInterval(poll);
+            resolve({ ok: false, error: 'Task disappeared', taskId: task.id });
+            return;
+          }
+          if (current.state === STATE.COMPLETED) {
+            clearInterval(poll);
+            resolve({ ok: true, result: current.result, taskId: task.id });
+          } else if (current.state === STATE.FAILED || current.state === STATE.CANCELLED || current.state === STATE.TIMEOUT) {
+            clearInterval(poll);
+            resolve({ ok: false, error: current.error || current.state, taskId: task.id });
+          } else if (Date.now() - startTime > maxWait) {
+            clearInterval(poll);
+            this.cancelTask(task.id);
+            resolve({ ok: false, error: `Handoff timed out after ${maxWait}ms`, taskId: task.id });
+          }
+        }, 500);
+      } catch (e) {
+        resolve({ ok: false, error: e.message, taskId: null });
+      }
+    });
+  }
+
+  // ── Worktree Isolation ──────────────────────────────────────────────────
+
+  /**
+   * Create a git worktree for a task, spawn the CLI in it.
+   * @param {Object} opts - same as spawnHeadless plus:
+   * @param {string} opts.repoPath - path to the git repo
+   * @param {string} [opts.branch] - branch name (auto-generated if omitted)
+   */
+  spawnInWorktree({ repoPath, branch, ...opts }) {
+    if (!repoPath) throw new Error('repoPath is required for worktree spawn');
+    const { execSync } = require('child_process');
+    const taskId = opts.taskId || this._id();
+    const branchName = branch || `orch/${taskId}`;
+    const worktreePath = path.join(repoPath, '..', `.worktree-${taskId}`);
+
+    try {
+      // Create worktree with a new branch
+      execSync(`git worktree add "${worktreePath}" -b "${branchName}"`, { cwd: repoPath, timeout: 10000, encoding: 'utf8' });
+    } catch (e) {
+      throw new Error(`Failed to create worktree: ${e.message}`);
+    }
+
+    const task = this.spawnHeadless({ ...opts, cwd: worktreePath, taskId });
+    task.worktree = { path: worktreePath, branch: branchName, repoPath };
+
+    // Clean up worktree when task completes
+    const origComplete = task.completedAt;
+    const checkCleanup = setInterval(() => {
+      const current = this.tasks.get(task.id);
+      if (!current || (current.completedAt && current.completedAt !== origComplete)) {
+        clearInterval(checkCleanup);
+        // Don't auto-remove worktree; the results might need merging
+        // Just broadcast that the worktree is available for review
+        this.broadcast({
+          type: 'orchestrator-event',
+          event: 'worktree-ready',
+          taskId: task.id,
+          worktree: task.worktree,
+          timestamp: Date.now(),
+        });
+      }
+    }, 1000);
+
+    return task;
+  }
+
+  /**
+   * Clean up a task's worktree after results have been merged/reviewed.
+   */
+  cleanupWorktree(taskId) {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.worktree) return { ok: false, error: 'Task has no worktree' };
+    const { execSync } = require('child_process');
+    try {
+      execSync(`git worktree remove "${task.worktree.path}" --force`, { cwd: task.worktree.repoPath, timeout: 10000 });
+      // Delete the branch too
+      try { execSync(`git branch -D "${task.worktree.branch}"`, { cwd: task.worktree.repoPath, timeout: 5000 }); } catch (_) {}
+      delete task.worktree;
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  // ── Heartbeat Monitoring ────────────────────────────────────────────────
+
+  /**
+   * Get heartbeat status for all running tasks.
+   * Returns tasks classified as active, stale, or missing.
+   */
+  getHeartbeats() {
+    const now = Date.now();
+    const result = [];
+    for (const [, task] of this.tasks) {
+      if (task.state !== STATE.RUNNING) continue;
+      const lastBeat = this.heartbeats.get(task.id);
+      const age = lastBeat ? now - lastBeat : now - (task.startedAt || task.createdAt);
+      let status = 'active';
+      if (age > 90000) status = 'stale';       // > 90s no output
+      else if (age > 30000) status = 'idle';    // > 30s no output
+      result.push({
+        taskId: task.id,
+        cli: task.cli,
+        status,
+        lastActivity: lastBeat || task.startedAt,
+        idleMs: age,
+      });
+    }
+    return result;
+  }
+
+  // ── Cross-Model Escalation ──────────────────────────────────────────────
+
+  /**
+   * Spawn a task with automatic escalation: tries cheapest CLI first,
+   * escalates through the chain on failure until one succeeds or all fail.
+   * @param {Object} opts - same as spawnHeadless, but `cli` is optional
+   * @param {string} [opts.preferCli] - preferred CLI to start with (skips cheaper ones)
+   * @returns {Task}
+   */
+  spawnWithEscalation({ preferCli, prompt, cwd, from, taskId }) {
+    // Build escalation chain, filtering out unavailable CLIs
+    let chain = [...ESCALATION_ORDER];
+    if (preferCli && chain.includes(preferCli)) {
+      // Start from the preferred CLI
+      chain = chain.slice(chain.indexOf(preferCli));
+    }
+    chain = chain.filter(cli => this.circuitBreaker.isAvailable(cli));
+
+    if (!chain.length) throw new Error('No CLIs available (all circuit-broken or not in escalation chain)');
+
+    const cli = chain[0];
+    const task = this.spawnHeadless({ cli, prompt, cwd, from, taskId });
+    // Store the escalation chain on the task for use on failure
+    task._escalationChain = chain.slice(1);
+    task._escalationPrompt = prompt;
+    task._escalationCwd = cwd;
+    return task;
+  }
+
+  /** Called when a task fails; attempts escalation to next CLI */
+  _tryEscalate(task) {
+    if (!task._escalationChain || !task._escalationChain.length) return false;
+    const nextCli = task._escalationChain.shift();
+    if (!this.circuitBreaker.isAvailable(nextCli)) return this._tryEscalate(task); // skip broken CLIs
+
+    this.broadcast({ type: 'orchestrator-event', event: 'task-escalate', taskId: task.id, from: task.cli, to: nextCli, timestamp: Date.now() });
+
+    try {
+      const checkpoint = this.checkpoints.get(task.id);
+      const enhancedPrompt = checkpoint
+        ? `[Previous attempt by ${task.cli} produced partial results]:\n${checkpoint.partial.substring(0, 1000)}\n\n[Retry with ${nextCli}]:\n${task._escalationPrompt}`
+        : task._escalationPrompt;
+
+      const newTask = this.spawnHeadless({ cli: nextCli, prompt: enhancedPrompt, cwd: task._escalationCwd, from: task.from, taskId: task.id });
+      // Transfer escalation chain to new attempt
+      newTask._escalationChain = task._escalationChain;
+      newTask._escalationPrompt = task._escalationPrompt;
+      newTask._escalationCwd = task._escalationCwd;
+      return true;
+    } catch (_) {
+      return this._tryEscalate(task); // try next in chain
+    }
+  }
+
+  // ── Parallel Fan-Out with Staggered Spawning ────────────────────────────
+
+  /**
+   * Spawn multiple tasks in parallel with staggered starts and concurrency cap.
+   * @param {Array<Object>} taskConfigs - array of spawnHeadless options
+   * @param {Object} [opts]
+   * @param {number} [opts.maxConcurrent=5] - max simultaneous tasks
+   * @param {number} [opts.staggerMs=200] - delay between spawns
+   * @param {boolean} [opts.aggregate=false] - aggregate results when all complete
+   * @returns {{ tasks: Task[], aggregatePromise?: Promise }}
+   */
+  fanOut(taskConfigs, { maxConcurrent = MAX_CONCURRENT_SPAWNS, staggerMs = SPAWN_STAGGER_MS, aggregate = false } = {}) {
+    const tasks = [];
+    let spawned = 0;
+    const queue = [...taskConfigs];
+
+    const spawnNext = () => {
+      while (queue.length > 0 && spawned < maxConcurrent) {
+        const config = queue.shift();
+        try {
+          const task = this.spawnHeadless(config);
+          tasks.push(task);
+          spawned++;
+        } catch (e) {
+          tasks.push({ id: this._id(), state: STATE.FAILED, error: e.message, cli: config.cli });
+        }
+        if (queue.length > 0 && staggerMs > 0) {
+          setTimeout(spawnNext, staggerMs);
+          return;
+        }
+      }
+    };
+    spawnNext();
+
+    // Watch for completions to release concurrency slots
+    const releaseCheck = setInterval(() => {
+      const running = tasks.filter(t => {
+        const current = this.tasks.get(t.id);
+        return current && (current.state === STATE.RUNNING || current.state === STATE.PENDING);
+      }).length;
+      spawned = running;
+      if (queue.length > 0 && spawned < maxConcurrent) spawnNext();
+      if (queue.length === 0 && running === 0) clearInterval(releaseCheck);
+    }, 500);
+
+    const result = { tasks: tasks.map(t => this._serializeTask(t) || t) };
+
+    if (aggregate) {
+      result.aggregatePromise = new Promise((resolve) => {
+        const poll = setInterval(() => {
+          const allDone = tasks.every(t => {
+            const current = this.tasks.get(t.id);
+            return !current || current.state === STATE.COMPLETED || current.state === STATE.FAILED || current.state === STATE.CANCELLED;
+          });
+          if (allDone) {
+            clearInterval(poll);
+            resolve(this._aggregateResults(tasks.map(t => t.id)));
+          }
+        }, 1000);
+      });
+    }
+
+    return result;
+  }
+
+  // ── Quality-Ranked Result Aggregation ───────────────────────────────────
+
+  /**
+   * Aggregate results from multiple tasks, ranked by quality.
+   * @param {string[]} taskIds
+   * @returns {{ results: Array, bestResult: string, totalScore: number }}
+   */
+  _aggregateResults(taskIds) {
+    const scored = [];
+    for (const id of taskIds) {
+      const task = this.tasks.get(id);
+      if (!task || task.state !== STATE.COMPLETED || !task.result) continue;
+      scored.push({ taskId: id, cli: task.cli, result: task.result, score: scoreResult(task.result) });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return {
+      results: scored,
+      bestResult: scored.length > 0 ? scored[0].result : null,
+      bestCli: scored.length > 0 ? scored[0].cli : null,
+      totalScore: scored.reduce((sum, s) => sum + s.score, 0),
+    };
+  }
+
+  // ── Task Lineage Context ────────────────────────────────────────────────
+
+  /**
+   * Spawn a task with sibling/lineage awareness.
+   * Each worker is told what other workers are doing for coordination.
+   * @param {Object} opts - same as spawnHeadless plus:
+   * @param {string} [opts.parentTaskId] - parent task that spawned this group
+   * @param {string[]} [opts.siblingTaskIds] - IDs of sibling tasks running in parallel
+   */
+  spawnWithLineage({ parentTaskId, siblingTaskIds = [], ...opts }) {
+    let lineageContext = '';
+    if (parentTaskId) {
+      const parent = this.tasks.get(parentTaskId);
+      if (parent) lineageContext += `[Parent task]: ${parent.prompt.substring(0, 200)}\n`;
+    }
+    if (siblingTaskIds.length) {
+      lineageContext += `[Sibling tasks running in parallel]:\n`;
+      for (const sibId of siblingTaskIds) {
+        const sib = this.tasks.get(sibId);
+        if (sib) lineageContext += `- ${sib.cli || 'agent'}: ${sib.prompt.substring(0, 100)}\n`;
+      }
+      lineageContext += `Coordinate with siblings. Avoid duplicating their work.\n`;
+    }
+
+    const enhancedPrompt = lineageContext
+      ? `${lineageContext}\n[Your task]:\n${opts.prompt}`
+      : opts.prompt;
+
+    return this.spawnHeadless({ ...opts, prompt: enhancedPrompt });
+  }
+
+  // ── Workflow Pause / Resume ─────────────────────────────────────────────
+
+  /** Pause all running tasks (they continue in background but results are held) */
+  pauseAll() {
+    this._paused = true;
+    this.broadcast({ type: 'orchestrator-event', event: 'paused', timestamp: Date.now() });
+    return { ok: true, paused: true };
+  }
+
+  /** Resume orchestration */
+  resumeAll() {
+    this._paused = false;
+    this.broadcast({ type: 'orchestrator-event', event: 'resumed', timestamp: Date.now() });
+    // Release any queued tasks that were held
+    this._releaseQueuedTasks();
+    return { ok: true, paused: false };
+  }
+
+  /** Check if orchestration is paused */
+  isPaused() { return !!this._paused; }
+
+  // ── Event WaitFor ───────────────────────────────────────────────────────
+
+  /**
+   * Wait for a specific task to reach a terminal state.
+   * Promise-based one-shot listener with timeout.
+   * @param {string} taskId
+   * @param {number} [timeoutMs=300000] - max wait (5 min default)
+   * @returns {Promise<Task>}
+   */
+  waitFor(taskId, timeoutMs = 300000) {
+    return new Promise((resolve, reject) => {
+      const check = setInterval(() => {
+        const task = this.tasks.get(taskId);
+        if (!task) { clearInterval(check); reject(new Error('Task not found')); return; }
+        if (task.state === STATE.COMPLETED || task.state === STATE.FAILED || task.state === STATE.CANCELLED || task.state === STATE.TIMEOUT) {
+          clearInterval(check);
+          resolve(this._serializeTask(task));
+        }
+      }, 500);
+      if (timeoutMs > 0) {
+        setTimeout(() => { clearInterval(check); reject(new Error(`waitFor timed out after ${timeoutMs}ms`)); }, timeoutMs);
+      }
+    });
+  }
+
   // ── Internals ────────────────────────────────────────────────────────────
 
   _id() {
@@ -997,7 +1790,7 @@ class Orchestrator extends EventEmitter {
   _createTask({ id, type, cli, prompt, from, timeout, targetTermId }) {
     const task = {
       id: id || this._id(),
-      type,              // 'headless' | 'dispatch'
+      type,              // 'headless' | 'dispatch' | 'handoff'
       cli: cli || null,
       prompt,
       from,
@@ -1005,8 +1798,11 @@ class Orchestrator extends EventEmitter {
       state: STATE.PENDING,
       result: null,
       error: null,
+      errorClassification: null,
       resultFile: null,
-      timeout: timeout || TASK_TIMEOUT_MS,
+      dependsOn: null,       // task IDs this depends on (DAG)
+      worktree: null,        // { path, branch, repoPath } if using worktree isolation
+      timeout: 0,  // Never timeout — AI runs as long as it needs
       createdAt: Date.now(),
       startedAt: null,
       completedAt: null,
@@ -1021,7 +1817,7 @@ class Orchestrator extends EventEmitter {
 
   _serializeTask(task) {
     if (!task) return null;
-    const { _proc, _timer, _pollInterval, ...safe } = task;
+    const { _proc, _timer, _pollInterval, _spawnOpts, _retryAttempt, ...safe } = task;
     return safe;
   }
 
@@ -1043,9 +1839,13 @@ class Orchestrator extends EventEmitter {
       timestamp: Date.now(),
     });
 
+    // Release queued tasks whose dependencies are now met
+    const taskFinished = task.state === STATE.COMPLETED || task.state === STATE.FAILED || task.state === STATE.TIMEOUT;
+    if (taskFinished) this._releaseQueuedTasks();
+
     // Track orchestration mode: active when any task is running
     const wasOrchestrating = this.orchestrating;
-    const hasRunning = [...this.tasks.values()].some(t => t.state === STATE.RUNNING || t.state === STATE.PENDING);
+    const hasRunning = [...this.tasks.values()].some(t => t.state === STATE.RUNNING || t.state === STATE.PENDING || t.state === STATE.QUEUED);
     this.orchestrating = hasRunning;
     if (this.orchestrating !== wasOrchestrating) {
       this.broadcast({
@@ -1059,14 +1859,27 @@ class Orchestrator extends EventEmitter {
     // Auto-notify the requesting agent when a task finishes
     const done = task.state === STATE.COMPLETED || task.state === STATE.FAILED || task.state === STATE.TIMEOUT;
     if (done && task.from) {
+      const delivery = (this.getConfig().OrchestrateResultDelivery) || 'inject';
       const stateLabel = task.state === STATE.COMPLETED ? 'completed successfully' : task.state;
-      const snippet = task.result ? task.result.substring(0, 300) : (task.error || 'No output');
-      this.sendMessage({
-        to: task.from,
-        from: 'orchestrator',
-        content: `Task ${task.id} ${stateLabel}.\n\nResult:\n${snippet}`,
-        metadata: { taskId: task.id, state: task.state, type: 'task-result' },
-      });
+      const snippet = task.result ? task.result.substring(0, 500) : (task.error || 'No output');
+
+      // PTY injection: push result directly into the requesting AI's terminal
+      if (delivery === 'inject' || delivery === 'both') {
+        // Build result as a single line to avoid multi-line paste issues in AI CLIs.
+        // Multi-line pastes don't auto-submit in most CLIs; a single-line message does.
+        const resultOneLine = `[TASK RESULT ${task.id}] ${stateLabel} (${task.cli || 'dispatch'}): ${snippet.replace(/\n/g, ' ').substring(0, 800)}`;
+        this.inject(task.from, resultOneLine + '\r');
+      }
+
+      // Inbox delivery (legacy polling mode)
+      if (delivery === 'inbox' || delivery === 'both') {
+        this.sendMessage({
+          to: task.from,
+          from: 'orchestrator',
+          content: `Task ${task.id} ${stateLabel}.\n\nResult:\n${snippet}`,
+          metadata: { taskId: task.id, state: task.state, type: 'task-result' },
+        });
+      }
     }
   }
 }
@@ -1098,7 +1911,8 @@ function readBody(req) {
  */
 function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, createTerminal, getConfig, getLearnings }) {
   const workspaceDir = path.join(repoRoot, '.ai-workspace', 'orchestrator');
-  const orch = new Orchestrator({ terminals, broadcast, workspaceDir, createTerminal });
+  const orch = new Orchestrator({ terminals, broadcast, workspaceDir, createTerminal, getConfig });
+  orch.getLearnings = getLearnings || null;
 
   // Auto-cleanup tasks older than 1 hour every 30 minutes (preserves recent results)
   setInterval(() => orch.cleanup(60 * 60 * 1000), 30 * 60 * 1000);
@@ -1152,9 +1966,30 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     }
   });
 
+  // ── GET /api/orchestrator/cli-models ──────────────────────────────────
+  // Returns available models per CLI, enriched with which API keys are configured
+  addRoute('GET', '/api/orchestrator/cli-models', (req, res) => {
+    const aiKeys = getConfig ? getConfig().AiApiKeys || {} : {};
+    const enriched = {};
+    for (const [cli, meta] of Object.entries(CLI_MODELS)) {
+      enriched[cli] = { ...meta };
+      // Indicate which API keys are set (boolean, not the actual key)
+      const keyMap = { claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', codex: 'OPENAI_API_KEY', grok: 'XAI_API_KEY' };
+      enriched[cli].hasApiKey = !!(keyMap[cli] && aiKeys[keyMap[cli]]);
+      // If API key is set, merge apiKeyOnlyModels into available models
+      if (enriched[cli].hasApiKey && enriched[cli].apiKeyOnlyModels) {
+        enriched[cli].models = [...enriched[cli].models, ...enriched[cli].apiKeyOnlyModels];
+      }
+      if (enriched[cli].hasApiKey && enriched[cli].paidModels) {
+        enriched[cli].models = [...enriched[cli].models, ...enriched[cli].paidModels];
+      }
+    }
+    json(res, enriched);
+  });
+
   // ── POST /api/orchestrator/spawn ──────────────────────────────────────
   addRoute('POST', '/api/orchestrator/spawn', async (req, res) => {
-    const { cli, prompt, cwd, timeout, from, taskId, visible } = await readBody(req);
+    const { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit } = await readBody(req);
     if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
     // Check if this CLI is allowed by the user's settings
     if (getConfig) {
@@ -1172,7 +2007,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
       const useVisible = visible === true || (visible !== false && cliCfg && !cliCfg.pipeMode);
       const task = useVisible
         ? orch.spawnVisible({ cli, prompt, cwd, timeout, from, taskId })
-        : orch.spawnHeadless({ cli, prompt, cwd, timeout, from, taskId });
+        : orch.spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit });
       json(res, orch._serializeTask(task));
     } catch (err) {
       json(res, { error: err.message }, 400);
@@ -1259,6 +2094,160 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     const cleaned = orch.cleanup(maxAge);
     json(res, { cleaned });
   });
+
+  // ── GET /api/orchestrator/circuit-breaker ──────────────────────────────
+  addRoute('GET', '/api/orchestrator/circuit-breaker', (req, res) => {
+    json(res, orch.circuitBreaker.getStatus());
+  });
+
+  // ── POST /api/orchestrator/circuit-breaker/reset ─────────────────────
+  addRoute('POST', '/api/orchestrator/circuit-breaker/reset', async (req, res) => {
+    const { cli } = await readBody(req);
+    if (cli) { orch.circuitBreaker.reset(cli); json(res, { ok: true, cli }); }
+    else { json(res, { error: 'cli required' }, 400); }
+  });
+
+  // ── GET /api/orchestrator/heartbeats ─────────────────────────────────
+  addRoute('GET', '/api/orchestrator/heartbeats', (req, res) => {
+    json(res, orch.getHeartbeats());
+  });
+
+  // ── POST /api/orchestrator/handoff ───────────────────────────────────
+  // Blocking handoff: spawns worker, waits for result, returns it
+  addRoute('POST', '/api/orchestrator/handoff', async (req, res) => {
+    const { cli, prompt, cwd, from, handoffTimeout } = await readBody(req);
+    if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
+    // Check CLI allowlist
+    if (getConfig) {
+      const cfg = getConfig();
+      const allowList = cfg.OrchestrateCliList;
+      if (Array.isArray(allowList) && allowList.length > 0 && !allowList.includes(cli)) {
+        return json(res, { error: `CLI "${cli}" is not enabled for orchestration.` }, 403);
+      }
+    }
+    const result = await orch.handoff({ cli, prompt, cwd, from, handoffTimeout });
+    json(res, result, result.ok ? 200 : 500);
+  });
+
+  // ── POST /api/orchestrator/spawn-with-deps ───────────────────────────
+  // Spawn a task that waits for dependencies to complete first
+  addRoute('POST', '/api/orchestrator/spawn-with-deps', async (req, res) => {
+    const { cli, prompt, cwd, from, dependsOn } = await readBody(req);
+    if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
+    if (!Array.isArray(dependsOn) || !dependsOn.length) return json(res, { error: 'dependsOn must be a non-empty array of task IDs' }, 400);
+    try {
+      const task = orch.spawnWithDependencies({ cli, prompt, cwd, from, dependsOn });
+      json(res, task);
+    } catch (err) {
+      json(res, { error: err.message }, 400);
+    }
+  });
+
+  // ── POST /api/orchestrator/spawn-worktree ────────────────────────────
+  // Spawn a task in an isolated git worktree
+  addRoute('POST', '/api/orchestrator/spawn-worktree', async (req, res) => {
+    const { cli, prompt, repoPath, branch, from } = await readBody(req);
+    if (!cli || !prompt || !repoPath) return json(res, { error: 'cli, prompt, and repoPath required' }, 400);
+    try {
+      const task = orch.spawnInWorktree({ cli, prompt, repoPath, branch, from });
+      json(res, orch._serializeTask(task));
+    } catch (err) {
+      json(res, { error: err.message }, 400);
+    }
+  });
+
+  // ── POST /api/orchestrator/cleanup-worktree ──────────────────────────
+  addRoute('POST', '/api/orchestrator/cleanup-worktree', async (req, res) => {
+    const { taskId } = await readBody(req);
+    if (!taskId) return json(res, { error: 'taskId required' }, 400);
+    json(res, orch.cleanupWorktree(taskId));
+  });
+
+  // ── GET /api/orchestrator/checkpoints ────────────────────────────────
+  addRoute('GET', '/api/orchestrator/checkpoints', (req, res) => {
+    const checkpoints = {};
+    for (const [taskId, cp] of orch.checkpoints) {
+      checkpoints[taskId] = { ...cp, partial: cp.partial.substring(0, 200) + '...' };
+    }
+    json(res, checkpoints);
+  });
+
+  // ── POST /api/orchestrator/spawn-escalate ──────────────────────────────
+  // Spawn with auto-escalation: tries cheapest CLI, escalates on failure
+  addRoute('POST', '/api/orchestrator/spawn-escalate', async (req, res) => {
+    const { preferCli, prompt, cwd, from } = await readBody(req);
+    if (!prompt) return json(res, { error: 'prompt required' }, 400);
+    try {
+      const task = orch.spawnWithEscalation({ preferCli, prompt, cwd, from });
+      json(res, orch._serializeTask(task));
+    } catch (err) {
+      json(res, { error: err.message }, 400);
+    }
+  });
+
+  // ── POST /api/orchestrator/fan-out ───────────────────────────────────
+  // Spawn multiple tasks in parallel with staggered starts
+  addRoute('POST', '/api/orchestrator/fan-out', async (req, res) => {
+    const { tasks: taskConfigs, maxConcurrent, staggerMs, aggregate } = await readBody(req);
+    if (!Array.isArray(taskConfigs) || !taskConfigs.length) return json(res, { error: 'tasks array required' }, 400);
+    try {
+      const result = orch.fanOut(taskConfigs, { maxConcurrent, staggerMs, aggregate });
+      json(res, { tasks: result.tasks, aggregate: !!aggregate });
+    } catch (err) {
+      json(res, { error: err.message }, 400);
+    }
+  });
+
+  // ── POST /api/orchestrator/spawn-lineage ─────────────────────────────
+  // Spawn with sibling/parent awareness
+  addRoute('POST', '/api/orchestrator/spawn-lineage', async (req, res) => {
+    const { cli, prompt, cwd, from, parentTaskId, siblingTaskIds } = await readBody(req);
+    if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
+    try {
+      const task = orch.spawnWithLineage({ cli, prompt, cwd, from, parentTaskId, siblingTaskIds });
+      json(res, orch._serializeTask(task));
+    } catch (err) {
+      json(res, { error: err.message }, 400);
+    }
+  });
+
+  // ── POST /api/orchestrator/pause ─────────────────────────────────────
+  addRoute('POST', '/api/orchestrator/pause', (req, res) => { json(res, orch.pauseAll()); });
+
+  // ── POST /api/orchestrator/resume ────────────────────────────────────
+  addRoute('POST', '/api/orchestrator/resume', (req, res) => { json(res, orch.resumeAll()); });
+
+  // ── POST /api/orchestrator/wait-for ──────────────────────────────────
+  // Promise-based wait for a task to complete (blocking HTTP call)
+  addRoute('POST', '/api/orchestrator/wait-for', async (req, res) => {
+    const { taskId, timeoutMs } = await readBody(req);
+    if (!taskId) return json(res, { error: 'taskId required' }, 400);
+    try {
+      const task = await orch.waitFor(taskId, timeoutMs);
+      json(res, task);
+    } catch (err) {
+      json(res, { error: err.message }, 408);
+    }
+  });
+
+  // ── GET /api/orchestrator/aggregate ──────────────────────────────────
+  // Aggregate and rank results from multiple tasks
+  addRoute('GET', '/api/orchestrator/aggregate', (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const taskIds = (url.searchParams.get('taskIds') || '').split(',').filter(Boolean);
+    if (!taskIds.length) return json(res, { error: 'taskIds query param required (comma-separated)' }, 400);
+    json(res, orch._aggregateResults(taskIds));
+  });
+
+  // ── Heartbeat monitor: detect stale agents and trigger reactions ──────
+  setInterval(() => {
+    const beats = orch.getHeartbeats();
+    for (const beat of beats) {
+      if (beat.status === 'stale') {
+        orch.broadcast({ type: 'orchestrator-event', event: 'agent-stale', taskId: beat.taskId, cli: beat.cli, idleMs: beat.idleMs, timestamp: Date.now() });
+      }
+    }
+  }, 30000);
 
   return orch;
 }

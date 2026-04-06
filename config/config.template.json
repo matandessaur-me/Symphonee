@@ -8,6 +8,11 @@
   "WhisperKey": "",
   "OrchestrateMode": false,
   "DefaultCli": "claude",
+  "IncognitoMode": false,
+  "YoloCliList": [],
+  "AiApiKeys": {},
+  "OrchestrateResultDelivery": "inject",
+  "BrowserCredentials": {},
   "Repos": {},
   "ThemePreference": "claude"
 }

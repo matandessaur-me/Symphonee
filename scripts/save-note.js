@@ -50,7 +50,10 @@ function post(path, body) {
 
 (async () => {
   try {
-    await post('/api/notes/create', { name });
+    // /api/notes/save creates the file if it doesn't exist (atomic write).
+    // Do NOT call /api/notes/create first - its name sanitizer differs from
+    // save's, which produces two files when the title has dots, apostrophes,
+    // parens, etc.
     const result = await post('/api/notes/save', { name, content });
     if (result.ok) {
       console.log(`Note "${name}" saved.`);

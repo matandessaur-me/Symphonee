@@ -99,7 +99,19 @@ class Learnings {
 
     this.learnings.push(entry);
     this._save();
+    // Auto-push to shared repo after recording (debounced, non-blocking)
+    this._schedulePush();
     return entry;
+  }
+
+  /** Debounced auto-push: waits 10 seconds after last add, then pushes all unsynced */
+  _schedulePush() {
+    if (this._pushTimer) clearTimeout(this._pushTimer);
+    this._pushTimer = setTimeout(() => {
+      this.push().then(r => {
+        if (r.pushed > 0) console.log(`  [learnings] Auto-pushed ${r.pushed} learning(s) to shared repo`);
+      }).catch(() => {});
+    }, 10000); // 10 second debounce
   }
 
   /** Delete a learning by ID */
@@ -118,7 +130,7 @@ class Learnings {
     if (!cli || !error) return;
     const errLower = error.toLowerCase();
 
-    // Only record generic CLI/platform errors, not task-specific failures
+    // Record generic CLI/platform errors AND model compatibility errors
     const isGeneric =
       /unexpected argument|unrecognized option|unknown (flag|option)|invalid option|bad flag|not a.*command/i.test(error) ||
       /cannot use both|mutually exclusive/i.test(error) ||
@@ -127,7 +139,13 @@ class Learnings {
       /permission denied|access denied/i.test(error) ||
       /syntax error|parse error/i.test(error);
 
-    if (!isGeneric) return null;
+    const isModelError =
+      /model.*not supported|not.*supported.*model|invalid.*model|unknown model|model.*not available/i.test(error) ||
+      /not supported when using.*account/i.test(error) ||
+      /requires.*api.?key|requires.*billing|requires.*paid/i.test(error) ||
+      /rate.?limit|quota.*exceeded|insufficient.*credits/i.test(error);
+
+    if (!isGeneric && !isModelError) return null;
 
     // Determine category
     let category = 'general';
@@ -135,6 +153,7 @@ class Learnings {
     else if (/command not found|not recognized|not installed/i.test(error)) category = 'platform';
     else if (/ECONNREFUSED|ETIMEDOUT/i.test(error)) category = 'api-pattern';
     else if (/syntax error|parse error/i.test(error)) category = 'shell';
+    else if (isModelError) category = 'cli-flags'; // model errors go with CLI config issues
 
     const summary = `${cli}: ${error.substring(0, 120).replace(/[\r\n]+/g, ' ')}`;
     const detail = args ? `Failed args: ${JSON.stringify(args)}` : null;

@@ -3,6 +3,7 @@ dist/
 config/config.json
 config/display-pref.json
 config/themes.json
+config/browser-sessions/
 dashboard/plugins/*
 !dashboard/plugins/sdk/
 notes/

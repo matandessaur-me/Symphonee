@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
-const { exec, execSync } = require('child_process');
+const { exec, execSync, spawnSync } = require('child_process');
 
 // ── New utility modules ────────────────────────────────────────────────────
 const { gitAsync, gitSync } = require('./utils/git-async');
@@ -108,55 +108,103 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/cli/install' && req.method === 'POST') return handleCliInstall(req, res);
 
     // ── Azure DevOps: Iterations ──────────────────────────────────────────
-    if (url.pathname === '/api/iterations' && req.method === 'GET') return handleIterations(res, url);
+    if (url.pathname === '/api/iterations' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read iterations')) return; return handleIterations(res, url);
+    }
 
     // ── Azure DevOps: Work Items ──────────────────────────────────────────
-    if (url.pathname === '/api/workitems' && req.method === 'GET') return handleWorkItems(url, res);
-    if (url.pathname === '/api/workitems/create' && req.method === 'POST') return handleCreateWorkItem(req, res);
+    if (url.pathname === '/api/workitems' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read work items')) return; return handleWorkItems(url, res);
+    }
+    if (url.pathname === '/api/workitems/create' && req.method === 'POST') {
+      if (incognitoGuard(res, 'create work item')) return; return handleCreateWorkItem(req, res);
+    }
 
     const wiMatch = url.pathname.match(/^\/api\/workitems\/(\d+)$/);
-    if (wiMatch && req.method === 'GET')   return handleWorkItemDetail(wiMatch[1], res);
-    if (wiMatch && req.method === 'PATCH') return handleUpdateWorkItem(wiMatch[1], req, res);
+    if (wiMatch && req.method === 'GET') {
+      if (incognitoGuard(res, 'read work item')) return; return handleWorkItemDetail(wiMatch[1], res);
+    }
+    if (wiMatch && req.method === 'PATCH') {
+      if (incognitoGuard(res, 'update work item')) return; return handleUpdateWorkItem(wiMatch[1], req, res);
+    }
 
     const wiStateMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/state$/);
-    if (wiStateMatch && req.method === 'PATCH') return handleWorkItemState(wiStateMatch[1], req, res);
+    if (wiStateMatch && req.method === 'PATCH') {
+      if (incognitoGuard(res, 'change work item state')) return; return handleWorkItemState(wiStateMatch[1], req, res);
+    }
 
     const wiCommentMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/comments$/);
-    if (wiCommentMatch && req.method === 'POST') return handleAddWorkItemComment(wiCommentMatch[1], req, res);
+    if (wiCommentMatch && req.method === 'POST') {
+      if (incognitoGuard(res, 'add work item comment')) return; return handleAddWorkItemComment(wiCommentMatch[1], req, res);
+    }
 
     // ── Azure DevOps: Velocity ────────────────────────────────────────────
-    if (url.pathname === '/api/velocity' && req.method === 'GET') return handleVelocity(res);
+    if (url.pathname === '/api/velocity' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read velocity')) return; return handleVelocity(res);
+    }
 
     // ── Azure DevOps: Teams & Members ─────────────────────────────────────
-    if (url.pathname === '/api/teams' && req.method === 'GET') return handleTeams(res);
-    if (url.pathname === '/api/team-members' && req.method === 'GET') return handleTeamMembers(res);
-    if (url.pathname === '/api/areas' && req.method === 'GET') return handleAreas(res);
+    if (url.pathname === '/api/teams' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read teams')) return; return handleTeams(res);
+    }
+    if (url.pathname === '/api/team-members' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read team members')) return; return handleTeamMembers(res);
+    }
+    if (url.pathname === '/api/areas' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read areas')) return; return handleAreas(res);
+    }
 
     // ── Azure DevOps: Burndown ────────────────────────────────────────────
-    if (url.pathname === '/api/burndown' && req.method === 'GET') return handleBurndown(url, res);
+    if (url.pathname === '/api/burndown' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read burndown')) return; return handleBurndown(url, res);
+    }
 
     // ── Repos ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/repos' && req.method === 'GET')  return handleGetRepos(res);
     if (url.pathname === '/api/repos' && req.method === 'POST') return handleSaveRepo(req, res);
 
     // ── Start Working ─────────────────────────────────────────────────────
-    if (url.pathname === '/api/start-working' && req.method === 'POST') return handleStartWorking(req, res);
+    if (url.pathname === '/api/start-working' && req.method === 'POST') {
+      if (incognitoGuard(res, 'start working on work item')) return; return handleStartWorking(req, res);
+    }
 
     // ── Pull Requests (ADO) ────────────────────────────────────────────────
-    if (url.pathname === '/api/pull-request' && req.method === 'POST') return handleCreatePullRequest(req, res);
+    if (url.pathname === '/api/pull-request' && req.method === 'POST') {
+      if (incognitoGuard(res, 'create pull request')) return; return handleCreatePullRequest(req, res);
+    }
 
     // ── GitHub Pull Requests ────────────────────────────────────────────────
-    if (url.pathname === '/api/github/repo-info' && req.method === 'GET')       return handleGitHubRepoInfo(url, res);
-    if (url.pathname === '/api/github/pulls' && req.method === 'GET')           return handleGitHubPulls(url, res);
-    if (url.pathname === '/api/github/pulls/detail' && req.method === 'GET')    return handleGitHubPullDetail(url, res);
-    if (url.pathname === '/api/github/pulls/files' && req.method === 'GET')     return handleGitHubPullFiles(url, res);
-    if (url.pathname === '/api/github/pulls/comments' && req.method === 'GET')  return handleGitHubPullComments(url, res);
-    if (url.pathname === '/api/github/pulls/timeline' && req.method === 'GET') return handleGitHubPullTimeline(url, res);
-    if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST')  return handleGitHubAddComment(req, res);
-    if (url.pathname === '/api/github/pulls/review' && req.method === 'POST')   return handleGitHubSubmitReview(req, res);
+    if (url.pathname === '/api/github/repo-info' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub repo info')) return; return handleGitHubRepoInfo(url, res);
+    }
+    if (url.pathname === '/api/github/pulls' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull requests')) return; return handleGitHubPulls(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/detail' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request detail')) return; return handleGitHubPullDetail(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/files' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request files')) return; return handleGitHubPullFiles(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/comments' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request comments')) return; return handleGitHubPullComments(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/timeline' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request timeline')) return; return handleGitHubPullTimeline(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST') {
+      if (incognitoGuard(res, 'comment on pull request')) return; return handleGitHubAddComment(req, res);
+    }
+    if (url.pathname === '/api/github/pulls/review' && req.method === 'POST') {
+      if (incognitoGuard(res, 'submit pull request review')) return; return handleGitHubSubmitReview(req, res);
+    }
     if (url.pathname === '/api/github/image' && req.method === 'GET')          return handleGitHubImageProxy(url, res);
-    if (url.pathname === '/api/github/user-repos' && req.method === 'GET')    return handleGitHubUserRepos(url, res);
-    if (url.pathname === '/api/github/clone' && req.method === 'POST')        return handleGitHubClone(req, res);
+    if (url.pathname === '/api/github/user-repos' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub repositories')) return; return handleGitHubUserRepos(url, res);
+    }
+    if (url.pathname === '/api/github/clone' && req.method === 'POST') {
+      if (incognitoGuard(res, 'clone GitHub repository')) return; return handleGitHubClone(req, res);
+    }
 
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
@@ -175,9 +223,15 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/git/log' && req.method === 'GET')       return handleGitLog(url, res);
     if (url.pathname === '/api/git/commit-diff' && req.method === 'GET') return handleCommitDiff(url, res);
     if (url.pathname === '/api/git/checkout' && req.method === 'POST')  return handleGitCheckout(req, res);
-    if (url.pathname === '/api/git/pull' && req.method === 'POST')      return handleGitPull(req, res);
-    if (url.pathname === '/api/git/push' && req.method === 'POST')      return handleGitPush(req, res);
-    if (url.pathname === '/api/git/fetch' && req.method === 'POST')     return handleGitFetch(req, res);
+    if (url.pathname === '/api/git/pull' && req.method === 'POST') {
+      if (incognitoGuard(res, 'git pull')) return; return handleGitPull(req, res);
+    }
+    if (url.pathname === '/api/git/push' && req.method === 'POST') {
+      if (incognitoGuard(res, 'git push')) return; return handleGitPush(req, res);
+    }
+    if (url.pathname === '/api/git/fetch' && req.method === 'POST') {
+      if (incognitoGuard(res, 'git fetch')) return; return handleGitFetch(req, res);
+    }
     if (url.pathname === '/api/git/discard' && req.method === 'POST')   return handleGitDiscard(req, res);
 
     // ── Split Diff ────────────────────────────────────────────────────────
@@ -241,6 +295,16 @@ function getConfig() {
   return {};
 }
 
+// ── Incognito Mode guard ─────────────────────────────────────────────────
+function isIncognito() { return getConfig().IncognitoMode === true; }
+function incognitoGuard(res, action) {
+  if (isIncognito()) {
+    json(res, { error: `Blocked by Incognito Mode: "${action}" is not available in incognito. All Azure DevOps, GitHub, and remote operations are disabled. Turn off incognito in Settings to proceed.`, incognito: true }, 403);
+    return true;
+  }
+  return false;
+}
+
 // ── Themes ────────────────────────────────────────────────────────────────
 const themesPath = path.join(repoRoot, 'config', 'themes.json');
 
@@ -282,11 +346,13 @@ async function handleSaveConfig(req, res) {
   iterationsCache = { data: null, ts: 0 };
   workItemsCache = { data: null, key: null, ts: 0 };
   swrIterations.clear(); swrWorkItems.clear(); swrTeamAreas.clear(); swrAreas.clear(); swrGit.clear(); swrGitHub.clear(); swrPlugins.clear();
+  // Regenerate AI instructions (incognito, orchestration, etc. may have changed)
+  try { writePluginHints(); } catch (_) {}
   json(res, { ok: true });
 }
 
 // Sensitive fields to strip from exports (PATs, API keys)
-const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WhisperKey'];
+const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WhisperKey', 'AiApiKeys'];
 
 function handleExportConfig(res) {
   const cfg = getConfig();
@@ -859,13 +925,17 @@ async function fetchWorkItemsData(iterationPath, state, type, assignedTo, areaPa
 
     let closedPromise = null;
     if (fetchClosedSeparately) {
-      // Fetch all closed IDs (lightweight -- just IDs, no details) to get total count
+      // Fetch closed IDs with a cap -- only need closedTop items + 1 to know if there are more
       let closedQuery = `SELECT [System.Id] FROM WorkItems WHERE [System.State] IN ('Closed', 'Done') AND [System.State] NOT IN ('Removed')`;
       closedQuery += areaClause;
       if (type)       closedQuery += ` AND [System.WorkItemType] = '${type}'`;
       if (assignedTo) closedQuery += ` AND [System.AssignedTo] = '${assignedTo}'`;
       closedQuery += ` ORDER BY [System.ChangedDate] DESC`;
-      closedPromise = adoRequest('POST', '/wit/wiql?api-version=7.1', { query: closedQuery });
+      // Cap the WIQL query to avoid fetching 20k+ IDs on large projects.
+      // Use max(closedTop, 200) + 1 so we get a useful count for the "X of Y" label
+      // while still knowing if there are more beyond the cap.
+      const closedCap = Math.max(closedTop, 200) + 1;
+      closedPromise = adoRequest('POST', `/wit/wiql?$top=${closedCap}&api-version=7.1`, { query: closedQuery });
     }
 
     const [wiql, closedWiql] = await Promise.all([mainPromise, closedPromise]);
@@ -874,18 +944,22 @@ async function fetchWorkItemsData(iterationPath, state, type, assignedTo, areaPa
     let closedIds = [];
     let hasMoreClosed = false;
     let totalClosed = 0;
+    let totalClosedCapped = false;
 
     if (closedWiql) {
-      const allClosedIds = (closedWiql.workItems || []).map(w => w.id);
-      totalClosed = allClosedIds.length;
-      hasMoreClosed = totalClosed > closedTop;
-      closedIds = allClosedIds.slice(0, closedTop);
+      const returnedClosedIds = (closedWiql.workItems || []).map(w => w.id);
+      const closedCap = Math.max(closedTop, 200);
+      // If ADO returned more than closedCap, the true total is unknown (capped)
+      totalClosedCapped = returnedClosedIds.length > closedCap;
+      hasMoreClosed = returnedClosedIds.length > closedTop;
+      closedIds = returnedClosedIds.slice(0, closedTop);
+      totalClosed = totalClosedCapped ? closedCap : returnedClosedIds.length;
     }
 
     const allIds = [...new Set([...mainIds, ...closedIds])];
 
     if (allIds.length === 0) {
-      const emptyResult = fetchClosedSeparately ? { items: [], hasMoreClosed: false, totalClosed: 0 } : [];
+      const emptyResult = fetchClosedSeparately ? { items: [], hasMoreClosed: false, totalClosed: 0, totalClosedCapped: false } : [];
       workItemsCache = { data: emptyResult, key: cacheKey, ts: Date.now() };
       return json(res, emptyResult);
     }
@@ -921,7 +995,7 @@ async function fetchWorkItemsData(iterationPath, state, type, assignedTo, areaPa
 
     // When excluding closed (no iteration/state filter), return wrapped format with pagination info
     // Otherwise return flat array for backward compat with scripts
-    const result = fetchClosedSeparately ? { items, hasMoreClosed, totalClosed } : items;
+    const result = fetchClosedSeparately ? { items, hasMoreClosed, totalClosed, totalClosedCapped } : items;
     workItemsCache = { data: result, key: cacheKey, ts: Date.now() };
     return result;
 }
@@ -1146,7 +1220,7 @@ async function handleVelocity(res) {
     const velocity = [];
     for (const it of pastIterations) {
       // Get completed items in this iteration
-      const wiql = await adoRequest('POST', '/wit/wiql?api-version=7.1', {
+      const wiql = await adoRequest('POST', '/wit/wiql?$top=200&api-version=7.1', {
         query: `SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] = '${it.path}' AND [System.State] IN ('Closed', 'Resolved', 'Done') ORDER BY [System.Id]`,
       });
       const ids = (wiql.workItems || []).map(w => w.id).slice(0, 200);
@@ -1199,7 +1273,7 @@ async function handleBurndown(url, res) {
     const finishDate = new Date(iteration.attributes?.finishDate);
 
     // Get all items in this iteration with points
-    const wiql = await adoRequest('POST', '/wit/wiql?api-version=7.1', {
+    const wiql = await adoRequest('POST', '/wit/wiql?$top=200&api-version=7.1', {
       query: `SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] = '${iterationPath}' AND [System.State] NOT IN ('Removed') ORDER BY [System.Id]`,
     });
     const ids = (wiql.workItems || []).map(w => w.id).slice(0, 200);
@@ -1357,18 +1431,30 @@ async function handleStartWorking(req, res) {
     const wiType = wi.fields['System.WorkItemType'] || 'feature';
     const prefix = wiType.toLowerCase() === 'bug' ? 'bugfix' : 'feature';
 
-    // Use AI to generate a concise branch slug from the work item context
+    // Use AI to generate a concise branch slug from the work item context.
+    // Pass the prompt via stdin (not argv) so titles/descriptions with quotes,
+    // commas, backticks, etc. don't break shell escaping and cause Claude to
+    // reply with a clarifying question instead of a slug.
+    const fallbackSlug = () => title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    const sanitizeSlug = (s) => String(s || '').trim().split('\n')[0].trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    const looksLikeQuestion = (s) => /\?|^(which|what|can|could|should|how|who|where|why)\b/i.test(String(s || '').trim());
+
     let slug;
     try {
-      const prompt = `Generate a short git branch slug (2-5 words, lowercase, hyphen-separated, no special chars) that clearly describes this work item. Reply with ONLY the slug, nothing else.\n\nTitle: ${title}\nType: ${wiType}${description ? `\nDescription: ${description}` : ''}`;
-      slug = execSync(`claude --print "${prompt.replace(/"/g, '\\"')}"`, {
-        encoding: 'utf8', timeout: 15000, windowsHide: true,
-      }).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-    } catch (_) {
-      // Fallback to simple slugification if AI is unavailable
-      slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-    }
-    if (!slug) slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      const prompt = `Generate a short git branch slug (2 to 5 words, lowercase, hyphen-separated, no special chars) that clearly describes this work item. Reply with ONLY the slug, nothing else. Do not ask questions. Do not add quotes or commentary.\n\nTitle: ${title}\nType: ${wiType}${description ? `\nDescription: ${description}` : ''}`;
+      const result = spawnSync('claude', ['--print'], {
+        input: prompt,
+        encoding: 'utf8',
+        timeout: 20000,
+        windowsHide: true,
+        shell: true,
+      });
+      const raw = (result.stdout || '').trim();
+      if (result.status === 0 && raw && !looksLikeQuestion(raw)) {
+        slug = sanitizeSlug(raw);
+      }
+    } catch (_) { /* fall through to fallback */ }
+    if (!slug) slug = fallbackSlug();
     const branchName = `${prefix}/AB#${workItemId}-${slug}`;
 
     // Move work item to Active
@@ -1381,21 +1467,26 @@ async function handleStartWorking(req, res) {
       workItemsCache = { data: null, ts: 0 };
     } catch (_) { /* may already be active */ }
 
-    // Proper branch creation: checkout main, fetch, then create branch
-    const commands = [
-      `cd "${repoPath.replace(/\\/g, '/')}"`,
-      `git checkout main 2>/dev/null || git checkout master`,
-      `git fetch origin`,
-      `git pull`,
-      `git checkout -b ${branchName}`,
-    ];
-
-    const mainTerm = terminals.get('main');
-    for (const cmd of commands) {
-      if (mainTerm) mainTerm.pty.write(cmd + '\r');
+    // Perform git operations server-side so they don't collide with the AI prompt in the terminal PTY.
+    const gitSteps = [];
+    try {
+      let baseBranch = 'main';
+      try {
+        gitExec(repoPath, 'checkout main');
+      } catch (_) {
+        baseBranch = 'master';
+        gitExec(repoPath, 'checkout master');
+      }
+      gitSteps.push(`checked out ${baseBranch}`);
+      try { gitExec(repoPath, 'fetch origin'); gitSteps.push('fetched origin'); } catch (e) { gitSteps.push(`fetch failed: ${e.message}`); }
+      try { gitExec(repoPath, 'pull'); gitSteps.push('pulled'); } catch (e) { gitSteps.push(`pull failed: ${e.message}`); }
+      gitExec(repoPath, `checkout -b ${branchName}`);
+      gitSteps.push(`created branch ${branchName}`);
+    } catch (e) {
+      return json(res, { error: `Git operation failed: ${e.message}`, steps: gitSteps }, 500);
     }
 
-    json(res, { ok: true, branchName, repoPath });
+    json(res, { ok: true, branchName, repoPath, steps: gitSteps });
   } catch (e) {
     json(res, { error: e.message }, 500);
   }
@@ -1874,6 +1965,12 @@ function handleFileGrep(url, res) {
   const MAX_MATCHES = 150;
   let fileCount = 0;
   const queryLower = query.toLowerCase();
+  const queryWords = queryLower.split(/\s+/).filter(Boolean);
+
+  function lineMatches(lineLower) {
+    if (queryWords.length <= 1) return lineLower.includes(queryLower);
+    return queryWords.every(w => lineLower.includes(w));
+  }
 
   function walk(dir, rel) {
     if (results.length >= MAX_MATCHES) return;
@@ -1898,7 +1995,7 @@ function handleFileGrep(url, res) {
           fileCount++;
           for (let i = 0; i < lines.length; i++) {
             if (results.length >= MAX_MATCHES) break;
-            if (lines[i].toLowerCase().includes(queryLower)) {
+            if (lineMatches(lines[i].toLowerCase())) {
               results.push({ path: childRel, name: e.name, line: i + 1, text: lines[i].substring(0, 200) });
             }
           }
@@ -1974,7 +2071,7 @@ function handleGitStatus(url, res) {
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
   const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
-  const status = gitExec(repoPath, 'status --porcelain');
+  const status = gitExec(repoPath, 'status --porcelain -u');
   const statusMap = { 'M': 'modified', 'A': 'added', 'D': 'deleted', 'R': 'renamed', '?': 'new', 'U': 'conflict' };
   const statusLabel = { 'modified': 'M', 'added': 'A', 'deleted': 'D', 'renamed': 'R', 'new': 'N', 'conflict': 'U' };
   const files = status ? status.split('\n').filter(Boolean).map(line => {
@@ -2475,7 +2572,12 @@ function getUiContextWithPath() {
 
 async function handleUiContextUpdate(req, res) {
   const data = await readBody(req);
+  const prevRepo = _uiContext.activeRepo;
   Object.assign(_uiContext, data);
+  // Regenerate AI instructions when active repo changes (e.g. No Repo mode toggle)
+  if (data.activeRepo !== undefined && data.activeRepo !== prevRepo) {
+    try { writePluginHints(); } catch (_) {}
+  }
   json(res, { ok: true, context: getUiContextWithPath() });
 }
 
@@ -2776,8 +2878,15 @@ function writePluginHints() {
   const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
   const ORCH_START = '<!-- ORCHESTRATION_START -->';
   const ORCH_END = '<!-- ORCHESTRATION_END -->';
+  const REPO_START = '<!-- REPO_CONTEXT_START -->';
+  const REPO_END = '<!-- REPO_CONTEXT_END -->';
+  const INCOGNITO_START = '<!-- INCOGNITO_START -->';
+  const INCOGNITO_END = '<!-- INCOGNITO_END -->';
   const cfg = getConfig();
   const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
+  const uiCtx = getUiContextWithPath();
+  const hasRepo = !!uiCtx.activeRepo;
+  const incognitoActive = cfg.IncognitoMode === true;
 
   if (!fs.existsSync(templatePath)) {
     console.warn('  [writePluginHints] template not found: INSTRUCTIONS.base.md');
@@ -2795,6 +2904,21 @@ function writePluginHints() {
         const orchEnd = content.indexOf(ORCH_END);
         if (orchStart !== -1 && orchEnd !== -1) {
           content = content.substring(0, orchStart) + content.substring(orchEnd + ORCH_END.length);
+        }
+      }
+      // Strip repo-specific context when in No Repo mode (handles multiple marker pairs)
+      if (!hasRepo) {
+        let rStart, rEnd;
+        while ((rStart = content.indexOf(REPO_START)) !== -1 && (rEnd = content.indexOf(REPO_END, rStart)) !== -1) {
+          content = content.substring(0, rStart) + content.substring(rEnd + REPO_END.length);
+        }
+      }
+      // Strip incognito section when NOT in incognito mode (include when active)
+      if (!incognitoActive) {
+        const iStart = content.indexOf(INCOGNITO_START);
+        const iEnd = content.indexOf(INCOGNITO_END);
+        if (iStart !== -1 && iEnd !== -1) {
+          content = content.substring(0, iStart) + content.substring(iEnd + INCOGNITO_END.length);
         }
       }
       // Inject plugin instructions
@@ -2824,10 +2948,68 @@ _learningsInstance.pull().then(r => {
   if (r.pulled > 0) { console.log(`  Pulled ${r.pulled} shared learning(s)`); writePluginHints(); }
 }).catch(() => {});
 
+// ── Mount browser agent ──────────────────────────────────────────────────────
+try {
+  const { mountBrowserRoutes } = require('./browser-agent');
+  mountBrowserRoutes(addRoute, json, { getConfig, repoRoot });
+  console.log('  Browser agent mounted (/api/browser/*)');
+} catch (e) {
+  console.log('  Browser agent skipped (playwright-core not installed)');
+}
+
 // ── Load plugins ─────────────────────────────────────────────────────────────
 loadedPlugins = loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints, swrCache: swrPlugins });
 if (loadedPlugins.length) console.log(`  Loaded ${loadedPlugins.length} plugin(s)`);
 writePluginHints();
+
+// ── AI Instructions endpoint ────────────────────────────────────────────────
+// Serves split instruction files from dashboard/instructions/ so CLAUDE.md stays small.
+// GET /api/instructions           - merged (all files concatenated)
+// GET /api/instructions/api-reference  - just the API reference
+(() => {
+  const instrDir = path.join(__dirname, 'instructions');
+  function readInstrFile(name) {
+    const p = path.join(instrDir, name + '.md');
+    if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+    return null;
+  }
+  // Merged: returns all instruction files concatenated (config-aware)
+  addRoute('GET', '/api/instructions', (req, res) => {
+    try {
+      const cfg = getConfig();
+      const orchestrationEnabled = cfg.OrchestrateMode === true;
+      // Order: behavioral rules first (survive compaction better), reference tables last
+      const priorityOrder = ['workflows.md', 'orchestrator.md', 'api-reference.md'];
+      const files = fs.readdirSync(instrDir).filter(f => {
+        if (!f.endsWith('.md')) return false;
+        if (f === 'orchestrator.md' && !orchestrationEnabled) return false;
+        return true;
+      }).sort((a, b) => {
+        const ai = priorityOrder.indexOf(a), bi = priorityOrder.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      });
+      const sections = files.map(f => fs.readFileSync(path.join(instrDir, f), 'utf8'));
+      res.writeHead(200, { 'Content-Type': 'text/markdown' });
+      res.end(sections.join('\n\n---\n\n'));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  });
+  // Individual: /api/instructions/{name} serves a single file
+  addRoute('__PREFIX__', '/api/instructions/', (req, res, url, subpath) => {
+    const name = (subpath || '').replace(/\.md$/i, '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!name) { json(res, { error: 'Missing instruction name' }, 400); return; }
+    const content = readInstrFile(name);
+    if (!content) { json(res, { error: `Instruction "${name}" not found` }, 404); return; }
+    res.writeHead(200, { 'Content-Type': 'text/markdown' });
+    res.end(content);
+  });
+  console.log('  AI Instructions endpoint mounted (/api/instructions/*)');
+})();
 
 // ── Start ───────────────────────────────────────────────────────────────────
 function startServer() {
