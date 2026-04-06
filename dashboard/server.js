@@ -108,55 +108,103 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/cli/install' && req.method === 'POST') return handleCliInstall(req, res);
 
     // ── Azure DevOps: Iterations ──────────────────────────────────────────
-    if (url.pathname === '/api/iterations' && req.method === 'GET') return handleIterations(res, url);
+    if (url.pathname === '/api/iterations' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read iterations')) return; return handleIterations(res, url);
+    }
 
     // ── Azure DevOps: Work Items ──────────────────────────────────────────
-    if (url.pathname === '/api/workitems' && req.method === 'GET') return handleWorkItems(url, res);
-    if (url.pathname === '/api/workitems/create' && req.method === 'POST') return handleCreateWorkItem(req, res);
+    if (url.pathname === '/api/workitems' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read work items')) return; return handleWorkItems(url, res);
+    }
+    if (url.pathname === '/api/workitems/create' && req.method === 'POST') {
+      if (incognitoGuard(res, 'create work item')) return; return handleCreateWorkItem(req, res);
+    }
 
     const wiMatch = url.pathname.match(/^\/api\/workitems\/(\d+)$/);
-    if (wiMatch && req.method === 'GET')   return handleWorkItemDetail(wiMatch[1], res);
-    if (wiMatch && req.method === 'PATCH') return handleUpdateWorkItem(wiMatch[1], req, res);
+    if (wiMatch && req.method === 'GET') {
+      if (incognitoGuard(res, 'read work item')) return; return handleWorkItemDetail(wiMatch[1], res);
+    }
+    if (wiMatch && req.method === 'PATCH') {
+      if (incognitoGuard(res, 'update work item')) return; return handleUpdateWorkItem(wiMatch[1], req, res);
+    }
 
     const wiStateMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/state$/);
-    if (wiStateMatch && req.method === 'PATCH') return handleWorkItemState(wiStateMatch[1], req, res);
+    if (wiStateMatch && req.method === 'PATCH') {
+      if (incognitoGuard(res, 'change work item state')) return; return handleWorkItemState(wiStateMatch[1], req, res);
+    }
 
     const wiCommentMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/comments$/);
-    if (wiCommentMatch && req.method === 'POST') return handleAddWorkItemComment(wiCommentMatch[1], req, res);
+    if (wiCommentMatch && req.method === 'POST') {
+      if (incognitoGuard(res, 'add work item comment')) return; return handleAddWorkItemComment(wiCommentMatch[1], req, res);
+    }
 
     // ── Azure DevOps: Velocity ────────────────────────────────────────────
-    if (url.pathname === '/api/velocity' && req.method === 'GET') return handleVelocity(res);
+    if (url.pathname === '/api/velocity' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read velocity')) return; return handleVelocity(res);
+    }
 
     // ── Azure DevOps: Teams & Members ─────────────────────────────────────
-    if (url.pathname === '/api/teams' && req.method === 'GET') return handleTeams(res);
-    if (url.pathname === '/api/team-members' && req.method === 'GET') return handleTeamMembers(res);
-    if (url.pathname === '/api/areas' && req.method === 'GET') return handleAreas(res);
+    if (url.pathname === '/api/teams' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read teams')) return; return handleTeams(res);
+    }
+    if (url.pathname === '/api/team-members' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read team members')) return; return handleTeamMembers(res);
+    }
+    if (url.pathname === '/api/areas' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read areas')) return; return handleAreas(res);
+    }
 
     // ── Azure DevOps: Burndown ────────────────────────────────────────────
-    if (url.pathname === '/api/burndown' && req.method === 'GET') return handleBurndown(url, res);
+    if (url.pathname === '/api/burndown' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read burndown')) return; return handleBurndown(url, res);
+    }
 
     // ── Repos ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/repos' && req.method === 'GET')  return handleGetRepos(res);
     if (url.pathname === '/api/repos' && req.method === 'POST') return handleSaveRepo(req, res);
 
     // ── Start Working ─────────────────────────────────────────────────────
-    if (url.pathname === '/api/start-working' && req.method === 'POST') return handleStartWorking(req, res);
+    if (url.pathname === '/api/start-working' && req.method === 'POST') {
+      if (incognitoGuard(res, 'start working on work item')) return; return handleStartWorking(req, res);
+    }
 
     // ── Pull Requests (ADO) ────────────────────────────────────────────────
-    if (url.pathname === '/api/pull-request' && req.method === 'POST') return handleCreatePullRequest(req, res);
+    if (url.pathname === '/api/pull-request' && req.method === 'POST') {
+      if (incognitoGuard(res, 'create pull request')) return; return handleCreatePullRequest(req, res);
+    }
 
     // ── GitHub Pull Requests ────────────────────────────────────────────────
-    if (url.pathname === '/api/github/repo-info' && req.method === 'GET')       return handleGitHubRepoInfo(url, res);
-    if (url.pathname === '/api/github/pulls' && req.method === 'GET')           return handleGitHubPulls(url, res);
-    if (url.pathname === '/api/github/pulls/detail' && req.method === 'GET')    return handleGitHubPullDetail(url, res);
-    if (url.pathname === '/api/github/pulls/files' && req.method === 'GET')     return handleGitHubPullFiles(url, res);
-    if (url.pathname === '/api/github/pulls/comments' && req.method === 'GET')  return handleGitHubPullComments(url, res);
-    if (url.pathname === '/api/github/pulls/timeline' && req.method === 'GET') return handleGitHubPullTimeline(url, res);
-    if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST')  return handleGitHubAddComment(req, res);
-    if (url.pathname === '/api/github/pulls/review' && req.method === 'POST')   return handleGitHubSubmitReview(req, res);
+    if (url.pathname === '/api/github/repo-info' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub repo info')) return; return handleGitHubRepoInfo(url, res);
+    }
+    if (url.pathname === '/api/github/pulls' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull requests')) return; return handleGitHubPulls(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/detail' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request detail')) return; return handleGitHubPullDetail(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/files' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request files')) return; return handleGitHubPullFiles(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/comments' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request comments')) return; return handleGitHubPullComments(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/timeline' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub pull request timeline')) return; return handleGitHubPullTimeline(url, res);
+    }
+    if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST') {
+      if (incognitoGuard(res, 'comment on pull request')) return; return handleGitHubAddComment(req, res);
+    }
+    if (url.pathname === '/api/github/pulls/review' && req.method === 'POST') {
+      if (incognitoGuard(res, 'submit pull request review')) return; return handleGitHubSubmitReview(req, res);
+    }
     if (url.pathname === '/api/github/image' && req.method === 'GET')          return handleGitHubImageProxy(url, res);
-    if (url.pathname === '/api/github/user-repos' && req.method === 'GET')    return handleGitHubUserRepos(url, res);
-    if (url.pathname === '/api/github/clone' && req.method === 'POST')        return handleGitHubClone(req, res);
+    if (url.pathname === '/api/github/user-repos' && req.method === 'GET') {
+      if (incognitoGuard(res, 'read GitHub repositories')) return; return handleGitHubUserRepos(url, res);
+    }
+    if (url.pathname === '/api/github/clone' && req.method === 'POST') {
+      if (incognitoGuard(res, 'clone GitHub repository')) return; return handleGitHubClone(req, res);
+    }
 
     // ── Notes ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
@@ -175,9 +223,15 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/git/log' && req.method === 'GET')       return handleGitLog(url, res);
     if (url.pathname === '/api/git/commit-diff' && req.method === 'GET') return handleCommitDiff(url, res);
     if (url.pathname === '/api/git/checkout' && req.method === 'POST')  return handleGitCheckout(req, res);
-    if (url.pathname === '/api/git/pull' && req.method === 'POST')      return handleGitPull(req, res);
-    if (url.pathname === '/api/git/push' && req.method === 'POST')      return handleGitPush(req, res);
-    if (url.pathname === '/api/git/fetch' && req.method === 'POST')     return handleGitFetch(req, res);
+    if (url.pathname === '/api/git/pull' && req.method === 'POST') {
+      if (incognitoGuard(res, 'git pull')) return; return handleGitPull(req, res);
+    }
+    if (url.pathname === '/api/git/push' && req.method === 'POST') {
+      if (incognitoGuard(res, 'git push')) return; return handleGitPush(req, res);
+    }
+    if (url.pathname === '/api/git/fetch' && req.method === 'POST') {
+      if (incognitoGuard(res, 'git fetch')) return; return handleGitFetch(req, res);
+    }
     if (url.pathname === '/api/git/discard' && req.method === 'POST')   return handleGitDiscard(req, res);
 
     // ── Split Diff ────────────────────────────────────────────────────────
@@ -241,6 +295,16 @@ function getConfig() {
   return {};
 }
 
+// ── Incognito Mode guard ─────────────────────────────────────────────────
+function isIncognito() { return getConfig().IncognitoMode === true; }
+function incognitoGuard(res, action) {
+  if (isIncognito()) {
+    json(res, { error: `Blocked by Incognito Mode: "${action}" is not available in incognito. All Azure DevOps, GitHub, and remote operations are disabled. Turn off incognito in Settings to proceed.`, incognito: true }, 403);
+    return true;
+  }
+  return false;
+}
+
 // ── Themes ────────────────────────────────────────────────────────────────
 const themesPath = path.join(repoRoot, 'config', 'themes.json');
 
@@ -282,11 +346,13 @@ async function handleSaveConfig(req, res) {
   iterationsCache = { data: null, ts: 0 };
   workItemsCache = { data: null, key: null, ts: 0 };
   swrIterations.clear(); swrWorkItems.clear(); swrTeamAreas.clear(); swrAreas.clear(); swrGit.clear(); swrGitHub.clear(); swrPlugins.clear();
+  // Regenerate AI instructions (incognito, orchestration, etc. may have changed)
+  try { writePluginHints(); } catch (_) {}
   json(res, { ok: true });
 }
 
 // Sensitive fields to strip from exports (PATs, API keys)
-const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WhisperKey'];
+const SENSITIVE_KEYS = ['AzureDevOpsPAT', 'GitHubPAT', 'WhisperKey', 'AiApiKeys'];
 
 function handleExportConfig(res) {
   const cfg = getConfig();
@@ -1874,6 +1940,12 @@ function handleFileGrep(url, res) {
   const MAX_MATCHES = 150;
   let fileCount = 0;
   const queryLower = query.toLowerCase();
+  const queryWords = queryLower.split(/\s+/).filter(Boolean);
+
+  function lineMatches(lineLower) {
+    if (queryWords.length <= 1) return lineLower.includes(queryLower);
+    return queryWords.every(w => lineLower.includes(w));
+  }
 
   function walk(dir, rel) {
     if (results.length >= MAX_MATCHES) return;
@@ -1898,7 +1970,7 @@ function handleFileGrep(url, res) {
           fileCount++;
           for (let i = 0; i < lines.length; i++) {
             if (results.length >= MAX_MATCHES) break;
-            if (lines[i].toLowerCase().includes(queryLower)) {
+            if (lineMatches(lines[i].toLowerCase())) {
               results.push({ path: childRel, name: e.name, line: i + 1, text: lines[i].substring(0, 200) });
             }
           }
@@ -2475,7 +2547,12 @@ function getUiContextWithPath() {
 
 async function handleUiContextUpdate(req, res) {
   const data = await readBody(req);
+  const prevRepo = _uiContext.activeRepo;
   Object.assign(_uiContext, data);
+  // Regenerate AI instructions when active repo changes (e.g. No Repo mode toggle)
+  if (data.activeRepo !== undefined && data.activeRepo !== prevRepo) {
+    try { writePluginHints(); } catch (_) {}
+  }
   json(res, { ok: true, context: getUiContextWithPath() });
 }
 
@@ -2776,8 +2853,15 @@ function writePluginHints() {
   const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
   const ORCH_START = '<!-- ORCHESTRATION_START -->';
   const ORCH_END = '<!-- ORCHESTRATION_END -->';
+  const REPO_START = '<!-- REPO_CONTEXT_START -->';
+  const REPO_END = '<!-- REPO_CONTEXT_END -->';
+  const INCOGNITO_START = '<!-- INCOGNITO_START -->';
+  const INCOGNITO_END = '<!-- INCOGNITO_END -->';
   const cfg = getConfig();
   const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
+  const uiCtx = getUiContextWithPath();
+  const hasRepo = !!uiCtx.activeRepo;
+  const incognitoActive = cfg.IncognitoMode === true;
 
   if (!fs.existsSync(templatePath)) {
     console.warn('  [writePluginHints] template not found: INSTRUCTIONS.base.md');
@@ -2795,6 +2879,21 @@ function writePluginHints() {
         const orchEnd = content.indexOf(ORCH_END);
         if (orchStart !== -1 && orchEnd !== -1) {
           content = content.substring(0, orchStart) + content.substring(orchEnd + ORCH_END.length);
+        }
+      }
+      // Strip repo-specific context when in No Repo mode (handles multiple marker pairs)
+      if (!hasRepo) {
+        let rStart, rEnd;
+        while ((rStart = content.indexOf(REPO_START)) !== -1 && (rEnd = content.indexOf(REPO_END, rStart)) !== -1) {
+          content = content.substring(0, rStart) + content.substring(rEnd + REPO_END.length);
+        }
+      }
+      // Strip incognito section when NOT in incognito mode (include when active)
+      if (!incognitoActive) {
+        const iStart = content.indexOf(INCOGNITO_START);
+        const iEnd = content.indexOf(INCOGNITO_END);
+        if (iStart !== -1 && iEnd !== -1) {
+          content = content.substring(0, iStart) + content.substring(iEnd + INCOGNITO_END.length);
         }
       }
       // Inject plugin instructions
@@ -2823,6 +2922,15 @@ console.log('  Learnings module mounted (/api/learnings/*)');
 _learningsInstance.pull().then(r => {
   if (r.pulled > 0) { console.log(`  Pulled ${r.pulled} shared learning(s)`); writePluginHints(); }
 }).catch(() => {});
+
+// ── Mount browser agent ──────────────────────────────────────────────────────
+try {
+  const { mountBrowserRoutes } = require('./browser-agent');
+  mountBrowserRoutes(addRoute, json, { getConfig, repoRoot });
+  console.log('  Browser agent mounted (/api/browser/*)');
+} catch (e) {
+  console.log('  Browser agent skipped (playwright-core not installed)');
+}
 
 // ── Load plugins ─────────────────────────────────────────────────────────────
 loadedPlugins = loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints, swrCache: swrPlugins });

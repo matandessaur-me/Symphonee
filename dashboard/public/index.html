@@ -426,7 +426,25 @@
     /* ── Tab panels ───────────────────────────────────────────────────────── */
     .tab-panel { display: none; width: 100%; height: 100%; overflow: hidden; position: relative; }
     .tab-panel.active { display: flex; flex-direction: column; }
-    .tab-panel#panel-terminal.active { display: flex; flex-direction: column; }
+    .tab-panel#panel-terminal.active { display: flex; flex-direction: column; position: relative; }
+
+    /* ── Incognito mode ────────────────────────────────────────────────── */
+    /* Hide all external-connected UI */
+    body.incognito-active #sidebarAdoFixed { display: none !important; }
+    body.incognito-active #sidebarAdoActions { display: none !important; }
+    body.incognito-active #sidebarGitActions { display: none !important; }
+    body.incognito-active #sidebarPluginAiActions { display: none !important; }
+    body.incognito-active #sidebarPluginSections { display: none !important; }
+    body.incognito-active [data-tab="backlog"] { display: none !important; }
+    body.incognito-active [data-tab="workitem"] { display: none !important; }
+    body.incognito-active [data-tab="activity"] { display: none !important; }
+    body.incognito-active [data-tab="prs"] { display: none !important; }
+    /* Right panel: hide all intel tabs and content, show incognito message */
+    body.incognito-active .intel .intel-tabs { display: none !important; }
+    body.incognito-active .intel .intel-panel { display: none !important; }
+    body.incognito-active .intel #incognitoIntelMsg { display: flex !important; }
+    /* Plugin tabs with external connections: hidden via JS (incognitoAware flag) */
+    body.incognito-active .plugin-tab-incognito { display: none !important; }
 
     /* ── Orchestration mode badge ────────────────────────────────────────── */
     .orch-mode-badge {
@@ -678,17 +696,6 @@
     .orch-dispatch-label { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
     .orch-dispatch-sub { font-size: 10px; color: var(--subtext0); margin-left: auto; white-space: nowrap; }
     #terminal { width: 100%; height: 100%; padding: 8px 12px 8px 12px; box-sizing: border-box; overflow: hidden; position: relative; }
-    .scroll-bottom-btn {
-      display: none; position: absolute; bottom: 16px; right: 20px; z-index: 10;
-      width: 32px; height: 32px; border-radius: 50%;
-      background: var(--surface0); border: 1px solid var(--surface1);
-      color: var(--subtext0); cursor: pointer;
-      align-items: center; justify-content: center;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: all 0.15s;
-    }
-    .scroll-bottom-btn:hover { background: var(--surface1); color: var(--text); }
-    .scroll-bottom-btn.visible { display: flex; }
-    .scroll-bottom-btn svg { width: 16px; height: 16px; }
 
     /* ── Board (Kanban) ───────────────────────────────────────────────────── */
     .board {
@@ -1054,11 +1061,11 @@
     .files-git-status.clean { color: var(--green); }
     .files-git-status.dirty { color: var(--yellow); }
     .script-btn {
-      padding: 3px 8px; border-radius: var(--radius); border: 1px solid var(--surface1);
-      background: var(--surface0); color: var(--subtext1); font: 10px var(--font-mono);
-      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+      padding: 6px 12px; border-radius: var(--radius); border: 1px solid var(--surface1);
+      background: var(--surface0); color: var(--subtext1); font: 12px/1 var(--font-ui);
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
     }
-    .script-btn:hover { border-color: var(--accent); color: var(--text); }
+    .script-btn:hover { border-color: var(--accent); color: var(--text); background: var(--surface1); }
     .script-btn.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
     .script-btn.primary:hover { filter: brightness(1.1); }
     .script-btn.install { background: var(--yellow); color: var(--crust); border-color: transparent; font-weight: 600; }
@@ -2115,6 +2122,10 @@
     <kbd>Ctrl+K</kbd>
   </div>
   <div class="header-right">
+    <div id="incognitoIndicator" style="display:none;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--accent);color:var(--accent);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:4px;">
+      <i data-lucide="shield" style="width:13px;height:13px;"></i>
+      <span>INCOGNITO</span>
+    </div>
     <div class="status-dot" id="statusDot"></div>
     <span id="connectionStatus">Connecting...</span>
     <button onclick="restartApp()" title="Restart App" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="rotate-cw" style="width:14px;height:14px;"></i></button>
@@ -2250,9 +2261,9 @@
       <div class="term-containers" id="termContainers">
         <div class="term-instance active" id="term-main"></div>
       </div>
-      <button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="getActiveTerm()?.scrollToBottom()" title="Scroll to bottom">
-        <i data-lucide="chevron-down"></i>
-      </button>
+      <div id="termScriptsBar" style="display:none;position:absolute;bottom:12px;right:16px;z-index:10;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;" id="termScriptBtns"></div>
+      </div>
     </div>
 
     <!-- Board -->
@@ -2616,6 +2627,13 @@
 
   <!-- ─── Intelligence Panel ──────────────────────────────────────────── -->
   <aside class="intel">
+    <!-- Incognito mode: shown instead of intel tabs/panels -->
+    <div id="incognitoIntelMsg" style="display:none;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px 20px;text-align:center;">
+      <i data-lucide="shield" style="width:48px;height:48px;color:var(--accent);opacity:0.5;"></i>
+      <div style="font-size:15px;font-weight:700;letter-spacing:2px;color:var(--accent);opacity:0.6;">INCOGNITO</div>
+      <div style="font-size:12px;color:var(--subtext0);line-height:1.5;max-width:280px;">All external connections are disabled. Working locally only. No data is sent to or received from Azure DevOps, GitHub, or any external service.</div>
+      <div style="font-size:11px;color:var(--subtext1);margin-top:12px;">Disable in Settings to reconnect.</div>
+    </div>
     <div class="intel-tabs">
       <button class="intel-tab active" data-itab="activity" onclick="switchIntelTab('activity')">Activity</button>
       <button class="intel-tab" data-itab="team" onclick="switchIntelTab('team')">Team</button>
@@ -2786,6 +2804,74 @@
 
                 <option value="grok">Grok Code</option>
               </select>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">API Keys</div>
+            <div class="settings-section-desc">Optional API keys unlock additional models. Without these, CLIs use your subscription login. With a key, the CLI uses API billing instead and all models become available.</div>
+            <div class="modal-field" style="margin-bottom:6px;">
+              <label>OpenAI API Key <span style="font-size:10px;color:var(--subtext0);">(unlocks o3, o4-mini, gpt-4.1 in Codex)</span></label>
+              <div style="display:flex;gap:0;"><input id="settingsOpenaiKey" type="password" placeholder="sk-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsOpenaiKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+            </div>
+            <div class="modal-field" style="margin-bottom:6px;">
+              <label>Gemini API Key <span style="font-size:10px;color:var(--subtext0);">(pay-as-you-go, overrides free tier limits)</span></label>
+              <div style="display:flex;gap:0;"><input id="settingsGeminiKey" type="password" placeholder="AIza..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsGeminiKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+            </div>
+            <div class="modal-field" style="margin-bottom:6px;">
+              <label>Anthropic API Key <span style="font-size:10px;color:var(--subtext0);">(pay-as-you-go for Claude)</span></label>
+              <div style="display:flex;gap:0;"><input id="settingsAnthropicKey" type="password" placeholder="sk-ant-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsAnthropicKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+            </div>
+            <div class="modal-field">
+              <label>xAI API Key <span style="font-size:10px;color:var(--subtext0);">(required for Grok CLI)</span></label>
+              <div style="display:flex;gap:0;"><input id="settingsXaiKey" type="password" placeholder="xai-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsXaiKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title" style="display:flex;align-items:center;gap:8px;">YOLO Mode (Auto-Approve Permissions) <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--red, #e64553);color:#fff;letter-spacing:0.5px;">DANGEROUS</span></div>
+            <div class="settings-section-desc">Select which CLIs should launch with full auto-approve flags. The AI will never ask for permission during execution.</div>
+            <div style="margin:8px 0;padding:10px 12px;background:color-mix(in srgb, var(--red, #e64553) 8%, var(--surface0));border:1px solid color-mix(in srgb, var(--red, #e64553) 25%, transparent);border-radius:var(--radius);font-size:11px;color:var(--subtext0);line-height:1.8;">
+              <span style="color:var(--red, #e64553);font-weight:600;">Use at your own risk.</span> These flags bypass all safety prompts. The AI can execute any command, modify any file, and make irreversible changes without confirmation.
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" class="yolo-cli-cb" value="claude" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
+                <span style="font-size:12px;color:var(--text);flex:1;">Claude Code</span>
+                <code style="font-size:10px;color:var(--subtext0);">--dangerously-skip-permissions</code>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" class="yolo-cli-cb" value="gemini" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
+                <span style="font-size:12px;color:var(--text);flex:1;">Gemini CLI</span>
+                <code style="font-size:10px;color:var(--subtext0);">--yolo</code>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" class="yolo-cli-cb" value="codex" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
+                <span style="font-size:12px;color:var(--text);flex:1;">Codex CLI</span>
+                <code style="font-size:10px;color:var(--subtext0);">--full-auto</code>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" class="yolo-cli-cb" value="copilot" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
+                <span style="font-size:12px;color:var(--text);flex:1;">Copilot CLI</span>
+                <code style="font-size:10px;color:var(--subtext0);">--yolo</code>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" class="yolo-cli-cb" value="grok" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
+                <span style="font-size:12px;color:var(--text);flex:1;">Grok CLI</span>
+                <code style="font-size:10px;color:var(--subtext0);">--permission-mode full</code>
+              </label>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Browser Automation</div>
+            <div class="settings-section-desc">AI-controlled browser sessions for account creation and authentication. Requires <code>playwright-core</code> to be installed. Uses the system Edge browser.</div>
+            <div id="settingsBrowserCreds">
+              <div style="font-size:11px;color:var(--subtext0);margin-bottom:6px;">Saved credentials (AI-owned accounts):</div>
+              <div id="browserCredList" style="margin-bottom:8px;"></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <input id="browserCredName" type="text" placeholder="Account name" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
+              <input id="browserCredEmail" type="email" placeholder="Email" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
+              <input id="browserCredPass" type="password" placeholder="Password" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
+              <button class="modal-btn" onclick="addBrowserCredential()" style="padding:6px 12px;font-size:11px;white-space:nowrap;">Add</button>
             </div>
           </div>
         </div>
@@ -2970,6 +3056,24 @@
                   <input type="checkbox" class="orch-cli-cb" value="grok" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer;"> Grok
                 </label>
               </div>
+              <div style="margin-top:10px;">
+                <div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">Result delivery mode:</div>
+                <select id="settingsOrchDelivery" style="padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none;">
+                  <option value="inject">Terminal injection (non-blocking, recommended)</option>
+                  <option value="inbox">Inbox only (AI must poll)</option>
+                  <option value="both">Both (terminal + inbox)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Incognito Mode</div>
+            <div class="settings-section-desc">When enabled, all connections to Azure DevOps and GitHub are blocked: no reading or writing work items, no PRs, no push/pull/fetch. Only local operations (commits, checkouts, local git history, file editing) remain available. Requires a restart to update AI instructions.</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="settingsIncognitoMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
+                <span style="font-size:12px;color:var(--text);">Enable incognito mode</span>
+              </label>
             </div>
           </div>
           <div class="settings-section">
@@ -3310,15 +3414,6 @@ function createTermInstance(termId, label) {
   // Input
   term.onData(data => {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data }));
-  });
-
-  // Scroll button
-  term.onScroll(() => {
-    if (activeTermId === termId) {
-      const btn = document.getElementById('scrollBottomBtn');
-      const isAtBottom = term.buffer.active.viewportY >= term.buffer.active.baseY;
-      btn.classList.toggle('visible', !isAtBottom);
-    }
   });
 
   // Right-click
@@ -3921,7 +4016,11 @@ async function runFilesSearch(query) {
           <span style="margin-left:auto;color:var(--subtext0);font-weight:400;">${matches.length}</span>
         </div>`;
         for (const m of matches.slice(0, 5)) {
-          const highlighted = esc(m.text.trimStart()).replace(new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), match => `<mark>${match}</mark>`);
+          const qWords = query.trim().split(/\s+/).filter(Boolean);
+          const highlightPattern = qWords.length > 1
+            ? qWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+            : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const highlighted = esc(m.text.trimStart()).replace(new RegExp(highlightPattern, 'gi'), match => `<mark>${match}</mark>`);
           html += `<div class="search-result" onclick="viewFile('${esc(filePath)}', ${m.line}, '${qEscaped}')">
             <span class="search-result-line">L${m.line}</span>
             <div class="search-result-text">${highlighted}</div>
@@ -4969,6 +5068,38 @@ function runNpmScript(script, repoName) {
       sendCommand(`cd "${repoPath}"; npm run ${script}`, termId);
     }
   }, 500);
+}
+
+// ── Terminal Panel npm Script Shortcuts ──────────────────────────────────
+async function loadTerminalScripts() {
+  const repo = activeRepo || filesCurrentRepo;
+  const bar = document.getElementById('termScriptsBar');
+  const btns = document.getElementById('termScriptBtns');
+  if (!bar || !btns) return;
+
+  if (!repo) { bar.style.display = 'none'; return; }
+
+  try {
+    const res = await fetch(`/api/project/scripts?repo=${encodeURIComponent(repo)}`);
+    const data = await res.json();
+    if (data.error || !data.scripts) { bar.style.display = 'none'; return; }
+
+    const scripts = data.scripts;
+    let html = '';
+    const priority = ['dev', 'start', 'build', 'test', 'lint', 'preview'];
+
+    for (const key of priority) {
+      if (scripts[key]) {
+        const isPrimary = key === 'dev' || key === 'start';
+        html += `<button class="script-btn ${isPrimary ? 'primary' : ''}" onclick="runNpmScript('${esc(key)}', '${esc(repo)}')">${key}</button>`;
+      }
+    }
+
+    btns.innerHTML = html;
+    bar.style.display = html ? '' : 'none';
+  } catch (_) {
+    bar.style.display = 'none';
+  }
 }
 
 // ── Syntax Highlighting Language Map ─────────────────────────────────────
@@ -6176,9 +6307,11 @@ async function orchShowDispatchDialog() {
     activeRepo = ctxData.activeRepo || '';
   } catch (_) {}
 
-  const repoOptions = Object.entries(repos).map(([name, repoPath]) =>
-    '<option value="' + name + '"' + (name === activeRepo ? ' selected' : '') + '>' + name + '</option>'
-  ).join('');
+  const noRepoSelected = !activeRepo;
+  const repoOptions = '<option value=""' + (noRepoSelected ? ' selected' : '') + '>No Repo</option>' +
+    Object.entries(repos).map(([name, repoPath]) =>
+      '<option value="' + name + '"' + (name === activeRepo ? ' selected' : '') + '>' + name + '</option>'
+    ).join('');
 
   // Build agent option cards (running agents + spawn options)
   let agentCards = '';
@@ -6512,13 +6645,28 @@ function toggleAi() {
 
 let _shellReadyResolve = null;
 
+// YOLO mode flags per CLI (auto-approve all permissions)
+const YOLO_FLAGS = {
+  claude:  '--dangerously-skip-permissions',
+  gemini:  '--yolo',
+  codex:   '--full-auto',
+  copilot: '--yolo',
+  grok:    '--permission-mode full',
+};
+
 function launchAiWith(cli) {
   document.getElementById('aiPickerMenu')?.classList.remove('open');
   const cfg = CLI_CONFIG[cli];
   const termId = activeTermId;
 
   function doLaunch() {
-    sendCommand(cfg.cmd, termId);
+    let cmd = cfg.cmd;
+    // Append YOLO flags if enabled per-CLI in settings
+    const yoloList = configData.YoloCliList || [];
+    if (yoloList.includes(cli) && YOLO_FLAGS[cli]) {
+      cmd += ' ' + YOLO_FLAGS[cli];
+    }
+    sendCommand(cmd, termId);
     const st = getTermAi(termId);
     st.cli = cli;
     st.launched = true;
@@ -6726,7 +6874,7 @@ function switchTab(tab, preserveSearch) {
   // Scroll active tab into view if overflowed
   var activeBtn = document.querySelector('.tab-btn[data-tab="' + tab + '"]');
   if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-  if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); }
+  if (tab === 'terminal') { requestAnimationFrame(fitTerminalNow); const t = getActiveTerm(); if (t) t.focus(); loadTerminalScripts(); }
   if (tab === 'backlog') {
     if (!preserveSearch) { const s = document.getElementById('backlogSearch'); if (s) s.value = ''; }
     applyBacklogFilters();
@@ -6844,11 +6992,22 @@ async function loadConfig(autoSelectSprint) {
     // Show/hide tabs based on configured PATs
     const hasAdo = !!(configData.AzureDevOpsOrg && configData.AzureDevOpsProject && configData.AzureDevOpsPAT);
     const hasGh = !!configData.GitHubPAT;
-    document.getElementById('backlogTabBtn').style.display = hasAdo ? '' : 'none';
-    document.getElementById('sidebarAdoFixed').style.display = hasAdo ? '' : 'none';
-    document.getElementById('sidebarAdoActions').style.display = hasAdo ? '' : 'none';
-    document.getElementById('prsTabBtn').style.display = hasGh ? '' : 'none';
+    const isIncognito = configData.IncognitoMode === true;
+    // Incognito overrides everything: hide all external-connected UI
+    document.getElementById('backlogTabBtn').style.display = (hasAdo && !isIncognito) ? '' : 'none';
+    document.getElementById('sidebarAdoFixed').style.display = (hasAdo && !isIncognito) ? '' : 'none';
+    document.getElementById('sidebarAdoActions').style.display = (hasAdo && !isIncognito) ? '' : 'none';
+    document.getElementById('prsTabBtn').style.display = (hasGh && !isIncognito) ? '' : 'none';
     document.getElementById('orchestratorTabBtn').style.display = configData.OrchestrateMode === true ? '' : 'none';
+    const incogEl = document.getElementById('incognitoIndicator');
+    if (incogEl) { incogEl.style.display = isIncognito ? 'flex' : 'none'; }
+    document.body.classList.toggle('incognito-active', isIncognito);
+    // If incognito is on and we're currently on a hidden tab, switch to terminal
+    if (isIncognito) {
+      const activeTab = document.querySelector('.tab-btn.active');
+      const hiddenTabs = ['backlog', 'workitem', 'activity', 'prs'];
+      if (activeTab && hiddenTabs.includes(activeTab.dataset.tab)) switchTab('terminal');
+    }
     if (hasAdo) {
       loadTeams();
       loadAreas();
@@ -8167,9 +8326,13 @@ async function loadRepoList() {
     // Auto-select saved repo on first load
     if (activeRepo) filesCurrentRepo = activeRepo;
 
-    container.innerHTML = Object.entries(repos).map(([name, path]) => {
+    const noRepoActive = !activeRepo;
+    const noRepoItem = `<div class="repo-sidebar-item ${noRepoActive ? 'active' : ''}" onclick="selectRepo('')" title="No repository context">
+      <div class="repo-sidebar-name"><i data-lucide="circle-off"></i> No Repo</div>
+    </div>`;
+    container.innerHTML = noRepoItem + Object.entries(repos).map(([name, rpath]) => {
       const isActive = name === activeRepo;
-      return `<div class="repo-sidebar-item ${isActive ? 'active' : ''}" onclick="selectRepo('${esc(name)}')" title="${esc(path)}">
+      return `<div class="repo-sidebar-item ${isActive ? 'active' : ''}" onclick="selectRepo('${esc(name)}')" title="${esc(rpath)}">
         <div class="repo-sidebar-name"><i data-lucide="git-branch"></i> ${esc(name)}</div>
         ${isActive ? `<div class="repo-sidebar-branch" id="repoSidebarBranch">...</div>` : ''}
       </div>`;
@@ -8185,8 +8348,13 @@ async function loadRepoList() {
       fetchAndPullOnStartup(activeRepo);
       loadGitStatusForDiffTab(activeRepo);
     }
+    // Hide git actions when no repo selected
+    const gitActions = document.getElementById('sidebarGitActions');
+    if (gitActions) gitActions.style.display = activeRepo ? '' : 'none';
+
     // Always push context after repo list loads (covers page-load restore from localStorage)
     pushUiContext();
+    loadTerminalScripts();
   } catch (_) {}
 }
 
@@ -8255,23 +8423,41 @@ startGitStatusPolling();
 function selectRepo(name) {
   activeRepo = name;
   filesCurrentRepo = name;
-  localStorage.setItem('devops-pilot-repo', name);
+
+  // No Repo mode: hide git actions, clear repo-dependent UI
+  const gitActions = document.getElementById('sidebarGitActions');
+  if (!name) {
+    localStorage.removeItem('devops-pilot-repo');
+    if (gitActions) gitActions.style.display = 'none';
+    const scriptsBar = document.getElementById('filesScriptsBar');
+    if (scriptsBar) scriptsBar.style.display = 'none';
+    const termBar = document.getElementById('termScriptsBar');
+    if (termBar) termBar.style.display = 'none';
+  } else {
+    localStorage.setItem('devops-pilot-repo', name);
+    if (gitActions) gitActions.style.display = '';
+  }
+
   loadRepoList();
+
   // Sync files tab repo selector
   const select = document.getElementById('filesRepoSelect');
   if (select) select.value = name;
-  // Load file tree if on files tab
-  loadFileTree('');
-  // Load git log in right panel
-  loadGitLogPanel();
-  // Load project scripts
-  loadProjectScripts();
+
+  if (name) {
+    loadFileTree('');
+    loadGitLogPanel();
+    loadProjectScripts();
+  }
+  loadTerminalScripts();
+
   // Sync PR tab repo selector and reload PRs if on that tab
   const prSelect = document.getElementById('prsRepoSelect');
   if (prSelect) { prSelect.value = name; prsCurrentRepo = name; }
-  if (document.getElementById('panel-prs')?.classList.contains('active')) { loadPRs(); }
+  if (name && document.getElementById('panel-prs')?.classList.contains('active')) { loadPRs(); }
+
   pushUiContext();
-  notifyPluginIframes('repoChanged', { repo: name });
+  notifyPluginIframes('repoChanged', { repo: name || null });
 }
 
 // ── Create Work Item Modal ──────────────────────────────────────────────
@@ -8469,6 +8655,18 @@ function openSettings(tab) {
   document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
+  document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
+  document.getElementById('settingsOrchDelivery').value = configData.OrchestrateResultDelivery || 'inject';
+  // YOLO per-CLI checkboxes
+  const yoloList = configData.YoloCliList || [];
+  document.querySelectorAll('.yolo-cli-cb').forEach(function(cb) { cb.checked = yoloList.includes(cb.value); });
+  // AI API keys
+  const aiKeys = configData.AiApiKeys || {};
+  document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
+  document.getElementById('settingsGeminiKey').value = aiKeys.GEMINI_API_KEY || '';
+  document.getElementById('settingsAnthropicKey').value = aiKeys.ANTHROPIC_API_KEY || '';
+  document.getElementById('settingsXaiKey').value = aiKeys.XAI_API_KEY || '';
+  renderBrowserCreds();
   // Populate orchestrator CLI checkboxes
   var orchList = Array.isArray(configData.OrchestrateCliList) ? configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok'];
   document.querySelectorAll('.orch-cli-cb').forEach(function(cb) { cb.checked = orchList.includes(cb.value); });
@@ -8729,7 +8927,8 @@ function checkSettingsNeedRestart() {
   const btn = document.getElementById('settingsSaveBtn');
   if (!btn) return;
   const orchChanged = document.getElementById('settingsOrchestrateMode').checked !== (configData.OrchestrateMode === true);
-  const needsRestart = orchChanged;
+  const incogChanged = document.getElementById('settingsIncognitoMode').checked !== (configData.IncognitoMode === true);
+  const needsRestart = orchChanged || incogChanged;
   btn.textContent = needsRestart ? 'Save & Restart' : 'Save';
   btn._needsRestart = needsRestart;
 }
@@ -8747,6 +8946,16 @@ async function saveSettings() {
     WhisperKey: document.getElementById('settingsWispr').value.trim(),
     OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
     OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
+    IncognitoMode: document.getElementById('settingsIncognitoMode').checked,
+    YoloCliList: Array.from(document.querySelectorAll('.yolo-cli-cb:checked')).map(function(cb) { return cb.value; }),
+    AiApiKeys: {
+      OPENAI_API_KEY: document.getElementById('settingsOpenaiKey').value.trim() || undefined,
+      GEMINI_API_KEY: document.getElementById('settingsGeminiKey').value.trim() || undefined,
+      ANTHROPIC_API_KEY: document.getElementById('settingsAnthropicKey').value.trim() || undefined,
+      XAI_API_KEY: document.getElementById('settingsXaiKey').value.trim() || undefined,
+    },
+    OrchestrateResultDelivery: document.getElementById('settingsOrchDelivery').value,
+    BrowserCredentials: configData.BrowserCredentials || {},
     DefaultCli: defaultCli,
     Repos: configData.Repos || {},
   };
@@ -10605,7 +10814,10 @@ function injectCenterTab(plugin, tab) {
   var tabId = 'plugin-' + plugin.id + '-' + tab.id;
 
   var btn = document.createElement('button');
-  btn.className = 'tab-btn closable';
+  // Plugins that interact with external services are hidden in incognito mode
+  // Plugin manifests can set incognitoSafe: true to stay visible
+  var hideInIncognito = !plugin.incognitoSafe;
+  btn.className = 'tab-btn closable' + (hideInIncognito ? ' plugin-tab-incognito' : '');
   btn.dataset.tab = tabId;
   btn.dataset.pluginId = plugin.id;
   btn.title = tab.label;
@@ -10740,8 +10952,11 @@ function toggleOpenTabMenu() {
   menu.classList.toggle('open', !isOpen);
   if (!isOpen) {
     menu.innerHTML = '';
+    var isIncog = document.body.classList.contains('incognito-active');
     for (var i = 0; i < pluginTabRegistry.length; i++) {
       (function(entry) {
+        // Hide non-incognito-safe plugins in incognito mode
+        if (isIncog && !entry.plugin.incognitoSafe) return;
         var open = isPluginTabOpen(entry.tabId);
         var item = document.createElement('button');
         item.className = 'tab-open-item';
@@ -11022,6 +11237,40 @@ function toggleSecretField(fieldId, btn) {
   var el = document.getElementById(fieldId);
   if (el.type === 'password') { el.type = 'text'; btn.style.color = 'var(--accent)'; }
   else { el.type = 'password'; btn.style.color = 'var(--subtext0)'; }
+}
+
+// ── Browser Credential Management ───────────────────────────────────────
+function renderBrowserCreds() {
+  const creds = configData.BrowserCredentials || {};
+  const list = document.getElementById('browserCredList');
+  if (!list) return;
+  const entries = Object.entries(creds);
+  if (!entries.length) { list.innerHTML = '<div style="font-size:11px;color:var(--subtext1);padding:4px 0;">No credentials saved.</div>'; return; }
+  list.innerHTML = entries.map(([name, data]) =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--surface0);">
+      <span style="font-size:12px;color:var(--text);flex:1;">${esc(name)}</span>
+      <span style="font-size:11px;color:var(--subtext0);flex:1;">${esc(data.email || '')}</span>
+      <button class="modal-btn" onclick="removeBrowserCredential('${esc(name)}')" style="padding:2px 8px;font-size:10px;color:var(--red);">Remove</button>
+    </div>`
+  ).join('');
+}
+
+function addBrowserCredential() {
+  const name = document.getElementById('browserCredName').value.trim();
+  const email = document.getElementById('browserCredEmail').value.trim();
+  const pass = document.getElementById('browserCredPass').value;
+  if (!name || !email || !pass) { toast('All fields required', 'error'); return; }
+  if (!configData.BrowserCredentials) configData.BrowserCredentials = {};
+  configData.BrowserCredentials[name] = { email, password: pass };
+  document.getElementById('browserCredName').value = '';
+  document.getElementById('browserCredEmail').value = '';
+  document.getElementById('browserCredPass').value = '';
+  renderBrowserCreds();
+}
+
+function removeBrowserCredential(name) {
+  if (configData.BrowserCredentials) delete configData.BrowserCredentials[name];
+  renderBrowserCreds();
 }
 
 var _registryPlugins = [];
