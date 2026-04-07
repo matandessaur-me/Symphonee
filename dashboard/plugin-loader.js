@@ -202,12 +202,14 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
       if (!manifest.id || !manifest.name) { json(res, { error: 'plugin.json missing id or name' }, 400); return; }
 
       const destDir = path.join(pluginsDir, manifest.id);
-      if (fs.existsSync(destDir)) { json(res, { error: 'Plugin "' + manifest.id + '" already installed' }, 409); return; }
+      const isUpdate = fs.existsSync(destDir);
+      if (isUpdate) fs.rmSync(destDir, { recursive: true, force: true });
 
       // Copy the folder recursively
       copyDirSync(sourcePath, destDir);
       if (writePluginHints) writePluginHints();
-      json(res, { ok: true, id: manifest.id, name: manifest.name, message: 'Installed. Restart app to activate.' });
+      const verb = isUpdate ? 'Updated' : 'Installed';
+      json(res, { ok: true, id: manifest.id, name: manifest.name, updated: isUpdate, message: verb + '. Restart app to activate.' });
     } catch (e) { json(res, { error: e.message }, 500); }
   });
 

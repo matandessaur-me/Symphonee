@@ -925,13 +925,17 @@ async function fetchWorkItemsData(iterationPath, state, type, assignedTo, areaPa
 
     let closedPromise = null;
     if (fetchClosedSeparately) {
-      // Fetch all closed IDs (lightweight -- just IDs, no details) to get total count
+      // Fetch closed IDs with a cap -- only need closedTop items + 1 to know if there are more
       let closedQuery = `SELECT [System.Id] FROM WorkItems WHERE [System.State] IN ('Closed', 'Done') AND [System.State] NOT IN ('Removed')`;
       closedQuery += areaClause;
       if (type)       closedQuery += ` AND [System.WorkItemType] = '${type}'`;
       if (assignedTo) closedQuery += ` AND [System.AssignedTo] = '${assignedTo}'`;
       closedQuery += ` ORDER BY [System.ChangedDate] DESC`;
-      closedPromise = adoRequest('POST', '/wit/wiql?api-version=7.1', { query: closedQuery });
+      // Cap the WIQL query to avoid fetching 20k+ IDs on large projects.
+      // Use max(closedTop, 200) + 1 so we get a useful count for the "X of Y" label
+      // while still knowing if there are more beyond the cap.
+      const closedCap = Math.max(closedTop, 200) + 1;
+      closedPromise = adoRequest('POST', `/wit/wiql?$top=${closedCap}&api-version=7.1`, { query: closedQuery });
     }
 
     const [wiql, closedWiql] = await Promise.all([mainPromise, closedPromise]);
@@ -940,18 +944,22 @@ async function fetchWorkItemsData(iterationPath, state, type, assignedTo, areaPa
     let closedIds = [];
     let hasMoreClosed = false;
     let totalClosed = 0;
+    let totalClosedCapped = false;
 
     if (closedWiql) {
-      const allClosedIds = (closedWiql.workItems || []).map(w => w.id);
-      totalClosed = allClosedIds.length;
-      hasMoreClosed = totalClosed > closedTop;
-      closedIds = allClosedIds.slice(0, closedTop);
+      const returnedClosedIds = (closedWiql.workItems || []).map(w => w.id);
+      const closedCap = Math.max(closedTop, 200);
+      // If ADO returned more than closedCap, the true total is unknown (capped)
+      totalClosedCapped = returnedClosedIds.length > closedCap;
+      hasMoreClosed = returnedClosedIds.length > closedTop;
+      closedIds = returnedClosedIds.slice(0, closedTop);
+      totalClosed = totalClosedCapped ? closedCap : returnedClosedIds.length;
     }
 
     const allIds = [...new Set([...mainIds, ...closedIds])];
 
     if (allIds.length === 0) {
-      const emptyResult = fetchClosedSeparately ? { items: [], hasMoreClosed: false, totalClosed: 0 } : [];
+      const emptyResult = fetchClosedSeparately ? { items: [], hasMoreClosed: false, totalClosed: 0, totalClosedCapped: false } : [];
       workItemsCache = { data: emptyResult, key: cacheKey, ts: Date.now() };
       return json(res, emptyResult);
     }
@@ -987,7 +995,7 @@ async function fetchWorkItemsData(iterationPath, state, type, assignedTo, areaPa
 
     // When excluding closed (no iteration/state filter), return wrapped format with pagination info
     // Otherwise return flat array for backward compat with scripts
-    const result = fetchClosedSeparately ? { items, hasMoreClosed, totalClosed } : items;
+    const result = fetchClosedSeparately ? { items, hasMoreClosed, totalClosed, totalClosedCapped } : items;
     workItemsCache = { data: result, key: cacheKey, ts: Date.now() };
     return result;
 }
@@ -1212,7 +1220,7 @@ async function handleVelocity(res) {
     const velocity = [];
     for (const it of pastIterations) {
       // Get completed items in this iteration
-      const wiql = await adoRequest('POST', '/wit/wiql?api-version=7.1', {
+      const wiql = await adoRequest('POST', '/wit/wiql?$top=200&api-version=7.1', {
         query: `SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] = '${it.path}' AND [System.State] IN ('Closed', 'Resolved', 'Done') ORDER BY [System.Id]`,
       });
       const ids = (wiql.workItems || []).map(w => w.id).slice(0, 200);
@@ -1265,7 +1273,7 @@ async function handleBurndown(url, res) {
     const finishDate = new Date(iteration.attributes?.finishDate);
 
     // Get all items in this iteration with points
-    const wiql = await adoRequest('POST', '/wit/wiql?api-version=7.1', {
+    const wiql = await adoRequest('POST', '/wit/wiql?$top=200&api-version=7.1', {
       query: `SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] = '${iterationPath}' AND [System.State] NOT IN ('Removed') ORDER BY [System.Id]`,
     });
     const ids = (wiql.workItems || []).map(w => w.id).slice(0, 200);

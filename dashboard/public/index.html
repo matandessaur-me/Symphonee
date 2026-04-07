@@ -3344,6 +3344,7 @@ let ws = null;
 let workItems = [];
 let hasMoreClosed = false;
 let totalClosedCount = 0;
+let totalClosedCapped = false;
 let closedItemsLimit = 10;
 let _activeWiCacheKey = '';
 let currentWiDetail = null;
@@ -3781,6 +3782,7 @@ function handleCacheUpdated(cacheName, data, key) {
       workItems = data.items;
       hasMoreClosed = data.hasMoreClosed || false;
       totalClosedCount = data.totalClosed || 0;
+      totalClosedCapped = data.totalClosedCapped || false;
     }
     renderBoard();
     renderBacklog();
@@ -7104,10 +7106,12 @@ async function loadWorkItems(refresh = false) {
       workItems = data;
       hasMoreClosed = false;
       totalClosedCount = 0;
+      totalClosedCapped = false;
     } else {
       workItems = data.items || [];
       hasMoreClosed = data.hasMoreClosed || false;
       totalClosedCount = data.totalClosed || 0;
+      totalClosedCapped = data.totalClosedCapped || false;
     }
     populateTagFilters();
     document.querySelectorAll('.multi-select').forEach(ms => updateMultiSelectLabel(ms));
@@ -7358,7 +7362,11 @@ function renderBoard() {
     const count = document.getElementById(`boardCount${state}`);
     if (!container) continue;
     // For Closed column, show total count (from API) when available, not just loaded count
-    count.textContent = (state === 'Closed' && totalClosedCount > items.length) ? totalClosedCount : items.length;
+    if (state === 'Closed' && totalClosedCount > items.length) {
+      count.textContent = totalClosedCapped ? totalClosedCount + '+' : totalClosedCount;
+    } else {
+      count.textContent = items.length;
+    }
 
     // Identify same-column children (parent is in this same column)
     const colItemMap = new Map(items.map(wi => [wi.id, wi]));
@@ -7401,7 +7409,8 @@ function renderBoard() {
     }
     // Add "Show more" button to Closed column when there are more items
     if (state === 'Closed' && hasMoreClosed) {
-      html += `<button class="show-more-closed-btn" onclick="event.stopPropagation(); loadMoreClosed();">Showing ${items.length} of ${totalClosedCount} -- load more...</button>`;
+      const closedLabel = totalClosedCapped ? totalClosedCount + '+' : totalClosedCount;
+      html += `<button class="show-more-closed-btn" onclick="event.stopPropagation(); loadMoreClosed();">Showing ${items.length} of ${closedLabel} -- load more...</button>`;
     }
 
     container.innerHTML = html;
@@ -7504,7 +7513,8 @@ function renderBacklog() {
   // Add "Show more" row when there are more closed items
   if (hasMoreClosed) {
     const loadedClosed = workItems.filter(wi => wi.state === 'Closed' || wi.state === 'Done').length;
-    html += `<tr class="show-more-closed-row"><td colspan="7"><button class="show-more-closed-btn" onclick="event.stopPropagation(); loadMoreClosed();">Showing ${loadedClosed} of ${totalClosedCount} closed items -- load more...</button></td></tr>`;
+    const closedLabel = totalClosedCapped ? totalClosedCount + '+' : totalClosedCount;
+    html += `<tr class="show-more-closed-row"><td colspan="7"><button class="show-more-closed-btn" onclick="event.stopPropagation(); loadMoreClosed();">Showing ${loadedClosed} of ${closedLabel} closed items -- load more...</button></td></tr>`;
   }
 
   body.innerHTML = html;
