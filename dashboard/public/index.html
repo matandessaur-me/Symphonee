@@ -7976,49 +7976,25 @@ async function startWorking(wiId) {
     toast(`Branch: ${data.branchName}`, 'success');
     switchTab('terminal');
 
-    // Build full work item context for AI
-    if (currentWiDetail) {
-      const wi = currentWiDetail;
-      const lines = [];
-      lines.push(`I'm starting work on ${wi.type} #${wi.id}: "${wi.title}"`);
-      lines.push(`Branch: ${data.branchName}`);
-      lines.push(`State: ${wi.state} | Priority: P${wi.priority}${wi.storyPoints ? ' | Story Points: ' + wi.storyPoints : ''}${wi.effort ? ' | Effort: ' + wi.effort : ''}`);
-      if (wi.tags) lines.push(`Tags: ${wi.tags}`);
+    // Send lean prompt: let the AI fetch the full work item itself
+    const ctx = [
+      `I am starting work on work item #${wiId}.`,
+      `Branch "${data.branchName}" has been created and checked out in "${data.repoPath}".`,
+      ``,
+      `Do the following:`,
+      `1. Fetch the full work item details: curl -s http://127.0.0.1:3800/api/workitems/${wiId}`,
+      `   This returns: title, type, state, priority, tags, description (HTML), acceptance criteria,`,
+      `   repro steps, story points, effort, linked items (parent/children), attachments, and comments.`,
+      `2. For any linked items (parent or children), fetch their details too so you understand the full scope.`,
+      `3. If there are attachments (especially images), download and view them for visual context.`,
+      `4. Analyze everything and suggest an approach for implementing this work item.`,
+    ].join('\n');
 
-      if (wi.description) {
-        const desc = wi.description.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-        if (desc) lines.push(`\nDescription:\n${desc}`);
-      }
-      if (wi.acceptanceCriteria) {
-        const ac = wi.acceptanceCriteria.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-        if (ac) lines.push(`\nAcceptance Criteria:\n${ac}`);
-      }
-      if (wi.reproSteps) {
-        const rs = wi.reproSteps.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-        if (rs) lines.push(`\nRepro Steps:\n${rs}`);
-      }
-      if (wi.linkedItems && wi.linkedItems.length > 0) {
-        const linked = wi.linkedItems.filter(l => l.id).map(l => `  - #${l.id} (${formatRelationType(l.rel)})${l.title ? ': ' + l.title : ''}`).join('\n');
-        if (linked) lines.push(`\nLinked Items:\n${linked}`);
-      }
-      if (wi.attachments && wi.attachments.length > 0) {
-        const atts = wi.attachments.map(a => `  - ${a.name}${a.comment ? ' (' + a.comment + ')' : ''}`).join('\n');
-        lines.push(`\nAttachments:\n${atts}`);
-      }
-      if (wi.webUrl) lines.push(`\nAzure DevOps: ${wi.webUrl}`);
-
-      lines.push(`\nPlease review the above and help me implement this work item. Start by analyzing what needs to be done and suggesting an approach.`);
-
-      const ctx = lines.join('\n');
-
-      const sendCtx = () => setTimeout(() => sendCommand(ctx), 2000);
-      if (!aiLaunched) {
-        setTimeout(() => { launchAi(); sendCtx(); }, 500);
-      } else {
-        sendCtx();
-      }
-    } else if (!aiLaunched) {
-      setTimeout(() => launchAi(), 500);
+    const sendCtx = () => setTimeout(() => sendCommand(ctx), 2000);
+    if (!aiLaunched) {
+      setTimeout(() => { launchAi(); sendCtx(); }, 500);
+    } else {
+      sendCtx();
     }
   } catch (e) {
     toast('Failed to start working', 'error');
@@ -10730,6 +10706,12 @@ window.addEventListener('message', function (event) {
       break;
     case 'openSettings':
       openSettings(msg.tab || 'plugins');
+      if (msg.plugin) {
+        setTimeout(function () {
+          var btn = document.querySelector('.plugin-settings-nav[data-plugin-tab="ps_' + msg.plugin + '"]');
+          if (btn) switchPluginSettingsTab(msg.plugin, btn);
+        }, 50);
+      }
       break;
   }
 });
