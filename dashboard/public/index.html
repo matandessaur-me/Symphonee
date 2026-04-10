@@ -10713,6 +10713,16 @@ window.addEventListener('message', function (event) {
         }, 50);
       }
       break;
+    case 'configChanged':
+      // Forward config change to all iframes of this plugin so the tab refreshes
+      if (msg.plugin) {
+        document.querySelectorAll('iframe[data-plugin-id="' + msg.plugin + '"]').forEach(function (f) {
+          if (f.contentWindow !== event.source) {
+            f.contentWindow.postMessage({ __devopsPilot: true, type: 'configChanged', data: {} }, location.origin);
+          }
+        });
+      }
+      break;
   }
 });
 
@@ -11174,7 +11184,16 @@ function renderPluginSettings(plugins) {
     nav += '<div class="settings-section-title">' + (p.name || p.id) + '</div>';
     if (p.description) nav += '<div class="settings-section-desc" style="margin-bottom:16px;">' + p.description + '</div>';
     var settings = p.settings || [];
-    if (!settings.length) {
+    var hasSettingsHtml = p.contributions && p.contributions.settingsHtml;
+    if (hasSettingsHtml) {
+      nav += '<iframe src="/plugins/' + p.id + '/' + p.contributions.settingsHtml + '" '
+        + 'style="width:100%;min-height:320px;border:none;" '
+        + 'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" '
+        + 'data-plugin-id="' + p.id + '"'
+        + (p.tint ? ' data-tint="' + p.tint + '"' : '')
+        + ' onload="this.style.height=Math.max(320,this.contentDocument.body.scrollHeight+24)+\'px\'"'
+        + '></iframe>';
+    } else if (!settings.length) {
       nav += '<div style="font-size:12px;color:var(--subtext0);">No configurable settings.</div>';
     }
     for (var j = 0; j < settings.length; j++) {
