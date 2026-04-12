@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
-const { exec, execSync } = require('child_process');
+const { exec, execSync, spawnSync } = require('child_process');
 
 // ── New utility modules ────────────────────────────────────────────────────
 const { gitAsync, gitSync } = require('./utils/git-async');
@@ -1431,18 +1431,30 @@ async function handleStartWorking(req, res) {
     const wiType = wi.fields['System.WorkItemType'] || 'feature';
     const prefix = wiType.toLowerCase() === 'bug' ? 'bugfix' : 'feature';
 
-    // Use AI to generate a concise branch slug from the work item context
+    // Use AI to generate a concise branch slug from the work item context.
+    // Pass the prompt via stdin (not argv) so titles/descriptions with quotes,
+    // commas, backticks, etc. don't break shell escaping and cause Claude to
+    // reply with a clarifying question instead of a slug.
+    const fallbackSlug = () => title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    const sanitizeSlug = (s) => String(s || '').trim().split('\n')[0].trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    const looksLikeQuestion = (s) => /\?|^(which|what|can|could|should|how|who|where|why)\b/i.test(String(s || '').trim());
+
     let slug;
     try {
-      const prompt = `Generate a short git branch slug (2-5 words, lowercase, hyphen-separated, no special chars) that clearly describes this work item. Reply with ONLY the slug, nothing else.\n\nTitle: ${title}\nType: ${wiType}${description ? `\nDescription: ${description}` : ''}`;
-      slug = execSync(`claude --print "${prompt.replace(/"/g, '\\"')}"`, {
-        encoding: 'utf8', timeout: 15000, windowsHide: true,
-      }).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-    } catch (_) {
-      // Fallback to simple slugification if AI is unavailable
-      slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-    }
-    if (!slug) slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      const prompt = `Generate a short git branch slug (2 to 5 words, lowercase, hyphen-separated, no special chars) that clearly describes this work item. Reply with ONLY the slug, nothing else. Do not ask questions. Do not add quotes or commentary.\n\nTitle: ${title}\nType: ${wiType}${description ? `\nDescription: ${description}` : ''}`;
+      const result = spawnSync('claude', ['--print'], {
+        input: prompt,
+        encoding: 'utf8',
+        timeout: 20000,
+        windowsHide: true,
+        shell: true,
+      });
+      const raw = (result.stdout || '').trim();
+      if (result.status === 0 && raw && !looksLikeQuestion(raw)) {
+        slug = sanitizeSlug(raw);
+      }
+    } catch (_) { /* fall through to fallback */ }
+    if (!slug) slug = fallbackSlug();
     const branchName = `${prefix}/AB#${workItemId}-${slug}`;
 
     // Move work item to Active
