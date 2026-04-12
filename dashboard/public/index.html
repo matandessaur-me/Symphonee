@@ -3140,12 +3140,15 @@
         <button class="git-nav-btn active" onclick="switchGitTab('branches', this)">
           <i data-lucide="git-branch" style="width:14px;height:14px;"></i> Branches
         </button>
-        <button class="git-nav-btn" onclick="switchGitTab('pull', this)">
+        <button class="git-nav-btn" id="gitNavPull" onclick="switchGitTab('pull', this)">
           <i data-lucide="download" style="width:14px;height:14px;"></i> Pull
         </button>
-        <button class="git-nav-btn" onclick="switchGitTab('push', this)">
+        <button class="git-nav-btn" id="gitNavPush" onclick="switchGitTab('push', this)">
           <i data-lucide="upload" style="width:14px;height:14px;"></i> Push
         </button>
+        <div id="gitNavNoPatHint" style="display:none;font-size:11px;color:var(--subtext0);padding:6px 8px;line-height:1.4;">
+          Set a GitHub PAT in Settings to enable Pull and Push.
+        </div>
         <div style="border-top:1px solid var(--surface0);margin:4px 0;"></div>
         <button class="git-nav-btn" onclick="switchGitTab('commit', this)">
           <i data-lucide="git-commit" style="width:14px;height:14px;"></i> Commit
@@ -7000,6 +7003,14 @@ async function loadConfig(autoSelectSprint) {
     document.getElementById('sidebarAdoFixed').style.display = (hasAdo && !isIncognito) ? '' : 'none';
     document.getElementById('sidebarAdoActions').style.display = (hasAdo && !isIncognito) ? '' : 'none';
     document.getElementById('prsTabBtn').style.display = (hasGh && !isIncognito) ? '' : 'none';
+    // Git modal: hide Pull/Push when no PAT (local ops like Branches/Commit/Compare still work)
+    const gitAuthOk = hasGh && !isIncognito;
+    const gitPullBtn = document.getElementById('gitNavPull');
+    const gitPushBtn = document.getElementById('gitNavPush');
+    const gitNoPatHint = document.getElementById('gitNavNoPatHint');
+    if (gitPullBtn) gitPullBtn.style.display = gitAuthOk ? '' : 'none';
+    if (gitPushBtn) gitPushBtn.style.display = gitAuthOk ? '' : 'none';
+    if (gitNoPatHint) gitNoPatHint.style.display = gitAuthOk ? 'none' : '';
     document.getElementById('orchestratorTabBtn').style.display = configData.OrchestrateMode === true ? '' : 'none';
     const incogEl = document.getElementById('incognitoIndicator');
     if (incogEl) { incogEl.style.display = isIncognito ? 'flex' : 'none'; }
