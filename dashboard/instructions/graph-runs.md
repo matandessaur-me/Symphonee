@@ -1,6 +1,6 @@
 # Graph Runs (BETA)
 
-Feature-flagged. Check `GraphRunsMode` in `config.json` or `/api/permissions`/`/api/models/catalog` (any endpoint that reads config). If disabled, `/api/graph-runs` returns 501.
+Part of the AI Orchestration BETA. Gated by the same `OrchestrateMode` config flag — when AI Orchestration is enabled in Settings -> Other, graph runs are available too. If disabled, `/api/graph-runs` returns 501.
 
 Use graph runs for multi-step workflows that need:
 - durability across app restarts

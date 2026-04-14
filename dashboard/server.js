@@ -187,10 +187,11 @@ const server = http.createServer(async (req, res) => {
       try { return json(res, await mcpClient.refresh(decodeURIComponent(mcpRefreshMatch[1]))); }
       catch (e) { return json(res, { error: e.message }, 400); }
     }
-    // ── Graph Runs (BETA, gated by config.GraphRunsMode) ───────────────────
+    // ── Graph Runs (gated by config.OrchestrateMode; graph runs are
+    //    part of the AI Orchestration BETA, not a separate feature) ─────
     if (url.pathname.startsWith('/api/graph-runs')) {
-      if (getConfig().GraphRunsMode !== true) {
-        return json(res, { error: 'Graph Runs is a BETA feature. Enable it in Settings -> Other.' }, 501);
+      if (getConfig().OrchestrateMode !== true) {
+        return json(res, { error: 'Graph Runs requires AI Orchestration. Enable it in Settings -> Other.' }, 501);
       }
       if (url.pathname === '/api/graph-runs' && req.method === 'GET') {
         return json(res, graphRuns.listRuns());
@@ -465,7 +466,7 @@ const server = http.createServer(async (req, res) => {
           loadedAt: new Date().toISOString(),
           features: {
             orchestrateMode: cfg.OrchestrateMode === true,
-            graphRunsMode: cfg.GraphRunsMode === true,
+            graphRunsMode: cfg.OrchestrateMode === true,
             incognitoMode: cfg.IncognitoMode === true,
           },
         };
@@ -3115,7 +3116,8 @@ function writePluginHints() {
   const GRAPH_END = '<!-- GRAPH_RUNS_END -->';
   const cfg = getConfig();
   const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
-  const graphRunsEnabled = cfg.GraphRunsMode === true;
+  // Graph runs are part of orchestration; same toggle controls both.
+  const graphRunsEnabled = orchestrationEnabled;
   const uiCtx = getUiContextWithPath();
   const hasRepo = !!uiCtx.activeRepo;
   const incognitoActive = cfg.IncognitoMode === true;

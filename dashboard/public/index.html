@@ -3030,18 +3030,8 @@
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
-            <div class="settings-section-title">Graph Runs <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
-            <div class="settings-section-desc">Durable multi-step workflows with checkpointing. A graph of nodes (worker, approval, branch) flows state between steps and survives app restarts. One-shot spawns are unaffected. Off by default while this stabilizes.</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" id="settingsGraphRunsMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
-                <span style="font-size:12px;color:var(--text);">Enable graph runs</span>
-              </label>
-            </div>
-          </div>
-          <div class="settings-section">
-            <div class="settings-section-title">AI Orchestration <span style="font-size:10px;opacity:0.5;font-weight:400;">[BETA]</span></div>
-            <div class="settings-section-desc">When enabled, the lead AI can automatically dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot). When disabled, the AI works alone without spawning other agents.</div>
+            <div class="settings-section-title">AI Orchestration <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
+            <div class="settings-section-desc">Enables the lead AI to dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot) AND unlocks Graph Runs (durable multi-step workflows with branching, approval gates, and crash recovery). When disabled, the AI works alone without spawning other agents and Graph Runs are not available.</div>
             <div style="display:flex;align-items:center;gap:10px;">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                 <input type="checkbox" id="settingsOrchestrateMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="toggleOrchClis();checkSettingsNeedRestart()">
@@ -3066,14 +3056,6 @@
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text);">
                   <input type="checkbox" class="orch-cli-cb" value="grok" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer;"> Grok
                 </label>
-              </div>
-              <div style="margin-top:10px;">
-                <div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">Result delivery mode:</div>
-                <select id="settingsOrchDelivery" style="padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none;">
-                  <option value="inject">Terminal injection (non-blocking, recommended)</option>
-                  <option value="inbox">Inbox only (AI must poll)</option>
-                  <option value="both">Both (terminal + inbox)</option>
-                </select>
               </div>
             </div>
           </div>
@@ -8671,10 +8653,7 @@ function openSettings(tab) {
   document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
-  const grToggle = document.getElementById('settingsGraphRunsMode');
-  if (grToggle) grToggle.checked = configData.GraphRunsMode === true;
   document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
-  document.getElementById('settingsOrchDelivery').value = configData.OrchestrateResultDelivery || 'inject';
   // AI API keys
   const aiKeys = configData.AiApiKeys || {};
   document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
@@ -8960,7 +8939,6 @@ async function saveSettings() {
     GitHubPAT: document.getElementById('settingsGitHubPAT').value.trim(),
     WhisperKey: document.getElementById('settingsWispr').value.trim(),
     OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
-    GraphRunsMode: document.getElementById('settingsGraphRunsMode') ? document.getElementById('settingsGraphRunsMode').checked : false,
     OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
     IncognitoMode: document.getElementById('settingsIncognitoMode').checked,
     AiApiKeys: {
@@ -8969,7 +8947,7 @@ async function saveSettings() {
       ANTHROPIC_API_KEY: document.getElementById('settingsAnthropicKey').value.trim() || undefined,
       XAI_API_KEY: document.getElementById('settingsXaiKey').value.trim() || undefined,
     },
-    OrchestrateResultDelivery: document.getElementById('settingsOrchDelivery').value,
+    OrchestrateResultDelivery: 'inject',
     BrowserCredentials: configData.BrowserCredentials || {},
     DefaultCli: defaultCli,
     Repos: configData.Repos || {},

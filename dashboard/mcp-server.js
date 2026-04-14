@@ -258,7 +258,7 @@ const TOOLS = [
   },
   {
     name: 'start_graph_run',
-    description: 'BETA. Start a durable multi-step graph run. Requires GraphRunsMode enabled in Settings -> Other. Node types: worker (spawn a CLI), approval (human gate), branch (expression decides next path). Prompt templates use {{ state.foo }} substitution; node output auto-merges into state.results[nodeId].',
+    description: 'BETA. Start a durable multi-step graph run. Requires AI Orchestration enabled in Settings -> Other (graph runs are part of orchestration). Node types: worker (spawn a CLI), approval (human gate), branch (expression decides next path). Prompt templates use {{ state.foo }} substitution; node output auto-merges into state.results[nodeId].',
     inputSchema: {
       type: 'object',
       properties: {
