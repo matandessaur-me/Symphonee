@@ -54,6 +54,14 @@ const permissions = require('./permissions');
 const { MCPClientManager } = require('./mcp-client');
 const mcpClient = new MCPClientManager({ configPath });
 mcpClient.bootstrap().catch(e => console.warn('  [mcp-client] bootstrap error:', e.message));
+const { GraphRunsEngine } = require('./graph-runs');
+const graphRuns = new GraphRunsEngine({
+  repoRoot,
+  injectToTerminal: (termId, text) => {
+    const t = terminals.get(termId);
+    if (t && t.pty) try { t.pty.write(text); } catch (_) {}
+  },
+});
 
 async function permGate(res, type, value, label) {
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
@@ -169,6 +177,52 @@ const server = http.createServer(async (req, res) => {
       try { return json(res, await mcpClient.refresh(decodeURIComponent(mcpRefreshMatch[1]))); }
       catch (e) { return json(res, { error: e.message }, 400); }
     }
+    // ── Graph Runs (BETA, gated by config.GraphRunsMode) ───────────────────
+    if (url.pathname.startsWith('/api/graph-runs')) {
+      if (getConfig().GraphRunsMode !== true) {
+        return json(res, { error: 'Graph Runs is a BETA feature. Enable it in Settings -> Other.' }, 501);
+      }
+      if (url.pathname === '/api/graph-runs' && req.method === 'GET') {
+        return json(res, graphRuns.listRuns());
+      }
+      if (url.pathname === '/api/graph-runs/pending-approvals' && req.method === 'GET') {
+        return json(res, graphRuns.listPendingApprovals());
+      }
+      if (url.pathname === '/api/graph-runs' && req.method === 'POST') {
+        const body = await readBody(req);
+        if (!await permGate(res, 'api', 'POST /api/graph-runs', `Start graph run: ${body.name || 'unnamed'}`)) return;
+        try { return json(res, await graphRuns.createRun(body)); }
+        catch (e) { return json(res, { error: e.message }, 400); }
+      }
+      const grMatch = url.pathname.match(/^\/api\/graph-runs\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
+      if (grMatch) {
+        const [_, runId, action, nodeId] = grMatch;
+        if (!action && req.method === 'GET') {
+          const run = graphRuns.getRun(runId);
+          if (!run) return json(res, { error: 'not found' }, 404);
+          return json(res, run);
+        }
+        if (action === 'pause' && req.method === 'POST') {
+          try { return json(res, graphRuns.pauseRun(runId)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'resume' && req.method === 'POST') {
+          try { return json(res, await graphRuns.resumeRun(runId)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'cancel' && req.method === 'POST') {
+          try { return json(res, graphRuns.cancelRun(runId)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'interrupt' && req.method === 'POST') {
+          const body = await readBody(req);
+          try { return json(res, graphRuns.updateState(runId, body.patch || {})); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'approve' && nodeId && req.method === 'POST') {
+          const body = await readBody(req);
+          try { return json(res, graphRuns.approveNode(runId, nodeId, body)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+      }
+      return json(res, { error: 'graph-runs: route not found' }, 404);
+    }
+
     if (url.pathname === '/api/mcp/call' && req.method === 'POST') {
       const body = await readBody(req);
       if (!await permGate(res, 'api', 'POST /api/mcp/call', `Call MCP tool ${body.server}/${body.tool}`)) return;
@@ -2823,6 +2877,7 @@ function createTerminal(termId, cols = 120, rows = 30, cwd = repoRoot) {
       COLORTERM: 'truecolor',
       FORCE_COLOR: '1',
       SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+      DEVOPS_PILOT_TERM_ID: termId,
     },
   });
 
@@ -2975,8 +3030,11 @@ function writePluginHints() {
   const REPO_END = '<!-- REPO_CONTEXT_END -->';
   const INCOGNITO_START = '<!-- INCOGNITO_START -->';
   const INCOGNITO_END = '<!-- INCOGNITO_END -->';
+  const GRAPH_START = '<!-- GRAPH_RUNS_START -->';
+  const GRAPH_END = '<!-- GRAPH_RUNS_END -->';
   const cfg = getConfig();
   const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
+  const graphRunsEnabled = cfg.GraphRunsMode === true;
   const uiCtx = getUiContextWithPath();
   const hasRepo = !!uiCtx.activeRepo;
   const incognitoActive = cfg.IncognitoMode === true;
@@ -2997,6 +3055,14 @@ function writePluginHints() {
         const orchEnd = content.indexOf(ORCH_END);
         if (orchStart !== -1 && orchEnd !== -1) {
           content = content.substring(0, orchStart) + content.substring(orchEnd + ORCH_END.length);
+        }
+      }
+      // Strip graph-runs BETA section if disabled
+      if (!graphRunsEnabled) {
+        const gStart = content.indexOf(GRAPH_START);
+        const gEnd = content.indexOf(GRAPH_END);
+        if (gStart !== -1 && gEnd !== -1) {
+          content = content.substring(0, gStart) + content.substring(gEnd + GRAPH_END.length);
         }
       }
       // Strip repo-specific context when in No Repo mode (handles multiple marker pairs)

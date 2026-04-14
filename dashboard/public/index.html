@@ -3030,6 +3030,16 @@
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
+            <div class="settings-section-title">Graph Runs <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
+            <div class="settings-section-desc">Durable multi-step workflows with checkpointing. A graph of nodes (worker, approval, branch) flows state between steps and survives app restarts. One-shot spawns are unaffected. Off by default while this stabilizes.</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="settingsGraphRunsMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
+                <span style="font-size:12px;color:var(--text);">Enable graph runs</span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-section">
             <div class="settings-section-title">AI Orchestration <span style="font-size:10px;opacity:0.5;font-weight:400;">[BETA]</span></div>
             <div class="settings-section-desc">When enabled, the lead AI can automatically dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot). When disabled, the AI works alone without spawning other agents.</div>
             <div style="display:flex;align-items:center;gap:10px;">
@@ -8661,6 +8671,8 @@ function openSettings(tab) {
   document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
+  const grToggle = document.getElementById('settingsGraphRunsMode');
+  if (grToggle) grToggle.checked = configData.GraphRunsMode === true;
   document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
   document.getElementById('settingsOrchDelivery').value = configData.OrchestrateResultDelivery || 'inject';
   // AI API keys
@@ -8948,6 +8960,7 @@ async function saveSettings() {
     GitHubPAT: document.getElementById('settingsGitHubPAT').value.trim(),
     WhisperKey: document.getElementById('settingsWispr').value.trim(),
     OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
+    GraphRunsMode: document.getElementById('settingsGraphRunsMode') ? document.getElementById('settingsGraphRunsMode').checked : false,
     OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
     IncognitoMode: document.getElementById('settingsIncognitoMode').checked,
     AiApiKeys: {
@@ -11546,60 +11559,100 @@ async function setPermMode(mode) {
   } catch (e) { console.error('setPermMode failed', e); }
 }
 
-// ── Approval modal: polls /api/permissions/pending every 3s ──
+// ── Approval modal: polls both permission + graph-run approval queues ──
 let _approvalShown = null;
 async function pollApprovals() {
   try {
-    const r = await fetch('/api/permissions/pending');
-    const list = await r.json();
-    if (!Array.isArray(list) || list.length === 0) {
+    const all = [];
+    try {
+      const r1 = await fetch('/api/permissions/pending');
+      const list1 = await r1.json();
+      if (Array.isArray(list1)) for (const p of list1) all.push({ kind: 'permission', key: p.id, data: p });
+    } catch (_) {}
+    try {
+      const r2 = await fetch('/api/graph-runs/pending-approvals');
+      if (r2.ok) {
+        const list2 = await r2.json();
+        if (Array.isArray(list2)) for (const g of list2) all.push({ kind: 'graph-run', key: g.runId + ':' + g.nodeId, data: g });
+      }
+    } catch (_) {}
+    if (all.length === 0) {
       if (_approvalShown) { hideApprovalModal(); _approvalShown = null; }
       return;
     }
-    const next = list[0];
-    if (_approvalShown && _approvalShown.id === next.id) return;
+    const next = all[0];
+    if (_approvalShown && _approvalShown.key === next.key) return;
     showApprovalModal(next);
     _approvalShown = next;
   } catch (_) {}
 }
-function showApprovalModal(p) {
+function showApprovalModal(entry) {
   let overlay = document.getElementById('approvalOverlay');
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'approvalOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
     overlay.innerHTML = `
-      <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:20px;min-width:420px;max-width:600px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--accent);font-weight:600;font-size:13px;">
-          <i data-lucide="shield-alert" style="width:16px;height:16px;"></i>
-          <span>Approval required</span>
-        </div>
-        <div id="approvalBody" style="font-size:12px;color:var(--text);margin-bottom:16px;line-height:1.5;"></div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button onclick="resolveApproval('deny',false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Reject</button>
-          <button onclick="resolveApproval('allow',false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Allow once</button>
-          <button onclick="resolveApproval('allow',true)" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Always allow this pattern</button>
-        </div>
+      <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:20px;min-width:420px;max-width:640px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+        <div id="approvalHeader" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--accent);font-weight:600;font-size:13px;"></div>
+        <div id="approvalBody" style="font-size:12px;color:var(--text);margin-bottom:16px;line-height:1.5;max-height:320px;overflow:auto;"></div>
+        <div id="approvalButtons" style="display:flex;gap:8px;justify-content:flex-end;"></div>
       </div>`;
     document.body.appendChild(overlay);
   }
+  const header = document.getElementById('approvalHeader');
   const body = document.getElementById('approvalBody');
-  if (body) {
+  const buttons = document.getElementById('approvalButtons');
+
+  if (entry.kind === 'permission') {
+    const p = entry.data;
     const a = p.action || {};
+    header.innerHTML = `<i data-lucide="shield-alert" style="width:16px;height:16px;"></i><span>Permission approval</span>`;
     body.innerHTML = `
       <div><strong>Type:</strong> <code style="background:var(--surface1);padding:1px 5px;border-radius:3px;">${escapeHtml(a.type || '?')}</code></div>
       <div style="margin-top:4px;"><strong>Action:</strong> <code style="background:var(--surface1);padding:1px 5px;border-radius:3px;word-break:break-all;">${escapeHtml(a.value || '')}</code></div>
       ${a.op ? `<div style="margin-top:4px;"><strong>Op:</strong> ${escapeHtml(a.op)}</div>` : ''}
       <div style="margin-top:8px;color:var(--subtext0);">Promoting to "always allow" saves the rule in your settings.</div>`;
+    buttons.innerHTML = `
+      <button onclick="resolveApproval('deny',false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Reject</button>
+      <button onclick="resolveApproval('allow',false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Allow once</button>
+      <button onclick="resolveApproval('allow',true)" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Always allow this pattern</button>`;
+  } else if (entry.kind === 'graph-run') {
+    const g = entry.data;
+    header.innerHTML = `<i data-lucide="workflow" style="width:16px;height:16px;"></i><span>Graph run approval</span>`;
+    const stateSnippet = JSON.stringify(g.state || {}, null, 2);
+    body.innerHTML = `
+      <div><strong>Run:</strong> ${escapeHtml(g.runName || g.runId)} <code style="color:var(--subtext0);font-size:10px;">${escapeHtml(g.runId)}</code></div>
+      <div style="margin-top:4px;"><strong>Node:</strong> <code style="background:var(--surface1);padding:1px 5px;border-radius:3px;">${escapeHtml(g.nodeId)}</code></div>
+      <div style="margin-top:4px;"><strong>Title:</strong> ${escapeHtml(g.title || '(no title)')}</div>
+      <div style="margin-top:8px;"><strong>State snapshot:</strong></div>
+      <pre style="background:var(--surface1);padding:8px;border-radius:4px;font-size:10px;margin-top:4px;overflow:auto;max-height:180px;">${escapeHtml(stateSnippet)}</pre>`;
+    buttons.innerHTML = `
+      <button onclick="resolveGraphApproval(false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Reject</button>
+      <button onclick="resolveGraphApproval(true)" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Approve</button>`;
   }
+
   overlay.style.display = 'flex';
   if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
 }
 function hideApprovalModal() { const o = document.getElementById('approvalOverlay'); if (o) o.style.display = 'none'; }
 async function resolveApproval(decision, promote) {
-  if (!_approvalShown) return;
+  if (!_approvalShown || _approvalShown.kind !== 'permission') return;
   try {
-    await fetch('/api/permissions/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: _approvalShown.id, decision, promote }) });
+    await fetch('/api/permissions/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: _approvalShown.data.id, decision, promote }) });
+  } catch (_) {}
+  hideApprovalModal();
+  _approvalShown = null;
+}
+
+async function resolveGraphApproval(approved) {
+  if (!_approvalShown || _approvalShown.kind !== 'graph-run') return;
+  const g = _approvalShown.data;
+  try {
+    await fetch(`/api/graph-runs/${encodeURIComponent(g.runId)}/approve/${encodeURIComponent(g.nodeId)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved, note: '' }),
+    });
   } catch (_) {}
   hideApprovalModal();
   _approvalShown = null;

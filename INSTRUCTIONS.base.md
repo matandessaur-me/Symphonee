@@ -210,6 +210,22 @@ powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/ScriptName
 - Use `curl` for API calls from bash. Use `Invoke-RestMethod` from PowerShell PTY.
 <!-- REPO_CONTEXT_END -->
 
+<!-- GRAPH_RUNS_START -->
+## Graph Runs (BETA)
+
+DevOps Pilot can run durable, multi-step workflows defined as a graph of nodes. Use this for multi-hour investigations that must survive app restarts and for workflows with real branching or human-approval gates. One-shot spawns (`POST /api/orchestrator/spawn`) are unchanged and do not use this engine.
+
+Primary interaction from inside DevOps Pilot is via `scripts/`:
+- `./scripts/Start-GraphRun.ps1 -File .ai-workspace/my-graph.json`
+- `./scripts/Get-GraphRun.ps1` (list) or `-Id gr_abc123` (detail)
+- `./scripts/Approve-GraphNode.ps1 -RunId gr_abc -NodeId review`
+- `./scripts/Stop-GraphRun.ps1 -Id gr_abc -Action pause|resume|cancel`
+
+API endpoints (scripts wrap these): `POST /api/graph-runs`, `GET /api/graph-runs[/:id]`, `POST /api/graph-runs/:id/pause|resume|cancel|interrupt`, `POST /api/graph-runs/:id/approve/:nodeId`.
+
+Node types (v1): `worker` (spawn a CLI), `approval` (human gate), `branch` (JS expression decides next path). Prompt templates use `{{ state.foo }}` substitution; node output auto-merges into `state.results[nodeId]`. Example: `examples/graph-runs/sprint-review.json`.
+<!-- GRAPH_RUNS_END -->
+
 <!-- ORCHESTRATION_START -->
 ## Orchestrator (Cross-AI Communication Bus)
 
