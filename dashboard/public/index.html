@@ -1007,6 +1007,10 @@
     .search-result-text { color: var(--subtext1); font-family: var(--font-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .search-result-text mark { background: rgba(249, 226, 175, 0.25); color: var(--yellow); border-radius: 2px; padding: 0 1px; }
     .monaco-highlight-line { background: rgba(249, 226, 175, 0.12) !important; }
+    /* In-note find bar highlight marks (overlay behind the textarea) */
+    #noteHighlightLayer mark { color: transparent; border-radius: 2px; padding: 0; }
+    #noteHighlightLayer mark.note-find { background: rgba(249, 226, 175, 0.35); }
+    #noteHighlightLayer mark.note-find-current { background: rgba(249, 226, 175, 0.7); outline: 1px solid rgba(249, 226, 175, 0.9); }
     .monaco-highlight-match { background: rgba(249, 226, 175, 0.35) !important; border-radius: 2px; outline: 1px solid rgba(249, 226, 175, 0.5); }
     .files-sidebar-tabs {
       display: flex; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
@@ -2624,8 +2628,9 @@
             <button class="tab-bar-btn" onclick="sendNoteToAi()" title="Send note content to AI">Send to AI</button>
             <button class="tab-bar-btn" onclick="saveCurrentNote()" id="noteSaveBtn" style="display:none;">Save</button>
           </div>
-          <div id="noteEditor" style="display:none;flex:1;position:relative;">
-            <textarea id="noteTextarea" style="width:100%;height:100%;resize:none;background:var(--crust);color:var(--text);border:none;padding:16px 20px;font:14px/1.7 var(--font-mono);outline:none;tab-size:2;" spellcheck="false" oninput="onNoteInput()"></textarea>
+          <div id="noteEditor" style="display:none;flex:1;position:relative;background:var(--crust);">
+            <div id="noteHighlightLayer" style="position:absolute;inset:0;padding:16px 20px;font:14px/1.7 var(--font-mono);color:transparent;white-space:pre-wrap;word-wrap:break-word;overflow:hidden;pointer-events:none;tab-size:2;box-sizing:border-box;"></div>
+            <textarea id="noteTextarea" onscroll="syncNoteHighlightScroll()" style="position:relative;width:100%;height:100%;resize:none;background:transparent;color:var(--text);border:none;padding:16px 20px;font:14px/1.7 var(--font-mono);outline:none;tab-size:2;box-sizing:border-box;" spellcheck="false" oninput="onNoteInput();updateNoteHighlightsLive()"></textarea>
             <div id="noteFindBar" style="display:none;position:absolute;top:8px;right:14px;background:var(--surface0);border:1px solid var(--surface2);border-radius:6px;padding:6px 10px;display:none;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10;font:12px var(--font-ui);">
               <i data-lucide="search" style="width:13px;height:13px;color:var(--subtext0);"></i>
               <input id="noteFindInput" type="text" placeholder="Find in note" oninput="updateNoteFindMatches(true)" onkeydown="onNoteFindKeydown(event)" style="background:transparent;border:none;outline:none;color:var(--text);font:12px var(--font-ui);width:160px;">
@@ -12292,6 +12297,7 @@ function closeNoteFind() {
   if (bar) bar.style.display = 'none';
   _noteFindMatches = [];
   _noteFindIndex = -1;
+  paintNoteHighlights('', -1);
 }
 
 function updateNoteFindMatches(jumpToFirst) {
@@ -12318,17 +12324,64 @@ function noteFindStep(delta) {
 function noteFindHighlight() {
   const ta = document.getElementById('noteTextarea');
   const term = document.getElementById('noteFindInput').value;
-  if (_noteFindIndex < 0 || !term) return;
+  if (_noteFindIndex < 0 || !term) { paintNoteHighlights('', -1); return; }
   const start = _noteFindMatches[_noteFindIndex];
   const end = start + term.length;
-  ta.focus();
+  // Native textarea selection (works only while textarea is focused)
   ta.setSelectionRange(start, end);
-  // Approximate scroll
+  // Approximate scroll so the current match is centered
   const before = ta.value.substring(0, start);
   const lines = before.split('\n').length;
   const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 24;
   ta.scrollTop = Math.max(0, lines * lineHeight - ta.clientHeight / 2);
   document.getElementById('noteFindCount').textContent = (_noteFindIndex + 1) + '/' + _noteFindMatches.length;
+  // Paint the overlay so highlights stay visible regardless of which element is focused
+  paintNoteHighlights(term, _noteFindIndex);
+  syncNoteHighlightScroll();
+}
+
+// Render the matched-term highlights into the overlay div behind the textarea.
+// Both elements share identical font / padding / wrap rules so character
+// positions align. The overlay's text is transparent so only the <mark>
+// backgrounds show; the textarea's text on top remains readable.
+function paintNoteHighlights(term, currentIdx) {
+  const layer = document.getElementById('noteHighlightLayer');
+  const ta = document.getElementById('noteTextarea');
+  if (!layer || !ta) return;
+  const text = ta.value;
+  if (!term) { layer.innerHTML = escapeHtml(text); return; }
+  const lower = text.toLowerCase();
+  const t = term.toLowerCase();
+  let html = '';
+  let i = 0;
+  let occ = 0;
+  while (true) {
+    const next = lower.indexOf(t, i);
+    if (next === -1) { html += escapeHtml(text.slice(i)); break; }
+    html += escapeHtml(text.slice(i, next));
+    const cls = (occ === currentIdx) ? 'note-find-current' : 'note-find';
+    html += `<mark class="${cls}">${escapeHtml(text.slice(next, next + term.length))}</mark>`;
+    i = next + term.length;
+    occ++;
+  }
+  layer.innerHTML = html;
+}
+
+function syncNoteHighlightScroll() {
+  const layer = document.getElementById('noteHighlightLayer');
+  const ta = document.getElementById('noteTextarea');
+  if (!layer || !ta) return;
+  layer.scrollTop = ta.scrollTop;
+  layer.scrollLeft = ta.scrollLeft;
+}
+
+// Re-render highlights as the user types in the note (so they don't drift)
+function updateNoteHighlightsLive() {
+  const term = document.getElementById('noteFindInput')?.value;
+  const bar = document.getElementById('noteFindBar');
+  if (term && bar && bar.style.display !== 'none') {
+    updateNoteFindMatches(false);
+  }
 }
 
 function onNoteFindKeydown(e) {
