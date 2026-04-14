@@ -43,6 +43,24 @@ Smart selectors (modal renders a populated dropdown with the active value pre-se
 
 The modal always shows a "Will run with" panel above the inputs, displaying the active repo / iteration / AI so the user knows what context the recipe will see — even when the recipe declares no inputs.
 
+## Creating a new recipe
+
+Two ways:
+
+**1. UI editor (recommended for humans):** right-side intel panel -> Recipes tab -> **+ New Recipe** button. Opens a closable center tab with form fields for the frontmatter, an inputs builder, a markdown body editor, and a clickable variable library on the right (context vars, your declared inputs, and common snippets). Save writes a file to `recipes/<filename>.md`.
+
+**2. Direct file write (for AI agents):** drop a markdown file into `recipes/<id>.md` matching the format above. The library auto-rescans every 60 seconds; users can also click Rescan in the panel. To save via the API:
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/recipes/save \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "my-recipe",
+    "frontmatter": { "name": "My Recipe", "description": "...", "intent": "deep-code", "inputs": [...] },
+    "body": "Prompt body with {{ inputs.X }} substitution"
+  }'
+```
+
 ## Scripts (primary surface)
 
 ```bash

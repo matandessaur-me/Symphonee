@@ -157,6 +157,44 @@ const server = http.createServer(async (req, res) => {
       if (!r) return json(res, { error: 'recipe not found' }, 404);
       return json(res, withRenderedDefaults(r, getUiContextWithPath()));
     }
+    if (url.pathname === '/api/recipes/save' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = String(body.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!id) return json(res, { error: 'id required' }, 400);
+      if (!await permGate(res, 'api', 'POST /api/recipes/save', `Save recipe: ${id}`)) return;
+      try {
+        const file = path.join(repoRoot, 'recipes', id + '.md');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        const fm = body.frontmatter || {};
+        const lines = ['---'];
+        const order = ['name', 'description', 'icon', 'intent', 'cli', 'model', 'mode', 'dispatch', 'plugins', 'mcpServers', 'inputs'];
+        for (const k of order) {
+          if (fm[k] === undefined || fm[k] === null || fm[k] === '') continue;
+          if (Array.isArray(fm[k])) {
+            if (k === 'inputs') {
+              lines.push('inputs:');
+              for (const it of fm[k]) {
+                lines.push('  - name: ' + it.name);
+                if (it.type) lines.push('    type: ' + it.type);
+                if (it.description) lines.push('    description: ' + JSON.stringify(it.description));
+                if (it.default !== undefined && it.default !== '') lines.push('    default: ' + JSON.stringify(String(it.default)));
+                if (it.required) lines.push('    required: true');
+              }
+            } else {
+              lines.push(k + ': [' + fm[k].map(v => JSON.stringify(v)).join(', ') + ']');
+            }
+          } else if (typeof fm[k] === 'boolean') {
+            lines.push(k + ': ' + (fm[k] ? 'true' : 'false'));
+          } else {
+            lines.push(k + ': ' + (typeof fm[k] === 'string' && /[:#'"\\\[\]\{\}]/.test(fm[k]) ? JSON.stringify(fm[k]) : fm[k]));
+          }
+        }
+        lines.push('---');
+        const content = lines.join('\n') + '\n\n' + (body.body || '').replace(/\r\n/g, '\n');
+        fs.writeFileSync(file, content, 'utf8');
+        return json(res, { ok: true, id, path: file });
+      } catch (e) { return json(res, { error: e.message }, 500); }
+    }
     if (url.pathname === '/api/recipes/run' && req.method === 'POST') {
       const body = await readBody(req);
       if (!body.id) return json(res, { error: 'id required' }, 400);
