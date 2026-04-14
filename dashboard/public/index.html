@@ -3360,10 +3360,11 @@
 <!-- ═══ Command Palette ═══════════════════════════════════════════════ -->
 <div class="cmd-palette-overlay" id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
   <div class="cmd-palette">
-    <div style="position:relative;">
-      <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
-      <div id="cmdPalettePill" style="display:none;position:absolute;pointer-events:none;background:color-mix(in srgb, var(--accent) 22%, var(--surface0));border:1px solid var(--accent);color:var(--accent);font-weight:600;border-radius:14px;padding:0 10px;line-height:22px;font-size:12px;display:none;align-items:center;gap:5px;"></div>
-      <span id="cmdPaletteMirror" aria-hidden="true" style="position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:-9999px;"></span>
+    <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
+    <div id="cmdPaletteCmdBadge" style="display:none;align-items:center;gap:6px;padding:6px 14px;border-bottom:1px solid var(--surface1);background:color-mix(in srgb, var(--accent) 8%, transparent);font-size:11px;color:var(--accent);">
+      <i data-lucide="search" style="width:11px;height:11px;"></i>
+      <span style="background:color-mix(in srgb, var(--accent) 22%, var(--surface0));border:1px solid var(--accent);color:var(--accent);font-weight:600;border-radius:11px;padding:1px 9px;font-size:11px;" id="cmdPaletteCmdBadgeText">find</span>
+      <span style="color:var(--subtext0);">command active &mdash; press <kbd style="font-size:10px;background:var(--surface1);border:1px solid var(--surface2);border-radius:3px;padding:1px 5px;">Esc</kbd> or clear input to exit</span>
     </div>
     <div class="cmd-palette-list" id="cmdPaletteList"></div>
     <div class="cmd-palette-footer">
@@ -10689,43 +10690,24 @@ function renderMarkdownToHtml(md) {
   return out.join('\n');
 }
 
-// Show the command keyword as a pill overlaid on the input, and shift the
-// input's text so the keyword characters are hidden behind the pill. When
-// the user backspaces past the keyword, the pill disappears.
+// Show a small badge below the input when a known command keyword is
+// detected. Non-overlapping with the input itself, so it can't break the
+// input's layout, padding, scroll behavior, or cursor handling.
 function updatePalettePill(keyword) {
   const input = document.getElementById('cmdPaletteInput');
-  const pill = document.getElementById('cmdPalettePill');
-  const mirror = document.getElementById('cmdPaletteMirror');
-  if (!input || !pill || !mirror) return;
+  const badge = document.getElementById('cmdPaletteCmdBadge');
+  const badgeText = document.getElementById('cmdPaletteCmdBadgeText');
+  if (!input || !badge) return;
   if (!keyword) {
-    pill.style.display = 'none';
-    input.style.paddingLeft = '';
-    input.style.color = '';
+    badge.style.display = 'none';
+    input.style.borderLeft = '';
     return;
   }
-  // Measure the keyword's pixel width using the input's font
-  const cs = getComputedStyle(input);
-  mirror.style.font = cs.font;
-  mirror.style.letterSpacing = cs.letterSpacing;
-  mirror.textContent = keyword + ' ';
-  const wKeyword = mirror.offsetWidth;
-  // Position the pill at the input's text-start, vertically centered
-  const padLeft = parseFloat(cs.paddingLeft) || 12;
-  const padTop = parseFloat(cs.paddingTop) || 0;
-  const inputH = input.offsetHeight;
-  const pillH = 22;
-  pill.style.display = 'inline-flex';
-  pill.style.left = padLeft + 'px';
-  pill.style.top = ((inputH - pillH) / 2) + 'px';
-  pill.innerHTML = `<i data-lucide="search" style="width:11px;height:11px;display:inline-block;"></i>${escapeHtml(keyword)}`;
+  badgeText.textContent = keyword;
+  badge.style.display = 'flex';
+  // Subtle accent on the input's left edge as a secondary cue.
+  input.style.borderLeft = '3px solid var(--accent)';
   if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
-  // Push the actual input text to the right so the keyword characters sit
-  // behind the pill. Add a small visual gap.
-  input.style.paddingLeft = (padLeft + Math.ceil(pill.offsetWidth) + 8) + 'px';
-  // Hide the underlying keyword text by making the first chars transparent.
-  // Simplest cross-browser way: use text-indent so the underlying text shifts
-  // out of view to the left of the new padding-left.
-  input.style.textIndent = '-' + (Math.ceil(pill.offsetWidth) + 8) + 'px';
 }
 
 async function runPaletteSearch(query) {
