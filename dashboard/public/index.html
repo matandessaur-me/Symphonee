@@ -2613,7 +2613,7 @@
           <div id="notesSearchWrap" style="padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;">
             <input id="notesSearchInput" type="text" placeholder="Search notes..." oninput="onNotesSearchInput()" style="width:100%;padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;box-sizing:border-box;">
           </div>
-          <div id="notesSearchResults" style="display:none;overflow-y:auto;padding:4px 0;border-bottom:1px solid var(--surface0);flex-shrink:0;max-height:50%;"></div>
+          <div id="notesSearchResults" style="display:none;overflow-y:auto;overflow-x:hidden;padding:4px 0;border-bottom:1px solid var(--surface0);flex-shrink:0;max-height:50%;"></div>
           <div id="notesList" style="overflow-y:auto;flex:1;"></div>
         </div>
         <div class="notes-editor">
@@ -12121,13 +12121,22 @@ async function runNotesSearch() {
       return;
     }
     host.style.display = '';
-    host.innerHTML = data.results.map(x => {
-      const noteName = x.id.replace(/^note:/, '');
-      return `<div onclick="openNote(${JSON.stringify(noteName)})" style="padding:6px 12px;cursor:pointer;border-bottom:1px solid var(--surface0);" onmouseenter="this.style.background='var(--surface0)'" onmouseleave="this.style.background='transparent'">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);font-weight:500;">${escapeHtml(x.title)} <span title="BM25 relevance score. Higher = better match. Combines how often your terms appear here, how rare those terms are across all notes, and document-length normalization." style="margin-left:auto;font-size:10px;color:var(--subtext0);cursor:help;">${x.score}</span></div>
-        <div style="font-size:11px;color:var(--subtext0);margin-top:3px;line-height:1.3;">${escapeHtml(x.snippet || '')}</div>
+    host.innerHTML = data.results.map((x, i) => {
+      return `<div data-note-result-idx="${i}" style="padding:6px 12px;cursor:pointer;border-bottom:1px solid var(--surface0);overflow:hidden;min-width:0;" onmouseenter="this.style.background='var(--surface0)'" onmouseleave="this.style.background='transparent'">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);font-weight:500;min-width:0;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(x.title)}</span><span title="BM25 relevance score. Higher = better match. Combines how often your terms appear here, how rare those terms are across all notes, and document-length normalization." style="font-size:10px;color:var(--subtext0);cursor:help;flex-shrink:0;">${x.score}</span></div>
+        <div style="font-size:11px;color:var(--subtext0);margin-top:3px;line-height:1.3;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(x.snippet || '')}</div>
       </div>`;
     }).join('');
+    // Bind click handlers via addEventListener so filenames with spaces / quotes work cleanly
+    host.querySelectorAll('[data-note-result-idx]').forEach(el => {
+      const idx = parseInt(el.getAttribute('data-note-result-idx'), 10);
+      const result = data.results[idx];
+      if (!result) return;
+      el.addEventListener('click', () => {
+        const name = result.id.replace(/^note:/, '');
+        openNote(name);
+      });
+    });
   } catch (_) {
     host.style.display = '';
     host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--red);">Search failed.</div>';
