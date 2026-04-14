@@ -6,8 +6,7 @@ param(
   [int]$Limit = 10
 )
 
-# Hybrid search across Notes + Learnings.
-# Requires Hybrid Search BETA enabled in Settings -> Other.
+# Hybrid search (BM25) across Notes + Learnings.
 #
 # Usage:
 #   ./scripts/Search-Notes.ps1 -Query "permission modes"

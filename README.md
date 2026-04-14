@@ -27,7 +27,7 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 - **Model Router** — Picks the right CLI + model for each task intent (`quick-summary`, `deep-code`, `web-research`, etc.) based on your subscriptions and API keys. Auto-promotes to large-context models when input exceeds 200k tokens.
 - **Recipes** — Reusable AI workflows declared as markdown files. Built-in editor (Monaco + variable library + icon picker + preview). Three universal defaults ship: Explain Codebase, Brainstorm Feature, Review My Changes.
 - **MCP Server + Client** — Exposes DevOps Pilot to Claude Desktop, Cursor, VS Code, Zed, etc. Consume external MCP servers (GitHub, Postgres, Slack, Linear, etc.) right inside the app.
-- **Hybrid Search** (BETA) — BM25 ranking across notes and learnings. Use the Notes search box (notes only) or the palette `find` command (notes + learnings).
+- **Hybrid Search** — BM25 ranking across notes and learnings. Use the Notes search box (notes only) or the palette `find` command (notes + learnings).
 - **Repo Map** — Token-budgeted symbol map of any repo. Languages, layout, top files ranked by recent commits with extracted classes and functions. Use it before grepping unfamiliar code. AI Action button in the sidebar.
 - **Plugins** — Builder.io, Sanity, WordPress, GA4/GTM, Release Manager, Dependency Inspector, Environment Manager, and more. Each plugin can contribute tabs, scripts, MCP tools, and AI keywords.
 - **Learnings Database** — Accumulated technical knowledge and past mistakes, fetched at session start so the AI doesn't repeat them.

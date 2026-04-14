@@ -3090,16 +3090,6 @@
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
-            <div class="settings-section-title">Hybrid Search <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
-            <div class="settings-section-desc">BM25 search across Notes and Learnings. Replaces substring search with proper relevance ranking. Index rebuilds on note save and on app start. Off by default while this stabilizes.</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" id="settingsHybridSearchMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
-                <span style="font-size:12px;color:var(--text);">Enable hybrid search</span>
-              </label>
-            </div>
-          </div>
-          <div class="settings-section">
             <div class="settings-section-title">AI Orchestration <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
             <div class="settings-section-desc">Enables the lead AI to dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot) AND unlocks Graph Runs (durable multi-step workflows with branching, approval gates, and crash recovery). When disabled, the AI works alone without spawning other agents and Graph Runs are not available.</div>
             <div style="display:flex;align-items:center;gap:10px;">
@@ -8729,8 +8719,6 @@ function openSettings(tab) {
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
   document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
-  const hsToggle = document.getElementById('settingsHybridSearchMode');
-  if (hsToggle) hsToggle.checked = configData.HybridSearchMode === true;
   // AI API keys
   const aiKeys = configData.AiApiKeys || {};
   document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
@@ -9016,7 +9004,6 @@ async function saveSettings() {
     GitHubPAT: document.getElementById('settingsGitHubPAT').value.trim(),
     WhisperKey: document.getElementById('settingsWispr').value.trim(),
     OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
-    HybridSearchMode: document.getElementById('settingsHybridSearchMode') ? document.getElementById('settingsHybridSearchMode').checked : false,
     OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
     IncognitoMode: document.getElementById('settingsIncognitoMode').checked,
     AiApiKeys: {
@@ -10718,10 +10705,6 @@ async function runPaletteSearch(query) {
   if (!/^\/?(?:find|search)\s+/i.test(cur)) return;
   try {
     const r = await fetch('/api/search?q=' + encodeURIComponent(query) + '&limit=20');
-    if (r.status === 501) {
-      _cmdFiltered = [{ label: 'Hybrid Search is OFF. Enable in Settings -> Other.', icon: 'alert-circle', action: () => openSettings('other'), category: 'Search' }];
-      _cmdSelectedIdx = 0; renderCmdPalette(); return;
-    }
     const data = await r.json();
     if (!data.results || !data.results.length) {
       _cmdFiltered = [{ label: `No matches for "${query}"`, icon: 'x-circle', action: () => {}, category: 'Search' }];
@@ -12249,7 +12232,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(refreshRecipes, 60000);
 });
 
-// ═══ Notes search (uses /api/search if Hybrid Search BETA is on) ═════════
+// ═══ Notes search (uses /api/search) ════════════════════════════════════
 let _notesSearchTimer = null;
 function onNotesSearchInput() {
   clearTimeout(_notesSearchTimer);
@@ -12262,11 +12245,6 @@ async function runNotesSearch() {
   try {
     // Notes tab search is scoped to notes only. Cross-corpus search lives in the command palette.
     const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&kinds=note&limit=15');
-    if (r.status === 501) {
-      host.style.display = '';
-      host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--subtext0);">Hybrid Search is OFF. Enable it in <a href="#" onclick="event.preventDefault();openSettings();return false;" style="color:var(--accent);">Settings -> Other</a> to search across notes + learnings.</div>';
-      return;
-    }
     const data = await r.json();
     if (!data.results || !data.results.length) {
       host.style.display = '';

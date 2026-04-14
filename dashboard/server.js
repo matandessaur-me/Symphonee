@@ -249,11 +249,8 @@ const server = http.createServer(async (req, res) => {
         }));
       } catch (e) { return json(res, { error: e.message }, 400); }
     }
-    // ── Hybrid Search (BETA, gated by config.HybridSearchMode) ───────────
+    // ── Hybrid Search ─────────────────────────────────────────────────────
     if (url.pathname.startsWith('/api/search')) {
-      if (getConfig().HybridSearchMode !== true) {
-        return json(res, { error: 'Hybrid Search is a BETA feature. Enable it in Settings -> Other.' }, 501);
-      }
       if (url.pathname === '/api/search' && req.method === 'GET') {
         const q = url.searchParams.get('q') || '';
         const kindsParam = url.searchParams.get('kinds') || '';
@@ -3028,7 +3025,7 @@ async function handleSaveNote(req, res) {
   fs.mkdirSync(notesDir, { recursive: true });
   atomicWriteSync(resolved, content || '');
   broadcast({ type: 'ui-action', action: 'refresh-notes' });
-  if (getConfig().HybridSearchMode === true) hybridSearch.indexNote(resolved).catch(() => {});
+  hybridSearch.indexNote(resolved).catch(() => {});
   json(res, { ok: true });
 }
 
@@ -3358,12 +3355,10 @@ _learningsInstance.pull().then(r => {
   if (r.pulled > 0) { console.log(`  Pulled ${r.pulled} shared learning(s)`); writePluginHints(); }
 }).catch(() => {});
 
-// ── Hybrid search bootstrap (only when BETA flag is on) ──────────────────────
-if (getConfig().HybridSearchMode === true) {
-  hybridSearch.initialize({ notesDir, learnings: _learningsInstance })
-    .then(() => console.log(`  Hybrid search indexed ${hybridSearch.totalDocs} doc(s) across ${hybridSearch.invertedIndex.size} term(s)`))
-    .catch(e => console.warn('  [hybrid-search] init error:', e.message));
-}
+// ── Hybrid search bootstrap ─────────────────────────────────────────────────
+hybridSearch.initialize({ notesDir, learnings: _learningsInstance })
+  .then(() => console.log(`  Hybrid search indexed ${hybridSearch.totalDocs} doc(s) across ${hybridSearch.invertedIndex.size} term(s)`))
+  .catch(e => console.warn('  [hybrid-search] init error:', e.message));
 
 // ── Mount browser agent ──────────────────────────────────────────────────────
 try {

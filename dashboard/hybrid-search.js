@@ -9,8 +9,7 @@
  * over a few hundred notes/learnings beats substring search by a wide
  * margin and ships with zero native dependencies.
  *
- * Gated behind config.HybridSearchMode (BETA) -- when off, the indexer
- * doesn't run and /api/search returns 501.
+ * Always on. Initialized at server boot.
  */
 
 const fs = require('fs');

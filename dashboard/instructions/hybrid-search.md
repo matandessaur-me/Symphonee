@@ -1,6 +1,6 @@
-# Hybrid Search (BETA)
+# Hybrid Search
 
-BM25-based search across Notes + Learnings. Beats substring search at scale (500+ docs). Gated behind `HybridSearchMode` in `config.json` -- when off, `/api/search` returns 501. v1 is BM25 only; v2 will add a local vector embedding model and combine scores.
+BM25-based search across Notes + Learnings. Always on. v1 is BM25 only; v2 will add a local vector embedding model and combine scores.
 
 ## Use it
 

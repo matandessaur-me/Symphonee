@@ -317,7 +317,7 @@ const TOOLS = [
   },
   {
     name: 'search_notes_and_learnings',
-    description: 'BETA. Hybrid (BM25) search across Notes and Learnings. Requires Hybrid Search enabled in Settings -> Other. Returns ranked results with snippets.',
+    description: 'Hybrid (BM25) search across Notes and Learnings. Returns ranked results with snippets.',
     inputSchema: {
       type: 'object',
       properties: {
