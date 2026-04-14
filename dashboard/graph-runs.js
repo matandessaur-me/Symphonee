@@ -290,12 +290,29 @@ class GraphRunsEngine extends EventEmitter {
     const cancelled = run.nodes.filter(n => n.status === 'cancelled').length;
     const failed = run.nodes.filter(n => n.status === 'failed').length;
     const duration = Math.round((run.updatedAt - run.createdAt) / 1000);
-    const lastCompleted = [...run.nodes].reverse().find(n => n.status === 'completed');
-    const snippet = lastCompleted && lastCompleted.output && lastCompleted.output.result
-      ? String(lastCompleted.output.result).replace(/\n/g, ' ').substring(0, 400)
-      : '(no result from last node)';
-    const line = `[GRAPH RUN ${run.id}] ${run.status} — ${run.name} | ${ran} done, ${cancelled} skipped, ${failed} failed | ${duration}s | last: ${snippet}`;
-    try { this.injectToTerminal(run.originTermId, line + '\r'); } catch (_) {}
+
+    let detail;
+    if (failed > 0) {
+      // Lead with the failure. The supervisor needs to know what broke,
+      // what was tried, and what the next action should be.
+      const failedNode = run.nodes.find(n => n.status === 'failed');
+      const err = (failedNode.error || '').replace(/\s+/g, ' ').slice(0, 500);
+      detail = `FAILED node '${failedNode.id}' (${failedNode.type}): ${err}. Inspect: ./scripts/Get-GraphRun.ps1 -Id ${run.id}. If the cause is a token/rate/quota limit, retry with a different CLI via the model router.`;
+    } else {
+      const lastCompleted = [...run.nodes].reverse().find(n => n.status === 'completed');
+      detail = lastCompleted && lastCompleted.output && lastCompleted.output.result
+        ? 'last: ' + String(lastCompleted.output.result).replace(/\s+/g, ' ').substring(0, 400)
+        : '(no result)';
+    }
+    const line = `[GRAPH RUN ${run.id}] ${run.status} - ${run.name} | ${ran} done, ${cancelled} skipped, ${failed} failed | ${duration}s | ${detail}`;
+    // Use \r\n + a small delay before injecting so the supervisor CLI's input
+    // buffer has settled; \r alone was observed to paste without submitting
+    // in some Claude Code builds.
+    try {
+      setTimeout(() => {
+        try { this.injectToTerminal(run.originTermId, line + '\r\n'); } catch (_) {}
+      }, 250);
+    } catch (_) {}
   }
 
   _areDepsComplete(run, node) {
@@ -348,28 +365,84 @@ class GraphRunsEngine extends EventEmitter {
   }
 
   async _runWorkerNode(run, node) {
-    const prompt = renderTemplate(node.prompt || '', { state: run.state });
-    const body = {
-      cli: node.cli || 'claude',
-      prompt,
-      cwd: node.cwd,
-      from: `graph-run:${run.id}`,
-      model: node.model,
-      effort: node.effort,
-      autoPermit: !!node.autoPermit,
-    };
-    const spawnRes = await apiRequest(this.apiHost, this.apiPort, 'POST', '/api/orchestrator/spawn', body);
-    if (!spawnRes || !spawnRes.id) throw new Error('spawn failed: ' + JSON.stringify(spawnRes));
-    // Poll the task until completion
-    const taskId = spawnRes.id;
-    while (true) {
-      await sleep(1500);
-      if (['paused', 'cancelled'].includes(run.status)) throw new Error('run paused/cancelled');
-      const task = await apiRequest(this.apiHost, this.apiPort, 'GET', `/api/orchestrator/task?id=${taskId}`);
-      if (!task) throw new Error('task disappeared');
-      if (task.state === 'completed') return { taskId, result: task.result };
-      if (['failed', 'cancelled', 'timeout'].includes(task.state)) throw new Error(`worker ${task.state}: ${task.error || ''}`);
+    // Try declared cli/model first; on a retry-worthy failure, ask the router
+    // for a different CLI and try again. Up to 3 attempts.
+    const triedClis = [];
+    let lastError = null;
+    const maxAttempts = node.noFallback ? 1 : 3;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      let cli = node.cli;
+      let model = node.model;
+      if (!cli || (attempt > 0 && !node.noFallback)) {
+        const rec = await this._routerRecommend({ intent: node.intent || 'deep-code', excludeClis: triedClis });
+        if (rec && rec.cli) { cli = rec.cli; model = rec.model; }
+        else if (!cli) throw new Error(`router returned no cli; last error: ${lastError}`);
+      }
+      if (!cli) cli = 'claude';
+      if (triedClis.includes(cli)) break;
+      triedClis.push(cli);
+
+      const prompt = renderTemplate(node.prompt || '', { state: run.state });
+      const body = { cli, model, prompt, cwd: node.cwd, from: `graph-run:${run.id}`,
+        effort: node.effort, autoPermit: !!node.autoPermit };
+      const spawnRes = await apiRequest(this.apiHost, this.apiPort, 'POST', '/api/orchestrator/spawn', body).catch(e => ({ __error: e }));
+      if (spawnRes && spawnRes.__error) {
+        lastError = `spawn ${cli} failed: ${spawnRes.__error.message || spawnRes.__error}`;
+        if (!this._shouldRetryOnAnotherModel(lastError)) throw new Error(lastError);
+        continue;
+      }
+      if (!spawnRes || !spawnRes.id) {
+        throw new Error(`spawn ${cli} refused: ${JSON.stringify(spawnRes)}`);
+      }
+      const taskId = spawnRes.id;
+      let taskFailed = false;
+      while (true) {
+        await sleep(1500);
+        if (['paused', 'cancelled'].includes(run.status)) throw new Error('run paused/cancelled');
+        const task = await apiRequest(this.apiHost, this.apiPort, 'GET', `/api/orchestrator/task?id=${taskId}`);
+        if (!task) { lastError = `task ${taskId} disappeared on ${cli}`; taskFailed = true; break; }
+        if (task.state === 'completed') return { taskId, cli, model, result: task.result, attempts: attempt + 1, triedClis };
+        if (['failed', 'cancelled', 'timeout'].includes(task.state)) {
+          const detail = (task.error || task.result || '').toString().replace(/\s+/g, ' ').slice(0, 600);
+          lastError = `worker ${task.state} on ${cli}: ${detail}`;
+          taskFailed = true;
+          break;
+        }
+      }
+      if (!taskFailed) break;
+      if (!this._shouldRetryOnAnotherModel(lastError)) throw new Error(lastError);
+      // loop; router will pick a different cli
     }
+    throw new Error(lastError || 'worker exhausted retries');
+  }
+
+  _shouldRetryOnAnotherModel(errMsg) {
+    if (!errMsg) return false;
+    const s = String(errMsg).toLowerCase();
+    return [
+      'token limit', 'token quota', 'rate limit', 'rate-limit', '429',
+      'quota exceeded', 'usage limit', 'reached your', 'context length', 'max tokens',
+      'circuit breaker', 'insufficient_quota', 'overloaded', 'server is busy',
+      'authentication', 'unauthorized', 'invalid api key', 'auth error',
+    ].some(k => s.includes(k));
+  }
+
+  async _routerRecommend({ intent, excludeClis = [] }) {
+    try {
+      const rec = await apiRequest(this.apiHost, this.apiPort, 'POST', '/api/models/recommend', { intent });
+      if (rec && rec.cli && !excludeClis.includes(rec.cli)) return rec;
+      const cat = await apiRequest(this.apiHost, this.apiPort, 'GET', '/api/models/catalog');
+      if (cat && cat.catalog) {
+        for (const [cli, def] of Object.entries(cat.catalog)) {
+          if (excludeClis.includes(cli)) continue;
+          for (const meta of Object.values(def.models || {})) {
+            if (meta.available) return { cli, model: meta.id, reasoning: 'fallback from catalog' };
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   async _runApprovalNode(run, node) {
