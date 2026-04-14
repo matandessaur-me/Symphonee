@@ -161,8 +161,16 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       if (!body.id) return json(res, { error: 'id required' }, 400);
       if (!await permGate(res, 'api', 'POST /api/recipes/run', `Run recipe: ${body.id}`)) return;
-      try { return json(res, await recipes.runRecipe(body)); }
-      catch (e) { return json(res, { error: e.message }, 400); }
+      try {
+        return json(res, await recipes.runRecipe({
+          ...body,
+          injectToTerminal: (termId, text) => {
+            const t = terminals.get(termId);
+            if (t && t.pty) try { t.pty.write(text); } catch (_) {}
+          },
+          getOrchestrateMode: () => getConfig().OrchestrateMode === true,
+        }));
+      } catch (e) { return json(res, { error: e.message }, 400); }
     }
     if (url.pathname === '/api/ui/open-path' && req.method === 'POST') {
       const body = await readBody(req);

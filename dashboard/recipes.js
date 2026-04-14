@@ -220,7 +220,13 @@ function loadRecipe(id, preferredScope = null) {
 }
 
 // ── Run a recipe ────────────────────────────────────────────────────────────
-async function runRecipe({ id, inputs, originTermId, apiHost = '127.0.0.1', apiPort = 3800 }) {
+// Two delivery modes:
+//   - 'inject' (default): write the rendered prompt into the active terminal
+//     as if the user typed it. Works whether orchestration is on or off; the
+//     currently-running AI (Claude Code, Codex, Gemini, etc.) handles it.
+//   - 'dispatch': spawn a headless worker via /api/orchestrator/spawn. Only
+//     works when OrchestrateMode is on. Set in the recipe via `dispatch: true`.
+async function runRecipe({ id, inputs, originTermId, injectToTerminal, getOrchestrateMode, apiHost = '127.0.0.1', apiPort = 3800 }) {
   const recipe = loadRecipe(id);
   if (!recipe) throw new Error(`Recipe not found: ${id}`);
 
@@ -243,38 +249,50 @@ async function runRecipe({ id, inputs, originTermId, apiHost = '127.0.0.1', apiP
     }
   }
 
-  // Render the body with full var scope
-  const prompt = renderTemplate(recipe.body, {
-    context,
-    env: process.env,
-    inputs: finalInputs,
-  }).trim();
+  // Render the body
+  const prompt = renderTemplate(recipe.body, { context, env: process.env, inputs: finalInputs }).trim();
 
-  // Resolve cli/model: explicit > router via intent > default
-  let cli = recipe.cli;
-  let model = recipe.model;
-  if (!cli && recipe.intent) {
-    const rec = await apiPost(apiHost, apiPort, '/api/models/recommend', { intent: recipe.intent }).catch(() => null);
-    if (rec && rec.cli) { cli = rec.cli; model = rec.model; }
+  // Decide delivery mode
+  const wantsDispatch = recipe.meta && recipe.meta.dispatch === true;
+  const orchestrationOn = typeof getOrchestrateMode === 'function' ? !!getOrchestrateMode() : false;
+
+  if (wantsDispatch) {
+    if (!orchestrationOn) {
+      throw new Error(`Recipe '${recipe.id}' uses dispatch mode but AI Orchestration is disabled. Enable it in Settings -> Other, or remove dispatch:true from the recipe to run in the active terminal instead.`);
+    }
+    // Resolve cli/model: explicit > router via intent > default
+    let cli = recipe.cli;
+    let model = recipe.model;
+    if (!cli && recipe.intent) {
+      const rec = await apiPost(apiHost, apiPort, '/api/models/recommend', { intent: recipe.intent }).catch(() => null);
+      if (rec && rec.cli) { cli = rec.cli; model = rec.model; }
+    }
+    if (!cli) cli = 'claude';
+    const spawnBody = { cli, model, prompt, from: originTermId || `recipe:${recipe.id}`, autoPermit: false };
+    const spawnRes = await apiPost(apiHost, apiPort, '/api/orchestrator/spawn', spawnBody);
+    if (!spawnRes || !spawnRes.id) throw new Error(`spawn failed: ${JSON.stringify(spawnRes)}`);
+    return {
+      recipe: recipe.id, mode: 'dispatch',
+      cli, model, taskId: spawnRes.id,
+      inputs: finalInputs, promptPreview: prompt.slice(0, 400),
+      advisedMode: recipe.mode,
+    };
   }
-  if (!cli) cli = 'claude';
 
-  // Spawn the worker. Note: this respects the active permission mode at the
-  // server gate. We do NOT temporarily switch modes (that would be invisible
-  // to the user and risky); the recipe's `mode` field is advisory in v1 and
-  // shown in the UI so the user can switch the chip themselves.
-  const spawnBody = {
-    cli, model, prompt,
-    from: originTermId || `recipe:${recipe.id}`,
-    autoPermit: false,
-  };
-  const spawnRes = await apiPost(apiHost, apiPort, '/api/orchestrator/spawn', spawnBody);
-  if (!spawnRes || !spawnRes.id) throw new Error(`spawn failed: ${JSON.stringify(spawnRes)}`);
-
+  // Default: inject into the active terminal as if the user typed it.
+  if (!originTermId) {
+    throw new Error(`Recipe '${recipe.id}' needs an active terminal to run in. Open or focus a terminal first, or add 'dispatch: true' to the recipe to spawn a headless worker.`);
+  }
+  if (typeof injectToTerminal !== 'function') {
+    throw new Error('Internal: injectToTerminal not provided');
+  }
+  // Two writes to ensure submission across CLIs (text, then a beat, then \r):
+  // matches the proven pattern from graph-runs result delivery.
+  injectToTerminal(originTermId, prompt);
+  setTimeout(() => { try { injectToTerminal(originTermId, '\r'); } catch (_) {} }, 150);
   return {
-    recipe: recipe.id,
-    cli, model,
-    taskId: spawnRes.id,
+    recipe: recipe.id, mode: 'inject',
+    targetTermId: originTermId,
     inputs: finalInputs,
     promptPreview: prompt.slice(0, 400),
     advisedMode: recipe.mode,

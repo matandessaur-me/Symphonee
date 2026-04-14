@@ -11833,7 +11833,12 @@ async function submitRecipeRun(recipeIdEnc) {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || r.statusText);
-    toast(`Recipe '${recipeId}' running on ${data.cli} (task ${data.taskId.slice(0,8)})`, 'success');
+    if (data.mode === 'dispatch') {
+      toast(`Recipe '${recipeId}' dispatched to ${data.cli} (task ${data.taskId.slice(0,8)})`, 'success');
+    } else {
+      toast(`Recipe '${recipeId}' sent to your active terminal`, 'success');
+      switchTab('terminal');
+    }
   } catch (e) { toast('Recipe failed: ' + e.message, 'error'); }
 }
 

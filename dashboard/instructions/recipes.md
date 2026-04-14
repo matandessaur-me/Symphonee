@@ -45,10 +45,18 @@ Body of the prompt. Supports {{ inputs.X }}, {{ context.X }}, {{ env.X }}.
 
 ## Behavior
 
-- If `intent` is set and `cli` is omitted, the model router picks the CLI/model that fits.
-- If `cli` (and optionally `model`) is set, that pick is used as-is.
-- Result is injected back into the originating terminal when the worker completes (same delivery path as graph runs).
-- The recipe's `mode` field is **advisory** in v1: the active permission mode chip still controls server-side gating. The runner reports the advised mode so the user can switch if needed.
+### Two delivery modes
+
+- **`inject` (default)**: the rendered prompt is sent to the active terminal as if the user typed it. The currently running AI (Claude Code, Codex, Gemini, Copilot, Grok) handles it. Works whether AI Orchestration is on or off.
+- **`dispatch`**: spawns a headless worker via the orchestrator. Set `dispatch: true` in the recipe frontmatter to opt in. **Requires AI Orchestration to be enabled** (Settings -> Other). Returns a task id; result is injected back when the worker completes.
+
+Use **dispatch** when you want the work to run in parallel without occupying your terminal (for example, a long backlog audit while you keep coding). Use the default **inject** mode for everything else.
+
+### Other notes
+
+- If `intent` is set and `cli` is omitted, the model router picks the CLI/model that fits. Only matters in dispatch mode (inject mode uses whatever AI is already running in your terminal).
+- If `cli` (and optionally `model`) is set, that pick is used as-is in dispatch mode.
+- The recipe's `mode` field is **advisory** in v1: the active permission mode chip still controls server-side gating. The runner reports the advised mode so the user can switch the chip if needed.
 
 ## Starter recipes shipped
 
