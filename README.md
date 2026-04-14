@@ -11,14 +11,26 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 
 ## Features
 
-- **Sprint & Work Item Management** — View your board, backlog, burndown charts, and velocity. Create, update, and move work items through their lifecycle.
-- **AI-Powered Terminal** — Run Claude Code, Gemini CLI, GitHub Copilot CLI, or OpenAI Codex directly inside the app. AI agents have full context of your Azure DevOps project.
-- **Git Operations** — Switch branches, pull, push, compare, and commit — all through the built-in UI. View diffs with syntax-highlighted side-by-side comparison.
-- **File Browser & Code Viewer** — Browse repository files, search across codebases, and view files with syntax highlighting.
-- **Markdown Notes** — Built-in scratchpad for meeting notes, sprint planning, and documentation. AI agents can read and write notes too.
-- **Command Palette** — Press `Ctrl+K` to instantly jump to any action, tab, repository, or work item.
-- **Activity Timeline** — Visual overview of recent work item changes with charts and daily activity.
-- **Pull Request Management** — View, review, and create GitHub pull requests without leaving the app.
+### Core
+- **Sprint & Work Item Management** — Board, backlog, burndown, velocity. Create, update, and move work items through their lifecycle.
+- **Multi-AI Terminal** — Run Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, or Grok directly inside the app. Agents get full context of your Azure DevOps project at session start.
+- **Git Operations** — Switch branches, pull, push, compare, and commit through the built-in UI. Side-by-side diff viewer with syntax highlighting.
+- **File Browser & Monaco Code Viewer** — Browse repository files, search across codebases, view and edit files with full Monaco editor (the editor that powers VS Code).
+- **Markdown Notes** — Built-in scratchpad. AI agents can read and write notes too.
+- **Command Palette** — `Ctrl+K` jumps to any action, tab, repository, work item, or recipe. Type `find <query>` to search across notes and learnings.
+- **Activity Timeline & Pull Requests** — Recent work item changes with charts; review and create GitHub PRs without leaving the app.
+
+### AI tooling
+- **Permission Modes** — Four modes (`review` / `edit` / `trusted` / `bypass`) gate every spawn, write, and external call at the server level. Pattern-based allow/ask/deny rules with one-click "always allow this pattern" promotion. Header chip switches mode; approval modal appears when needed.
+- **AI Orchestration** (BETA) — Lead AI dispatches work to other CLIs (Codex, Gemini, Grok, Copilot) with circuit breaker, retry, escalation ladder, fan-out, worktree isolation, and durable graph runs.
+- **Graph Runs** (BETA, part of Orchestration) — Define multi-step workflows with worker, approval, and branch nodes. Survive app restarts. Auto-fallback to a different CLI on rate-limit/quota errors. Result auto-injects back into the launching terminal.
+- **Model Router** — Picks the right CLI + model for each task intent (`quick-summary`, `deep-code`, `web-research`, etc.) based on your subscriptions and API keys. Auto-promotes to large-context models when input exceeds 200k tokens.
+- **Recipes** — Reusable AI workflows declared as markdown files. Built-in editor (Monaco + variable library + icon picker + preview). Three universal defaults ship: Explain Codebase, Brainstorm Feature, Review My Changes.
+- **MCP Server + Client** — Exposes DevOps Pilot to Claude Desktop, Cursor, VS Code, Zed, etc. Consume external MCP servers (GitHub, Postgres, Slack, Linear, etc.) right inside the app.
+- **Hybrid Search** — BM25 ranking across notes and learnings. Use the Notes search box (notes only) or the palette `find` command (notes + learnings).
+- **Repo Map** — Token-budgeted symbol map of any repo. Languages, layout, top files ranked by recent commits with extracted classes and functions. Use it before grepping unfamiliar code. AI Action button in the sidebar.
+- **Plugins** — Builder.io, Sanity, WordPress, GA4/GTM, Release Manager, Dependency Inspector, Environment Manager, and more. Each plugin can contribute tabs, scripts, MCP tools, and AI keywords.
+- **Learnings Database** — Accumulated technical knowledge and past mistakes, fetched at session start so the AI doesn't repeat them.
 
 
 
@@ -52,11 +64,12 @@ That's it. The app will walk you through connecting your Azure DevOps organizati
 For AI-powered features, install one or more of these CLIs globally:
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — `npm i -g @anthropic-ai/claude-code`
+- [Codex CLI](https://github.com/openai/codex) — `npm i -g @openai/codex`
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — `npm i -g @google/gemini-cli`
 - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) — `npm i -g @githubnext/github-copilot-cli`
-- [Codex CLI](https://github.com/openai/codex) — `npm i -g @openai/codex`
+- [Grok CLI](https://x.ai/api) — community CLI; xAI official is on the waitlist as of April 2026
 
-The app auto-detects which CLIs are installed and lets you switch between them.
+The app auto-detects which CLIs are installed and lets you switch between them. Each session starts with a single bootstrap call so the AI knows the active repo, permission mode, plugins, and learnings before its first reply.
 
 ---
 
@@ -68,31 +81,41 @@ DevOps Pilot
 |   +-- Loads http://localhost:3800
 |
 +-- Node.js Server (server.js, port 3800)
-|   +-- REST API (/api/*)          -> Azure DevOps proxy
-|   +-- WebSocket                  -> Terminal PTY bridge
-|   +-- Git handlers               -> Local repo operations
-|   +-- Static files               -> Dashboard UI
+|   +-- REST API (/api/*)              -> Azure DevOps + GitHub proxy, all internal services
+|   +-- Permissions engine             -> Modes + pattern rules + approval queue
+|   +-- Orchestrator                   -> Spawn / dispatch / handoff / fan-out / worktree
+|   +-- Graph runs engine              -> Durable multi-step workflows
+|   +-- Model router                   -> Intent-based CLI + model selection
+|   +-- Recipes loader                 -> Markdown workflow files
+|   +-- Hybrid search (BM25)           -> Notes + Learnings retrieval
+|   +-- Repo map                       -> Token-budgeted symbol graph
+|   +-- MCP server (stdio)             -> Exposes plugins + tools to external clients
+|   +-- MCP client manager             -> Consumes external MCP servers
+|   +-- Plugin loader                  -> Auto-discovers + mounts plugin routes
+|   +-- Learnings store                -> Accumulated technical knowledge
+|   +-- WebSocket                      -> Terminal PTY bridge
 |
 +-- Dashboard UI (index.html)
-|   +-- Board & Backlog views
-|   +-- Work item detail/create modals
-|   +-- XTerm.js terminal (WebGL)
-|   +-- File browser & code viewer
-|   +-- Diff viewer (split & unified)
-|   +-- Git modal (branches, pull, push, commit, compare)
-|   +-- Markdown notes editor
-|   +-- Settings modal
+|   +-- Header                         -> Permission mode chip + status
+|   +-- Sidebar                        -> Boards, AI actions, plugins, git
+|   +-- Center tabs                    -> Terminal, Backlog, Work Item, PRs, Files, Diff,
+|   |                                     Notes, Recipe Editor, plugin tabs
+|   +-- Right intel panel              -> Activity, Team, Git Log, Recipes
+|   +-- Monaco editor                  -> Code viewer + recipe editor + repo map viewer
+|   +-- XTerm.js terminal              -> Multi-tab PTYs with AI launchers
+|   +-- Approval modal                 -> Permissions + graph-run approval gates
 |
-+-- PowerShell Scripts (scripts/)
-    +-- Utility scripts for AI agents
++-- Scripts (scripts/)
+    +-- 30+ PowerShell + Node helpers (work items, git, recipes, graph runs, etc.)
 ```
 
 ### How It Works
 
 1. The **Electron app** launches a local Node.js HTTP server on port 3800.
-2. The **server** proxies Azure DevOps REST API calls using your PAT, manages local git operations, serves the dashboard UI, and bridges a WebSocket connection to a persistent PowerShell PTY.
-3. The **dashboard** is a single-page app with the board, backlog, terminal, file browser, diff viewer, and notes editor.
-4. **AI agents** run inside the terminal and interact with the app through the REST API and pre-made PowerShell scripts.
+2. The **server** proxies Azure DevOps and GitHub APIs, runs all internal services (orchestrator, graph runs, recipes, search, MCP server, plugins, learnings), and bridges the terminal over WebSocket.
+3. The **dashboard** is a single-page app with center tabs and a right-side intel panel. Monaco is used wherever code or markdown is shown or edited.
+4. **AI agents** in the terminal call the same internal API as the UI. Every session starts with a single `/api/bootstrap` fetch that returns context, instructions, plugins, learnings, and permission state in one round-trip.
+5. **External AI clients** (Claude Desktop, Cursor, etc.) reach the same surface through the MCP server.
 
 ---
 
@@ -174,26 +197,31 @@ DevOps Pilot can also connect to external MCP servers (GitHub, Postgres, Slack, 
 
 ## Supported AI Agents
 
-Each AI agent gets its own themed color palette when active:
+DevOps Pilot detects installed CLIs at boot and lets you launch any of them per terminal tab. The Model Router picks the best CLI + model per task intent, respecting your installed CLIs and configured API keys.
 
-| Agent | Theme Color | Package |
-|-------|------------|---------|
-| Claude Code | Orange | `@anthropic-ai/claude-code` |
-| Gemini CLI | Blue | `@google/gemini-cli` |
-| Copilot CLI | Purple | `@githubnext/github-copilot-cli` |
-| Codex CLI | Green | `@openai/codex` |
+| Agent | Package | Notes |
+|-------|---------|-------|
+| Claude Code | `@anthropic-ai/claude-code` | Anthropic. Models: Haiku 4.5 / Sonnet 4.6 / Opus 4.6 / opusplan. |
+| Codex CLI | `@openai/codex` | OpenAI. Models: GPT-5.4 / GPT-5.4-mini / GPT-5.3-Codex / Spark. Native web search. |
+| Gemini CLI | `@google/gemini-cli` | Google. Models: Gemini 3 Flash (free tier) / Gemini 3 Pro (paid). 2M context. |
+| GitHub Copilot CLI | `@githubnext/github-copilot-cli` | GitHub. Best for PR/issue workflows. |
+| Grok | `x.ai` API | xAI. Community CLI only as of April 2026; official Grok CLI is on the waitlist. Unique edge: live X/social context. |
+
+The visual theme is driven by your **theme preference** in Settings (Catppuccin variants and others), not by which CLI is active.
 
 ---
 
 ## Tech Stack
 
 - **Electron** v35 — Desktop application shell
-- **Node.js** — HTTP server and Azure DevOps API proxy
+- **Node.js** — HTTP server, internal services, Azure DevOps + GitHub proxy
+- **Monaco Editor** — Code viewer, recipe editor, repo map viewer
 - **XTerm.js** — Terminal emulator with WebGL rendering
 - **node-pty** — Persistent PowerShell PTY sessions
 - **WebSocket (ws)** — Real-time terminal I/O bridge
 - **Lucide Icons** — UI iconography
-- **Highlight.js** — Syntax highlighting for code viewer and diffs
+- **Highlight.js** — Syntax highlighting for diffs
+- **Model Context Protocol** — Open standard for AI tool/resource integration (server + client)
 
 ---
 
