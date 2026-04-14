@@ -45,17 +45,28 @@ class GraphRunsEngine extends EventEmitter {
   _loadPersisted() {
     let entries = [];
     try { entries = fs.readdirSync(this.runsDir); } catch (_) { return; }
+    const toResume = [];
     for (const f of entries) {
       if (!f.endsWith('.json')) continue;
       try {
         const run = JSON.parse(fs.readFileSync(path.join(this.runsDir, f), 'utf8'));
-        // Any run that was "running" when we crashed gets marked paused on load.
-        if (run.status === 'running') run.status = 'paused';
+        // Runs that were mid-flight (running) or mid-approval when the app
+        // stopped need their in-memory state rebuilt. The on-disk approval
+        // waiter is gone, so we reset those nodes to pending and re-enter the
+        // scheduler — it will recreate the waiter, the modal will surface
+        // again, and Approve / Reject will work as expected.
+        const needsResume = run.status === 'running' || run.status === 'awaiting_approval';
+        if (needsResume) run.status = 'pending';
         for (const n of run.nodes) {
-          if (n.status === 'running') n.status = 'pending';
+          if (n.status === 'running' || n.status === 'awaiting_approval') n.status = 'pending';
         }
         this.runs.set(run.id, run);
+        if (needsResume) toResume.push(run.id);
       } catch (_) {}
+    }
+    // Kick the scheduler for any resumed run. Defer so constructor finishes.
+    for (const id of toResume) {
+      setImmediate(() => this._executeNextBatch(id).catch(err => this._failRun(id, err.message)));
     }
   }
 
