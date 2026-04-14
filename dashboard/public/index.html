@@ -1007,6 +1007,10 @@
     .search-result-text { color: var(--subtext1); font-family: var(--font-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .search-result-text mark { background: rgba(249, 226, 175, 0.25); color: var(--yellow); border-radius: 2px; padding: 0 1px; }
     .monaco-highlight-line { background: rgba(249, 226, 175, 0.12) !important; }
+    /* In-note find bar highlight marks (overlay behind the textarea) */
+    #noteHighlightLayer mark { color: transparent; border-radius: 2px; padding: 0; }
+    #noteHighlightLayer mark.note-find { background: rgba(249, 226, 175, 0.35); }
+    #noteHighlightLayer mark.note-find-current { background: rgba(249, 226, 175, 0.7); outline: 1px solid rgba(249, 226, 175, 0.9); }
     .monaco-highlight-match { background: rgba(249, 226, 175, 0.35) !important; border-radius: 2px; outline: 1px solid rgba(249, 226, 175, 0.5); }
     .files-sidebar-tabs {
       display: flex; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
@@ -2186,6 +2190,7 @@
         <button class="btn" onclick="runScript('standup')"><i data-lucide="message-square"></i> Standup Summary</button>
         <button class="btn" onclick="runScript('status')"><i data-lucide="bar-chart-2"></i> Iteration Status</button>
         <button class="btn" onclick="runScript('retro')"><i data-lucide="rotate-ccw"></i> Retrospective</button>
+        <button class="btn" onclick="openRepoMapModal()"><i data-lucide="map"></i> Generate Repo Map</button>
         <div id="sidebarPluginAiActions"></div>
         <div class="divider"></div>
       </div>
@@ -2610,6 +2615,10 @@
           <div id="newNoteInputWrap" style="display:none;padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;">
             <input id="newNoteInput" type="text" placeholder="Note name..." style="width:100%;padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;" onkeydown="if(event.key==='Enter')confirmCreateNote();if(event.key==='Escape')hideNewNoteInput();">
           </div>
+          <div id="notesSearchWrap" style="padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;">
+            <input id="notesSearchInput" type="text" placeholder="Search notes..." oninput="onNotesSearchInput()" style="width:100%;padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;box-sizing:border-box;">
+          </div>
+          <div id="notesSearchResults" style="display:none;overflow-y:auto;overflow-x:hidden;padding:4px 0;border-bottom:1px solid var(--surface0);flex-shrink:0;max-height:50%;"></div>
           <div id="notesList" style="overflow-y:auto;flex:1;"></div>
         </div>
         <div class="notes-editor">
@@ -2619,8 +2628,17 @@
             <button class="tab-bar-btn" onclick="sendNoteToAi()" title="Send note content to AI">Send to AI</button>
             <button class="tab-bar-btn" onclick="saveCurrentNote()" id="noteSaveBtn" style="display:none;">Save</button>
           </div>
-          <div id="noteEditor" style="display:none;flex:1;position:relative;">
-            <textarea id="noteTextarea" style="width:100%;height:100%;resize:none;background:var(--crust);color:var(--text);border:none;padding:16px 20px;font:14px/1.7 var(--font-mono);outline:none;tab-size:2;" spellcheck="false" oninput="onNoteInput()"></textarea>
+          <div id="noteEditor" style="display:none;flex:1;position:relative;background:var(--crust);">
+            <div id="noteHighlightLayer" style="position:absolute;inset:0;padding:16px 20px;font:14px/1.7 var(--font-mono);color:transparent;white-space:pre-wrap;word-wrap:break-word;overflow:hidden;pointer-events:none;tab-size:2;box-sizing:border-box;"></div>
+            <textarea id="noteTextarea" onscroll="syncNoteHighlightScroll()" style="position:relative;width:100%;height:100%;resize:none;background:transparent;color:var(--text);border:none;padding:16px 20px;font:14px/1.7 var(--font-mono);outline:none;tab-size:2;box-sizing:border-box;" spellcheck="false" oninput="onNoteInput();updateNoteHighlightsLive()"></textarea>
+            <div id="noteFindBar" style="display:none;position:absolute;top:8px;right:14px;background:var(--surface0);border:1px solid var(--surface2);border-radius:6px;padding:6px 10px;display:none;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:10;font:12px var(--font-ui);">
+              <i data-lucide="search" style="width:13px;height:13px;color:var(--subtext0);"></i>
+              <input id="noteFindInput" type="text" placeholder="Find in note" oninput="updateNoteFindMatches(true)" onkeydown="onNoteFindKeydown(event)" style="background:transparent;border:none;outline:none;color:var(--text);font:12px var(--font-ui);width:160px;">
+              <span id="noteFindCount" style="color:var(--subtext0);font-size:11px;min-width:50px;text-align:right;">0/0</span>
+              <button onclick="noteFindStep(-1)" title="Previous (Shift+Enter)" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;border-radius:3px;display:flex;align-items:center;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="chevron-up" style="width:13px;height:13px;"></i></button>
+              <button onclick="noteFindStep(1)" title="Next (Enter)" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;border-radius:3px;display:flex;align-items:center;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="chevron-down" style="width:13px;height:13px;"></i></button>
+              <button onclick="closeNoteFind()" title="Close (Esc)" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;border-radius:3px;display:flex;align-items:center;" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="x" style="width:13px;height:13px;"></i></button>
+            </div>
           </div>
           <div id="notePreview" style="flex:1;overflow-y:auto;padding:16px 20px;display:none;">
           </div>
@@ -3346,6 +3364,11 @@
 <div class="cmd-palette-overlay" id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
   <div class="cmd-palette">
     <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
+    <div id="cmdPaletteCmdBadge" style="display:none;align-items:center;gap:6px;padding:6px 14px;border-bottom:1px solid var(--surface1);background:color-mix(in srgb, var(--accent) 8%, transparent);font-size:11px;color:var(--accent);">
+      <i data-lucide="search" style="width:11px;height:11px;"></i>
+      <span style="background:color-mix(in srgb, var(--accent) 22%, var(--surface0));border:1px solid var(--accent);color:var(--accent);font-weight:600;border-radius:11px;padding:1px 9px;font-size:11px;" id="cmdPaletteCmdBadgeText">find</span>
+      <span style="color:var(--subtext0);">command active &mdash; press <kbd style="font-size:10px;background:var(--surface1);border:1px solid var(--surface2);border-radius:3px;padding:1px 5px;">Esc</kbd> or clear input to exit</span>
+    </div>
     <div class="cmd-palette-list" id="cmdPaletteList"></div>
     <div class="cmd-palette-footer">
       <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
@@ -5657,7 +5680,7 @@ async function loadNotesList() {
   } catch (_) {}
 }
 
-async function openNote(name) {
+async function openNote(name, opts) {
   if (noteDirty && currentNote) await saveCurrentNote();
   try {
     const res = await fetch(`/api/notes/read?name=${encodeURIComponent(name)}`);
@@ -5665,10 +5688,33 @@ async function openNote(name) {
     currentNote = name;
     noteDirty = false;
     document.getElementById('noteTitle').textContent = name;
-    document.getElementById('noteTextarea').value = data.content || '';
+    const ta = document.getElementById('noteTextarea');
+    ta.value = data.content || '';
     document.getElementById('noteEmpty').style.display = 'none';
     document.getElementById('noteSaveBtn').style.display = 'none';
-    setNoteMode('preview');
+    // If a search query was passed, jump to the first match in edit mode so
+    // the user can see WHERE the term occurs (instead of just opening the
+    // note at the top).
+    const term = opts && opts.jumpTo ? String(opts.jumpTo).toLowerCase() : null;
+    if (term) {
+      setNoteMode('edit');
+      const idx = ta.value.toLowerCase().indexOf(term);
+      if (idx !== -1) {
+        // Use a 0-length selection at idx so all matches stay reachable via Ctrl+F.
+        // Then trigger note-find with this term so the highlight bar opens too.
+        ta.focus();
+        ta.setSelectionRange(idx, idx + term.length);
+        // Approximate scroll to the line containing the match
+        const before = ta.value.substring(0, idx);
+        const lines = before.split('\n').length;
+        const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 24;
+        ta.scrollTop = Math.max(0, lines * lineHeight - ta.clientHeight / 2);
+        // Also open the note find bar with this term pre-filled
+        openNoteFind(term);
+      }
+    } else {
+      setNoteMode('preview');
+    }
     loadNotesList();
   } catch (_) {}
 }
@@ -10322,6 +10368,9 @@ function getCmdActions() {
     { label: 'Resume Session', icon: 'rotate-ccw', action: () => { resumeAiSession(); switchTab('terminal'); }, category: 'AI' },
     // Settings
     { label: 'Open Settings', icon: 'settings', action: () => openSettings(), category: 'Settings' },
+    // Search + retrieval
+    { label: 'Search Notes + Learnings', icon: 'search', action: () => { document.getElementById('cmdPaletteInput').value = 'find '; filterCmdPalette(); }, category: 'Action', hint: 'find <query>' },
+    { label: 'Generate Repo Map', icon: 'map', action: () => openRepoMapModal(), category: 'Action', hint: 'Symbol map of the active repo' },
   ];
   // Repos
   for (const name of repos) {
@@ -10441,8 +10490,27 @@ function closeCmdPalette() {
 var _cmdSearchTimer = null;
 
 function filterCmdPalette() {
-  const q = document.getElementById('cmdPaletteInput').value.toLowerCase().trim();
+  const inputEl = document.getElementById('cmdPaletteInput');
+  const raw = inputEl.value;
+  const q = raw.trim().toLowerCase();
   const all = getCmdActions();
+
+  // Detect a known command keyword at the start (slash optional). Show it as
+  // a pill overlay so the user has visual feedback they're in command mode.
+  const cmdMatch = raw.match(/^(\s*\/?(?:find|search))(\s+|$)/i);
+  updatePalettePill(cmdMatch ? cmdMatch[1].replace(/^\s+/, '').replace(/^\//, '') : null);
+
+  // Search command: "find <query>" or "search <query>" (slash optional)
+  // -> hybrid search across notes + learnings
+  const findMatch = raw.match(/^\s*\/?(?:find|search)\s+(.+)$/i);
+  if (findMatch) {
+    const query = findMatch[1];
+    _cmdFiltered = [{ label: `Searching "${query}"...`, icon: 'loader', action: () => {}, category: 'Search' }];
+    _cmdSelectedIdx = 0;
+    renderCmdPalette();
+    runPaletteSearch(query);
+    return;
+  }
 
   // Check if user typed a work item ID like #12345 or just 12345
   const idMatch = q.match(/^#?(\d{3,})$/);
@@ -10450,7 +10518,6 @@ function filterCmdPalette() {
   if (idMatch) {
     const id = idMatch[1];
     _cmdFiltered = all.filter(a => a.label.includes(`#${id}`));
-    // Also add a "Go to #ID" option
     if (!_cmdFiltered.some(a => a.label === `#${id}`)) {
       _cmdFiltered.unshift({ label: `Open Work Item #${id}`, icon: 'external-link', action: () => viewWorkItem(parseInt(id)), category: 'Work Item' });
     }
@@ -10470,6 +10537,230 @@ function filterCmdPalette() {
     if (pluginHits < 3) {
       _cmdSearchTimer = setTimeout(function() { liveSearchPlugins(q); }, 300);
     }
+  }
+}
+
+async function openLearningModal(id) {
+  let learning = null;
+  try {
+    const all = await fetch('/api/learnings').then(r => r.json());
+    learning = (Array.isArray(all) ? all : []).find(l => l.id === id);
+  } catch (_) {}
+  if (!learning) { toast('Learning not found: ' + id, 'error'); return; }
+  let overlay = document.getElementById('learningOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'learningOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+  const cli = learning.cli ? `<span style="font-size:10px;padding:2px 6px;background:var(--surface2);color:var(--subtext0);border-radius:3px;">cli: ${escapeHtml(learning.cli)}</span>` : '';
+  const synced = learning.synced ? '<span style="font-size:10px;color:var(--green);" title="Synced to shared learnings repo">synced</span>' : '<span style="font-size:10px;color:var(--subtext0);" title="Local only">local</span>';
+  overlay.innerHTML = `
+    <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:18px 22px;width:80vw;max-width:780px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <i data-lucide="book-marked" style="width:18px;height:18px;color:var(--accent);"></i>
+        <strong style="font-size:14px;">Learning</strong>
+        <span style="font-size:10px;padding:2px 6px;background:var(--surface2);color:var(--subtext0);border-radius:3px;">${escapeHtml(learning.category || 'general')}</span>
+        ${cli}
+        ${synced}
+        <div style="flex:1;"></div>
+        <span style="font-size:10px;color:var(--subtext0);font-family:var(--font-mono);">id: ${escapeHtml(learning.id)}</span>
+        <button onclick="document.getElementById('learningOverlay').remove()" style="font-size:12px;padding:5px 12px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;">Close</button>
+      </div>
+      <div style="overflow-y:auto;flex:1;min-height:0;">
+        <div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:14px;word-wrap:break-word;">${escapeHtml(learning.summary || '')}</div>
+        ${learning.detail ? `<div style="font-size:12px;color:var(--subtext0);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Detail</div><pre style="background:var(--mantle);border:1px solid var(--surface2);border-radius:4px;padding:12px;color:var(--text);font:12px var(--font-mono);white-space:pre-wrap;line-height:1.5;margin:0;">${escapeHtml(learning.detail)}</pre>` : ''}
+        ${learning.source ? `<div style="margin-top:14px;font-size:11px;color:var(--subtext0);">Source: ${escapeHtml(learning.source)} · ${escapeHtml(learning.addedAt || '')}</div>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+}
+
+let _repoMapEditor = null;
+let _repoMapMarkdownText = '';
+let _repoMapView = 'code'; // 'code' | 'preview'
+
+async function openRepoMapModal() {
+  let overlay = document.getElementById('repoMapOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'repoMapOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+  overlay.innerHTML = `
+    <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:14px 16px;width:92vw;max-width:1100px;height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-shrink:0;">
+        <i data-lucide="map" style="width:18px;height:18px;color:var(--accent);"></i>
+        <strong style="font-size:15px;">Repo Map</strong>
+        <select id="repoMapRepo" style="margin-left:8px;padding:5px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;"></select>
+        <select id="repoMapBudget" style="padding:5px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;">
+          <option value="2000">~2k tokens</option>
+          <option value="4000" selected>~4k tokens</option>
+          <option value="8000">~8k tokens</option>
+          <option value="16000">~16k tokens</option>
+        </select>
+        <button onclick="loadRepoMapInto()" style="font-size:12px;padding:5px 12px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;">Refresh</button>
+        <div style="display:flex;border:1px solid var(--surface2);border-radius:4px;overflow:hidden;">
+          <button onclick="setRepoMapView('code')" id="repoMapBtnCode" style="font-size:12px;padding:5px 12px;background:var(--accent);border:none;color:#000;cursor:pointer;font-weight:600;">Code</button>
+          <button onclick="setRepoMapView('preview')" id="repoMapBtnPreview" style="font-size:12px;padding:5px 12px;background:var(--surface1);border:none;border-left:1px solid var(--surface2);color:var(--text);cursor:pointer;">Preview</button>
+        </div>
+        <div style="flex:1;"></div>
+        <button onclick="copyRepoMap()" style="font-size:12px;padding:5px 12px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;">Copy</button>
+        <button onclick="closeRepoMapModal()" style="font-size:12px;padding:5px 12px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;">Close</button>
+      </div>
+      <div id="repoMapEditor" style="flex:1;border:1px solid var(--surface2);border-radius:4px;overflow:hidden;display:block;"></div>
+      <div id="repoMapPreview" style="flex:1;border:1px solid var(--surface2);border-radius:4px;overflow:auto;background:var(--mantle);padding:18px 22px;color:var(--text);display:none;line-height:1.55;font-size:13px;"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  try {
+    const repos = await fetch('/api/repos').then(r => r.json());
+    const ctx = await fetch('/api/ui/context').then(r => r.json());
+    const sel = document.getElementById('repoMapRepo');
+    sel.innerHTML = Object.keys(repos || {}).map(n => `<option value="${escapeHtml(n)}" ${n===ctx.activeRepo?'selected':''}>${escapeHtml(n)}${n===ctx.activeRepo?' (active)':''}</option>`).join('');
+  } catch (_) {}
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  // Mount Monaco
+  try {
+    if (typeof loadMonaco === 'function') await loadMonaco();
+    if (typeof monaco !== 'undefined') {
+      _repoMapEditor = monaco.editor.create(document.getElementById('repoMapEditor'), {
+        value: 'Loading...',
+        language: 'markdown',
+        theme: 'devops-pilot',
+        fontSize: 13,
+        fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        wordWrap: 'on',
+        automaticLayout: true,
+        readOnly: true,
+        lineNumbers: 'off',
+        padding: { top: 10 },
+      });
+    }
+  } catch (e) { console.warn('repo map monaco mount failed', e); }
+  _repoMapView = 'code';
+  loadRepoMapInto();
+}
+
+function closeRepoMapModal() {
+  if (_repoMapEditor) { try { _repoMapEditor.dispose(); } catch (_) {} _repoMapEditor = null; }
+  const o = document.getElementById('repoMapOverlay'); if (o) o.remove();
+}
+
+function setRepoMapView(view) {
+  _repoMapView = view;
+  const ed = document.getElementById('repoMapEditor');
+  const pv = document.getElementById('repoMapPreview');
+  const bc = document.getElementById('repoMapBtnCode');
+  const bp = document.getElementById('repoMapBtnPreview');
+  if (view === 'preview') {
+    ed.style.display = 'none'; pv.style.display = '';
+    pv.innerHTML = renderMarkdownToHtml(_repoMapMarkdownText);
+    bc.style.background = 'var(--surface1)'; bc.style.color = 'var(--text)'; bc.style.fontWeight = '400';
+    bp.style.background = 'var(--accent)'; bp.style.color = '#000'; bp.style.fontWeight = '600';
+  } else {
+    ed.style.display = ''; pv.style.display = 'none';
+    bc.style.background = 'var(--accent)'; bc.style.color = '#000'; bc.style.fontWeight = '600';
+    bp.style.background = 'var(--surface1)'; bp.style.color = 'var(--text)'; bp.style.fontWeight = '400';
+    if (_repoMapEditor) _repoMapEditor.layout();
+  }
+}
+
+async function loadRepoMapInto() {
+  const repo = document.getElementById('repoMapRepo').value;
+  const budget = document.getElementById('repoMapBudget').value;
+  if (_repoMapEditor) _repoMapEditor.setValue(`Generating map for ${repo} (~${budget} tokens)...`);
+  try {
+    const r = await fetch('/api/repo/map?repo=' + encodeURIComponent(repo) + '&budget=' + encodeURIComponent(budget));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _repoMapMarkdownText = await r.text();
+    if (_repoMapEditor) _repoMapEditor.setValue(_repoMapMarkdownText);
+    if (_repoMapView === 'preview') {
+      document.getElementById('repoMapPreview').innerHTML = renderMarkdownToHtml(_repoMapMarkdownText);
+    }
+  } catch (e) {
+    _repoMapMarkdownText = 'Failed: ' + e.message;
+    if (_repoMapEditor) _repoMapEditor.setValue(_repoMapMarkdownText);
+  }
+}
+
+async function copyRepoMap() {
+  try { await navigator.clipboard.writeText(_repoMapMarkdownText); toast('Copied to clipboard', 'success'); }
+  catch (_) { toast('Copy failed', 'error'); }
+}
+
+// Tiny markdown -> HTML renderer (handles the subset our repo maps emit)
+function renderMarkdownToHtml(md) {
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  const inline = s => esc(s)
+    .replace(/`([^`]+)`/g, '<code style="background:var(--surface1);padding:1px 5px;border-radius:3px;font-size:12px;">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/_([^_]+)_/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:var(--accent);text-decoration:underline;">$1</a>');
+  const lines = String(md || '').split(/\r?\n/);
+  const out = [];
+  let inList = false;
+  for (const line of lines) {
+    if (/^### /.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h3 style="margin:18px 0 8px;font-size:14px;color:var(--text);">' + inline(line.slice(4)) + '</h3>'); }
+    else if (/^## /.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h2 style="margin:22px 0 10px;font-size:16px;color:var(--text);border-bottom:1px solid var(--surface2);padding-bottom:4px;">' + inline(line.slice(3)) + '</h2>'); }
+    else if (/^# /.test(line)) { if (inList) { out.push('</ul>'); inList = false; } out.push('<h1 style="margin:0 0 14px;font-size:20px;color:var(--text);">' + inline(line.slice(2)) + '</h1>'); }
+    else if (/^- /.test(line)) { if (!inList) { out.push('<ul style="margin:6px 0 12px 20px;">'); inList = true; } out.push('<li style="margin:3px 0;">' + inline(line.slice(2)) + '</li>'); }
+    else if (line.trim() === '') { if (inList) { out.push('</ul>'); inList = false; } out.push(''); }
+    else { if (inList) { out.push('</ul>'); inList = false; } out.push('<p style="margin:6px 0;">' + inline(line) + '</p>'); }
+  }
+  if (inList) out.push('</ul>');
+  return out.join('\n');
+}
+
+// Show a small badge below the input when a known command keyword is
+// detected. Non-overlapping with the input itself, so it can't break the
+// input's layout, padding, scroll behavior, or cursor handling.
+function updatePalettePill(keyword) {
+  const input = document.getElementById('cmdPaletteInput');
+  const badge = document.getElementById('cmdPaletteCmdBadge');
+  const badgeText = document.getElementById('cmdPaletteCmdBadgeText');
+  if (!input || !badge) return;
+  if (!keyword) {
+    badge.style.display = 'none';
+    input.style.borderLeft = '';
+    return;
+  }
+  badgeText.textContent = keyword;
+  badge.style.display = 'flex';
+  // Subtle accent on the input's left edge as a secondary cue.
+  input.style.borderLeft = '3px solid var(--accent)';
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+}
+
+async function runPaletteSearch(query) {
+  const input = document.getElementById('cmdPaletteInput');
+  if (!input) return;
+  // Bail if the user has typed past this query (race protection)
+  const cur = input.value.trim().toLowerCase();
+  if (!/^\/?(?:find|search)\s+/i.test(cur)) return;
+  try {
+    const r = await fetch('/api/search?q=' + encodeURIComponent(query) + '&limit=20');
+    const data = await r.json();
+    if (!data.results || !data.results.length) {
+      _cmdFiltered = [{ label: `No matches for "${query}"`, icon: 'x-circle', action: () => {}, category: 'Search' }];
+      _cmdSelectedIdx = 0; renderCmdPalette(); return;
+    }
+    _cmdFiltered = data.results.map(x => ({
+      label: `${x.kind === 'learning' ? '[learning] ' : ''}${x.title}`,
+      icon: x.kind === 'learning' ? 'book-marked' : 'file-text',
+      hint: (x.snippet || '').slice(0, 80),
+      category: 'Search',
+      action: () => {
+        if (x.kind === 'note') openNote(x.id.replace(/^note:/, ''));
+        else openLearningModal(x.id.replace(/^learning:/, ''));
+      },
+    }));
+    _cmdSelectedIdx = 0;
+    renderCmdPalette();
+  } catch (_) {
+    _cmdFiltered = [{ label: 'Search failed', icon: 'alert-circle', action: () => {}, category: 'Search' }];
+    _cmdSelectedIdx = 0; renderCmdPalette();
   }
 }
 
@@ -11976,6 +12267,205 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshRecipes();
   setInterval(refreshRecipes, 60000);
 });
+
+// ═══ Notes search (uses /api/search) ════════════════════════════════════
+let _notesSearchTimer = null;
+function onNotesSearchInput() {
+  clearTimeout(_notesSearchTimer);
+  _notesSearchTimer = setTimeout(runNotesSearch, 200);
+}
+// ═══ In-note find bar (Ctrl+F when focused in the notes editor) ═════════
+let _noteFindMatches = [];
+let _noteFindIndex = -1;
+
+function openNoteFind(prefill) {
+  const ta = document.getElementById('noteTextarea');
+  if (!ta) return;
+  // Find bar only makes sense in edit mode (textarea visible)
+  if (noteMode !== 'edit') setNoteMode('edit');
+  const bar = document.getElementById('noteFindBar');
+  bar.style.display = 'flex';
+  const input = document.getElementById('noteFindInput');
+  if (prefill && !input.value) input.value = prefill;
+  setTimeout(() => { input.focus(); input.select(); }, 0);
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+  updateNoteFindMatches(true);
+}
+
+function closeNoteFind() {
+  const bar = document.getElementById('noteFindBar');
+  if (bar) bar.style.display = 'none';
+  _noteFindMatches = [];
+  _noteFindIndex = -1;
+  paintNoteHighlights('', -1);
+}
+
+function updateNoteFindMatches(jumpToFirst) {
+  const ta = document.getElementById('noteTextarea');
+  const term = (document.getElementById('noteFindInput').value || '').toLowerCase();
+  const countEl = document.getElementById('noteFindCount');
+  if (!term) { _noteFindMatches = []; _noteFindIndex = -1; countEl.textContent = '0/0'; return; }
+  const text = ta.value.toLowerCase();
+  const matches = [];
+  let i = 0;
+  while ((i = text.indexOf(term, i)) !== -1) { matches.push(i); i += term.length; }
+  _noteFindMatches = matches;
+  if (matches.length === 0) { _noteFindIndex = -1; countEl.textContent = '0/0'; return; }
+  if (jumpToFirst || _noteFindIndex < 0 || _noteFindIndex >= matches.length) _noteFindIndex = 0;
+  noteFindHighlight();
+}
+
+function noteFindStep(delta) {
+  if (_noteFindMatches.length === 0) return;
+  _noteFindIndex = (_noteFindIndex + delta + _noteFindMatches.length) % _noteFindMatches.length;
+  noteFindHighlight();
+}
+
+function noteFindHighlight() {
+  const ta = document.getElementById('noteTextarea');
+  const term = document.getElementById('noteFindInput').value;
+  if (_noteFindIndex < 0 || !term) { paintNoteHighlights('', -1); return; }
+  const start = _noteFindMatches[_noteFindIndex];
+  const end = start + term.length;
+  // Native textarea selection (works only while textarea is focused)
+  ta.setSelectionRange(start, end);
+  // Approximate scroll so the current match is centered
+  const before = ta.value.substring(0, start);
+  const lines = before.split('\n').length;
+  const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 24;
+  ta.scrollTop = Math.max(0, lines * lineHeight - ta.clientHeight / 2);
+  document.getElementById('noteFindCount').textContent = (_noteFindIndex + 1) + '/' + _noteFindMatches.length;
+  // Paint the overlay so highlights stay visible regardless of which element is focused
+  paintNoteHighlights(term, _noteFindIndex);
+  syncNoteHighlightScroll();
+}
+
+// Render the matched-term highlights into the overlay div behind the textarea.
+// Both elements share identical font / padding / wrap rules so character
+// positions align. The overlay's text is transparent so only the <mark>
+// backgrounds show; the textarea's text on top remains readable.
+function paintNoteHighlights(term, currentIdx) {
+  const layer = document.getElementById('noteHighlightLayer');
+  const ta = document.getElementById('noteTextarea');
+  if (!layer || !ta) return;
+  const text = ta.value;
+  if (!term) { layer.innerHTML = escapeHtml(text); return; }
+  const lower = text.toLowerCase();
+  const t = term.toLowerCase();
+  let html = '';
+  let i = 0;
+  let occ = 0;
+  while (true) {
+    const next = lower.indexOf(t, i);
+    if (next === -1) { html += escapeHtml(text.slice(i)); break; }
+    html += escapeHtml(text.slice(i, next));
+    const cls = (occ === currentIdx) ? 'note-find-current' : 'note-find';
+    html += `<mark class="${cls}">${escapeHtml(text.slice(next, next + term.length))}</mark>`;
+    i = next + term.length;
+    occ++;
+  }
+  layer.innerHTML = html;
+}
+
+function syncNoteHighlightScroll() {
+  const layer = document.getElementById('noteHighlightLayer');
+  const ta = document.getElementById('noteTextarea');
+  if (!layer || !ta) return;
+  layer.scrollTop = ta.scrollTop;
+  layer.scrollLeft = ta.scrollLeft;
+}
+
+// Re-render highlights as the user types in the note (so they don't drift)
+function updateNoteHighlightsLive() {
+  const term = document.getElementById('noteFindInput')?.value;
+  const bar = document.getElementById('noteFindBar');
+  if (term && bar && bar.style.display !== 'none') {
+    updateNoteFindMatches(false);
+  }
+}
+
+function onNoteFindKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    noteFindStep(e.shiftKey ? -1 : 1);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeNoteFind();
+    document.getElementById('noteTextarea').focus();
+  }
+}
+
+// Capture Ctrl+F when the notes panel is the active tab and focus is in the
+// note editor. Other tabs keep the browser-default behavior.
+document.addEventListener('keydown', (e) => {
+  const isFind = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f';
+  if (!isFind) return;
+  const notesPanel = document.getElementById('panel-notes');
+  if (!notesPanel || !notesPanel.classList.contains('active')) return;
+  if (!currentNote) return;
+  e.preventDefault();
+  openNoteFind();
+}, true);
+
+async function runNotesSearch() {
+  const q = document.getElementById('notesSearchInput').value.trim();
+  const host = document.getElementById('notesSearchResults');
+  if (!q) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  try {
+    // Notes tab search is scoped to notes only. Cross-corpus search lives in the command palette.
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&kinds=note&limit=15');
+    const data = await r.json();
+    if (!data.results || !data.results.length) {
+      host.style.display = '';
+      host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--subtext0);">No matches.</div>';
+      return;
+    }
+    host.style.display = '';
+    host.innerHTML = data.results.map((x, i) => {
+      // Build a human label that explains WHERE the match is, since users
+      // were confused by '0 matches' on results that scored only via title.
+      let matchLabel;
+      if (x.bodyMatches > 0) {
+        matchLabel = `${x.bodyMatches} in note`;
+      } else if (x.titleMatches > 0) {
+        matchLabel = 'match in title';
+      } else if (x.matches > 0) {
+        matchLabel = `${x.matches} match${x.matches===1?'':'es'}`;
+      } else {
+        matchLabel = 'related';
+      }
+      const meta = `${matchLabel} · score ${x.score}`;
+      return `<div data-note-result-idx="${i}" style="padding:6px 12px;cursor:pointer;border-bottom:1px solid var(--surface0);overflow:hidden;min-width:0;" onmouseenter="this.style.background='var(--surface0)'" onmouseleave="this.style.background='transparent'">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);font-weight:500;min-width:0;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(x.title)}</span><span title="Where matches occur. 'in note' = found in the body. 'match in title' = only in the filename. 'related' = ranked by relevance but no exact substring (rare for whole-word queries). Score: BM25 relevance, higher is better." style="font-size:10px;color:var(--subtext0);cursor:help;flex-shrink:0;white-space:nowrap;">${meta}</span></div>
+        <div style="font-size:11px;color:var(--subtext0);margin-top:3px;line-height:1.3;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(x.snippet || '')}</div>
+      </div>`;
+    }).join('');
+    // Bind click handlers via addEventListener so filenames with spaces / quotes work cleanly
+    host.querySelectorAll('[data-note-result-idx]').forEach(el => {
+      const idx = parseInt(el.getAttribute('data-note-result-idx'), 10);
+      const result = data.results[idx];
+      if (!result) return;
+      el.addEventListener('click', () => {
+        const name = result.id.replace(/^note:/, '');
+        const term = result.terms && result.terms[0] ? result.terms[0] : q;
+        // Only ask openNote to jump (and switch to edit mode) when the term
+        // actually appears in the body. Otherwise just open in preview --
+        // the title matched, the user wants to read the note normally.
+        const jumpTo = (result.bodyMatches > 0) ? term : null;
+        openNote(name, jumpTo ? { jumpTo } : null);
+        if (!jumpTo && (result.titleMatches > 0 || result.matches === 0)) {
+          // Toast a hint so they know why no highlight appeared
+          toast(result.titleMatches > 0
+            ? `"${term}" appears in the title only, not in the body.`
+            : `"${term}" is related but not literally in this note.`, 'success');
+        }
+      });
+    });
+  } catch (_) {
+    host.style.display = '';
+    host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--red);">Search failed.</div>';
+  }
+}
 
 // ═══ Recipe Editor ════════════════════════════════════════════════════════
 const RECIPE_ICONS = ['play','book-open','lightbulb','search-check','file-text','clipboard-list','users','sunrise','filter','git-pull-request','flag','flame','zap','sparkles','wand-2','hammer','wrench','bug','package','rocket','calendar','clock','check-square','list','layers','target','send','bell','mail','message-square','refresh-cw','terminal','code-2','database','server','brain','eye','settings','scale','gauge','book-plus','flask','beaker','telescope','compass','map'];

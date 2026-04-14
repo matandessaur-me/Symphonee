@@ -316,6 +316,41 @@ const TOOLS = [
     handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/recipes/preview', args), null, 2)),
   },
   {
+    name: 'search_notes_and_learnings',
+    description: 'Hybrid (BM25) search across Notes and Learnings. Returns ranked results with snippets.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        kinds: { type: 'array', items: { type: 'string', enum: ['note', 'learning'] }, description: 'Optional filter; default is both.' },
+        limit: { type: 'number', default: 20 },
+      },
+      required: ['query'],
+    },
+    handler: async (args) => {
+      const params = new URLSearchParams({ q: args.query, limit: String(args.limit || 20) });
+      if (args.kinds && args.kinds.length) params.set('kinds', args.kinds.join(','));
+      return textResult(JSON.stringify(await apiRequest('GET', '/api/search?' + params.toString()), null, 2));
+    },
+  },
+  {
+    name: 'get_repo_map',
+    description: 'Token-budgeted symbol map of a repo: languages, top-level layout, manifests, top files ranked by recent commit activity with their key symbols. Defaults to the active repo. Use this BEFORE grepping a codebase you do not know; saves tokens.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Configured repo name. Defaults to active repo.' },
+        budget: { type: 'number', default: 4000, description: 'Approximate token budget for the output.' },
+      },
+    },
+    handler: async (args) => {
+      const params = new URLSearchParams();
+      if (args.repo) params.set('repo', args.repo);
+      params.set('budget', String(args.budget || 4000));
+      return textResult(await apiRequest('GET', '/api/repo/map?' + params.toString()));
+    },
+  },
+  {
     name: 'delete_recipe',
     description: 'Delete a recipe by id. Permission-gated.',
     inputSchema: {
