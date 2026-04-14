@@ -12215,12 +12215,17 @@ function getRecipeBody() {
 function buildRecipeFrontmatter() {
   const inputs = [];
   document.querySelectorAll('#reInputsList > div').forEach(row => {
-    const name = row.querySelector('[data-recipe-input-name]').value.trim();
+    let name = row.querySelector('[data-recipe-input-name]').value.trim();
     if (!name) return;
+    // Identifier-safe: lowercase, alphanumeric + underscore + dash. Spaces and
+    // other chars break {{ inputs.<name> }} dotted-path lookups.
+    name = name.replace(/[^a-zA-Z0-9_-]/g, '_');
     const type = row.querySelector('[data-recipe-input-type]').value;
+    const desc = row.querySelector('[data-recipe-input-desc]')?.value?.trim() || '';
     const def = row.querySelector('[data-recipe-input-default]').value;
     const req = row.querySelector('[data-recipe-input-required]').checked;
     const item = { name, type };
+    if (desc) item.description = desc;
     if (def !== '') item.default = def;
     if (req) item.required = true;
     inputs.push(item);

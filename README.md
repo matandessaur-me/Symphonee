@@ -96,6 +96,28 @@ DevOps Pilot
 
 ---
 
+## Recipes (reusable AI workflows)
+
+A recipe is a single markdown file with YAML frontmatter that bundles a recurring AI operation: which CLI/model (or just an intent for the model router), which plugins/MCP servers to enable, what permission mode to use, typed inputs, and a prompt template body. Recipes live in `recipes/` (project-local, committed) or `~/.devops-pilot/recipes/` (user-global).
+
+Open the right intel panel -> **Recipes** tab to browse, create, edit, duplicate, preview, delete, or run any recipe. The built-in editor is a Monaco-based markdown editor with a clickable variable library on the right (context vars like Selected Repo, your declared inputs, plus snippets for common patterns).
+
+**Three default recipes** ship with the app, all universal (no Azure DevOps or GitHub required):
+
+| Recipe | What it does |
+|---|---|
+| **Explain This Codebase** | Reads README + manifest + entry points, produces a 6-section orientation brief |
+| **Brainstorm a Feature** | Turn a one-line idea into user stories, edge cases, technical considerations, ordered implementation plan |
+| **Review My Changes** | Pre-flight code review of your uncommitted git diff before pushing |
+
+**Two delivery modes**:
+- `inject` (default): rendered prompt is typed into the active terminal so the AI you're already working with handles it.
+- `dispatch`: spawns a fresh headless worker via the orchestrator (requires AI Orchestration enabled).
+
+Recipes can be invoked via the Recipes panel, the command palette (Ctrl+K), `./scripts/Run-Recipe.ps1`, or any MCP client that has the DevOps Pilot MCP server connected (`run_recipe`, `list_recipes`, `preview_recipe`, etc.).
+
+---
+
 ## MCP Server (Model Context Protocol)
 
 DevOps Pilot ships an MCP server so external AI clients (Claude Desktop, Cursor, VS Code Copilot, Zed, Goose, Warp, etc.) can use its work item management, sprint queries, notes, orchestrator, and learnings database as tools and resources.
