@@ -10,11 +10,13 @@ curl -s http://127.0.0.1:3800/api/ui/context
 curl -s http://127.0.0.1:3800/api/instructions
 curl -s http://127.0.0.1:3800/api/plugins/instructions
 curl -s http://127.0.0.1:3800/api/learnings
+curl -s http://127.0.0.1:3800/api/permissions
 ```
 - `activeRepoPath` = the ONLY codebase you touch. NEVER ask "which repo?"
 - Instructions = API endpoints, workflow rules, orchestrator rules. **Read them. They define what you can do.**
 - Plugin instructions = additional tools and APIs for the active repo.
 - Learnings = errors you MUST NOT repeat.
+- Permissions = the active runtime permission mode (`review`, `edit`, `trusted`, `bypass`) and rule lists. The server enforces these; knowing the mode shapes what you should even attempt.
 
 ---
 
@@ -119,26 +121,49 @@ If an operation is blocked, the API returns a 403 with `"incognito": true`.
 4. **Never create a script just to call another script.** Call the script directly.
 5. **Never create intermediate test scripts.** Just do the action.
 
-## Permission Rules
+## Permission Rules (Runtime-Enforced)
 
-**You do NOT need to ask permission for:**
-- Running any script in `./scripts/`
-- Running commands that only READ data (GET requests, queries, searches)
-- Creating/editing files in `.ai-workspace/`
-- Creating/editing notes via `Save-Note.ps1`
-- Switching dashboard tabs via UI control endpoints
-- Reading work items, iterations, team members
-- Reading GitHub pull requests, files, comments, and timeline
-- Running git commands that don't push (status, log, diff, checkout, branch)
+**Permissions are enforced by the server, not by self-regulation.** The current posture lives in `config.json` under `Permissions.mode` and is visible in the header chip. You can read it any time: `curl -s http://127.0.0.1:3800/api/permissions`.
 
-**You MUST ask permission before:**
-- Creating or updating work items in Azure DevOps (this writes to the real board)
-- Changing work item state (moving items between columns)
-- Pushing code to remote repositories
-- Commenting on GitHub pull requests (POST to /api/github/pulls/comment)
-- Commenting on Azure DevOps work items (POST to /api/workitems/{id}/comments)
-- Approving or requesting changes on GitHub pull requests (POST to /api/github/pulls/review)
-- Any action that modifies data in Azure DevOps, GitHub, or external systems
+### Modes
+
+- **`review`**: read-only. Writes, spawns, and external calls are rejected server-side.
+- **`edit`** (default): writes allowed; destructive or external actions (push, PR comments/reviews, work-item writes, spawns) require user approval via the approval modal.
+- **`trusted`**: like `edit`, but inside a git worktree everything is auto-approved.
+- **`bypass`**: everything allowed. Use only when the user explicitly asks.
+
+### Response semantics
+
+When you call a gated endpoint, expect one of:
+
+- **200/normal response**: action was allowed.
+- **403 `{ "error": "Permission denied: ...", "permission": { "decision": "deny", ... } }`**: blocked by a `deny` rule or by the current mode's defaults. **Do not retry or try to work around it.** Stop and tell the user what was blocked and which mode / rule fired.
+- **403 `{ "error": "Rejected by user: ..." }`**: the user saw the approval modal and clicked Reject. **Do not retry the same action.**
+- **412 `{ "error": "Approval required: ..." }`**: only appears when the caller passed `wait: false` or `autoPermit: false`. Rare in normal flow. Means the modal was bypassed. Retry with `autoPermit: true` only if the user explicitly pre-authorized autonomous operation.
+- **Hung for up to 2 minutes, then 200 or 403**: the approval modal is open, waiting for the user to click Allow, Always allow, or Reject. This is normal. Let it resolve.
+
+### Rules of engagement
+
+- **Do not change the permission mode yourself.** Only the user switches modes via the chip in the header.
+- **Do not pass `autoPermit: true` to spawn routes unprompted.** Use it only when the user explicitly asked for autonomous batch work (e.g., "fire off a bunch of research agents unattended").
+- **Before operations you know will need approval**, tell the user what you are about to do in one short sentence, so they are not surprised by a modal popup.
+- **If you see `403 deny`, stop.** Do not fall back to a different tool or route to achieve the same effect. The user set the mode deliberately.
+
+### What is always safe (no modal, no approval needed)
+
+- Reading anything: GET endpoints, file reads, grep, git log/status/diff, browser reads.
+- Writing to `.ai-workspace/` and the Notes system.
+- Switching dashboard tabs via UI control endpoints.
+- Local git operations that do not touch a remote (checkout, branch, commit to a local branch).
+- Any non-gated route.
+
+### What is gated (will trigger deny in `review` or an approval in `edit`)
+
+- Spawning orchestrator workers (`POST /api/orchestrator/spawn`, `spawn-with-deps`, `spawn-worktree`, `spawn-escalate`, `spawn-lineage`, `fan-out`, `handoff`).
+- Work item create / update / state change / comment.
+- Pull request create.
+- GitHub PR comment / review.
+- `git push`, force push, destructive shell commands (enforced through the mode defaults on `cmd:` rules).
 
 ## API Reference
 

@@ -155,7 +155,7 @@
     #connectionStatus { font-size: 11px; color: var(--subtext0); transition: color 0.3s; }
 
     /* ── Window controls (custom title bar) ──────────────────────────── */
-    .header { -webkit-app-region: drag; }
+    .header { -webkit-app-region: no-drag; }
     .header button, .header .cmd-trigger, .header select, .header input,
     .header .project-selector, .header a { -webkit-app-region: no-drag; }
     .window-controls { display: flex; align-items: center; gap: 0; -webkit-app-region: no-drag; margin-left: 8px; }
@@ -2112,9 +2112,21 @@
 
 <!-- ═══ Header ═══════════════════════════════════════════════════════════ -->
 <header class="header">
-  <div class="header-left">
+  <div class="header-left" style="position:relative;">
     <img src="/logo.svg" class="header-logo" alt="">
     <span class="header-title">DevOps Pilot</span>
+    <div id="permModeSlot" style="display:inline-flex;align-items:center;min-width:110px;margin-left:12px;">
+      <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--subtext0);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
+        <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
+        <span id="permModeLabel">EDIT</span>
+      </div>
+    </div>
+    <div id="permModeMenu" style="display:none;position:absolute;top:32px;left:calc(var(--header-logo-width, 140px) + 12px);z-index:2000;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);padding:4px;min-width:220px;font-family:var(--font-ui);font-size:11px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+      <div class="perm-opt" data-mode="review" onclick="setPermMode('review')" style="padding:6px 10px;cursor:pointer;border-radius:4px;"><strong>Review</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Read-only. Blocks all writes.</div></div>
+      <div class="perm-opt" data-mode="edit" onclick="setPermMode('edit')" style="padding:6px 10px;cursor:pointer;border-radius:4px;"><strong>Edit</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Writes allowed, destructive asks.</div></div>
+      <div class="perm-opt" data-mode="trusted" onclick="setPermMode('trusted')" style="padding:6px 10px;cursor:pointer;border-radius:4px;"><strong>Trusted</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Auto-approve in worktrees.</div></div>
+      <div class="perm-opt" data-mode="bypass" onclick="setPermMode('bypass')" style="padding:6px 10px;cursor:pointer;border-radius:4px;color:var(--accent);"><strong>Bypass</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Allow everything. Use with care.</div></div>
+    </div>
   </div>
   <div class="cmd-trigger" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
     <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
@@ -11508,6 +11520,102 @@ async function savePluginSettings() {
     } catch (_) {}
   }
 }
+
+// ═══ Permission Mode + Approval Modal ══════════════════════════════════════
+const PERM_MODE_COLORS = { review: '#4a9eff', edit: '#9acd32', trusted: '#f5b800', bypass: '#ff6b6b' };
+async function refreshPermMode() {
+  try {
+    const r = await fetch('/api/permissions');
+    const data = await r.json();
+    const mode = (data.settings && data.settings.mode) || 'edit';
+    const chip = document.getElementById('permModeChip');
+    const label = document.getElementById('permModeLabel');
+    if (label) label.textContent = mode.toUpperCase();
+    if (chip) chip.style.borderColor = PERM_MODE_COLORS[mode] || 'var(--subtext0)';
+    document.querySelectorAll('.perm-opt').forEach(el => {
+      el.style.background = el.dataset.mode === mode ? 'var(--surface2)' : 'transparent';
+    });
+  } catch (_) {}
+}
+function openPermModeMenu(ev) {
+  ev.stopPropagation();
+  const m = document.getElementById('permModeMenu');
+  if (!m) return;
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  if (m.style.display === 'block') {
+    setTimeout(() => document.addEventListener('click', closePermModeMenuOnce, { once: true }), 0);
+  }
+}
+function closePermModeMenuOnce() { const m = document.getElementById('permModeMenu'); if (m) m.style.display = 'none'; }
+async function setPermMode(mode) {
+  try {
+    await fetch('/api/permissions/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
+    closePermModeMenuOnce();
+    refreshPermMode();
+  } catch (e) { console.error('setPermMode failed', e); }
+}
+
+// ── Approval modal: polls /api/permissions/pending every 3s ──
+let _approvalShown = null;
+async function pollApprovals() {
+  try {
+    const r = await fetch('/api/permissions/pending');
+    const list = await r.json();
+    if (!Array.isArray(list) || list.length === 0) {
+      if (_approvalShown) { hideApprovalModal(); _approvalShown = null; }
+      return;
+    }
+    const next = list[0];
+    if (_approvalShown && _approvalShown.id === next.id) return;
+    showApprovalModal(next);
+    _approvalShown = next;
+  } catch (_) {}
+}
+function showApprovalModal(p) {
+  let overlay = document.getElementById('approvalOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'approvalOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+    overlay.innerHTML = `
+      <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:20px;min-width:420px;max-width:600px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--accent);font-weight:600;font-size:13px;">
+          <i data-lucide="shield-alert" style="width:16px;height:16px;"></i>
+          <span>Approval required</span>
+        </div>
+        <div id="approvalBody" style="font-size:12px;color:var(--text);margin-bottom:16px;line-height:1.5;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button onclick="resolveApproval('deny',false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Reject</button>
+          <button onclick="resolveApproval('allow',false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Allow once</button>
+          <button onclick="resolveApproval('allow',true)" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Always allow this pattern</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+  const body = document.getElementById('approvalBody');
+  if (body) {
+    const a = p.action || {};
+    body.innerHTML = `
+      <div><strong>Type:</strong> <code style="background:var(--surface1);padding:1px 5px;border-radius:3px;">${escapeHtml(a.type || '?')}</code></div>
+      <div style="margin-top:4px;"><strong>Action:</strong> <code style="background:var(--surface1);padding:1px 5px;border-radius:3px;word-break:break-all;">${escapeHtml(a.value || '')}</code></div>
+      ${a.op ? `<div style="margin-top:4px;"><strong>Op:</strong> ${escapeHtml(a.op)}</div>` : ''}
+      <div style="margin-top:8px;color:var(--subtext0);">Promoting to "always allow" saves the rule in your settings.</div>`;
+  }
+  overlay.style.display = 'flex';
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+}
+function hideApprovalModal() { const o = document.getElementById('approvalOverlay'); if (o) o.style.display = 'none'; }
+async function resolveApproval(decision, promote) {
+  if (!_approvalShown) return;
+  try {
+    await fetch('/api/permissions/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: _approvalShown.id, decision, promote }) });
+  } catch (_) {}
+  hideApprovalModal();
+  _approvalShown = null;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+
+document.addEventListener('DOMContentLoaded', () => { refreshPermMode(); setInterval(pollApprovals, 3000); });
 
 </script>
 </body>

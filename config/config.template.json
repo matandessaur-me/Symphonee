@@ -14,5 +14,11 @@
   "OrchestrateResultDelivery": "inject",
   "BrowserCredentials": {},
   "Repos": {},
-  "ThemePreference": "claude"
+  "ThemePreference": "claude",
+  "Permissions": {
+    "mode": "edit",
+    "allow": [],
+    "ask": [],
+    "deny": []
+  }
 }

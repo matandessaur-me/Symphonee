@@ -50,6 +50,11 @@ let loadedPlugins = [];
 
 // ── Orchestrator (cross-AI communication bus) ────────────────────────────────
 const { mountOrchestrator } = require('./orchestrator');
+const permissions = require('./permissions');
+
+async function permGate(res, type, value, label) {
+  return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
+}
 
 // ── Learnings (collective intelligence) ──────────────────────────────────────
 const { mountLearnings } = require('./learnings');
@@ -104,6 +109,38 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/config/import' && req.method === 'POST') return handleImportConfig(req, res);
     if (url.pathname === '/api/themes' && req.method === 'GET')  return handleGetThemes(res);
     if (url.pathname === '/api/themes' && req.method === 'POST') return handleSaveThemes(req, res);
+
+    // ── Permissions ────────────────────────────────────────────────────────
+    if (url.pathname === '/api/permissions' && req.method === 'GET') {
+      return json(res, { settings: permissions.loadSettings(configPath), modes: permissions.MODES, defaults: permissions.MODE_DEFAULTS });
+    }
+    if (url.pathname === '/api/permissions' && req.method === 'POST') {
+      const body = await readBody(req);
+      return json(res, permissions.saveSettings(configPath, body));
+    }
+    if (url.pathname === '/api/permissions/mode' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!permissions.MODES.includes(body.mode)) return json(res, { error: 'invalid mode' }, 400);
+      return json(res, permissions.saveSettings(configPath, { mode: body.mode }));
+    }
+    if (url.pathname === '/api/permissions/evaluate' && req.method === 'POST') {
+      const body = await readBody(req);
+      const settings = permissions.loadSettings(configPath);
+      return json(res, permissions.evaluate(body.action || {}, settings, body.ctx || {}));
+    }
+    if (url.pathname === '/api/permissions/promote' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.rule) return json(res, { error: 'rule required' }, 400);
+      return json(res, permissions.promoteRule(configPath, body.rule, body.bucket || 'allow'));
+    }
+    if (url.pathname === '/api/permissions/pending' && req.method === 'GET') {
+      return json(res, permissions.listPending());
+    }
+    if (url.pathname === '/api/permissions/resolve' && req.method === 'POST') {
+      const body = await readBody(req);
+      const ok = permissions.resolveApproval(body.id, body.decision, !!body.promote);
+      return json(res, { ok });
+    }
     if (url.pathname === '/api/prerequisites')                   return handlePrerequisites(res);
     if (url.pathname === '/api/cli/install' && req.method === 'POST') return handleCliInstall(req, res);
 
@@ -117,7 +154,9 @@ const server = http.createServer(async (req, res) => {
       if (incognitoGuard(res, 'read work items')) return; return handleWorkItems(url, res);
     }
     if (url.pathname === '/api/workitems/create' && req.method === 'POST') {
-      if (incognitoGuard(res, 'create work item')) return; return handleCreateWorkItem(req, res);
+      if (incognitoGuard(res, 'create work item')) return;
+      if (!await permGate(res, 'api', 'POST /api/workitems/create', 'Create work item')) return;
+      return handleCreateWorkItem(req, res);
     }
 
     const wiMatch = url.pathname.match(/^\/api\/workitems\/(\d+)$/);
@@ -125,17 +164,23 @@ const server = http.createServer(async (req, res) => {
       if (incognitoGuard(res, 'read work item')) return; return handleWorkItemDetail(wiMatch[1], res);
     }
     if (wiMatch && req.method === 'PATCH') {
-      if (incognitoGuard(res, 'update work item')) return; return handleUpdateWorkItem(wiMatch[1], req, res);
+      if (incognitoGuard(res, 'update work item')) return;
+      if (!await permGate(res, 'api', `PATCH /api/workitems/${wiMatch[1]}`, `Update work item #${wiMatch[1]}`)) return;
+      return handleUpdateWorkItem(wiMatch[1], req, res);
     }
 
     const wiStateMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/state$/);
     if (wiStateMatch && req.method === 'PATCH') {
-      if (incognitoGuard(res, 'change work item state')) return; return handleWorkItemState(wiStateMatch[1], req, res);
+      if (incognitoGuard(res, 'change work item state')) return;
+      if (!await permGate(res, 'api', `PATCH /api/workitems/${wiStateMatch[1]}/state`, `Change state of work item #${wiStateMatch[1]}`)) return;
+      return handleWorkItemState(wiStateMatch[1], req, res);
     }
 
     const wiCommentMatch = url.pathname.match(/^\/api\/workitems\/(\d+)\/comments$/);
     if (wiCommentMatch && req.method === 'POST') {
-      if (incognitoGuard(res, 'add work item comment')) return; return handleAddWorkItemComment(wiCommentMatch[1], req, res);
+      if (incognitoGuard(res, 'add work item comment')) return;
+      if (!await permGate(res, 'api', `POST /api/workitems/${wiCommentMatch[1]}/comments`, `Comment on work item #${wiCommentMatch[1]}`)) return;
+      return handleAddWorkItemComment(wiCommentMatch[1], req, res);
     }
 
     // ── Azure DevOps: Velocity ────────────────────────────────────────────
@@ -170,7 +215,9 @@ const server = http.createServer(async (req, res) => {
 
     // ── Pull Requests (ADO) ────────────────────────────────────────────────
     if (url.pathname === '/api/pull-request' && req.method === 'POST') {
-      if (incognitoGuard(res, 'create pull request')) return; return handleCreatePullRequest(req, res);
+      if (incognitoGuard(res, 'create pull request')) return;
+      if (!await permGate(res, 'api', 'POST /api/pull-request', 'Create pull request')) return;
+      return handleCreatePullRequest(req, res);
     }
 
     // ── GitHub Pull Requests ────────────────────────────────────────────────
@@ -193,10 +240,14 @@ const server = http.createServer(async (req, res) => {
       if (incognitoGuard(res, 'read GitHub pull request timeline')) return; return handleGitHubPullTimeline(url, res);
     }
     if (url.pathname === '/api/github/pulls/comment' && req.method === 'POST') {
-      if (incognitoGuard(res, 'comment on pull request')) return; return handleGitHubAddComment(req, res);
+      if (incognitoGuard(res, 'comment on pull request')) return;
+      if (!await permGate(res, 'api', 'POST /api/github/pulls/comment', 'Comment on GitHub PR')) return;
+      return handleGitHubAddComment(req, res);
     }
     if (url.pathname === '/api/github/pulls/review' && req.method === 'POST') {
-      if (incognitoGuard(res, 'submit pull request review')) return; return handleGitHubSubmitReview(req, res);
+      if (incognitoGuard(res, 'submit pull request review')) return;
+      if (!await permGate(res, 'api', 'POST /api/github/pulls/review', 'Submit GitHub PR review')) return;
+      return handleGitHubSubmitReview(req, res);
     }
     if (url.pathname === '/api/github/image' && req.method === 'GET')          return handleGitHubImageProxy(url, res);
     if (url.pathname === '/api/github/user-repos' && req.method === 'GET') {
@@ -488,9 +539,14 @@ async function handleImportConfig(req, res) {
 
 // ── Watch config for external changes ─────────────────────────────────────
 let configWatchDebounce = null;
+let _configSelfWriteAt = 0;
+global.__markConfigSelfWrite = () => { _configSelfWriteAt = Date.now(); };
 try {
   fs.watch(path.dirname(configPath), (eventType, filename) => {
     if (filename === 'config.json') {
+      // Ignore server-initiated writes (permissions toggle, internal saves).
+      // Only react to external edits (user editing the JSON file directly).
+      if (Date.now() - _configSelfWriteAt < 1500) return;
       if (configWatchDebounce) clearTimeout(configWatchDebounce);
       configWatchDebounce = setTimeout(() => {
         teamAreasCache = { data: null, team: null, ts: 0 };
