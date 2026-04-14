@@ -2610,6 +2610,10 @@
           <div id="newNoteInputWrap" style="display:none;padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;">
             <input id="newNoteInput" type="text" placeholder="Note name..." style="width:100%;padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;" onkeydown="if(event.key==='Enter')confirmCreateNote();if(event.key==='Escape')hideNewNoteInput();">
           </div>
+          <div id="notesSearchWrap" style="padding:6px 8px;border-bottom:1px solid var(--surface0);flex-shrink:0;">
+            <input id="notesSearchInput" type="text" placeholder="Search notes + learnings..." oninput="onNotesSearchInput()" style="width:100%;padding:5px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);color:var(--text);font:12px var(--font-ui);outline:none;box-sizing:border-box;">
+          </div>
+          <div id="notesSearchResults" style="display:none;overflow-y:auto;padding:4px 0;border-bottom:1px solid var(--surface0);flex-shrink:0;max-height:50%;"></div>
           <div id="notesList" style="overflow-y:auto;flex:1;"></div>
         </div>
         <div class="notes-editor">
@@ -3084,6 +3088,16 @@
 
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
+          <div class="settings-section">
+            <div class="settings-section-title">Hybrid Search <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
+            <div class="settings-section-desc">BM25 search across Notes and Learnings. Replaces substring search with proper relevance ranking. Index rebuilds on note save and on app start. Off by default while this stabilizes.</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="settingsHybridSearchMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
+                <span style="font-size:12px;color:var(--text);">Enable hybrid search</span>
+              </label>
+            </div>
+          </div>
           <div class="settings-section">
             <div class="settings-section-title">AI Orchestration <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
             <div class="settings-section-desc">Enables the lead AI to dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot) AND unlocks Graph Runs (durable multi-step workflows with branching, approval gates, and crash recovery). When disabled, the AI works alone without spawning other agents and Graph Runs are not available.</div>
@@ -8709,6 +8723,8 @@ function openSettings(tab) {
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
   document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
+  const hsToggle = document.getElementById('settingsHybridSearchMode');
+  if (hsToggle) hsToggle.checked = configData.HybridSearchMode === true;
   // AI API keys
   const aiKeys = configData.AiApiKeys || {};
   document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
@@ -8994,6 +9010,7 @@ async function saveSettings() {
     GitHubPAT: document.getElementById('settingsGitHubPAT').value.trim(),
     WhisperKey: document.getElementById('settingsWispr').value.trim(),
     OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
+    HybridSearchMode: document.getElementById('settingsHybridSearchMode') ? document.getElementById('settingsHybridSearchMode').checked : false,
     OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
     IncognitoMode: document.getElementById('settingsIncognitoMode').checked,
     AiApiKeys: {
@@ -11976,6 +11993,43 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshRecipes();
   setInterval(refreshRecipes, 60000);
 });
+
+// ═══ Notes search (uses /api/search if Hybrid Search BETA is on) ═════════
+let _notesSearchTimer = null;
+function onNotesSearchInput() {
+  clearTimeout(_notesSearchTimer);
+  _notesSearchTimer = setTimeout(runNotesSearch, 200);
+}
+async function runNotesSearch() {
+  const q = document.getElementById('notesSearchInput').value.trim();
+  const host = document.getElementById('notesSearchResults');
+  if (!q) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  try {
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=15');
+    if (r.status === 501) {
+      host.style.display = '';
+      host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--subtext0);">Hybrid Search is OFF. Enable it in <a href="#" onclick="event.preventDefault();openSettings();return false;" style="color:var(--accent);">Settings -> Other</a> to search across notes + learnings.</div>';
+      return;
+    }
+    const data = await r.json();
+    if (!data.results || !data.results.length) {
+      host.style.display = '';
+      host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--subtext0);">No matches.</div>';
+      return;
+    }
+    host.style.display = '';
+    host.innerHTML = data.results.map(x => {
+      const click = x.kind === 'note' ? `selectNote('${escapeHtml(x.title.replace(/ /g, '-'))}.md')` : '';
+      return `<div onclick="${click}" style="padding:6px 12px;cursor:${click?'pointer':'default'};border-bottom:1px solid var(--surface0);" onmouseenter="this.style.background='var(--surface0)'" onmouseleave="this.style.background='transparent'">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);font-weight:500;"><span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--surface2);color:var(--subtext0);">${x.kind.toUpperCase()}</span> ${escapeHtml(x.title)} <span style="margin-left:auto;font-size:10px;color:var(--subtext0);">${x.score}</span></div>
+        <div style="font-size:11px;color:var(--subtext0);margin-top:3px;line-height:1.3;">${escapeHtml(x.snippet || '')}</div>
+      </div>`;
+    }).join('');
+  } catch (_) {
+    host.style.display = '';
+    host.innerHTML = '<div style="padding:10px 14px;font-size:11px;color:var(--red);">Search failed.</div>';
+  }
+}
 
 // ═══ Recipe Editor ════════════════════════════════════════════════════════
 const RECIPE_ICONS = ['play','book-open','lightbulb','search-check','file-text','clipboard-list','users','sunrise','filter','git-pull-request','flag','flame','zap','sparkles','wand-2','hammer','wrench','bug','package','rocket','calendar','clock','check-square','list','layers','target','send','bell','mail','message-square','refresh-cw','terminal','code-2','database','server','brain','eye','settings','scale','gauge','book-plus','flask','beaker','telescope','compass','map'];

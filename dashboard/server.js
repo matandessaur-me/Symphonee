@@ -64,6 +64,9 @@ const graphRuns = new GraphRunsEngine({
 });
 const modelRouter = require('./model-router');
 const recipes = require('./recipes');
+const { HybridSearchEngine } = require('./hybrid-search');
+const { buildRepoMap } = require('./repo-map');
+const hybridSearch = new HybridSearchEngine({ repoRoot });
 
 // Render input.default templates so the UI sees evaluated values
 // instead of raw {{ context.selectedIterationName }} placeholders.
@@ -246,6 +249,42 @@ const server = http.createServer(async (req, res) => {
         }));
       } catch (e) { return json(res, { error: e.message }, 400); }
     }
+    // ── Hybrid Search (BETA, gated by config.HybridSearchMode) ───────────
+    if (url.pathname.startsWith('/api/search')) {
+      if (getConfig().HybridSearchMode !== true) {
+        return json(res, { error: 'Hybrid Search is a BETA feature. Enable it in Settings -> Other.' }, 501);
+      }
+      if (url.pathname === '/api/search' && req.method === 'GET') {
+        const q = url.searchParams.get('q') || '';
+        const kindsParam = url.searchParams.get('kinds') || '';
+        const kinds = kindsParam ? kindsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+        const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+        return json(res, { query: q, kinds, results: hybridSearch.search(q, { kinds, limit }) });
+      }
+      if (url.pathname === '/api/search/reindex' && req.method === 'POST') {
+        try { return json(res, await hybridSearch.reindex()); }
+        catch (e) { return json(res, { error: e.message }, 500); }
+      }
+      if (url.pathname === '/api/search/stats' && req.method === 'GET') {
+        return json(res, { docs: hybridSearch.totalDocs, terms: hybridSearch.invertedIndex.size, avgDocLength: Math.round(hybridSearch.avgDocLength) });
+      }
+    }
+
+    // ── Repo Map (always available) ──────────────────────────────────────
+    if (url.pathname === '/api/repo/map' && req.method === 'GET') {
+      const repoName = url.searchParams.get('repo') || (getUiContextWithPath().activeRepo);
+      const budget = parseInt(url.searchParams.get('budget') || '4000', 10);
+      const cfg = getConfig();
+      const repoPath = (cfg.Repos || {})[repoName];
+      if (!repoPath) return json(res, { error: `Repo '${repoName}' not configured` }, 400);
+      try {
+        const md = await buildRepoMap({ repoPath, repoName, budget });
+        res.writeHead(200, { 'Content-Type': 'text/markdown' });
+        res.end(md);
+        return;
+      } catch (e) { return json(res, { error: e.message }, 500); }
+    }
+
     if (url.pathname === '/api/ui/open-path' && req.method === 'POST') {
       const body = await readBody(req);
       const safe = String(body.path || '').replace(/\.\./g, '');
@@ -2989,6 +3028,7 @@ async function handleSaveNote(req, res) {
   fs.mkdirSync(notesDir, { recursive: true });
   atomicWriteSync(resolved, content || '');
   broadcast({ type: 'ui-action', action: 'refresh-notes' });
+  if (getConfig().HybridSearchMode === true) hybridSearch.indexNote(resolved).catch(() => {});
   json(res, { ok: true });
 }
 
@@ -3317,6 +3357,13 @@ console.log('  Learnings module mounted (/api/learnings/*)');
 _learningsInstance.pull().then(r => {
   if (r.pulled > 0) { console.log(`  Pulled ${r.pulled} shared learning(s)`); writePluginHints(); }
 }).catch(() => {});
+
+// ── Hybrid search bootstrap (only when BETA flag is on) ──────────────────────
+if (getConfig().HybridSearchMode === true) {
+  hybridSearch.initialize({ notesDir, learnings: _learningsInstance })
+    .then(() => console.log(`  Hybrid search indexed ${hybridSearch.totalDocs} doc(s) across ${hybridSearch.invertedIndex.size} term(s)`))
+    .catch(e => console.warn('  [hybrid-search] init error:', e.message));
+}
 
 // ── Mount browser agent ──────────────────────────────────────────────────────
 try {

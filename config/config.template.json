@@ -7,6 +7,7 @@
   "GitHubPAT": "",
   "WhisperKey": "",
   "OrchestrateMode": false,
+  "HybridSearchMode": false,
   "DefaultCli": "claude",
   "IncognitoMode": false,
   "AiApiKeys": {},
