@@ -63,6 +63,7 @@ const graphRuns = new GraphRunsEngine({
   },
 });
 const modelRouter = require('./model-router');
+const recipes = require('./recipes');
 
 async function permGate(res, type, value, label) {
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
@@ -129,6 +130,24 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/models/recommend' && req.method === 'POST') {
       const body = await readBody(req);
       return json(res, modelRouter.recommend({ ...body, configPath }));
+    }
+
+    // ── Recipes ───────────────────────────────────────────────────────────
+    if (url.pathname === '/api/recipes' && req.method === 'GET') {
+      return json(res, recipes.listRecipes());
+    }
+    const recipeMatch = url.pathname.match(/^\/api\/recipes\/([^/]+)$/);
+    if (recipeMatch && req.method === 'GET') {
+      const r = recipes.loadRecipe(decodeURIComponent(recipeMatch[1]));
+      if (!r) return json(res, { error: 'recipe not found' }, 404);
+      return json(res, r);
+    }
+    if (url.pathname === '/api/recipes/run' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.id) return json(res, { error: 'id required' }, 400);
+      if (!await permGate(res, 'api', 'POST /api/recipes/run', `Run recipe: ${body.id}`)) return;
+      try { return json(res, await recipes.runRecipe(body)); }
+      catch (e) { return json(res, { error: e.message }, 400); }
     }
 
     // ── Permissions ────────────────────────────────────────────────────────

@@ -10272,6 +10272,18 @@ function getCmdActions() {
   for (const name of repos) {
     actions.push({ label: `Switch to ${name}`, icon: 'git-branch', action: () => selectRepo(name), category: 'Repo' });
   }
+  // Recipes (project-local + user-global). Loaded synchronously from cache.
+  if (_recipesCache && _recipesCache.length) {
+    for (const r of _recipesCache) {
+      actions.push({
+        label: r.name,
+        icon: r.icon || 'play',
+        action: () => openRecipeRunModal(r.id),
+        category: 'Recipe',
+        hint: r.description || '',
+      });
+    }
+  }
   // Work items (top 20 recent)
   const recentWi = [...workItems].sort((a, b) => new Date(b.changedDate) - new Date(a.changedDate)).slice(0, 20);
   for (const wi of recentWi) {
@@ -11725,6 +11737,88 @@ async function removeMcp(nameEnc) {
 }
 
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+
+// ═══ Recipes ═══════════════════════════════════════════════════════════════
+let _recipesCache = [];
+async function refreshRecipes() {
+  try {
+    const r = await fetch('/api/recipes');
+    const list = await r.json();
+    _recipesCache = Array.isArray(list) ? list : [];
+  } catch (_) { _recipesCache = []; }
+}
+
+async function openRecipeRunModal(recipeId) {
+  let recipe;
+  try {
+    const r = await fetch('/api/recipes/' + encodeURIComponent(recipeId));
+    if (!r.ok) throw new Error('fetch failed');
+    recipe = await r.json();
+  } catch (e) { toast('Could not load recipe: ' + recipeId, 'error'); return; }
+
+  let overlay = document.getElementById('recipeRunOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'recipeRunOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+
+  const inputsHtml = (recipe.inputs || []).map(i => {
+    const def = i.default == null ? '' : String(i.default);
+    const req = i.required ? ' <span style="color:var(--accent);">*</span>' : '';
+    if (i.type === 'boolean') {
+      return `<div style="margin-bottom:10px;"><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);"><input type="checkbox" data-recipe-input="${escapeHtml(i.name)}" ${def==='true'?'checked':''}> ${escapeHtml(i.name)}${req}</label></div>`;
+    }
+    const inputType = i.type === 'number' ? 'number' : 'text';
+    return `<div style="margin-bottom:10px;"><label style="display:block;font-size:11px;color:var(--subtext0);margin-bottom:4px;">${escapeHtml(i.name)}${req}</label><input type="${inputType}" data-recipe-input="${escapeHtml(i.name)}" value="${escapeHtml(def)}" style="width:100%;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;"></div>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:20px;min-width:440px;max-width:600px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--accent);font-weight:600;font-size:13px;">
+        <i data-lucide="${escapeHtml(recipe.icon || 'play')}" style="width:16px;height:16px;"></i>
+        <span>${escapeHtml(recipe.name)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--subtext0);margin-bottom:14px;">${escapeHtml(recipe.description)}</div>
+      <div style="font-size:10px;color:var(--subtext0);margin-bottom:12px;">
+        ${recipe.intent ? 'intent: <code>' + escapeHtml(recipe.intent) + '</code>' : ''}
+        ${recipe.cli ? ' &nbsp;cli: <code>' + escapeHtml(recipe.cli) + '</code>' : ''}
+        ${recipe.mode ? ' &nbsp;advised mode: <code>' + escapeHtml(recipe.mode) + '</code>' : ''}
+      </div>
+      ${inputsHtml || '<div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">(no inputs)</div>'}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+        <button onclick="document.getElementById('recipeRunOverlay').remove()" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Cancel</button>
+        <button onclick="submitRecipeRun('${encodeURIComponent(recipe.id)}')" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Run</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+}
+
+async function submitRecipeRun(recipeIdEnc) {
+  const recipeId = decodeURIComponent(recipeIdEnc);
+  const inputs = {};
+  document.querySelectorAll('[data-recipe-input]').forEach(el => {
+    const name = el.getAttribute('data-recipe-input');
+    if (el.type === 'checkbox') inputs[name] = el.checked;
+    else if (el.type === 'number') inputs[name] = el.value === '' ? null : Number(el.value);
+    else inputs[name] = el.value;
+  });
+  document.getElementById('recipeRunOverlay').remove();
+  try {
+    const r = await fetch('/api/recipes/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: recipeId, inputs, originTermId: activeTermId || null }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    toast(`Recipe '${recipeId}' running on ${data.cli} (task ${data.taskId.slice(0,8)})`, 'success');
+  } catch (e) { toast('Recipe failed: ' + e.message, 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  refreshRecipes();
+  setInterval(refreshRecipes, 60000);
+});
 
 </script>
 </body>

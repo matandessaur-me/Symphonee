@@ -287,6 +287,35 @@ const TOOLS = [
     handler: async (args) => textResult(JSON.stringify(await apiRequest('GET', `/api/graph-runs/${encodeURIComponent(args.id)}`), null, 2)),
   },
   {
+    name: 'list_recipes',
+    description: 'List all available DevOps Pilot recipes (reusable AI workflows declared as markdown files in recipes/).',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/recipes'), null, 2)),
+  },
+  {
+    name: 'get_recipe',
+    description: 'Get full detail of a recipe, including its prompt body and input schema.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Recipe id (filename without .md).' } },
+      required: ['id'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('GET', `/api/recipes/${encodeURIComponent(args.id)}`), null, 2)),
+  },
+  {
+    name: 'run_recipe',
+    description: 'Run a recipe with the given inputs. Returns the spawned task id; the worker result will be injected into the originating terminal when complete.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        inputs: { type: 'object', description: 'Map of input name to value.' },
+      },
+      required: ['id'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/recipes/run', args), null, 2)),
+  },
+  {
     name: 'approve_graph_node',
     description: 'BETA. Resolve a pending approval node in a graph run.',
     inputSchema: {
