@@ -161,9 +161,12 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const id = String(body.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
       if (!id) return json(res, { error: 'id required' }, 400);
-      if (!await permGate(res, 'api', 'POST /api/recipes/save', `Save recipe: ${id}`)) return;
+      const file = path.join(repoRoot, 'recipes', id + '.md');
+      if (fs.existsSync(file) && !body.overwrite) {
+        return json(res, { error: `A recipe with id '${id}' already exists. Pass overwrite:true to replace it.`, exists: true }, 409);
+      }
+      if (!await permGate(res, 'api', 'POST /api/recipes/save', `${body.overwrite ? 'Update' : 'Save'} recipe: ${id}`)) return;
       try {
-        const file = path.join(repoRoot, 'recipes', id + '.md');
         fs.mkdirSync(path.dirname(file), { recursive: true });
         const fm = body.frontmatter || {};
         const lines = ['---'];
@@ -193,6 +196,39 @@ const server = http.createServer(async (req, res) => {
         const content = lines.join('\n') + '\n\n' + (body.body || '').replace(/\r\n/g, '\n');
         fs.writeFileSync(file, content, 'utf8');
         return json(res, { ok: true, id, path: file });
+      } catch (e) { return json(res, { error: e.message }, 500); }
+    }
+    if (url.pathname === '/api/recipes/preview' && req.method === 'POST') {
+      const body = await readBody(req);
+      const id = String(body.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!id) return json(res, { error: 'id required' }, 400);
+      const recipe = recipes.loadRecipe(id);
+      if (!recipe) return json(res, { error: 'recipe not found' }, 404);
+      try {
+        const ctx = getUiContextWithPath();
+        const finalInputs = {};
+        for (const def of (recipe.inputs || [])) {
+          let v = (body.inputs && Object.prototype.hasOwnProperty.call(body.inputs, def.name)) ? body.inputs[def.name] : undefined;
+          if (v === undefined && def.default !== undefined) v = def.default;
+          if (typeof v === 'string' && v.includes('{{')) {
+            v = recipes.renderTemplate(v, { context: ctx });
+          }
+          finalInputs[def.name] = v;
+        }
+        const rendered = recipes.renderTemplate(recipe.body, { context: ctx, env: process.env, inputs: finalInputs });
+        return json(res, { id, inputs: finalInputs, prompt: rendered.trim() });
+      } catch (e) { return json(res, { error: e.message }, 500); }
+    }
+    const recipeDelMatch = url.pathname.match(/^\/api\/recipes\/([^/]+)$/);
+    if (recipeDelMatch && req.method === 'DELETE') {
+      const id = decodeURIComponent(recipeDelMatch[1]).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!id) return json(res, { error: 'id required' }, 400);
+      if (!await permGate(res, 'api', `DELETE /api/recipes/${id}`, `Delete recipe: ${id}`)) return;
+      try {
+        const file = path.join(repoRoot, 'recipes', id + '.md');
+        if (!fs.existsSync(file)) return json(res, { error: 'not found' }, 404);
+        fs.unlinkSync(file);
+        return json(res, { ok: true, id });
       } catch (e) { return json(res, { error: e.message }, 500); }
     }
     if (url.pathname === '/api/recipes/run' && req.method === 'POST') {
