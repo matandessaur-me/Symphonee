@@ -2842,40 +2842,6 @@
             </div>
           </div>
           <div class="settings-section">
-            <div class="settings-section-title" style="display:flex;align-items:center;gap:8px;">YOLO Mode (Auto-Approve Permissions) <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--red, #e64553);color:#fff;letter-spacing:0.5px;">DANGEROUS</span></div>
-            <div class="settings-section-desc">Select which CLIs should launch with full auto-approve flags. The AI will never ask for permission during execution.</div>
-            <div style="margin:8px 0;padding:10px 12px;background:color-mix(in srgb, var(--red, #e64553) 8%, var(--surface0));border:1px solid color-mix(in srgb, var(--red, #e64553) 25%, transparent);border-radius:var(--radius);font-size:11px;color:var(--subtext0);line-height:1.8;">
-              <span style="color:var(--red, #e64553);font-weight:600;">Use at your own risk.</span> These flags bypass all safety prompts. The AI can execute any command, modify any file, and make irreversible changes without confirmation.
-            </div>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" class="yolo-cli-cb" value="claude" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
-                <span style="font-size:12px;color:var(--text);flex:1;">Claude Code</span>
-                <code style="font-size:10px;color:var(--subtext0);">--dangerously-skip-permissions</code>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" class="yolo-cli-cb" value="gemini" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
-                <span style="font-size:12px;color:var(--text);flex:1;">Gemini CLI</span>
-                <code style="font-size:10px;color:var(--subtext0);">--yolo</code>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" class="yolo-cli-cb" value="codex" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
-                <span style="font-size:12px;color:var(--text);flex:1;">Codex CLI</span>
-                <code style="font-size:10px;color:var(--subtext0);">--full-auto</code>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" class="yolo-cli-cb" value="copilot" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
-                <span style="font-size:12px;color:var(--text);flex:1;">Copilot CLI</span>
-                <code style="font-size:10px;color:var(--subtext0);">--yolo</code>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" class="yolo-cli-cb" value="grok" style="width:16px;height:16px;accent-color:var(--red, #e64553);cursor:pointer;">
-                <span style="font-size:12px;color:var(--text);flex:1;">Grok CLI</span>
-                <code style="font-size:10px;color:var(--subtext0);">--permission-mode full</code>
-              </label>
-            </div>
-          </div>
-          <div class="settings-section">
             <div class="settings-section-title">Browser Automation</div>
             <div class="settings-section-desc">AI-controlled browser sessions for account creation and authentication. Requires <code>playwright-core</code> to be installed. Uses the system Edge browser.</div>
             <div id="settingsBrowserCreds">
@@ -6701,9 +6667,13 @@ function launchAiWith(cli) {
 
   function doLaunch() {
     let cmd = cfg.cmd;
-    // Append YOLO flags if enabled per-CLI in settings
-    const yoloList = configData.YoloCliList || [];
-    if (yoloList.includes(cli) && YOLO_FLAGS[cli]) {
+    // Append YOLO flags when the permission mode implies auto-approval.
+    // Mode === 'bypass' always; 'trusted' only when launching inside a worktree path.
+    const mode = (permModeCache && permModeCache.mode) || 'edit';
+    const termCwd = (termInstances.get(termId) && termInstances.get(termId).cwd) || '';
+    const inWorktree = /worktree/i.test(termCwd);
+    const shouldYolo = mode === 'bypass' || (mode === 'trusted' && inWorktree);
+    if (shouldYolo && YOLO_FLAGS[cli]) {
       cmd += ' ' + YOLO_FLAGS[cli];
     }
     sendCommand(cmd, termId);
@@ -8693,9 +8663,6 @@ function openSettings(tab) {
   document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
   document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
   document.getElementById('settingsOrchDelivery').value = configData.OrchestrateResultDelivery || 'inject';
-  // YOLO per-CLI checkboxes
-  const yoloList = configData.YoloCliList || [];
-  document.querySelectorAll('.yolo-cli-cb').forEach(function(cb) { cb.checked = yoloList.includes(cb.value); });
   // AI API keys
   const aiKeys = configData.AiApiKeys || {};
   document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
@@ -8983,7 +8950,6 @@ async function saveSettings() {
     OrchestrateMode: document.getElementById('settingsOrchestrateMode').checked,
     OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
     IncognitoMode: document.getElementById('settingsIncognitoMode').checked,
-    YoloCliList: Array.from(document.querySelectorAll('.yolo-cli-cb:checked')).map(function(cb) { return cb.value; }),
     AiApiKeys: {
       OPENAI_API_KEY: document.getElementById('settingsOpenaiKey').value.trim() || undefined,
       GEMINI_API_KEY: document.getElementById('settingsGeminiKey').value.trim() || undefined,
@@ -11546,11 +11512,13 @@ async function savePluginSettings() {
 
 // ═══ Permission Mode + Approval Modal ══════════════════════════════════════
 const PERM_MODE_COLORS = { review: '#4a9eff', edit: '#9acd32', trusted: '#f5b800', bypass: '#ff6b6b' };
+let permModeCache = { mode: 'edit' };
 async function refreshPermMode() {
   try {
     const r = await fetch('/api/permissions');
     const data = await r.json();
     const mode = (data.settings && data.settings.mode) || 'edit';
+    permModeCache = { mode, settings: data.settings };
     const chip = document.getElementById('permModeChip');
     const label = document.getElementById('permModeLabel');
     if (label) label.textContent = mode.toUpperCase();

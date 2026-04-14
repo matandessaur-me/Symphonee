@@ -503,11 +503,9 @@ class Orchestrator extends EventEmitter {
       if (effort && cliMeta.effortFlag) {
         finalArgs.unshift(cliMeta.effortFlag, effort);
       }
-      // Auto-permit resolves from three sources, in order:
+      // Auto-permit resolves from two sources, in order:
       //   1. explicit autoPermit param on the spawn call
       //   2. the active permission mode (bypass always; trusted only in a worktree)
-      //   3. legacy YoloCliList setting (kept as escape hatch; will retire once UI is removed)
-      const yoloList = this.getConfig().YoloCliList || [];
       let modeYolo = false;
       try {
         const perms = require('./permissions');
@@ -518,7 +516,7 @@ class Orchestrator extends EventEmitter {
         if (settings.mode === 'bypass') modeYolo = true;
         else if (settings.mode === 'trusted' && isWorktree) modeYolo = true;
       } catch (_) {}
-      const shouldYolo = autoPermit || modeYolo || yoloList.includes(cli);
+      const shouldYolo = autoPermit || modeYolo;
       if (shouldYolo && cliMeta.permissionFlag) {
         if (typeof cliMeta.autoPermission === 'boolean') {
           finalArgs.unshift(cliMeta.permissionFlag); // boolean flag like --full-auto, --yolo
