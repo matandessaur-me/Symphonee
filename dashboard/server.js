@@ -65,6 +65,20 @@ const graphRuns = new GraphRunsEngine({
 const modelRouter = require('./model-router');
 const recipes = require('./recipes');
 
+// Render input.default templates so the UI sees evaluated values
+// instead of raw {{ context.selectedIterationName }} placeholders.
+function withRenderedDefaults(recipe, ctx) {
+  if (!recipe || !Array.isArray(recipe.inputs)) return recipe;
+  const renderedInputs = recipe.inputs.map(i => {
+    if (typeof i.default !== 'string' || !i.default.includes('{{')) return i;
+    try {
+      const rendered = recipes.renderTemplate(i.default, { context: ctx });
+      return { ...i, default: rendered, defaultTemplate: i.default };
+    } catch (_) { return i; }
+  });
+  return { ...recipe, inputs: renderedInputs };
+}
+
 async function permGate(res, type, value, label) {
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
 }
@@ -134,13 +148,14 @@ const server = http.createServer(async (req, res) => {
 
     // ── Recipes ───────────────────────────────────────────────────────────
     if (url.pathname === '/api/recipes' && req.method === 'GET') {
-      return json(res, recipes.listRecipes());
+      const ctx = getUiContextWithPath();
+      return json(res, recipes.listRecipes().map(r => withRenderedDefaults(r, ctx)));
     }
     const recipeMatch = url.pathname.match(/^\/api\/recipes\/([^/]+)$/);
     if (recipeMatch && req.method === 'GET') {
       const r = recipes.loadRecipe(decodeURIComponent(recipeMatch[1]));
       if (!r) return json(res, { error: 'recipe not found' }, 404);
-      return json(res, r);
+      return json(res, withRenderedDefaults(r, getUiContextWithPath()));
     }
     if (url.pathname === '/api/recipes/run' && req.method === 'POST') {
       const body = await readBody(req);
