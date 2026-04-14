@@ -241,17 +241,21 @@ class GraphRunsEngine extends EventEmitter {
     while (true) {
       // Re-check status each iteration (external pause/cancel can happen)
       if (['paused', 'cancelled'].includes(run.status)) break;
-      const ready = run.nodes.filter(n => n.status === 'pending' && this._areDepsComplete(run, n) && !this._isSkipped(run, n));
-      if (!ready.length) {
-        // Mark skipped nodes explicitly so they show in UI
-        for (const n of run.nodes) {
-          if (n.status === 'pending' && this._isSkipped(run, n) && this._areDepsComplete(run, n)) {
-            n.status = 'cancelled';
-            n.endedAt = Date.now();
-          }
+
+      // First, cancel any skipped nodes whose dependencies are already
+      // terminal. This unblocks merge nodes downstream.
+      let cancelledSomething = false;
+      for (const n of run.nodes) {
+        if (n.status === 'pending' && this._isSkipped(run, n) && this._areDepsComplete(run, n)) {
+          n.status = 'cancelled';
+          n.endedAt = Date.now();
+          cancelledSomething = true;
         }
-        break;
       }
+      if (cancelledSomething) this._persist(run);
+
+      const ready = run.nodes.filter(n => n.status === 'pending' && this._areDepsComplete(run, n) && !this._isSkipped(run, n));
+      if (!ready.length) break;
       // Execute ready nodes sequentially for v1 (parallel is phase 2)
       for (const node of ready) {
         if (['paused', 'cancelled'].includes(run.status)) break;
@@ -371,10 +375,14 @@ class GraphRunsEngine extends EventEmitter {
     } catch (e) {
       throw new Error(`branch expression failed: ${e.message}`);
     }
-    // thenNext + elseNext are node ids; the branch of nodes NOT taken gets skipped.
+    // thenNext + elseNext are node ids; the branch not taken gets skipped.
+    // Only propagate the skip forward to descendants whose EVERY dependency
+    // is already skipped — merge nodes with an alternate reachable parent
+    // must still run.
     const skipTarget = result ? node.elseNext : node.thenNext;
     if (skipTarget) {
-      const toSkip = descendantsOf(run.nodes, skipTarget);
+      const existing = Array.isArray(run.state._skipNodes) ? run.state._skipNodes : [];
+      const toSkip = unreachableFrom(run.nodes, skipTarget, existing);
       run.state = deepMerge(run.state, { _skipNodes: toSkip });
     }
     return { taken: result ? 'then' : 'else' };
@@ -431,19 +439,26 @@ function evalSafe(expr, state) {
   return fn(state);
 }
 
-function descendantsOf(nodes, startId) {
-  const out = new Set([startId]);
-  const queue = [startId];
-  while (queue.length) {
-    const cur = queue.shift();
+// Compute the set of nodes that become unreachable when `startId` is skipped,
+// given that `alreadySkipped` is the running skip set. A node is unreachable
+// only if it has at least one dependency AND every dependency is in the skip
+// set. Iterated to a fixed point so chained merges work too.
+function unreachableFrom(nodes, startId, alreadySkipped = []) {
+  const skip = new Set([...alreadySkipped, startId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
     for (const n of nodes) {
-      if ((n.dependsOn || []).includes(cur) && !out.has(n.id)) {
-        out.add(n.id);
-        queue.push(n.id);
+      if (skip.has(n.id)) continue;
+      const deps = n.dependsOn || [];
+      if (!deps.length) continue; // root nodes are never skipped by propagation
+      if (deps.every(d => skip.has(d))) {
+        skip.add(n.id);
+        changed = true;
       }
     }
   }
-  return Array.from(out);
+  return Array.from(skip);
 }
 
 function apiRequest(host, port, method, pathname, body) {
