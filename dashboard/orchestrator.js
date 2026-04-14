@@ -503,9 +503,20 @@ class Orchestrator extends EventEmitter {
       if (effort && cliMeta.effortFlag) {
         finalArgs.unshift(cliMeta.effortFlag, effort);
       }
-      // Auto-permit: either explicit param or per-CLI YoloCliList setting
-      const yoloList = this.getConfig().YoloCliList || [];
-      const shouldYolo = autoPermit || yoloList.includes(cli);
+      // Auto-permit resolves from two sources, in order:
+      //   1. explicit autoPermit param on the spawn call
+      //   2. the active permission mode (bypass always; trusted only in a worktree)
+      let modeYolo = false;
+      try {
+        const perms = require('./permissions');
+        const path = require('path');
+        const configPath = path.join(path.resolve(__dirname, '..'), 'config', 'config.json');
+        const settings = perms.loadSettings(configPath);
+        const isWorktree = !!cwd && cwd.includes('worktree');
+        if (settings.mode === 'bypass') modeYolo = true;
+        else if (settings.mode === 'trusted' && isWorktree) modeYolo = true;
+      } catch (_) {}
+      const shouldYolo = autoPermit || modeYolo;
       if (shouldYolo && cliMeta.permissionFlag) {
         if (typeof cliMeta.autoPermission === 'boolean') {
           finalArgs.unshift(cliMeta.permissionFlag); // boolean flag like --full-auto, --yolo
@@ -1909,6 +1920,18 @@ function readBody(req) {
  * @param {string}   opts.repoRoot
  * @returns {Orchestrator}
  */
+async function gateSpawn(res, { cli, cwd, label, wait = true }) {
+  const permissions = require('./permissions');
+  const path = require('path');
+  const configPath = path.join(path.resolve(__dirname, '..'), 'config', 'config.json');
+  return permissions.gate(res, { type: 'cli', value: `${cli}:spawn` }, {
+    configPath,
+    wait,
+    ctx: { worktree: !!cwd && cwd.includes('worktree') },
+    actionLabel: label || `Spawn ${cli} worker`,
+  });
+}
+
 function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, createTerminal, getConfig, getLearnings }) {
   const workspaceDir = path.join(repoRoot, '.ai-workspace', 'orchestrator');
   const orch = new Orchestrator({ terminals, broadcast, workspaceDir, createTerminal, getConfig });
@@ -1999,6 +2022,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
         return json(res, { error: `CLI "${cli}" is not enabled for orchestration. Enable it in Settings > Other.` }, 403);
       }
     }
+    if (!await gateSpawn(res, { cli, cwd, label: `Spawn ${cli} worker`, wait: !autoPermit })) return;
     try {
       // Auto-select best mode: pipe mode for CLIs that support it (fast, reliable),
       // visible PTY for interactive CLIs that need a terminal.
@@ -2125,6 +2149,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
         return json(res, { error: `CLI "${cli}" is not enabled for orchestration.` }, 403);
       }
     }
+    if (!await gateSpawn(res, { cli, cwd, label: `Handoff to ${cli}` })) return;
     const result = await orch.handoff({ cli, prompt, cwd, from, handoffTimeout });
     json(res, result, result.ok ? 200 : 500);
   });
@@ -2135,6 +2160,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     const { cli, prompt, cwd, from, dependsOn } = await readBody(req);
     if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
     if (!Array.isArray(dependsOn) || !dependsOn.length) return json(res, { error: 'dependsOn must be a non-empty array of task IDs' }, 400);
+    if (!await gateSpawn(res, { cli, cwd, label: `Spawn ${cli} with dependencies` })) return;
     try {
       const task = orch.spawnWithDependencies({ cli, prompt, cwd, from, dependsOn });
       json(res, task);
@@ -2148,6 +2174,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   addRoute('POST', '/api/orchestrator/spawn-worktree', async (req, res) => {
     const { cli, prompt, repoPath, branch, from } = await readBody(req);
     if (!cli || !prompt || !repoPath) return json(res, { error: 'cli, prompt, and repoPath required' }, 400);
+    if (!await gateSpawn(res, { cli, cwd: 'worktree', label: `Spawn ${cli} in worktree` })) return;
     try {
       const task = orch.spawnInWorktree({ cli, prompt, repoPath, branch, from });
       json(res, orch._serializeTask(task));
@@ -2177,6 +2204,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   addRoute('POST', '/api/orchestrator/spawn-escalate', async (req, res) => {
     const { preferCli, prompt, cwd, from } = await readBody(req);
     if (!prompt) return json(res, { error: 'prompt required' }, 400);
+    if (!await gateSpawn(res, { cli: preferCli || 'escalation', cwd, label: `Spawn with escalation (prefer ${preferCli || 'auto'})` })) return;
     try {
       const task = orch.spawnWithEscalation({ preferCli, prompt, cwd, from });
       json(res, orch._serializeTask(task));
@@ -2190,6 +2218,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   addRoute('POST', '/api/orchestrator/fan-out', async (req, res) => {
     const { tasks: taskConfigs, maxConcurrent, staggerMs, aggregate } = await readBody(req);
     if (!Array.isArray(taskConfigs) || !taskConfigs.length) return json(res, { error: 'tasks array required' }, 400);
+    if (!await gateSpawn(res, { cli: 'fan-out', label: `Fan out ${taskConfigs.length} workers` })) return;
     try {
       const result = orch.fanOut(taskConfigs, { maxConcurrent, staggerMs, aggregate });
       json(res, { tasks: result.tasks, aggregate: !!aggregate });
@@ -2203,6 +2232,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   addRoute('POST', '/api/orchestrator/spawn-lineage', async (req, res) => {
     const { cli, prompt, cwd, from, parentTaskId, siblingTaskIds } = await readBody(req);
     if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
+    if (!await gateSpawn(res, { cli, cwd, label: `Spawn ${cli} with lineage` })) return;
     try {
       const task = orch.spawnWithLineage({ cli, prompt, cwd, from, parentTaskId, siblingTaskIds });
       json(res, orch._serializeTask(task));

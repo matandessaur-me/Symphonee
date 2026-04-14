@@ -9,10 +9,15 @@
   "OrchestrateMode": false,
   "DefaultCli": "claude",
   "IncognitoMode": false,
-  "YoloCliList": [],
   "AiApiKeys": {},
   "OrchestrateResultDelivery": "inject",
   "BrowserCredentials": {},
   "Repos": {},
-  "ThemePreference": "claude"
+  "ThemePreference": "claude",
+  "Permissions": {
+    "mode": "edit",
+    "allow": [],
+    "ask": [],
+    "deny": []
+  }
 }
