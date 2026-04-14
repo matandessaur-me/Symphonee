@@ -1,0 +1,34 @@
+{
+  "name": "Sprint Review (example)",
+  "state": {
+    "iteration": "Sprint 42"
+  },
+  "nodes": [
+    {
+      "id": "pull",
+      "type": "worker",
+      "cli": "claude",
+      "prompt": "List all work items in iteration {{ state.iteration }} from Azure DevOps. For each item, include id, title, state, assignedTo, storyPoints. Group by state. Output as JSON."
+    },
+    {
+      "id": "review",
+      "type": "approval",
+      "title": "Review the pulled data before generating the summary?",
+      "dependsOn": ["pull"]
+    },
+    {
+      "id": "summarize",
+      "type": "worker",
+      "cli": "gemini",
+      "prompt": "Using this sprint data, produce a standup-ready markdown summary. Call out completed items, carried-over items, blockers, and velocity vs. last 3 sprints.\n\nData:\n{{ state.results.pull.result }}",
+      "dependsOn": ["review"]
+    },
+    {
+      "id": "save",
+      "type": "worker",
+      "cli": "codex",
+      "prompt": "Save this markdown content as a note titled 'Sprint Review {{ state.iteration }}'. Use the DevOps Pilot save-note API.\n\nContent:\n{{ state.results.summarize.result }}",
+      "dependsOn": ["summarize"]
+    }
+  ]
+}

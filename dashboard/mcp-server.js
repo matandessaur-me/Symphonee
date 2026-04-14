@@ -256,6 +256,51 @@ const TOOLS = [
       return textResult(JSON.stringify(res, null, 2));
     },
   },
+  {
+    name: 'start_graph_run',
+    description: 'BETA. Start a durable multi-step graph run. Requires AI Orchestration enabled in Settings -> Other (graph runs are part of orchestration). Node types: worker (spawn a CLI), approval (human gate), branch (expression decides next path). Prompt templates use {{ state.foo }} substitution; node output auto-merges into state.results[nodeId].',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        state: { type: 'object', description: 'Initial state object.' },
+        nodes: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['nodes'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/graph-runs', args), null, 2)),
+  },
+  {
+    name: 'list_graph_runs',
+    description: 'BETA. List all graph runs with summary info.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/graph-runs'), null, 2)),
+  },
+  {
+    name: 'get_graph_run',
+    description: 'BETA. Get full detail of a graph run including state, nodes, outputs.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('GET', `/api/graph-runs/${encodeURIComponent(args.id)}`), null, 2)),
+  },
+  {
+    name: 'approve_graph_node',
+    description: 'BETA. Resolve a pending approval node in a graph run.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'string' },
+        nodeId: { type: 'string' },
+        approved: { type: 'boolean' },
+        note: { type: 'string' },
+      },
+      required: ['runId', 'nodeId', 'approved'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', `/api/graph-runs/${encodeURIComponent(args.runId)}/approve/${encodeURIComponent(args.nodeId)}`, { approved: args.approved, note: args.note }), null, 2)),
+  },
 ];
 
 function textResult(text) {

@@ -54,6 +54,15 @@ const permissions = require('./permissions');
 const { MCPClientManager } = require('./mcp-client');
 const mcpClient = new MCPClientManager({ configPath });
 mcpClient.bootstrap().catch(e => console.warn('  [mcp-client] bootstrap error:', e.message));
+const { GraphRunsEngine } = require('./graph-runs');
+const graphRuns = new GraphRunsEngine({
+  repoRoot,
+  injectToTerminal: (termId, text) => {
+    const t = terminals.get(termId);
+    if (t && t.pty) try { t.pty.write(text); } catch (_) {}
+  },
+});
+const modelRouter = require('./model-router');
 
 async function permGate(res, type, value, label) {
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
@@ -113,6 +122,15 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/themes' && req.method === 'GET')  return handleGetThemes(res);
     if (url.pathname === '/api/themes' && req.method === 'POST') return handleSaveThemes(req, res);
 
+    // ── Model Router ──────────────────────────────────────────────────────
+    if (url.pathname === '/api/models/catalog' && req.method === 'GET') {
+      return json(res, modelRouter.publicCatalog(configPath));
+    }
+    if (url.pathname === '/api/models/recommend' && req.method === 'POST') {
+      const body = await readBody(req);
+      return json(res, modelRouter.recommend({ ...body, configPath }));
+    }
+
     // ── Permissions ────────────────────────────────────────────────────────
     if (url.pathname === '/api/permissions' && req.method === 'GET') {
       return json(res, { settings: permissions.loadSettings(configPath), modes: permissions.MODES, defaults: permissions.MODE_DEFAULTS });
@@ -169,6 +187,53 @@ const server = http.createServer(async (req, res) => {
       try { return json(res, await mcpClient.refresh(decodeURIComponent(mcpRefreshMatch[1]))); }
       catch (e) { return json(res, { error: e.message }, 400); }
     }
+    // ── Graph Runs (gated by config.OrchestrateMode; graph runs are
+    //    part of the AI Orchestration BETA, not a separate feature) ─────
+    if (url.pathname.startsWith('/api/graph-runs')) {
+      if (getConfig().OrchestrateMode !== true) {
+        return json(res, { error: 'Graph Runs requires AI Orchestration. Enable it in Settings -> Other.' }, 501);
+      }
+      if (url.pathname === '/api/graph-runs' && req.method === 'GET') {
+        return json(res, graphRuns.listRuns());
+      }
+      if (url.pathname === '/api/graph-runs/pending-approvals' && req.method === 'GET') {
+        return json(res, graphRuns.listPendingApprovals());
+      }
+      if (url.pathname === '/api/graph-runs' && req.method === 'POST') {
+        const body = await readBody(req);
+        if (!await permGate(res, 'api', 'POST /api/graph-runs', `Start graph run: ${body.name || 'unnamed'}`)) return;
+        try { return json(res, await graphRuns.createRun(body)); }
+        catch (e) { return json(res, { error: e.message }, 400); }
+      }
+      const grMatch = url.pathname.match(/^\/api\/graph-runs\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
+      if (grMatch) {
+        const [_, runId, action, nodeId] = grMatch;
+        if (!action && req.method === 'GET') {
+          const run = graphRuns.getRun(runId);
+          if (!run) return json(res, { error: 'not found' }, 404);
+          return json(res, run);
+        }
+        if (action === 'pause' && req.method === 'POST') {
+          try { return json(res, graphRuns.pauseRun(runId)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'resume' && req.method === 'POST') {
+          try { return json(res, await graphRuns.resumeRun(runId)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'cancel' && req.method === 'POST') {
+          try { return json(res, graphRuns.cancelRun(runId)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'interrupt' && req.method === 'POST') {
+          const body = await readBody(req);
+          try { return json(res, graphRuns.updateState(runId, body.patch || {})); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+        if (action === 'approve' && nodeId && req.method === 'POST') {
+          const body = await readBody(req);
+          try { return json(res, graphRuns.approveNode(runId, nodeId, body)); } catch (e) { return json(res, { error: e.message }, 400); }
+        }
+      }
+      return json(res, { error: 'graph-runs: route not found' }, 404);
+    }
+
     if (url.pathname === '/api/mcp/call' && req.method === 'POST') {
       const body = await readBody(req);
       if (!await permGate(res, 'api', 'POST /api/mcp/call', `Call MCP tool ${body.server}/${body.tool}`)) return;
@@ -357,6 +422,77 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ui/view-plugin' && req.method === 'POST')   return handleUiAction(req, res, 'view-plugin');
     if (url.pathname === '/api/ui/context' && req.method === 'GET')         return json(res, getUiContextWithPath());
     if (url.pathname === '/api/ui/context' && req.method === 'POST')        return handleUiContextUpdate(req, res);
+
+    // ── Bootstrap: one call returns everything an AI CLI needs to start ─
+    // The instructions tell every CLI (Claude, Gemini, Codex, Copilot, Grok)
+    // to call this once at the start of a session. Returns a checksum the
+    // CLI is required to echo in its first reply so we can verify it
+    // actually bootstrapped.
+    if (url.pathname === '/api/bootstrap' && req.method === 'GET') {
+      try {
+        const context = getUiContextWithPath();
+        const cfg = getConfig();
+        const permissionsData = { settings: permissions.loadSettings(configPath), modes: permissions.MODES };
+        // Reuse the instructions builder by calling the route handler logic inline.
+        // Simpler: read all files in dashboard/instructions/ same way /api/instructions does.
+        const instrDir = path.join(__dirname, 'instructions');
+        let instructions = '';
+        try {
+          const orchestrationEnabled = cfg.OrchestrateMode === true;
+          const priorityOrder = ['workflows.md', 'orchestrator.md', 'api-reference.md'];
+          const files = fs.readdirSync(instrDir).filter(f => {
+            if (!f.endsWith('.md')) return false;
+            if (f === 'orchestrator.md' && !orchestrationEnabled) return false;
+            return true;
+          }).sort((a, b) => {
+            const ai = priorityOrder.indexOf(a), bi = priorityOrder.indexOf(b);
+            if (ai !== -1 && bi !== -1) return ai - bi;
+            if (ai !== -1) return -1;
+            if (bi !== -1) return 1;
+            return a.localeCompare(b);
+          });
+          instructions = files.map(f => fs.readFileSync(path.join(instrDir, f), 'utf8')).join('\n\n---\n\n');
+        } catch (_) {}
+        // Plugins: lightweight index (full instructions remain at /api/plugins/instructions)
+        const plugins = (loadedPlugins || []).map(p => ({
+          id: p.id, name: p.name, description: p.description || '',
+          keywords: p.aiKeywords || [],
+        }));
+        // Learnings: full list, AI must scan
+        const learnings = _learningsInstance ? _learningsInstance.list() : [];
+        // Compose payload
+        const payload = {
+          context, instructions, plugins, learnings, permissions: permissionsData,
+          loadedAt: new Date().toISOString(),
+          features: {
+            orchestrateMode: cfg.OrchestrateMode === true,
+            graphRunsMode: cfg.OrchestrateMode === true,
+            incognitoMode: cfg.IncognitoMode === true,
+          },
+        };
+        // Checksum: short hash so the CLI can echo it. Computed over a stable view.
+        const stable = JSON.stringify({
+          activeRepo: context.activeRepo, mode: permissionsData.settings.mode,
+          pluginCount: plugins.length, learningCount: learnings.length,
+          features: payload.features, instructionsLen: instructions.length,
+        });
+        const crypto = require('crypto');
+        payload.checksum = 'b' + crypto.createHash('sha256').update(stable).digest('hex').slice(0, 10);
+        return json(res, payload);
+      } catch (e) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+    if (url.pathname === '/api/bootstrap/ack' && req.method === 'POST') {
+      const body = await readBody(req);
+      // Lightweight receipt log; visible in dashboard later.
+      try {
+        const log = path.join(repoRoot, '.devops-pilot', 'bootstrap-acks.jsonl');
+        fs.mkdirSync(path.dirname(log), { recursive: true });
+        fs.appendFileSync(log, JSON.stringify({ ts: Date.now(), ...body }) + '\n', 'utf8');
+      } catch (_) {}
+      return json(res, { ok: true });
+    }
 
     // ── System Health & Diagnostics ─────────────────────────────────────
     if (url.pathname === '/api/health' && req.method === 'GET')              return handleHealthCheck(res);
@@ -2823,6 +2959,7 @@ function createTerminal(termId, cols = 120, rows = 30, cwd = repoRoot) {
       COLORTERM: 'truecolor',
       FORCE_COLOR: '1',
       SystemRoot: process.env.SystemRoot || 'C:\\Windows',
+      DEVOPS_PILOT_TERM_ID: termId,
     },
   });
 
@@ -2975,8 +3112,12 @@ function writePluginHints() {
   const REPO_END = '<!-- REPO_CONTEXT_END -->';
   const INCOGNITO_START = '<!-- INCOGNITO_START -->';
   const INCOGNITO_END = '<!-- INCOGNITO_END -->';
+  const GRAPH_START = '<!-- GRAPH_RUNS_START -->';
+  const GRAPH_END = '<!-- GRAPH_RUNS_END -->';
   const cfg = getConfig();
   const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
+  // Graph runs are part of orchestration; same toggle controls both.
+  const graphRunsEnabled = orchestrationEnabled;
   const uiCtx = getUiContextWithPath();
   const hasRepo = !!uiCtx.activeRepo;
   const incognitoActive = cfg.IncognitoMode === true;
@@ -2997,6 +3138,14 @@ function writePluginHints() {
         const orchEnd = content.indexOf(ORCH_END);
         if (orchStart !== -1 && orchEnd !== -1) {
           content = content.substring(0, orchStart) + content.substring(orchEnd + ORCH_END.length);
+        }
+      }
+      // Strip graph-runs BETA section if disabled
+      if (!graphRunsEnabled) {
+        const gStart = content.indexOf(GRAPH_START);
+        const gEnd = content.indexOf(GRAPH_END);
+        if (gStart !== -1 && gEnd !== -1) {
+          content = content.substring(0, gStart) + content.substring(gEnd + GRAPH_END.length);
         }
       }
       // Strip repo-specific context when in No Repo mode (handles multiple marker pairs)
@@ -3021,8 +3170,11 @@ function writePluginHints() {
       const before = content.substring(0, startIdx + START.length);
       const after = content.substring(endIdx);
       // Inject learnings (if the module is loaded)
-      const learningsBlock = _learningsInstance ? _learningsInstance.toMarkdown() : '';
-      content = before + '\n' + block + '\n' + learningsBlock + after;
+      // NOTE: learnings are NOT inlined here. They are fetchable via
+      // /api/learnings at bootstrap. Inlining pushed CLAUDE.md past 40k
+      // chars (Claude Code's warning threshold) and grew with every new
+      // entry. The fetch is one extra curl at session start.
+      content = before + '\n' + block + '\n' + after;
       atomicWriteSync(out, content);
     } catch (err) { console.error(`  [writePluginHints] failed to generate ${filename}:`, err.message); }
   }
