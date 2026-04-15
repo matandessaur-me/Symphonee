@@ -1,10 +1,4 @@
 {
-  "AzureDevOpsOrg": "",
-  "AzureDevOpsProject": "",
-  "AzureDevOpsPAT": "",
-  "DefaultTeam": "",
-  "DefaultUser": "",
-  "GitHubPAT": "",
   "WhisperKey": "",
   "OrchestrateMode": false,
   "DefaultCli": "claude",

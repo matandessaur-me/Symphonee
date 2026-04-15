@@ -4,6 +4,8 @@ config/config.json
 config/display-pref.json
 config/themes.json
 config/browser-sessions/
+config/plugin-configs-preserved/
+config/uninstalled-plugins.json
 dashboard/plugins/*
 !dashboard/plugins/sdk/
 notes/
