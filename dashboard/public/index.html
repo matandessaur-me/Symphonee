@@ -2610,8 +2610,8 @@
           <div style="display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:38px;border-bottom:1px solid var(--surface0);background:var(--mantle);flex-shrink:0;">
             <span style="font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;">Notes</span>
             <div style="display:flex;align-items:center;gap:2px;">
-              <button onclick="importNotesFromFile()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:2px 4px;display:flex;align-items:center;" title="Import notes from JSON or Markdown"><i data-lucide="upload" style="width:13px;height:13px;"></i></button>
-              <button onclick="exportAllNotes()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:2px 4px;display:flex;align-items:center;" title="Export all notes"><i data-lucide="download" style="width:13px;height:13px;"></i></button>
+              <button onclick="importNotesFromFile()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:2px 4px;display:flex;align-items:center;" title="Import notes from JSON or Markdown"><i data-lucide="download" style="width:13px;height:13px;"></i></button>
+              <button onclick="exportAllNotes()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:2px 4px;display:flex;align-items:center;" title="Export all notes"><i data-lucide="upload" style="width:13px;height:13px;"></i></button>
               <button onclick="showNewNoteInput()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:18px;line-height:1;padding:2px 4px;" title="New Note">+</button>
             </div>
             <input type="file" id="notesImportFile" accept=".json,.md" multiple style="display:none;" onchange="onNotesImportFileChosen(event)">
