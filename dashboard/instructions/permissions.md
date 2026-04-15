@@ -36,8 +36,6 @@ When calling a gated endpoint, expect:
 ## What is gated
 
 - Spawning orchestrator workers (`POST /api/orchestrator/spawn`, `spawn-with-deps`, `spawn-worktree`, `spawn-escalate`, `spawn-lineage`, `fan-out`, `handoff`).
-- Work item create / update / state / comment.
-- Pull request create.
-- GitHub PR comment / review.
 - `git push`, force push, destructive shell commands.
+- Mutating plugin routes. Every plugin declares which of its routes require approval in its own `instructions.md`; the server enforces the same rules regardless of who calls them.
 - Graph run create.

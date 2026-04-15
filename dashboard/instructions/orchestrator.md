@@ -38,7 +38,7 @@ NEVER attempt a model that the learnings or cli-models say is incompatible with 
 **What you keep for yourself (do NOT dispatch):**
 - Code architecture decisions, refactoring, complex debugging
 - Reading and understanding the codebase structure
-- Git operations, work item management, DevOps tasks
+- Git operations and plugin-driven tasks (issue trackers, CMS, CI/CD)
 - Anything requiring deep reasoning about the current task
 
 ### Dispatch Rules

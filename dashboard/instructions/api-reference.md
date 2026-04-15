@@ -1,29 +1,6 @@
 ## Available API Endpoints
 
-### Work Items
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/workitems?iteration={path}` | List work items (filterable by iteration, state, type, assignedTo) |
-| GET | `/api/workitems/{id}` | Get full work item details |
-| POST | `/api/workitems/create` | Create a work item. Body: `{ type, title, description, priority, tags, assignedTo, iterationPath, storyPoints, acceptanceCriteria }` |
-| PATCH | `/api/workitems/{id}` | Update fields. Body: `{ title, description, state, assignedTo, priority, tags, iterationPath, storyPoints, acceptanceCriteria }` |
-| PATCH | `/api/workitems/{id}/state` | Change state. Body: `{ state }` |
-| POST | `/api/workitems/{id}/comments` | Add a comment to a work item. Body: `{ text }` |
-| POST | `/api/pull-request` | Create a pull request on GitHub. Body: `{ repoName, title, description, sourceBranch, targetBranch, workItemId }` |
-
-### Sprints & Velocity
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/iterations` | List all sprints (current sprint is marked) |
-| GET | `/api/velocity` | Velocity data for last 10 completed sprints |
-| GET | `/api/burndown?iteration={path}` | Burndown data for a specific sprint |
-
-### Team & Organization
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/team-members` | List team members |
-| GET | `/api/teams` | List teams in the project |
-| GET | `/api/areas` | Get area paths |
+This reference covers ONLY the core shell. Every provider integration -- issue tracking, code hosting, CMS, analytics -- lives in a plugin and exposes its own routes under `/api/plugins/<id>/*`. To discover those, fetch `/api/plugins/instructions` (all active plugins) or `/api/plugins/<id>/instructions` (one plugin) after the user agrees to use that plugin.
 
 ### Config & Repos
 | Method | Endpoint | Description |
@@ -32,10 +9,10 @@
 | POST | `/api/config` | Save config changes. Body: key-value pairs to update |
 | GET | `/api/config/export` | Export settings to JSON (PATs stripped) |
 | POST | `/api/config/import` | Import settings + auto-install missing plugins |
+| POST | `/api/config/reset` | Factory reset. Body: `{ confirm: true }` -- wipes config, plugin configs, notes, recipes, learnings, display prefs |
 | GET | `/api/repos` | Configured local repositories |
 | GET | `/api/prerequisites` | Check which AI CLIs are installed |
 | POST | `/api/cli/install` | Install a Node CLI globally. Body: `{ name }` |
-| POST | `/api/start-working` | Start working on a work item. Body: `{ workItemId, repoName }`  - creates a branch, sets state to Active |
 
 ### File Operations
 | Method | Endpoint | Description |
@@ -64,24 +41,7 @@
 
 **Note:** Branch switching, pull, and push are handled by the dashboard's Git modal (not the AI terminal). The AI is only involved for **Commit Changes** (when "Let AI Decide" is chosen) and **Compare Branches** (AI analyzes the diff).
 
-### GitHub Pull Requests
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/github/repo-info?repo={name}` | Returns `{owner, repo}` parsed from git remote |
-| GET | `/api/github/pulls?repo={name}&state=open` | List PRs (number, title, author, draft, labels, branches) |
-| GET | `/api/github/pulls/detail?repo={name}&number={n}` | Full PR details (body, merge status, additions/deletions) |
-| GET | `/api/github/pulls/files?repo={name}&number={n}` | Changed files with patches |
-| GET | `/api/github/pulls/comments?repo={name}&number={n}` | Merged issue + review comments |
-| GET | `/api/github/pulls/timeline?repo={name}&number={n}` | Full conversation timeline (comments, reviews, commits, events) |
-| POST | `/api/github/pulls/comment` | Add comment. Body: `{ repo, number, body }` **REQUIRES USER PERMISSION** |
-| POST | `/api/github/pulls/review` | Submit review. Body: `{ repo, number, event, body }` (event: APPROVE / REQUEST_CHANGES) **REQUIRES USER PERMISSION** |
-| GET | `/api/github/user-repos?repo={name}` | List all user's GitHub repos |
-| POST | `/api/github/clone` | Clone GitHub repo to disk. Body: `{ url, path }` |
-| GET | `/api/github/image?url={url}` | Image proxy for auth'd GitHub images |
-
-**Note:** GitHub PRs require a GitHub PAT configured in Settings > Other. The `repo` parameter is the repo name from Settings (not the GitHub owner/repo  - it's resolved from the git remote automatically).
-
-### Notes (markdown scratchpad  - you can read and write notes)
+### Notes (markdown scratchpad -- you can read and write notes)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/notes` | List all notes |
@@ -89,46 +49,35 @@
 | POST | `/api/notes/save` | Save a note. Body: `{ name, content }` |
 | POST | `/api/notes/create` | Create a new note. Body: `{ name }` |
 | DELETE | `/api/notes/delete` | Delete a note. Body: `{ name }` |
+| GET | `/api/notes/export?name={name}` | Download a single note as markdown |
+| GET | `/api/notes/export-all` | Download all notes as a JSON bundle |
+| POST | `/api/notes/import` | Import notes. Body: `{ notes: { name: content } }` |
 
 When asked to gather information or create summaries, you can save them as notes using the API. The user can then review, edit, and send them back to you.
 
 ### UI Control (navigate the dashboard contextually)
 
-You can control the dashboard UI. **Use these intelligently based on context**  - don't auto-navigate after every action. Instead, offer to navigate when it makes sense.
+You can control the dashboard UI. **Use these intelligently based on context** -- don't auto-navigate after every action. Instead, offer to navigate when it makes sense.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/ui/tab` | Switch tab. Body: `{ tab: "terminal"\|"backlog"\|"workitem"\|"prs"\|"files"\|"notes" }` . Note: "board" is accepted and maps to backlog with board view. |
-| POST | `/api/ui/view-workitem` | Open work item detail. Body: `{ id: 12345 }` |
+| POST | `/api/ui/tab` | Switch tab. Body: `{ tab: "terminal"\|"files"\|"notes"\|<plugin-tab-id> }` |
 | POST | `/api/ui/view-note` | Open a note in preview. Body: `{ name: "My Note" }` |
-| POST | `/api/ui/view-file` | Open a file in the code viewer. Body: `{ repo: "RepoName", path: "src/index.ts", line: 132 }` (line is optional  - scrolls to and highlights that line) |
+| POST | `/api/ui/view-file` | Open a file in the code viewer. Body: `{ repo: "RepoName", path: "src/index.ts", line: 132 }` (line is optional -- scrolls to and highlights that line) |
 | POST | `/api/ui/view-diff` | Open split diff for a file. Body: `{ repo: "RepoName", path: "src/index.ts", base: "HEAD" }` |
 | POST | `/api/ui/view-commit-diff` | Open the commit diff viewer for a specific commit. Body: `{ repo: "RepoName", hash: "abc1234" }` (`commit` is also accepted as an alias for `hash`) |
-| POST | `/api/ui/refresh-workitems` | Refresh work items list. Body: `{}` |
-| POST | `/api/ui/view-activity` | Open the Activity Timeline view. Body: `{}` |
-| POST | `/api/ui/view-pr` | Open a pull request. Body: `{ repo: "RepoName", number: 123 }` (number is optional  - opens PR list if omitted) |
 | POST | `/api/ui/view-plugin` | Open a plugin tab. Body: `{ plugin: "pluginId", message: { type: "action", ... } }` (message is optional -- forwarded to the plugin iframe via postMessage) |
-| GET | `/api/ui/context` | Get current dashboard state: selected iteration, active repo, activeRepoPath |
+| GET | `/api/ui/context` | Get current dashboard state: active repo, activeRepoPath, and any context keys plugins have registered (iteration, area, etc.) |
 | POST | `/api/ui/context` | Update UI context. Body: key-value pairs |
 
-**Important: The Board and Backlog are a single tab called "Backlog".** The Backlog tab has two views: List (default) and Board. Use `{ tab: "backlog" }` to navigate there. If you send `{ tab: "board" }` it will automatically switch to the backlog tab with board view active. The Pull Requests tab is only visible when a GitHub PAT is configured.
+Plugins can register additional UI-view endpoints (open a work item, open a pull request, open the plugin's own tab). See each plugin's `instructions.md` for the routes it contributes; they are all namespaced under `/api/ui/view-*` or `/api/plugins/<id>/*`.
 
-**When to navigate:**
-- After creating a work item: ask "Want me to open it?" then call `view-workitem`
-- After saving a note: ask "Want to see it?" then call `view-note`
-- When user asks "what's assigned to me?": show results, then ask "Want me to open the backlog filtered to you?"
-- When user asks about recent activity, "what was done", or "show me an overview": call `view-activity` to open the Activity Timeline
-- When user asks about pull requests: call `view-pr` with the repo name, optionally with a PR number
-- After a query: DON'T auto-switch tabs. Let the user read the terminal output first.
+**Command Palette:** The user can press `Ctrl+K` or click the search bar at the top to open the Command Palette. It provides quick access to all actions, tabs, repos, and (when relevant plugins are installed) work items. The AI does NOT need to use this -- it's a UI shortcut for the user.
 
-**Command Palette:** The user can press `Ctrl+K` or click the search bar at the top to open the Command Palette. It provides quick access to all actions, tabs, repos, and work items. The AI does NOT need to use this  - it's a UI shortcut for the user.
-
-**How to navigate (from bash  - use curl):**
+**How to navigate (from bash -- use curl):**
 ```bash
-curl -s -X POST http://127.0.0.1:3800/api/ui/view-workitem -H "Content-Type: application/json" -d '{"id":12345}'
-curl -s -X POST http://127.0.0.1:3800/api/ui/tab -H "Content-Type: application/json" -d '{"tab":"backlog"}'
+curl -s -X POST http://127.0.0.1:3800/api/ui/tab -H "Content-Type: application/json" -d '{"tab":"notes"}'
 curl -s -X POST http://127.0.0.1:3800/api/ui/view-note -H "Content-Type: application/json" -d '{"name":"My Note"}'
-curl -s -X POST http://127.0.0.1:3800/api/ui/view-pr -H "Content-Type: application/json" -d '{"repo":"MyRepo","number":123}'
 ```
 
 **From PowerShell PTY:** Use `Invoke-RestMethod` with the same endpoints and JSON bodies as above.
@@ -223,7 +172,7 @@ Launch browser with a session name, navigate to the target page, use `query-all`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/voice/transcribe` | Transcribe audio to text (OpenAI Whisper). Requires WhisperKey in config |
-| GET | `/api/image-proxy?url={url}` | Proxy images with auth headers (for ADO images) |
+| GET | `/api/image-proxy?url={url}` | Generic image proxy with auth headers |
 
 ### System & Utilities
 | Method | Endpoint | Description |
@@ -240,6 +189,7 @@ Launch browser with a session name, navigate to the target page, use `query-all`
 |--------|----------|-------------|
 | GET | `/api/plugins` | List active plugins and their scripts |
 | GET | `/api/plugins/instructions` | Concatenated markdown instructions from all active plugins |
+| GET | `/api/plugins/contributions` | Aggregated contributions (tabs, providers, linkers, actions) across active plugins |
 | GET | `/api/plugins/registry` | Fetch available plugins from GitHub registry |
 | POST | `/api/plugins/install` | Install plugin from local path. Body: `{ path }` |
 | POST | `/api/plugins/install-from-registry` | Clone plugin from registry. Body: `{ id }` |

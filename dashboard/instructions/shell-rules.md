@@ -12,6 +12,10 @@
 **PowerShell PTY** (the app's built-in terminal):
 - Run scripts directly: `.\scripts\Get-SprintStatus.ps1`
 - Backslashes are fine.
+- **NEVER use `curl -s <url>` in PowerShell.** On Windows `curl` is an alias for `Invoke-WebRequest`. Its `-s` flag is ambiguous (prefix-matches `-SessionVariable` / `-SkipCertificateCheck`), so PowerShell prompts `Uri:` and hangs. Use ONE of:
+  - `Invoke-RestMethod http://127.0.0.1:3800/api/bootstrap` (returns parsed JSON)
+  - `curl.exe -s http://127.0.0.1:3800/api/bootstrap` (the real curl binary; bypasses the alias)
+- Same rule applies to any HTTP GET against the local API.
 
 **How to tell:** bash prompt is `$`, paths use `/`, tool is called "Bash". PowerShell PTY prompt is `PS>`.
 
@@ -28,7 +32,7 @@
 ## Speed rules
 
 1. **Save a note from bash**: `node scripts/save-note.js "Title" "content"`. Long content: write to `.ai-workspace/my-note.md` first, then `--file .ai-workspace/my-note.md`. NEVER use PowerShell's `Save-Note.ps1` from bash — it chokes on special chars.
-2. Create / query work items: run the script directly. No wrappers.
+2. Run plugin scripts (e.g. `./dashboard/plugins/<id>/scripts/X.ps1`) directly. No wrappers.
 3. NEVER create a script just to call another script.
 4. NEVER create intermediate test scripts.
 

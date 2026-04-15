@@ -25,7 +25,7 @@ Feed the returned `cli` + `model` into your spawn body (`POST /api/orchestrator/
 - `long-autonomy` — multi-hour agentic work
 - `web-research` — needs current info from the open web
 - `web-research-cheap` — light web lookup (pricing, docs)
-- `pr-review` — GitHub PR/issue workflow
+- `pr-review` — pull-request / issue review workflow (plugin-dependent)
 - `social-live` — live X/Twitter context
 - `parallel-fanout` — one of N cheap workers
 - `large-context` — input > 200k tokens (auto-promoted if `contextTokens` passed)

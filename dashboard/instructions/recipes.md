@@ -38,7 +38,7 @@ Free-text:
 
 Smart selectors (modal renders a populated dropdown with the active value pre-selected):
 - `repo` - dropdown of all configured repos from `/api/repos`. Active repo marked.
-- `iteration` - dropdown of Azure DevOps iterations from `/api/iterations`. Active iteration marked.
+- Plugin-provided selectors (iteration, sprint, work-item picker, etc.) -- each plugin registers its own selector types via its `contributions.inputTypes`. If the required plugin is not installed, the selector renders empty and the recipe can fall back to a plain text input.
 - `select` with `choices: [...]` - explicit list of options
 
 The modal always shows a "Will run with" panel above the inputs, displaying the active repo / iteration / AI so the user knows what context the recipe will see — even when the recipe declares no inputs.
@@ -93,9 +93,12 @@ Use **dispatch** when you want the work to run in parallel without occupying you
 
 ## Starter recipes shipped
 
-- `sprint-review` - closed work items + grouped summary, saved as a note
-- `standup-summary` - last-N-hours activity grouped by engineer
-- `release-notes` - work items + merged PRs into versioned notes
+- `explain-codebase` - summarise an active repo for a new reader
+- `what-changed-recently` - git-log summary of activity over the last N days
+- `find-todos` - ripgrep TODO / FIXME / HACK comments and triage by severity
+- `smoke-test-shell` - 16-point validation of the plugin-first shell (core primitives, plugin gates, export surface). Read-only diagnostic.
+
+All four depend only on the core shell (git, ripgrep, notes, scripts) -- no plugin required. Plugins may ship their own recipes; installed plugins surface theirs through `/api/recipes`.
 
 ## When to write a recipe vs. a graph run
 
