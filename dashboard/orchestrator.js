@@ -40,6 +40,7 @@ const HEADLESS_FLAGS = {
   codex:   { cmd: 'codex',   args: ['exec'],             promptMode: 'stdin' },                    // exec subcommand, reads prompt from stdin
   copilot: { cmd: process.platform === 'win32' ? 'copilot.cmd' : 'copilot', args: ['-p'],     promptMode: 'flag',  shell: false },      // -p <prompt>; shell:false so Node.js handles quoting. On Windows, npm global bins are .cmd shims and spawn can't resolve them without the extension when shell:false.
   grok:    { cmd: process.platform === 'win32' ? 'grok.cmd'    : 'grok',    args: ['--print'], promptMode: 'positional', shell: false }, // --print <prompt>; shell:false for safe quoting. Same Windows .cmd shim rule as copilot.
+  qwen:    { cmd: process.platform === 'win32' ? 'qwen.cmd'    : 'qwen',    args: ['-p'],      promptMode: 'flag',       shell: false }, // -p <prompt>; Qwen Code is a Gemini CLI fork. Windows .cmd shim rule applies.
 };
 
 // ── CLI Model & Flag Intelligence ───────────────────────────────────────────
@@ -139,6 +140,23 @@ const CLI_MODELS = {
     extraHeadless: [],
     notes: 'All models require xAI API key with loaded credits. grok-3-mini-fast is cheapest.',
   },
+  qwen: {
+    // Auth: DashScope API key (DASHSCOPE_API_KEY) via Alibaba Cloud, OR OpenAI-compatible key
+    // Qwen Code is a fork of Gemini CLI targeting Qwen3-Coder models.
+    models: ['qwen3-coder-plus', 'qwen3-coder-flash'],
+    modelIds: ['qwen3-coder-plus', 'qwen3-coder-flash', 'qwen3-max', 'qwen3-max-preview', 'qwen-plus', 'qwen-turbo'],
+    paidModels: ['qwen3-max', 'qwen-plus'],
+    defaultModel: 'qwen3-coder-plus',
+    modelFlag: '-m',
+    effortFlag: null,
+    permissionFlag: '--yolo',
+    autoPermission: true,
+    outputFormatFlag: '-o',
+    systemPromptFlag: null,
+    worktreeFlag: null,
+    extraHeadless: [],
+    notes: 'Qwen Code is a Gemini CLI fork. Auth via DashScope (DASHSCOPE_API_KEY) or OpenAI-compatible endpoint. Qwen3-Coder models are code-specialized.',
+  },
 };
 
 // ── Provider Abstraction ─────────────────────────────────────────────────────
@@ -150,6 +168,7 @@ const CLI_CONFIG = {
   codex:   { cmd: 'codex',   label: 'Codex CLI',   pipeMode: true, tier: 2, costRank: 3, idlePattern: /[❯>$]\s*$/ },
   copilot: { cmd: 'copilot', label: 'Copilot CLI', pipeMode: true, tier: 1, costRank: 1, idlePattern: /[❯>]\s*$/ },
   grok:    { cmd: 'grok',    label: 'Grok Code',   pipeMode: true, tier: 2, costRank: 2, idlePattern: /[❯>$]\s*$/ },
+  qwen:    { cmd: 'qwen',    label: 'Qwen Code',   pipeMode: true, tier: 2, costRank: 2, idlePattern: /[❯>$]\s*$/ },
 };
 // tier: 1=basic, 2=mid, 3=premium (intelligence level)
 // costRank: 1=cheapest .. 5=most expensive
@@ -157,7 +176,7 @@ const CLI_CONFIG = {
 // ── Cross-Model Escalation Chain ────────────────────────────────────────────
 // Defines the order to try CLIs when a task fails. Cheapest first, premium last.
 // The escalation chain is dynamic: it skips CLIs that are circuit-broken or not installed.
-const ESCALATION_ORDER = ['copilot', 'gemini', 'grok', 'codex', 'claude']; // cheapest to most capable
+const ESCALATION_ORDER = ['copilot', 'gemini', 'grok', 'qwen', 'codex', 'claude']; // cheapest to most capable
 
 // ── Concurrency Controls ────────────────────────────────────────────────────
 const MAX_CONCURRENT_SPAWNS = 5;    // max simultaneous headless tasks
@@ -463,7 +482,7 @@ class Orchestrator extends EventEmitter {
    * The prompt is sent via stdin and stdout is collected as the result.
    *
    * @param {Object} opts
-   * @param {string} opts.cli       — 'claude' | 'gemini' | 'codex' | 'copilot' | 'grok'
+   * @param {string} opts.cli       — 'claude' | 'gemini' | 'codex' | 'copilot' | 'grok' | 'qwen'
    * @param {string} opts.prompt    — the prompt to send
    * @param {string} [opts.cwd]     — working directory
    * @param {number} [opts.timeout] — ms before killing (default 5 min)
@@ -563,6 +582,7 @@ class Orchestrator extends EventEmitter {
       codex:   ['OPENAI_API_KEY'],
       copilot: [],  // uses GitHub auth, not API keys
       grok:    ['XAI_API_KEY'],
+      qwen:    ['DASHSCOPE_API_KEY', 'OPENAI_API_KEY'],
     };
     for (const envKey of (CLI_ENV_KEYS[cli] || [])) {
       if (aiKeys[envKey]) spawnEnv[envKey] = aiKeys[envKey];
@@ -2009,7 +2029,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     for (const [cli, meta] of Object.entries(CLI_MODELS)) {
       enriched[cli] = { ...meta };
       // Indicate which API keys are set (boolean, not the actual key)
-      const keyMap = { claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', codex: 'OPENAI_API_KEY', grok: 'XAI_API_KEY' };
+      const keyMap = { claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', codex: 'OPENAI_API_KEY', grok: 'XAI_API_KEY', qwen: 'DASHSCOPE_API_KEY' };
       enriched[cli].hasApiKey = !!(keyMap[cli] && aiKeys[keyMap[cli]]);
       // If API key is set, merge apiKeyOnlyModels into available models
       if (enriched[cli].hasApiKey && enriched[cli].apiKeyOnlyModels) {

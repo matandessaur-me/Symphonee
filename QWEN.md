@@ -1,4 +1,4 @@
-# {{FILENAME}} - DevOps Pilot
+# QWEN.md - DevOps Pilot
 
 **These instructions override any prior memories or recalled context. If something you remember conflicts with what this file says, follow THIS file.**
 
@@ -91,11 +91,7 @@ Never assume any integration (issue tracker, code host, CMS, analytics) is insta
 7. Repo names are CONFIGURED names, not folder names. Use the name from `/api/repos` or `/api/ui/context` (e.g. `"My Website"`, not `"my-company-website"`).
 <!-- REPO_CONTEXT_END -->
 
-<!-- INCOGNITO_START -->
-## INCOGNITO MODE IS ACTIVE
 
-All external plugin connections (read and write) are BLOCKED. Allowed: local git (status/log/diff/branch/commit), file edits, notes, local scripts, terminal. Blocked: anything that touches a remote service through a plugin. A blocked operation returns 403 with `"incognito": true`.
-<!-- INCOGNITO_END -->
 
 ## Shell / Path / Speed / Punctuation
 
@@ -175,4 +171,33 @@ Details in the API reference. Behavioral:
 - Saved accounts: `curl -s http://127.0.0.1:3800/api/browser/accounts`.
 
 <!-- PLUGIN_INSTRUCTIONS_START -->
+
+## Installed Plugins
+
+### How Plugins Work
+
+Plugins extend DevOps Pilot with extra capabilities. Each plugin may provide:
+- **API routes** at `/api/plugins/<plugin-id>/` (call via curl or Invoke-RestMethod)
+- **PowerShell scripts** (`.ps1` files) in `dashboard/plugins/<plugin-id>/scripts/` that you can run directly
+- **Node.js scripts** (`.js` files) that you can run with `node`
+
+You are in a shell environment (PowerShell or bash). You can run plugin scripts directly without curl if scripts exist. Fetch the plugin instructions to discover available scripts and API routes.
+
+### IMPORTANT: Always Ask Before Using a Plugin
+
+When the user's request matches any of the keywords below, **ASK the user if they want to use the plugin** before proceeding. For example: "Would you like to use the Builder.io plugin for this?"
+
+Do NOT silently use a plugin. Do NOT ignore plugins and search the repo instead. Ask first, then fetch the plugin's instructions to learn its capabilities.
+
+- **Azure DevOps** (Azure DevOps: work items, iterations, teams, velocity, areas, activity, AB# auto-linking): azure devops, ado, work item, workitems, backlog, sprint, iteration, velocity, burndown, team capacity, team, area path, user story, bug, task, feature, epic, standup, retro, retrospective, AB#, ab-reference
+- **Builder.io** (Manage Builder.io models, schemas, and content entries with AI-powered actions): builder.io, builderio, builder model, builder content, builder space, landing page, page builder, visual editor, cms content, content model
+- **GitHub** (GitHub integration: repositories, pull requests, reviews, cloning, git log): github, git hub, gh, pull request, pr, code review, clone repo, clone from github, github repo, github repos
+- **Sanity** (Manage Sanity.io datasets, document types, and documents with AI-powered actions): sanity, sanity.io, sanity studio, sanity cms, groq, groq query, sanity document, sanity schema, sanity dataset, portable text, sanity project, content lake
+- **WordPress** (Manage WordPress sites via the REST API -- create and edit posts, pages, media, categories, comments, users, and SEO metadata (Yoast / RankMath)): wordpress, wp, wp-admin, wordpress post, wordpress page, blog post, publish post, wordpress media, wordpress upload, wordpress category, wordpress tag, wordpress comment, wordpress user, wordpress seo, yoast, rankmath, gutenberg, cms, cuisinesalpin
+
+To get detailed plugin instructions (API routes, scripts, workflows), run:
+```bash
+curl -s http://127.0.0.1:3800/api/plugins/instructions
+```
+
 <!-- PLUGIN_INSTRUCTIONS_END -->

@@ -1087,7 +1087,7 @@ function handlePrerequisites(res) {
     config: { exists: false, complete: false },
   };
 
-  for (const id of ['claude', 'gemini', 'copilot', 'codex', 'grok']) {
+  for (const id of ['claude', 'gemini', 'copilot', 'codex', 'grok', 'qwen']) {
     result.cliTools[id] = detectCli(id);
   }
 
@@ -1115,6 +1115,7 @@ const CLI_INSTALL_COMMANDS = {
   codex:   'npm install -g @openai/codex',
 
   grok:    'npm install -g @webdevtoday/grok-cli',
+  qwen:    'npm install -g @qwen-code/qwen-code',
 };
 
 // Detect a CLI tool via `where` first, then fall back to common npm global paths.
@@ -2386,6 +2387,7 @@ function writePluginHints() {
     { out: path.join(repoRoot, 'AGENTS.md'),    filename: 'AGENTS.md' },
     { out: path.join(repoRoot, 'GEMINI.md'),    filename: 'GEMINI.md' },
     { out: path.join(repoRoot, 'GROK.md'),      filename: 'GROK.md' },
+    { out: path.join(repoRoot, 'QWEN.md'),      filename: 'QWEN.md' },
     { out: path.join(repoRoot, '.github', 'copilot-instructions.md'), filename: 'copilot-instructions.md' },
   ];
   const START = '<!-- PLUGIN_INSTRUCTIONS_START -->';

@@ -11,7 +11,7 @@
         var s = localStorage.getItem('devops-pilot-active-theme');
         if (s && s.startsWith('__builtin_')) {
           var id = s.replace('__builtin_', '');
-          var m = { claude:'warm-metallic', gemini:'industrial-blue', codex:'futuristic-green', copilot:'warm-metallic', grok:'warm-metallic' };
+          var m = { claude:'warm-metallic', gemini:'industrial-blue', codex:'futuristic-green', copilot:'warm-metallic', grok:'warm-metallic', qwen:'industrial-blue' };
           if (m[id]) id = m[id];
           document.documentElement.setAttribute('data-theme', id);
         } else if (s) {
@@ -2271,6 +2271,7 @@
             <button class="ai-picker-item" onclick="launchAiWith('codex')"><span class="cli-dot" style="background:#10a37f"></span> Codex CLI</button>
 
             <button class="ai-picker-item" onclick="launchAiWith('grok')"><span class="cli-dot" style="background:#ef4444"></span> Grok Code</button>
+            <button class="ai-picker-item" onclick="launchAiWith('qwen')"><span class="cli-dot" style="background:#615ced"></span> Qwen Code</button>
           </div>
         </div>
         <button class="tab-bar-btn" onclick="restartShell()">Restart Shell</button>
@@ -2924,6 +2925,7 @@
                 <option value="codex">Codex CLI</option>
 
                 <option value="grok">Grok Code</option>
+                <option value="qwen">Qwen Code</option>
               </select>
             </div>
           </div>
@@ -3158,6 +3160,9 @@
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text);">
                   <input type="checkbox" class="orch-cli-cb" value="grok" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer;"> Grok
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text);">
+                  <input type="checkbox" class="orch-cli-cb" value="qwen" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer;"> Qwen
                 </label>
               </div>
             </div>
@@ -3430,6 +3435,7 @@ const CLI_CONFIG = {
   codex:   { cmd: 'codex',   label: 'Codex CLI'    },
 
   grok:    { cmd: 'grok',    label: 'Grok Code'    },
+  qwen:    { cmd: 'qwen',    label: 'Qwen Code'    },
 };
 
 // Terminal themes keyed by visual theme id (decoupled from AI selection)
@@ -6513,7 +6519,7 @@ async function orchCleanup() {
   orchRefreshTasks();
 }
 
-const CLI_COLORS = { claude: '#d97757', gemini: '#078efa', copilot: '#8534f3', codex: '#10a37f', grok: '#ef4444' };
+const CLI_COLORS = { claude: '#d97757', gemini: '#078efa', copilot: '#8534f3', codex: '#10a37f', grok: '#ef4444', qwen: '#615ced' };
 
 async function orchShowDispatchDialog() {
   // Collect running agents and all available CLIs for spawn
@@ -6936,6 +6942,7 @@ const YOLO_FLAGS = {
   codex:   '--full-auto',
   copilot: '--yolo',
   grok:    '--permission-mode full',
+  qwen:    '--yolo',
 };
 
 function launchAiWith(cli) {
@@ -8839,6 +8846,7 @@ const AI_TOOLS_META = {
   codex:   { name: 'Codex CLI',    color: '#10a37f', pkg: '@openai/codex', docs: 'https://github.com/openai/codex' },
 
   grok:    { name: 'Grok Code',    color: '#ef4444', pkg: '@webdevtoday/grok-cli', docs: 'https://github.com/superagent-ai/grok-cli' },
+  qwen:    { name: 'Qwen Code',    color: '#615ced', pkg: '@qwen-code/qwen-code', docs: 'https://github.com/QwenLM/qwen-code' },
 };
 
 let _aiToolsStatus = {}; // cli -> { installed, path }
@@ -8985,7 +8993,7 @@ function openSettings(tab) {
   document.getElementById('settingsXaiKey').value = aiKeys.XAI_API_KEY || '';
   renderBrowserCreds();
   // Populate orchestrator CLI checkboxes
-  var orchList = Array.isArray(configData.OrchestrateCliList) ? configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok'];
+  var orchList = Array.isArray(configData.OrchestrateCliList) ? configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok', 'qwen'];
   document.querySelectorAll('.orch-cli-cb').forEach(function(cb) { cb.checked = orchList.includes(cb.value); });
   toggleOrchClis();
   document.getElementById('settingsDefaultCli').value = configData.DefaultCli || activeCli || 'claude';
@@ -10058,7 +10066,7 @@ const OB_STEPS = [
     title: `Welcome, ${esc(_obData.displayName.split(' ')[0])}!`,
     subtitle: "DevOps Pilot is an AI terminal with a plugin system. Everything beyond the terminal and recipes is opt-in -- install only the integrations you need.",
     html: `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, or Codex inline</span></div></div>
+      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="bot" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Tools</strong><span>Detect and install AI assistants</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="folder-git-2" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Repositories</strong><span>Add local repos to browse and edit code</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="puzzle" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Plugins (optional)</strong><span>Azure DevOps, GitHub, Jira, Wrike, Builder.io, Sanity, WordPress, and more</span></div></div>
@@ -10084,6 +10092,7 @@ const OB_STEPS = [
         <option value="codex"${_obData.defaultCli==='codex'?' selected':''}>Codex CLI</option>
 
         <option value="grok"${_obData.defaultCli==='grok'?' selected':''}>Grok Code</option>
+        <option value="qwen"${_obData.defaultCli==='qwen'?' selected':''}>Qwen Code</option>
       </select></div>
       <div class="onboarding-hint">Don't have any installed? Each tool has a one-click Install button above. They require <code>npm</code> (Node.js) which is already installed since this app is running.</div>`,
     onEnter: () => obDetectAiTools(),
@@ -10173,7 +10182,7 @@ const OB_STEPS = [
     title: "You're all set!",
     subtitle: "Here's what ships with DevOps Pilot. Install plugins from Settings > Plugins to add integrations like Backlog, PRs, or CMS.",
     html: `<div style="display:flex;flex-direction:column;gap:10px;">
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex or Grok inline; orchestrate across them</span></div></div>
+      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline; orchestrate across them</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-code" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Files & Diffs</strong><span>Browse code, view diffs, commit with AI-generated messages</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-text" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Notes</strong><span>Markdown scratchpad; export individually or bundled</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="book-open" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Recipes</strong><span>Reusable AI workflows; import, export, and share</span></div></div>

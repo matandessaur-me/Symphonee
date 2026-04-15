@@ -76,6 +76,20 @@ const CATALOG = {
         requiresKey: 'XAI_API_KEY', experimental: true },
     },
   },
+  qwen: {
+    provider: 'Alibaba',
+    models: {
+      'qwen3-coder-flash': { id: 'qwen3-coder-flash', tier: 'fast', cost: 1, ctx: 256000, agentic: 'fair', specialty: 'coding',
+        requiresKey: 'DASHSCOPE_API_KEY',
+        note: 'Fast Qwen3-Coder variant. Open-weights family, cheap via DashScope.' },
+      'qwen3-coder-plus': { id: 'qwen3-coder-plus', tier: 'balanced', cost: 2, ctx: 1000000, agentic: 'good', specialty: 'coding',
+        requiresKey: 'DASHSCOPE_API_KEY',
+        note: 'Flagship Qwen3-Coder. Strong on repo-scale code edits.' },
+      'qwen3-max': { id: 'qwen3-max', tier: 'deep', cost: 3, ctx: 256000, agentic: 'good',
+        requiresKey: 'DASHSCOPE_API_KEY',
+        note: 'General-purpose flagship.' },
+    },
+  },
 };
 
 // ── Intent -> preference matrix ─────────────────────────────────────────────
@@ -87,6 +101,7 @@ const INTENTS = {
       { cli: 'claude', model: 'haiku-4-5', weight: 10 },
       { cli: 'codex', model: 'gpt-5.4-mini', weight: 9 },
       { cli: 'gemini', model: 'gemini-3-flash', weight: 8 },
+      { cli: 'qwen', model: 'qwen3-coder-flash', weight: 6 },
     ],
   },
   'deep-code': {
@@ -95,6 +110,7 @@ const INTENTS = {
       { cli: 'claude', model: 'opus-4-6', weight: 10 },
       { cli: 'codex', model: 'gpt-5.3-codex', weight: 9 },
       { cli: 'claude', model: 'sonnet-4-6', weight: 7 },
+      { cli: 'qwen', model: 'qwen3-coder-plus', weight: 6 },
     ],
   },
   'plan-and-implement': {
@@ -147,6 +163,7 @@ const INTENTS = {
       { cli: 'codex', model: 'gpt-5.4-mini', weight: 10 },
       { cli: 'gemini', model: 'gemini-3-flash', weight: 9 },
       { cli: 'claude', model: 'haiku-4-5', weight: 8 },
+      { cli: 'qwen', model: 'qwen3-coder-flash', weight: 7 },
     ],
   },
   'large-context': {
