@@ -6928,8 +6928,51 @@ function toggleAi() {
   if (st.launched) {
     stopAi();
   } else {
-    // Show picker so user can choose which AI
-    document.getElementById('aiPickerMenu')?.classList.toggle('open');
+    // Show picker so user can choose which AI, filtered to installed CLIs only.
+    const menu = document.getElementById('aiPickerMenu');
+    if (!menu) return;
+    refreshAiPickerItems(menu);
+    menu.classList.toggle('open');
+  }
+}
+
+// Hide picker entries for CLIs that aren't installed. Uses the cached
+// _aiToolsStatus when available, falls back to a fresh /api/prerequisites fetch.
+async function refreshAiPickerItems(menu) {
+  const apply = (status) => {
+    const items = menu.querySelectorAll('.ai-picker-item');
+    let visible = 0;
+    items.forEach(el => {
+      const m = /launchAiWith\('([^']+)'\)/.exec(el.getAttribute('onclick') || '');
+      if (!m) return;
+      const installed = !!(status[m[1]] && status[m[1]].installed);
+      el.style.display = installed ? '' : 'none';
+      if (installed) visible++;
+    });
+    if (!visible) {
+      let empty = menu.querySelector('.ai-picker-empty');
+      if (!empty) {
+        empty = document.createElement('div');
+        empty.className = 'ai-picker-empty';
+        empty.style.cssText = 'padding:8px 10px;font-size:11px;color:var(--subtext0);';
+        empty.textContent = 'No AI CLIs installed. Open Settings > AI Tools to install one.';
+        menu.appendChild(empty);
+      }
+    } else {
+      menu.querySelector('.ai-picker-empty')?.remove();
+    }
+  };
+  if (_aiToolsStatus && Object.keys(_aiToolsStatus).length) {
+    apply(_aiToolsStatus);
+    return;
+  }
+  try {
+    const res = await fetch('/api/prerequisites');
+    const data = await res.json();
+    _aiToolsStatus = data.cliTools || {};
+    apply(_aiToolsStatus);
+  } catch (_) {
+    // On failure, leave all items visible -- degrades gracefully.
   }
 }
 
@@ -9021,6 +9064,11 @@ function openSettings(tab) {
   const settingsModal = document.getElementById('settingsModal');
   settingsModal.classList.add('open');
   settingsModal.classList.toggle('theme-preview', targetTab === 'theme');
+  // Trigger any per-tab lazy loaders for the initially-shown tab. Previously only
+  // switchSettingsTab did this, so opening straight onto "AI Tools" (the default)
+  // showed an empty panel until the user tabbed away and back.
+  if (targetTab === 'ai') detectAiTools();
+  if (targetTab === 'theme') renderThemeList();
   try { lucide.createIcons(); } catch (_) {}
 }
 

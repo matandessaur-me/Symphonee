@@ -1,9 +1,9 @@
 <img src="https://repository-images.githubusercontent.com/1187508410/001d4330-d22f-4655-bb5f-0cb51022fdab" alt="devopspilot-logo"/>
 # DevOps Pilot
 
-**An AI-powered Azure DevOps workstation built on Electron.**
+**A plugin-first AI terminal and developer workstation built on Electron.**
 
-DevOps Pilot is a desktop application that brings together Azure DevOps project management, a built-in terminal with AI agent support, git operations, and a full-featured code/diff viewer — all in one window. It's designed for developers who want to manage sprints, work items, and code without constantly switching between browser tabs and terminal windows.
+DevOps Pilot is a desktop shell that combines a multi-CLI AI terminal, git operations, a Monaco-backed code and diff viewer, notes, recipes, and an orchestrator for multi-agent work. The core ships provider-agnostic. Every integration (issue trackers, code hosts, CMSs, analytics, etc.) is a plugin you install per project from a GitHub-backed registry. A clean install is a fast AI terminal; you add only the plugins you need.
 
 > Created and maintained by **[Matan Dessaur](https://github.com/M8N-MatanDessaur)**
 
@@ -12,13 +12,12 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 ## Features
 
 ### Core
-- **Sprint & Work Item Management** — Board, backlog, burndown, velocity. Create, update, and move work items through their lifecycle.
-- **Multi-AI Terminal** — Run Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Grok, or Qwen Code directly inside the app. Agents get full context of your Azure DevOps project at session start.
+- **Multi-AI Terminal** — Run Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Grok, or Qwen Code directly inside the app. Every session starts with a single bootstrap call so the agent knows the active repo, permission mode, installed plugins, and learnings before its first reply.
 - **Git Operations** — Switch branches, pull, push, compare, and commit through the built-in UI. Side-by-side diff viewer with syntax highlighting.
 - **File Browser & Monaco Code Viewer** — Browse repository files, search across codebases, view and edit files with full Monaco editor (the editor that powers VS Code).
 - **Markdown Notes** — Built-in scratchpad. AI agents can read and write notes too.
-- **Command Palette** — `Ctrl+K` jumps to any action, tab, repository, work item, or recipe. Type `find <query>` to search across notes and learnings.
-- **Activity Timeline & Pull Requests** — Recent work item changes with charts; review and create GitHub PRs without leaving the app.
+- **Command Palette** — `Ctrl+K` jumps to any action, tab, repository, recipe, or plugin surface. Type `find <query>` to search across notes and learnings.
+- **Factory Reset + Export/Import** — One-click wipe of config, themes, notes, recipes, and installed plugins. Export bundle round-trips on import and auto-clones the plugins you used.
 
 ### AI tooling
 - **Permission Modes** — Four modes (`review` / `edit` / `trusted` / `bypass`) gate every spawn, write, and external call at the server level. Pattern-based allow/ask/deny rules with one-click "always allow this pattern" promotion. Header chip switches mode; approval modal appears when needed.
@@ -29,7 +28,7 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 - **MCP Server + Client** — Exposes DevOps Pilot to Claude Desktop, Cursor, VS Code, Zed, etc. Consume external MCP servers (GitHub, Postgres, Slack, Linear, etc.) right inside the app.
 - **Hybrid Search** — BM25 ranking across notes and learnings. Use the Notes search box (notes only) or the palette `find` command (notes + learnings).
 - **Repo Map** — Token-budgeted symbol map of any repo. Languages, layout, top files ranked by recent commits with extracted classes and functions. Use it before grepping unfamiliar code. AI Action button in the sidebar.
-- **Plugins** — Builder.io, Sanity, WordPress, GA4/GTM, Release Manager, Dependency Inspector, Environment Manager, and more. Each plugin can contribute tabs, scripts, MCP tools, and AI keywords.
+- **Plugins** — Every integration (issue tracker, code host, CMS, analytics, etc.) ships as a plugin installed from a GitHub-backed registry. A plugin can contribute tabs, sidebar actions, scripts, MCP tools, AI actions and keywords, work-item / PR providers, repo sources, commit linkers, and its own config keys. Uninstall a plugin and its surfaces disappear cleanly. Core ships provider-agnostic; AI instructions for a plugin are fetched on demand only when that plugin is active.
 - **Learnings Database** — Accumulated technical knowledge and past mistakes, fetched at session start so the AI doesn't repeat them.
 
 
@@ -40,7 +39,8 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 
 - [Node.js](https://nodejs.org/) (v18 or later)
 - [Git](https://git-scm.com/)
-- An [Azure DevOps](https://dev.azure.com/) organization with a Personal Access Token (PAT)
+
+Provider credentials (Azure DevOps PAT, GitHub token, etc.) are only needed if you install the corresponding plugin.
 
 ### Setup
 
@@ -55,7 +55,7 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 
 3. **Launch DevOps Pilot** from the desktop shortcut
 
-That's it. The app will walk you through connecting your Azure DevOps organization on first launch.
+That's it. The app will walk you through onboarding: pick which AI CLIs to use, browse the plugin registry (with context-aware recommendations based on your local git remotes), and only then configure any provider credentials the plugins you chose actually need. A "Just the terminal" shortcut skips past plugin setup entirely.
 
 > To change settings later, click the **Settings** button in the bottom-left corner of the app.
 
@@ -68,6 +68,7 @@ For AI-powered features, install one or more of these CLIs globally:
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) — `npm i -g @google/gemini-cli`
 - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) — `npm i -g @githubnext/github-copilot-cli`
 - [Grok CLI](https://x.ai/api) — community CLI; xAI official is on the waitlist as of April 2026
+- [Qwen Code](https://github.com/QwenLM/qwen-code) — `npm i -g @qwen-code/qwen-code`
 
 The app auto-detects which CLIs are installed and lets you switch between them. Each session starts with a single bootstrap call so the AI knows the active repo, permission mode, plugins, and learnings before its first reply.
 
@@ -81,7 +82,7 @@ DevOps Pilot
 |   +-- Loads http://localhost:3800
 |
 +-- Node.js Server (server.js, port 3800)
-|   +-- REST API (/api/*)              -> Azure DevOps + GitHub proxy, all internal services
+|   +-- REST API (/api/*)              -> Core services; plugin routes mounted under /api/plugins/<id>/
 |   +-- Permissions engine             -> Modes + pattern rules + approval queue
 |   +-- Orchestrator                   -> Spawn / dispatch / handoff / fan-out / worktree
 |   +-- Graph runs engine              -> Durable multi-step workflows
@@ -91,16 +92,16 @@ DevOps Pilot
 |   +-- Repo map                       -> Token-budgeted symbol graph
 |   +-- MCP server (stdio)             -> Exposes plugins + tools to external clients
 |   +-- MCP client manager             -> Consumes external MCP servers
-|   +-- Plugin loader                  -> Auto-discovers + mounts plugin routes
+|   +-- Plugin loader                  -> Install from registry, mount routes, contribute UI / MCP / AI actions
 |   +-- Learnings store                -> Accumulated technical knowledge
 |   +-- WebSocket                      -> Terminal PTY bridge
 |
 +-- Dashboard UI (index.html)
 |   +-- Header                         -> Permission mode chip + status
-|   +-- Sidebar                        -> Boards, AI actions, plugins, git
-|   +-- Center tabs                    -> Terminal, Backlog, Work Item, PRs, Files, Diff,
-|   |                                     Notes, Recipe Editor, plugin tabs
-|   +-- Right intel panel              -> Activity, Team, Git Log, Recipes
+|   +-- Sidebar                        -> Core + plugin-contributed quick actions, AI actions
+|   +-- Center tabs                    -> Terminal, Orchestrator, Files, Diff, Notes,
+|   |                                     Recipe Editor, plugin-contributed tabs
+|   +-- Right intel panel              -> Recipes + plugin-contributed panels
 |   +-- Monaco editor                  -> Code viewer + recipe editor + repo map viewer
 |   +-- XTerm.js terminal              -> Multi-tab PTYs with AI launchers
 |   +-- Approval modal                 -> Permissions + graph-run approval gates
@@ -112,7 +113,7 @@ DevOps Pilot
 ### How It Works
 
 1. The **Electron app** launches a local Node.js HTTP server on port 3800.
-2. The **server** proxies Azure DevOps and GitHub APIs, runs all internal services (orchestrator, graph runs, recipes, search, MCP server, plugins, learnings), and bridges the terminal over WebSocket.
+2. The **server** runs all core services (orchestrator, graph runs, recipes, search, MCP server, plugin loader, learnings, permissions) and bridges the terminal over WebSocket. Every external integration is owned by a plugin mounted under `/api/plugins/<id>/`.
 3. The **dashboard** is a single-page app with center tabs and a right-side intel panel. Monaco is used wherever code or markdown is shown or edited.
 4. **AI agents** in the terminal call the same internal API as the UI. Every session starts with a single `/api/bootstrap` fetch that returns context, instructions, plugins, learnings, and permission state in one round-trip.
 5. **External AI clients** (Claude Desktop, Cursor, etc.) reach the same surface through the MCP server.
@@ -143,7 +144,7 @@ Recipes can be invoked via the Recipes panel, the command palette (Ctrl+K), `./s
 
 ## MCP Server (Model Context Protocol)
 
-DevOps Pilot ships an MCP server so external AI clients (Claude Desktop, Cursor, VS Code Copilot, Zed, Goose, Warp, etc.) can use its work item management, sprint queries, notes, orchestrator, and learnings database as tools and resources.
+DevOps Pilot ships an MCP server so external AI clients (Claude Desktop, Cursor, VS Code Copilot, Zed, Goose, Warp, etc.) can use its core tools plus whatever each installed plugin contributes.
 
 Launch it from your MCP client's config. The DevOps Pilot app must be running.
 
@@ -161,28 +162,26 @@ Launch it from your MCP client's config. The DevOps Pilot app must be running.
 
 **Cursor / VS Code / Zed**: point at the same command. Transport is stdio.
 
-Exposed tools: `list_work_items`, `get_work_item`, `create_work_item`, `set_work_item_state`, `get_sprint_status`, `save_note`, `spawn_worker`, `search_learnings`, `list_repos`, `get_permission_mode`.
+Core tools: `save_note`, `spawn_worker`, `search_learnings`, `list_repos`, `get_permission_mode`. Plugin-contributed tools (work items, PRs, CMS operations, etc.) are namespaced `<pluginId>__<toolName>` and appear automatically when the plugin is installed.
 
-Exposed resources: `devops-pilot://context`, `devops-pilot://instructions`, `devops-pilot://learnings`, `devops-pilot://permissions`.
-
-Exposed prompts: `standup_summary`, `retro_analysis`.
+Core resources: `devops-pilot://context`, `devops-pilot://instructions`, `devops-pilot://learnings`, `devops-pilot://permissions`.
 
 All mutating tools are gated by the active DevOps Pilot permission mode (review / edit / trusted / bypass), with an in-app modal for approval.
 
 ### Plugins as MCP tools
 
-Any installed plugin can declare tools, resources, and prompts in its `plugin.json` under `contributions.mcp`. They are automatically merged into DevOps Pilot's MCP server with a namespaced name (`<pluginId>__<toolName>`), so a Claude Desktop user can use Builder.io plugin tools without ever opening DevOps Pilot's UI.
+Any installed plugin can declare tools, resources, and prompts in its `plugin.json` under `contributions.mcp`. They are automatically merged into DevOps Pilot's MCP server with a namespaced name (`<pluginId>__<toolName>`), so an external MCP client can use plugin tools without ever opening DevOps Pilot's UI.
 
-Example (`dashboard/plugins/builderio/plugin.json`):
+Example `plugin.json`:
 ```json
 "contributions": {
   "mcp": {
     "tools": [
       {
         "name": "health",
-        "description": "Builder.io project health check.",
+        "description": "Plugin health check.",
         "inputSchema": { "type": "object", "properties": {} },
-        "route": "GET /api/plugins/builderio/health"
+        "route": "GET /api/plugins/<plugin-id>/health"
       }
     ]
   }
@@ -206,6 +205,7 @@ DevOps Pilot detects installed CLIs at boot and lets you launch any of them per 
 | Gemini CLI | `@google/gemini-cli` | Google. Models: Gemini 3 Flash (free tier) / Gemini 3 Pro (paid). 2M context. |
 | GitHub Copilot CLI | `@githubnext/github-copilot-cli` | GitHub. Best for PR/issue workflows. |
 | Grok | `x.ai` API | xAI. Community CLI only as of April 2026; official Grok CLI is on the waitlist. Unique edge: live X/social context. |
+| Qwen Code | `@qwen-code/qwen-code` | Alibaba. Long-context coding CLI. |
 
 The visual theme is driven by your **theme preference** in Settings (Catppuccin variants and others), not by which CLI is active.
 
@@ -214,7 +214,7 @@ The visual theme is driven by your **theme preference** in Settings (Catppuccin 
 ## Tech Stack
 
 - **Electron** v35 — Desktop application shell
-- **Node.js** — HTTP server, internal services, Azure DevOps + GitHub proxy
+- **Node.js** — HTTP server and core services (orchestrator, graph runs, recipes, permissions, plugin loader, MCP)
 - **Monaco Editor** — Code viewer, recipe editor, repo map viewer
 - **XTerm.js** — Terminal emulator with WebGL rendering
 - **node-pty** — Persistent PowerShell PTY sessions
