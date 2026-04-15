@@ -5,7 +5,7 @@ Recipes are reusable markdown files that bundle a recurring AI operation: which 
 ## Where they live
 
 - `recipes/` at the repo root - project-local, committed and shared with the team
-- `~/.devops-pilot/recipes/` - user-global, available across projects (project-local wins on name conflict)
+- `~/.symphonee/recipes/` - user-global, available across projects (project-local wins on name conflict)
 
 ## Format
 

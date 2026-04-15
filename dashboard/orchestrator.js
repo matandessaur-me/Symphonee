@@ -1,5 +1,5 @@
 /**
- * Orchestrator — Cross-AI communication bus for DevOps Pilot
+ * Orchestrator — Cross-AI communication bus for Symphonee
  *
  * Enables AI agents running in different terminals to dispatch tasks to each
  * other, exchange messages, and collect structured results.

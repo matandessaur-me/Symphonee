@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot Utility Modules Index
+ * Symphonee Utility Modules Index
  */
 module.exports = {
   ...require('./git-async'),

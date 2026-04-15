@@ -7,7 +7,7 @@ Commits: 46 | Files changed: 35 | Diff: +2248 / -2403 (net -155 lines)
 
 ### Before (master)
 
-DevOps Pilot was a monolithic dashboard that shipped Azure DevOps and GitHub as first-class, hardcoded integrations:
+Symphonee was a monolithic dashboard that shipped Azure DevOps and GitHub as first-class, hardcoded integrations:
 
 - `server.js` (3455 lines) hosted every work-item / iteration / team / PR / pull-request handler directly. Azure DevOps helpers (`adoRequest`, `getTeamAreaPaths`), GitHub helpers (`ghRequest`, `parseGitHubRemote`), SWR caches for both services, and all the route dispatch logic lived in core.
 - `scripts/` shipped 11 PowerShell scripts for ADO / GitHub operations (`Find-WorkItems`, `Get-SprintStatus`, `New-PullRequest`, `Push-AndPR`, ...).
@@ -20,11 +20,11 @@ DevOps Pilot was a monolithic dashboard that shipped Azure DevOps and GitHub as 
 - Backlog / Work Item / Pull Requests / Activity / Teams / Git Log tabs were always present, gated only on whether their config keys were set.
 - The command palette hardcoded Azure DevOps and GitHub commands, shown/hidden with `if (hasAdo)` / `if (hasGh)` booleans.
 
-A Jira, Wrike, or GitLab user installing DevOps Pilot saw a UI full of Azure-flavored surfaces they would never use and an AI that insisted `AB#` commit conventions were mandatory.
+A Jira, Wrike, or GitLab user installing Symphonee saw a UI full of Azure-flavored surfaces they would never use and an AI that insisted `AB#` commit conventions were mandatory.
 
 ### After (feature/plugin-first-shell)
 
-DevOps Pilot is now a shell. Core keeps terminal, files, diff viewer, notes, recipes, git primitives, orchestrator, AI instructions, settings, export/import, factory reset, permissions. **Azure DevOps and GitHub are plugins** -- installed from the same registry (`matandessaur-me/devops-pilot-plugins`) as Builder.io, Sanity, WordPress, and any future integration.
+Symphonee is now a shell. Core keeps terminal, files, diff viewer, notes, recipes, git primitives, orchestrator, AI instructions, settings, export/import, factory reset, permissions. **Azure DevOps and GitHub are plugins** -- installed from the same registry (`matandessaur-me/Symphonee-plugins`) as Builder.io, Sanity, WordPress, and any future integration.
 
 - `server.js` (2681 lines, -774 lines) has zero ADO or GitHub handlers. Every `/api/workitems/*`, `/api/iterations`, `/api/teams`, `/api/areas`, `/api/velocity`, `/api/burndown`, `/api/team-members`, `/api/start-working`, `/api/github/*`, `/api/pull-request` route is owned by its plugin via `ctx.addAbsoluteRoute`. Uninstall the plugin -> routes 404 with `{ pluginRequired }` JSON.
 - `scripts/` (17 files, -11 ADO/GitHub scripts + 1 new `Get-PluginInstructions.ps1`) ships only generic tooling. ADO/GitHub scripts moved into their plugin repos.
@@ -169,7 +169,7 @@ Updated files:
 
 ## Codex-audit resolution pass (2026-04-15)
 
-After the first polish pass, Codex reviewed the branch and flagged five gaps between "ADO/GitHub are plugins" (achieved) and "DevOps Pilot is provider-pluggable" (the revamp promise). All five are resolved in this pass:
+After the first polish pass, Codex reviewed the branch and flagged five gaps between "ADO/GitHub are plugins" (achieved) and "Symphonee is provider-pluggable" (the revamp promise). All five are resolved in this pass:
 
 1. **Provider routing is now end-to-end.** Every PR and work-item call in `index.html` goes through `DevOpsPilot.contributions.providerFetch(kind, routeField, opts)`:
    - PR: `detailRoute`, `filesRoute`, `timelineRoute`, `commentRoute`, `reviewRoute`, `listRoute`.

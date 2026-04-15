@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Model Context Protocol (MCP) server, stdio transport.
+ * Symphonee -- Model Context Protocol (MCP) server, stdio transport.
  *
  * Implements the minimum viable MCP spec:
  *   - JSON-RPC 2.0 framing (newline-delimited, stdin/stdout)
@@ -9,8 +9,8 @@
  *   - prompts/list, prompts/get
  *
  * The server is a thin adapter: every tool call forwards to the running
- * DevOps Pilot HTTP server at 127.0.0.1:3800, which already enforces
- * permissions, caching, and business logic. If DevOps Pilot is not
+ * Symphonee HTTP server at 127.0.0.1:3800, which already enforces
+ * permissions, caching, and business logic. If Symphonee is not
  * running, tool calls return an error (no silent no-ops).
  *
  * Designed to be launched by an MCP client (Claude Desktop, Cursor, VS
@@ -54,7 +54,7 @@ function log(...args) {
   process.stderr.write('[mcp-server] ' + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ') + '\n');
 }
 
-// ── HTTP bridge to DevOps Pilot ─────────────────────────────────────────────
+// ── HTTP bridge to Symphonee ─────────────────────────────────────────────
 function apiRequest(method, pathname, body) {
   return new Promise((resolve, reject) => {
     const data = body !== undefined ? JSON.stringify(body) : null;
@@ -93,7 +93,7 @@ function apiRequest(method, pathname, body) {
 const TOOLS = [
   {
     name: 'save_note',
-    description: 'Save a markdown note to DevOps Pilot Notes. Returns the saved file path.',
+    description: 'Save a markdown note to Symphonee Notes. Returns the saved file path.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,7 +109,7 @@ const TOOLS = [
   },
   {
     name: 'spawn_worker',
-    description: 'Spawn an AI worker (claude, gemini, codex, grok, copilot, qwen) with a prompt via the DevOps Pilot orchestrator. Gated by permissions.',
+    description: 'Spawn an AI worker (claude, gemini, codex, grok, copilot, qwen) with a prompt via the Symphonee orchestrator. Gated by permissions.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -127,7 +127,7 @@ const TOOLS = [
   },
   {
     name: 'search_learnings',
-    description: 'Search the DevOps Pilot learnings database (accumulated technical knowledge and past errors).',
+    description: 'Search the Symphonee learnings database (accumulated technical knowledge and past errors).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -148,7 +148,7 @@ const TOOLS = [
   },
   {
     name: 'list_repos',
-    description: 'List all configured repositories in DevOps Pilot (name and path).',
+    description: 'List all configured repositories in Symphonee (name and path).',
     inputSchema: { type: 'object', properties: {} },
     handler: async () => {
       const res = await apiRequest('GET', '/api/repos');
@@ -157,10 +157,10 @@ const TOOLS = [
   },
   {
     name: 'get_permission_mode',
-    description: 'Read the current DevOps Pilot permission mode and rules.',
+    description: 'Read the current Symphonee permission mode and rules.',
     inputSchema: { type: 'object', properties: {} },
     handler: async () => {
-      const res = await apiRequest('GET', '/api/permissions').catch(() => ({ note: 'Permissions API not available on this DevOps Pilot version.' }));
+      const res = await apiRequest('GET', '/api/permissions').catch(() => ({ note: 'Permissions API not available on this Symphonee version.' }));
       return textResult(JSON.stringify(res, null, 2));
     },
   },
@@ -196,7 +196,7 @@ const TOOLS = [
   },
   {
     name: 'list_recipes',
-    description: 'List all available DevOps Pilot recipes (reusable AI workflows declared as markdown files in recipes/). Defaults are pre-rendered against the current UI context.',
+    description: 'List all available Symphonee recipes (reusable AI workflows declared as markdown files in recipes/). Defaults are pre-rendered against the current UI context.',
     inputSchema: { type: 'object', properties: {} },
     handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/recipes'), null, 2)),
   },
@@ -440,28 +440,28 @@ function buildPromptRenderer(p) {
 // ── Resources ───────────────────────────────────────────────────────────────
 const RESOURCES = [
   {
-    uri: 'devops-pilot://context',
+    uri: 'symphonee://context',
     name: 'Active UI context',
     description: 'Currently selected repo, iteration, and area.',
     mimeType: 'application/json',
     read: async () => apiRequest('GET', '/api/ui/context'),
   },
   {
-    uri: 'devops-pilot://instructions',
-    name: 'DevOps Pilot instructions',
+    uri: 'symphonee://instructions',
+    name: 'Symphonee instructions',
     description: 'Full API reference, workflow rules, orchestrator rules.',
     mimeType: 'text/markdown',
     read: async () => apiRequest('GET', '/api/instructions'),
   },
   {
-    uri: 'devops-pilot://learnings',
+    uri: 'symphonee://learnings',
     name: 'Learnings database',
     description: 'Accumulated technical knowledge, errors, and patterns.',
     mimeType: 'application/json',
     read: async () => apiRequest('GET', '/api/learnings'),
   },
   {
-    uri: 'devops-pilot://permissions',
+    uri: 'symphonee://permissions',
     name: 'Active permission mode and rules',
     mimeType: 'application/json',
     read: async () => apiRequest('GET', '/api/permissions'),
@@ -489,11 +489,11 @@ async function handleRequest(msg) {
           logging: {},
         },
         serverInfo: {
-          name: 'devops-pilot',
+          name: 'symphonee',
           version: '0.1.0',
-          title: 'DevOps Pilot MCP Server',
+          title: 'Symphonee MCP Server',
         },
-        instructions: 'DevOps Pilot is a shell-first workstation. Core tools manage notes, orchestration, and shell resources; installed plugins contribute provider-specific tools and prompts. All mutating tools are gated by the DevOps Pilot permission layer.',
+        instructions: 'Symphonee is a shell-first workstation. Core tools manage notes, orchestration, and shell resources; installed plugins contribute provider-specific tools and prompts. All mutating tools are gated by the Symphonee permission layer.',
       });
     }
 
@@ -599,4 +599,4 @@ stdin.on('end', () => { log('stdin closed, exiting'); process.exit(0); });
 process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));
 
-log(`DevOps Pilot MCP server started (proto ${PROTOCOL_VERSION}, bridging to http://${API_HOST}:${API_PORT})`);
+log(`Symphonee MCP server started (proto ${PROTOCOL_VERSION}, bridging to http://${API_HOST}:${API_PORT})`);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Save a markdown note via the DevOps Pilot API.
+// Save a markdown note via the Symphonee API.
 // Usage:
 //   node scripts/save-note.js "Note Name" "Short content"
 //   node scripts/save-note.js "Note Name" --file .ai-workspace/note.md

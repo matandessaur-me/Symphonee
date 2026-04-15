@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- MCP client manager.
+ * Symphonee -- MCP client manager.
  *
  * Connects to one or more external MCP servers over stdio (and, eventually,
  * Streamable HTTP). Each server is spawned as a child process; we framer
@@ -76,7 +76,7 @@ class MCPServerConnection {
     const initResp = await this._send('initialize', {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { roots: { listChanged: false }, sampling: {} },
-      clientInfo: { name: 'devops-pilot', version: '0.1.0' },
+      clientInfo: { name: 'symphonee', version: '0.1.0' },
     });
     this.capabilities = initResp && initResp.capabilities;
     this._sendNotification('notifications/initialized');

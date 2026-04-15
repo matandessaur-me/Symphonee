@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   DevOps Pilot - Installation
+echo   Symphonee - Installation
 echo ========================================
 echo.
 
@@ -43,6 +43,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Create-Shortcut.ps1
 echo.
 echo ========================================
 echo   Installation complete!
-echo   Launch from the "DevOps Pilot" desktop shortcut.
+echo   Launch from the "Symphonee" desktop shortcut.
 echo ========================================
 pause

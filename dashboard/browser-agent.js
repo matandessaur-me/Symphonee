@@ -25,7 +25,7 @@ const os = require('os');
 
 function deriveKey() {
   // Derive a machine-specific key (not truly secure, prevents casual reading)
-  const seed = `devops-pilot:${os.hostname()}:${os.userInfo().username}`;
+  const seed = `symphonee:${os.hostname()}:${os.userInfo().username}`;
   return crypto.pbkdf2Sync(seed, 'dp-salt-v1', 100000, 32, 'sha256');
 }
 

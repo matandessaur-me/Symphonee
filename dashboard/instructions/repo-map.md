@@ -6,7 +6,7 @@ Token-budgeted symbol map of a repository. Use this **before grepping** a codeba
 
 ```bash
 ./scripts/Get-RepoMap.ps1                       # active repo, ~4k tokens
-./scripts/Get-RepoMap.ps1 -Repo "DevOps-Pilot"  # explicit repo
+./scripts/Get-RepoMap.ps1 -Repo "Symphonee"  # explicit repo
 ./scripts/Get-RepoMap.ps1 -Budget 8000          # larger map
 ```
 

@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Hybrid Search (v1: BM25)
+ * Symphonee -- Hybrid Search (v1: BM25)
  *
  * Indexes Notes + Learnings into an in-memory inverted index with BM25
  * scoring. Persists the document set to disk so reindex on boot is fast.
@@ -34,7 +34,7 @@ function tokenize(text) {
 class HybridSearchEngine {
   constructor({ repoRoot }) {
     this.repoRoot = repoRoot;
-    this.indexDir = path.join(repoRoot, '.devops-pilot', 'search');
+    this.indexDir = path.join(repoRoot, '.symphonee', 'search');
     this.indexPath = path.join(this.indexDir, 'index.json');
     this.docs = new Map(); // id -> { id, kind, title, body, path, tokens, ts }
     this.invertedIndex = new Map(); // term -> Set(doc id)

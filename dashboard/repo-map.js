@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Repo Map
+ * Symphonee -- Repo Map
  *
  * Token-budgeted symbol graph of a repository. Injected into worker
  * prompts so they don't waste tokens grepping around to learn the
@@ -22,7 +22,7 @@ const { execSync } = require('child_process');
 const SKIP_DIRS = new Set([
   'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'target',
   '__pycache__', '.cache', '.vercel', '.netlify', '.turbo', 'coverage',
-  '.devops-pilot', '.ai-workspace', 'venv', '.venv', 'env', '.env', 'bin', 'obj',
+  '.symphonee', '.ai-workspace', 'venv', '.venv', 'env', '.env', 'bin', 'obj',
   'vendor', '.idea', '.vscode',
 ]);
 

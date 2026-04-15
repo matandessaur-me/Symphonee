@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot — Node.js server
+ * Symphonee — Node.js server
  * Serves the web UI, manages a persistent PTY terminal via WebSocket,
  * and provides Azure DevOps REST API proxy.
  */
@@ -61,6 +61,29 @@ function sanitizeText(str) {
 const PORT = 3800;
 const HOST = '127.0.0.1';
 const repoRoot = path.resolve(__dirname, '..');
+
+// One-time filesystem migration: .devops-pilot -> .symphonee (home + repo root).
+// Safe no-op after the first run. Avoids data loss from the rebrand.
+(function migrateSymphoneeDirs() {
+  try {
+    const os = require('os');
+    const candidates = [
+      { from: path.join(os.homedir(), '.devops-pilot'), to: path.join(os.homedir(), '.symphonee') },
+      { from: path.join(repoRoot, '.devops-pilot'),    to: path.join(repoRoot, '.symphonee') },
+    ];
+    for (const { from, to } of candidates) {
+      if (!fs.existsSync(from)) continue;
+      if (fs.existsSync(to)) continue;
+      try {
+        fs.renameSync(from, to);
+        console.log(`  Migrated ${from} -> ${to}`);
+      } catch (e) {
+        console.warn(`  [migrate] ${from} -> ${to} failed: ${e.message}`);
+      }
+    }
+  } catch (_) { /* best-effort */ }
+})();
+
 const publicDir = path.join(__dirname, 'public');
 const nodeModules = path.join(repoRoot, 'node_modules');
 const configPath = path.join(repoRoot, 'config', 'config.json');
@@ -215,9 +238,9 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const id = String(body.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
       if (!id) return json(res, { error: 'id required' }, 400);
-      // User-authored recipes live in ~/.devops-pilot/recipes/ so they stay
+      // User-authored recipes live in ~/.symphonee/recipes/ so they stay
       // machine-local and never get committed alongside the shipped recipes.
-      const userRecipesDir = path.join(require('os').homedir(), '.devops-pilot', 'recipes');
+      const userRecipesDir = path.join(require('os').homedir(), '.symphonee', 'recipes');
       const shippedFile = path.join(repoRoot, 'recipes', id + '.md');
       const file = path.join(userRecipesDir, id + '.md');
       const alreadyExists = fs.existsSync(file) || fs.existsSync(shippedFile);
@@ -286,7 +309,7 @@ const server = http.createServer(async (req, res) => {
       try {
         // Prefer the user-scoped file; only shipped recipes should be in the
         // repo folder, and we refuse to delete those here.
-        const userFile = path.join(require('os').homedir(), '.devops-pilot', 'recipes', id + '.md');
+        const userFile = path.join(require('os').homedir(), '.symphonee', 'recipes', id + '.md');
         const repoFile = path.join(repoRoot, 'recipes', id + '.md');
         if (fs.existsSync(userFile)) {
           fs.unlinkSync(userFile);
@@ -628,7 +651,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       // Lightweight receipt log; visible in dashboard later.
       try {
-        const log = path.join(repoRoot, '.devops-pilot', 'bootstrap-acks.jsonl');
+        const log = path.join(repoRoot, '.symphonee', 'bootstrap-acks.jsonl');
         fs.mkdirSync(path.dirname(log), { recursive: true });
         fs.appendFileSync(log, JSON.stringify({ ts: Date.now(), ...body }) + '\n', 'utf8');
       } catch (_) {}
@@ -809,7 +832,7 @@ function handleExportConfig(res) {
   delete exportCfg.Repos;
   for (const key of getSensitiveKeys()) delete exportCfg[key];
   exportCfg._exportedAt = new Date().toISOString();
-  exportCfg._exportedFrom = 'DevOps Pilot';
+  exportCfg._exportedFrom = 'Symphonee';
   // Collect plugin configs
   const pluginConfigs = {};
   try {
@@ -845,11 +868,11 @@ function handleExportConfig(res) {
       if (Object.keys(map).length) exportCfg._notes = map;
     }
   } catch (_) {}
-  // Include user-authored recipes (from both project-local and ~/.devops-pilot/recipes).
+  // Include user-authored recipes (from both project-local and ~/.symphonee/recipes).
   // We bundle whatever is on disk; on import we only write non-shipped names to avoid overwriting the built-ins.
   try {
     const recipeMap = {};
-    const dirs = [path.join(repoRoot, 'recipes'), path.join(require('os').homedir(), '.devops-pilot', 'recipes')];
+    const dirs = [path.join(repoRoot, 'recipes'), path.join(require('os').homedir(), '.symphonee', 'recipes')];
     for (const d of dirs) {
       if (!fs.existsSync(d)) continue;
       for (const f of fs.readdirSync(d)) {
@@ -871,7 +894,7 @@ function handleExportConfig(res) {
   } catch (_) {}
   res.writeHead(200, {
     'Content-Type': 'application/json',
-    'Content-Disposition': 'attachment; filename="devops-pilot-settings.json"',
+    'Content-Disposition': 'attachment; filename="symphonee-settings.json"',
   });
   res.end(JSON.stringify(exportCfg, null, 2));
 }
@@ -910,7 +933,7 @@ async function handleImportConfig(req, res) {
       }
     } catch (_) {}
   }
-  // Restore user recipes into ~/.devops-pilot/recipes (never overwrite shipped defaults).
+  // Restore user recipes into ~/.symphonee/recipes (never overwrite shipped defaults).
   const importedRecipes = incoming._recipes;
   delete incoming._recipes;
   if (importedRecipes && typeof importedRecipes === 'object') {
@@ -922,7 +945,7 @@ async function handleImportConfig(req, res) {
           if (f.endsWith('.md')) shipped.add(f.replace(/\.md$/, ''));
         }
       }
-      const userDir = path.join(require('os').homedir(), '.devops-pilot', 'recipes');
+      const userDir = path.join(require('os').homedir(), '.symphonee', 'recipes');
       fs.mkdirSync(userDir, { recursive: true });
       for (const [name, body] of Object.entries(importedRecipes)) {
         if (shipped.has(name)) continue;
@@ -970,9 +993,9 @@ async function handleImportConfig(req, res) {
     if (missingPluginIds.length > 0) {
       try {
         const https = require('https');
-        const REGISTRY_API_URL = 'https://api.github.com/repos/matandessaur-me/devops-pilot-plugins/contents/registry.json';
+        const REGISTRY_API_URL = 'https://api.github.com/repos/matandessaur-me/Symphonee-plugins/contents/registry.json';
         const raw = await new Promise((resolve, reject) => {
-          https.get(REGISTRY_API_URL, { headers: { 'User-Agent': 'DevOps-Pilot', 'Accept': 'application/vnd.github.v3+json' } }, (resp) => {
+          https.get(REGISTRY_API_URL, { headers: { 'User-Agent': 'Symphonee', 'Accept': 'application/vnd.github.v3+json' } }, (resp) => {
             let d = '';
             resp.on('data', c => { d += c; });
             resp.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
@@ -1035,7 +1058,7 @@ async function handleFactoryReset(req, res) {
   rmIfExists(path.join(repoRoot, 'config', 'display-pref.json'));
   // 2. Notes + user recipes + learnings
   rmIfExists(path.join(repoRoot, 'notes'));
-  rmIfExists(path.join(require('os').homedir(), '.devops-pilot', 'recipes'));
+  rmIfExists(path.join(require('os').homedir(), '.symphonee', 'recipes'));
   rmIfExists(path.join(learningsDataDir, 'learnings.json'));
   // 3. Third-party plugins (keep only the SDK docs that ship from the main repo).
   const BUNDLED_PLUGIN_IDS = new Set(['sdk']);
@@ -2137,7 +2160,7 @@ function handleExportNote(url, res) {
 }
 
 function handleExportAllNotes(res) {
-  const payload = { _exportedAt: new Date().toISOString(), _exportedFrom: 'DevOps Pilot', notes: {} };
+  const payload = { _exportedAt: new Date().toISOString(), _exportedFrom: 'Symphonee', notes: {} };
   try {
     if (fs.existsSync(notesDir)) {
       for (const f of fs.readdirSync(notesDir)) {
@@ -2148,7 +2171,7 @@ function handleExportAllNotes(res) {
   } catch (_) {}
   res.writeHead(200, {
     'Content-Type': 'application/json',
-    'Content-Disposition': 'attachment; filename="devops-pilot-notes.json"',
+    'Content-Disposition': 'attachment; filename="symphonee-notes.json"',
   });
   res.end(JSON.stringify(payload, null, 2));
 }
@@ -2362,7 +2385,7 @@ function writePluginHints() {
   if (pluginData.length) {
     block += '\n## Installed Plugins\n\n';
     block += '### How Plugins Work\n\n';
-    block += 'Plugins extend DevOps Pilot with extra capabilities. Each plugin may provide:\n';
+    block += 'Plugins extend Symphonee with extra capabilities. Each plugin may provide:\n';
     block += '- **API routes** at `/api/plugins/<plugin-id>/` (call via curl or Invoke-RestMethod)\n';
     block += '- **PowerShell scripts** (`.ps1` files) in `dashboard/plugins/<plugin-id>/scripts/` that you can run directly\n';
     block += '- **Node.js scripts** (`.js` files) that you can run with `node`\n\n';
@@ -2546,8 +2569,8 @@ writePluginHints();
     const httpsLib = require('https');
     const { execSync } = require('child_process');
     const registry = await new Promise((resolve, reject) => {
-      httpsLib.get('https://api.github.com/repos/matandessaur-me/devops-pilot-plugins/contents/registry.json',
-        { headers: { 'User-Agent': 'DevOps-Pilot', 'Accept': 'application/vnd.github.v3+json' } },
+      httpsLib.get('https://api.github.com/repos/matandessaur-me/Symphonee-plugins/contents/registry.json',
+        { headers: { 'User-Agent': 'Symphonee', 'Accept': 'application/vnd.github.v3+json' } },
         (resp) => { let d = ''; resp.on('data', c => d += c); resp.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } }); }
       ).on('error', reject);
     });
@@ -2640,7 +2663,7 @@ function startServer() {
 
   server.listen(PORT, HOST, () => {
     const url = `http://${HOST}:${PORT}`;
-    console.log(`\n  DevOps Pilot running at ${url}\n`);
+    console.log(`\n  Symphonee running at ${url}\n`);
     if (!process.env.ELECTRON) exec(`start ${url}`);
   });
 }

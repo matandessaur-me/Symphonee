@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Opens the diff viewer in the DevOps Pilot dashboard.
+    Opens the diff viewer in the Symphonee dashboard.
 
 .DESCRIPTION
-    Sends a UI action to DevOps Pilot to open the diff viewer tab.
+    Sends a UI action to Symphonee to open the diff viewer tab.
     Can show all working changes or a specific file's diff.
 
 .PARAMETER Repo

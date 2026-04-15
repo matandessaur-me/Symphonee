@@ -2,13 +2,36 @@
 <html lang="en" data-theme="warm-metallic">
 <head>
   <meta charset="utf-8">
-  <title>DevOps Pilot</title>
+  <title>Symphonee</title>
   <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <style>@import url('https://fonts.googleapis.com/css2?family=BJ+Cree:wght@400;500;600;700&display=swap');</style>
+  <script>
+    // One-time localStorage migration: symphonee-* -> symphonee-*
+    (function() {
+      try {
+        if (localStorage.getItem('symphonee-migrated-v1')) return;
+        var keys = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('symphonee-') === 0) keys.push(k);
+        }
+        for (var j = 0; j < keys.length; j++) {
+          var oldK = keys[j];
+          var newK = 'symphonee-' + oldK.substring('symphonee-'.length);
+          if (localStorage.getItem(newK) === null) {
+            localStorage.setItem(newK, localStorage.getItem(oldK));
+          }
+          localStorage.removeItem(oldK);
+        }
+        localStorage.setItem('symphonee-migrated-v1', '1');
+      } catch(_) {}
+    })();
+  </script>
   <script>
     // Apply saved theme BEFORE CSS loads to prevent flash of default theme
     (function() {
       try {
-        var s = localStorage.getItem('devops-pilot-active-theme');
+        var s = localStorage.getItem('symphonee-active-theme');
         if (s && s.startsWith('__builtin_')) {
           var id = s.replace('__builtin_', '');
           var m = { claude:'warm-metallic', gemini:'industrial-blue', codex:'futuristic-green', copilot:'warm-metallic', grok:'warm-metallic', qwen:'industrial-blue' };
@@ -16,7 +39,7 @@
           document.documentElement.setAttribute('data-theme', id);
         } else if (s) {
           // Custom theme -- apply inline vars from localStorage
-          var themes = JSON.parse(localStorage.getItem('devops-pilot-themes') || '[]');
+          var themes = JSON.parse(localStorage.getItem('symphonee-themes') || '[]');
           var t = themes.find(function(x) { return x.name === s; });
           if (t && t.vars) {
             document.documentElement.setAttribute('data-theme', 'custom');
@@ -140,7 +163,7 @@
     }
     .header-left { display: flex; align-items: center; gap: 8px; }
     .header-logo { width: 28px; height: 28px; border-radius: 6px; }
-    .header-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .header-title { font-family: 'BJ Cree', var(--font-ui); font-size: 18px; font-weight: 600; color: var(--text); letter-spacing: 0.2px; }
     .header-sep { color: var(--subtext0); font-size: 13px; }
     .header-accent { font-size: 15px; font-weight: 600; color: var(--accent); }
 
@@ -2118,7 +2141,7 @@
 <header class="header">
   <div class="header-left" style="position:relative;">
     <img src="/logo.svg" class="header-logo" alt="">
-    <span class="header-title">DevOps Pilot</span>
+    <span class="header-title">Symphonee</span>
     <div id="permModeSlot" style="display:inline-flex;align-items:center;min-width:110px;margin-left:12px;">
       <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--subtext0);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
         <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
@@ -2909,7 +2932,7 @@
         <div class="settings-tab" id="settingsTab-ai">
           <div class="settings-section">
             <div class="settings-section-title">Installed AI CLIs</div>
-            <div class="settings-section-desc">Manage the terminal-based AI agents available in DevOps Pilot. Click Install to add any missing tools.</div>
+            <div class="settings-section-desc">Manage the terminal-based AI agents available in Symphonee. Click Install to add any missing tools.</div>
             <div id="settingsAiTools" style="display:flex;flex-direction:column;gap:8px;">
               <div style="font-size:11px;color:var(--subtext0);">Detecting installed AI CLIs...</div>
             </div>
@@ -2995,7 +3018,7 @@
         <div class="settings-tab" id="settingsTab-mcp">
           <div class="settings-section">
             <div class="settings-section-title">External MCP Servers</div>
-            <div class="settings-section-desc">Connect to external Model Context Protocol servers to add their tools, resources, and prompts to DevOps Pilot. Each server runs as a child process via stdio.</div>
+            <div class="settings-section-desc">Connect to external Model Context Protocol servers to add their tools, resources, and prompts to Symphonee. Each server runs as a child process via stdio.</div>
             <div id="mcpServersList" style="display:flex;flex-direction:column;gap:8px;margin:12px 0;"><div style="color:var(--subtext0);padding:12px;">No servers configured.</div></div>
           </div>
           <div class="settings-section">
@@ -3452,7 +3475,7 @@ function getActiveTermTheme() {
   return TERM_THEMES['_active'] || TERM_THEMES[activeThemeId] || TERM_THEMES['warm-metallic'];
 }
 
-let activeCli = localStorage.getItem('devops-pilot-cli') || 'claude';
+let activeCli = localStorage.getItem('symphonee-cli') || 'claude';
 // Per-shell AI state: termId -> { cli: string, launched: boolean }
 const termAiState = new Map();
 // Legacy compat getter
@@ -4250,7 +4273,7 @@ function createOrUpdateMonaco(content, ext, readOnly) {
     monacoEditor.updateOptions({ readOnly });
   } else {
     monacoEditor = monaco.editor.create(document.getElementById('monacoEditor'), {
-      value: content, language: lang, theme: 'devops-pilot',
+      value: content, language: lang, theme: 'symphonee',
       fontSize: 13, fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
       minimap: { enabled: true }, scrollBeyondLastLine: false, wordWrap: 'off',
       automaticLayout: true, lineNumbers: 'on', renderWhitespace: 'selection',
@@ -4320,7 +4343,7 @@ function _defineMonacoTheme() {
   if (!window.monaco) return;
   const cs = getComputedStyle(document.documentElement);
   const base = _isLightTheme() ? 'vs' : 'vs-dark';
-  monaco.editor.defineTheme('devops-pilot', {
+  monaco.editor.defineTheme('symphonee', {
     base,
     inherit: true,
     rules: [],
@@ -4330,7 +4353,7 @@ function _defineMonacoTheme() {
       'editorLineNumber.foreground': cs.getPropertyValue('--overlay0').trim(),
     },
   });
-  if (monacoEditor) monaco.editor.setTheme('devops-pilot');
+  if (monacoEditor) monaco.editor.setTheme('symphonee');
 }
 
 function loadMonaco() {
@@ -5913,7 +5936,7 @@ function exportCurrentNote() {
 function exportAllNotes() {
   const a = document.createElement('a');
   a.href = '/api/notes/export-all';
-  a.download = 'devops-pilot-notes.json';
+  a.download = 'symphonee-notes.json';
   document.body.appendChild(a); a.click(); a.remove();
 }
 
@@ -6919,7 +6942,7 @@ function syncAiControls() {
 
 function switchCli(cli) {
   activeCli = cli;
-  localStorage.setItem('devops-pilot-cli', cli);
+  localStorage.setItem('symphonee-cli', cli);
   // Theme is independent of AI selection -- no theme change here
 }
 
@@ -7128,7 +7151,7 @@ async function applyUpdate() {
   btn.querySelector('span').textContent = 'Updating...';
   btn.style.opacity = '0.7';
   btn.style.cursor = 'wait';
-  toast('Updating DevOps Pilot...', 'info');
+  toast('Updating Symphonee...', 'info');
   try {
     const res = await fetch('/api/update-app', { method: 'POST' });
     const data = await res.json();
@@ -7573,12 +7596,12 @@ function isOnHold(wi) {
 }
 
 // Track expanded parents across renders (default: collapsed; persisted in localStorage)
-const _expandedParents = new Set(JSON.parse(localStorage.getItem('devops-pilot-expanded-parents') || '[]'));
+const _expandedParents = new Set(JSON.parse(localStorage.getItem('symphonee-expanded-parents') || '[]'));
 function toggleParentCollapse(parentId, event) {
   event.stopPropagation();
   if (_expandedParents.has(parentId)) _expandedParents.delete(parentId);
   else _expandedParents.add(parentId);
-  localStorage.setItem('devops-pilot-expanded-parents', JSON.stringify([..._expandedParents]));
+  localStorage.setItem('symphonee-expanded-parents', JSON.stringify([..._expandedParents]));
   renderBoard();
 }
 
@@ -7765,12 +7788,12 @@ function renderBoard() {
 }
 
 // ── Backlog Rendering ───────────────────────────────────────────────────
-const _collapsedBacklogParents = new Set(JSON.parse(localStorage.getItem('devops-pilot-collapsed-backlog') || '[]'));
+const _collapsedBacklogParents = new Set(JSON.parse(localStorage.getItem('symphonee-collapsed-backlog') || '[]'));
 function toggleBacklogParent(parentId, event) {
   event.stopPropagation();
   if (_collapsedBacklogParents.has(parentId)) _collapsedBacklogParents.delete(parentId);
   else _collapsedBacklogParents.add(parentId);
-  localStorage.setItem('devops-pilot-collapsed-backlog', JSON.stringify([..._collapsedBacklogParents]));
+  localStorage.setItem('symphonee-collapsed-backlog', JSON.stringify([..._collapsedBacklogParents]));
   // Toggle child row visibility
   document.querySelectorAll(`tr[data-backlog-parent="${parentId}"]`).forEach(row => {
     row.classList.toggle('backlog-child-hidden', _collapsedBacklogParents.has(parentId));
@@ -8680,7 +8703,7 @@ function updateActivityFeed() {
 }
 
 // ── Repos ───────────────────────────────────────────────────────────────
-let activeRepo = localStorage.getItem('devops-pilot-repo') || '';
+let activeRepo = localStorage.getItem('symphonee-repo') || '';
 
 async function loadRepoList() {
   try {
@@ -8689,7 +8712,7 @@ async function loadRepoList() {
     const container = document.getElementById('repoList');
     // Validate saved repo still exists
     const repoNames = Object.keys(repos);
-    if (activeRepo && !repoNames.includes(activeRepo)) { activeRepo = ''; localStorage.removeItem('devops-pilot-repo'); }
+    if (activeRepo && !repoNames.includes(activeRepo)) { activeRepo = ''; localStorage.removeItem('symphonee-repo'); }
     // Auto-select saved repo on first load
     if (activeRepo) filesCurrentRepo = activeRepo;
 
@@ -8794,14 +8817,14 @@ function selectRepo(name) {
   // No Repo mode: hide git actions, clear repo-dependent UI
   const gitActions = document.getElementById('sidebarGitActions');
   if (!name) {
-    localStorage.removeItem('devops-pilot-repo');
+    localStorage.removeItem('symphonee-repo');
     if (gitActions) gitActions.style.display = 'none';
     const scriptsBar = document.getElementById('filesScriptsBar');
     if (scriptsBar) scriptsBar.style.display = 'none';
     const termBar = document.getElementById('termScriptsBar');
     if (termBar) termBar.style.display = 'none';
   } else {
-    localStorage.setItem('devops-pilot-repo', name);
+    localStorage.setItem('symphonee-repo', name);
     if (gitActions) gitActions.style.display = '';
   }
 
@@ -9381,7 +9404,7 @@ function closeFactoryResetModal() {
 function factoryResetExportFirst() {
   const a = document.createElement('a');
   a.href = '/api/config/export';
-  a.download = 'devops-pilot-settings.json';
+  a.download = 'symphonee-settings.json';
   document.body.appendChild(a); a.click(); a.remove();
   toast('Exported. Reopen the reset dialog when ready.', 'info');
   closeFactoryResetModal();
@@ -9505,7 +9528,7 @@ function exportSettings() {
   document.querySelector('.export-import-menu')?.remove();
   const a = document.createElement('a');
   a.href = '/api/config/export';
-  a.download = 'devops-pilot-settings.json';
+  a.download = 'symphonee-settings.json';
   a.click();
   toast('Settings exported (PATs excluded for security)', 'success');
 }
@@ -9552,8 +9575,8 @@ function importSettings() {
 }
 
 // ── Theme System ──────────────────────────────────────────────────────────
-const THEME_STORAGE_KEY = 'devops-pilot-themes';
-const ACTIVE_THEME_KEY = 'devops-pilot-active-theme';
+const THEME_STORAGE_KEY = 'symphonee-themes';
+const ACTIVE_THEME_KEY = 'symphonee-active-theme';
 let _themeEditorDirty = false;
 let _editorMode = 'dark';
 
@@ -9965,7 +9988,7 @@ function exportThemes() {
   const blob = new Blob([JSON.stringify(themes, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'devops-pilot-themes.json';
+  a.download = 'symphonee-themes.json';
   a.click();
   URL.revokeObjectURL(a.href);
   toast('Themes exported', 'success');
@@ -10105,14 +10128,14 @@ const OB_STEPS = [
   // 0: Display name
   () => ({
     title: 'What should we call you?',
-    subtitle: 'This will be used as your display name across DevOps Pilot.',
+    subtitle: 'This will be used as your display name across Symphonee.',
     html: `<div class="onboarding-field"><label>Your Name</label><input id="obName" type="text" placeholder="e.g. Jane Doe" value="${esc(_obData.displayName)}" oninput="_obData.displayName=this.value"></div>`,
     validate: () => !!_obData.displayName.trim(),
   }),
   // 1: Welcome
   () => ({
     title: `Welcome, ${esc(_obData.displayName.split(' ')[0])}!`,
-    subtitle: "DevOps Pilot is an AI terminal with a plugin system. Everything beyond the terminal and recipes is opt-in -- install only the integrations you need.",
+    subtitle: "Symphonee is an AI terminal with a plugin system. Everything beyond the terminal and recipes is opt-in -- install only the integrations you need.",
     html: `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="bot" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Tools</strong><span>Detect and install AI assistants</span></div></div>
@@ -10131,7 +10154,7 @@ const OB_STEPS = [
   // 2: AI Tools
   () => ({
     title: 'AI Tools',
-    subtitle: 'DevOps Pilot works with AI assistants to help you write code and manage your work. Check which ones are installed, then pick your default.',
+    subtitle: 'Symphonee works with AI assistants to help you write code and manage your work. Check which ones are installed, then pick your default.',
     html: `<div id="obAiTools" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"><div style="font-size:11px;color:var(--subtext0);">Detecting...</div></div>
       <div class="onboarding-field"><label>Default AI</label><select id="obDefaultCli" onchange="_obData.defaultCli=this.value" style="padding:8px 10px;font-size:13px;">
         <option value="claude"${_obData.defaultCli==='claude'?' selected':''}>Claude Code</option>
@@ -10180,7 +10203,7 @@ const OB_STEPS = [
   // 5: Repositories
   () => ({
     title: 'Repositories',
-    subtitle: 'Add the local repositories you work with. DevOps Pilot uses these for file browsing, diffs, commits, and pull requests.',
+    subtitle: 'Add the local repositories you work with. Symphonee uses these for file browsing, diffs, commits, and pull requests.',
     html: `<div id="obRepoList" style="margin-bottom:10px;"></div>
       <div id="obRepoAddBtns" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
         <button class="onboarding-btn onboarding-btn-primary" onclick="repoAddBrowse('ob')" style="padding:8px 14px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;">
@@ -10228,7 +10251,7 @@ const OB_STEPS = [
   // 7: Overview
   () => ({
     title: "You're all set!",
-    subtitle: "Here's what ships with DevOps Pilot. Install plugins from Settings > Plugins to add integrations like Backlog, PRs, or CMS.",
+    subtitle: "Here's what ships with Symphonee. Install plugins from Settings > Plugins to add integrations like Backlog, PRs, or CMS.",
     html: `<div style="display:flex;flex-direction:column;gap:10px;">
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline; orchestrate across them</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-code" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Files & Diffs</strong><span>Browse code, view diffs, commit with AI-generated messages</span></div></div>
@@ -11206,7 +11229,7 @@ async function openRepoMapModal() {
       _repoMapEditor = monaco.editor.create(document.getElementById('repoMapEditor'), {
         value: 'Loading...',
         language: 'markdown',
-        theme: 'devops-pilot',
+        theme: 'symphonee',
         fontSize: 13,
         fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
         minimap: { enabled: false },
@@ -12331,12 +12354,12 @@ function saveOpenTabs() {
   document.querySelectorAll('.tab-btn.closable').forEach(function(btn) {
     if (btn.dataset.tab) open.push(btn.dataset.tab);
   });
-  try { localStorage.setItem('devops-pilot-open-tabs', JSON.stringify(open)); } catch (_) {}
+  try { localStorage.setItem('symphonee-open-tabs', JSON.stringify(open)); } catch (_) {}
 }
 
 function restoreOpenTabs() {
   try {
-    var saved = JSON.parse(localStorage.getItem('devops-pilot-open-tabs') || '[]');
+    var saved = JSON.parse(localStorage.getItem('symphonee-open-tabs') || '[]');
     for (var i = 0; i < saved.length; i++) {
       var tabId = saved[i];
       if (!isPluginTabOpen(tabId)) {
@@ -13320,7 +13343,7 @@ async function refreshRecipesPanel() {
     const canRun = wantsDispatch || aiReady;
     // Only show USER badge (project-local is the boring default)
     const userBadge = r.scope === 'user'
-      ? '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--subtext0);margin-left:6px;" title="From your global recipes folder (~/.devops-pilot/recipes/)">USER</span>'
+      ? '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--subtext0);margin-left:6px;" title="From your global recipes folder (~/.symphonee/recipes/)">USER</span>'
       : '';
     const modeBadge = wantsDispatch
       ? '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--subtext0);margin-left:6px;" title="Spawns a fresh worker via orchestrator">DISPATCH</span>'
@@ -13349,14 +13372,14 @@ async function refreshRecipesPanel() {
 }
 
 async function openRecipesFolder() {
-  // User-authored and imported recipes live in ~/.devops-pilot/recipes/. The
+  // User-authored and imported recipes live in ~/.symphonee/recipes/. The
   // in-repo `recipes/` folder holds only shipped defaults, which is rarely what
   // the user wants to inspect after importing settings.
   try {
     await fetch('/api/ui/open-path', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope: 'home', path: '.devops-pilot/recipes' }),
+      body: JSON.stringify({ scope: 'home', path: '.symphonee/recipes' }),
     });
   } catch (_) { toast('Could not open folder', 'error'); }
 }
@@ -13619,7 +13642,7 @@ async function openRecipeEditor(idEnc, mode) {
       recipeBodyEditor = monaco.editor.create(host, {
         value: '',
         language: 'markdown',
-        theme: 'devops-pilot',
+        theme: 'symphonee',
         fontSize: 13,
         fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
         minimap: { enabled: false },

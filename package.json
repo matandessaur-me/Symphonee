@@ -1,7 +1,7 @@
 {
-  "name": "devops-pilot",
+  "name": "symphonee",
   "version": "1.0.0",
-  "description": "DevOps Pilot — AI-powered Azure DevOps workstation",
+  "description": "Symphonee - Execution Engine for AI Workflows",
   "author": "Matan Dessaur",
   "license": "AGPL-3.0-only",
   "main": "dashboard/electron-main.js",
@@ -27,8 +27,8 @@
     "rcedit": "^5.0.2"
   },
   "build": {
-    "appId": "com.devops-pilot",
-    "productName": "DevOps Pilot",
+    "appId": "com.symphonee",
+    "productName": "Symphonee",
     "win": {
       "target": "portable",
       "icon": "dashboard/public/icon.png",

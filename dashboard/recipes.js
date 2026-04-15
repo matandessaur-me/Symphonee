@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Recipes
+ * Symphonee -- Recipes
  *
  * A recipe is a single markdown file with YAML frontmatter that bundles
  * everything needed to run a recurring AI operation:
@@ -11,7 +11,7 @@
  *   - optional outputs (save as note, etc.)
  *
  * Lives in `recipes/` at the repo root (project-local). Future: also
- * `~/.devops-pilot/recipes/` (user-global).
+ * `~/.symphonee/recipes/` (user-global).
  *
  * No external deps: tiny YAML and tiny template renderer below.
  */
@@ -21,7 +21,7 @@ const path = require('path');
 const http = require('http');
 
 const PROJECT_DIR = path.resolve(__dirname, '..', 'recipes');
-const USER_DIR = path.join(require('os').homedir(), '.devops-pilot', 'recipes');
+const USER_DIR = path.join(require('os').homedir(), '.symphonee', 'recipes');
 
 // ── Frontmatter parser (tiny YAML subset) ───────────────────────────────────
 // Supports: scalars (string, number, bool), inline arrays [a, b, c], and

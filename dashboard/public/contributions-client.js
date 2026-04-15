@@ -184,5 +184,5 @@
   refresh();
 
   // Re-fetch when the host broadcasts that plugins changed (plugin-loader broadcasts via WS).
-  window.addEventListener('devops-pilot:pluginsChanged', refresh);
+  window.addEventListener('symphonee:pluginsChanged', refresh);
 })();

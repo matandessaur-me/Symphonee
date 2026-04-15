@@ -5,7 +5,7 @@ Source note: `Next Big Plan For DevopsPilot`
 
 ## Goal
 
-Turn DevOps Pilot into a **pure shell** with zero built-in integrations. Azure DevOps and GitHub become first-party plugins, equal in kind to Builder.io, Sanity, WordPress, etc. Users without ADO or GitHub (GitLab, Jira, Wrike users) can install only what they need. A clean install is just a terminal + quick actions + recipes; everything else is opt-in.
+Turn Symphonee into a **pure shell** with zero built-in integrations. Azure DevOps and GitHub become first-party plugins, equal in kind to Builder.io, Sanity, WordPress, etc. Users without ADO or GitHub (GitLab, Jira, Wrike users) can install only what they need. A clean install is just a terminal + quick actions + recipes; everything else is opt-in.
 
 ## Target shape
 

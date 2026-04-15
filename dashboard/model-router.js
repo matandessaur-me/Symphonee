@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Model Router
+ * Symphonee -- Model Router
  *
  * Given a task intent + availability signals, recommend the best
  * (cli, model) pair. Consulted by graph-runs, orchestrator recipes, and
@@ -183,7 +183,7 @@ function loadConfig(configPath) {
 
 function availableClis(cfg) {
   // Orchestration allowlist trumps everything. If orchestration mode is off,
-  // assume the user's primary CLI is available (they run DevOps Pilot alone).
+  // assume the user's primary CLI is available (they run Symphonee alone).
   if (cfg.OrchestrateMode === true) {
     const list = Array.isArray(cfg.OrchestrateCliList) ? cfg.OrchestrateCliList : [];
     return new Set(list);

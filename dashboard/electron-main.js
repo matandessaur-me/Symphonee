@@ -108,7 +108,7 @@ if (!gotLock) {
     try {
       ({ server, startServer, addRoute } = require('./server'));
     } catch (err) {
-      dialog.showErrorBox('DevOps Pilot - Startup Error',
+      dialog.showErrorBox('Symphonee - Startup Error',
         `Failed to load server modules.\n\n${err.message}\n\nTry running "npm install" in the dashboard folder.`);
       app.quit();
       return;
@@ -121,7 +121,7 @@ if (!gotLock) {
           setTimeout(() => { app.relaunch(); app.exit(0); }, 800);
           return;
         }
-        dialog.showErrorBox('DevOps Pilot', `Port ${PORT} is already in use.\n\nClose any other DevOps Pilot instances and try again.`);
+        dialog.showErrorBox('Symphonee', `Port ${PORT} is already in use.\n\nClose any other Symphonee instances and try again.`);
       } else {
         dialog.showErrorBox('Server Error', err.message);
       }
@@ -264,7 +264,7 @@ if (!gotLock) {
         width,
         height,
         autoHideMenuBar: true,
-        title: 'DevOps Pilot',
+        title: 'Symphonee',
         icon: nativeImage.createFromPath(
           fs.existsSync(path.join(__dirname, 'public', 'icon.ico'))
             ? path.join(__dirname, 'public', 'icon.ico')
@@ -304,7 +304,7 @@ if (!gotLock) {
 
     startServer();
   }).catch((err) => {
-    dialog.showErrorBox('DevOps Pilot - Startup Error',
+    dialog.showErrorBox('Symphonee - Startup Error',
       `An unexpected error occurred during startup.\n\n${err.message}`);
     app.quit();
   });

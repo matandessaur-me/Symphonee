@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Plugin Loader
+ * Symphonee -- Plugin Loader
  * Scans dashboard/plugins/ on startup, validates manifests,
  * registers API routes + static file serving for each plugin.
  */
@@ -490,12 +490,12 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
   });
 
   // GET /api/plugins/registry -- fetch available plugins from the online registry
-  const REGISTRY_API_URL = 'https://api.github.com/repos/matandessaur-me/devops-pilot-plugins/contents/registry.json';
+  const REGISTRY_API_URL = 'https://api.github.com/repos/matandessaur-me/Symphonee-plugins/contents/registry.json';
   addRoute('GET', '/api/plugins/registry', async (req, res) => {
     try {
       const https = require('https');
       const raw = await new Promise((resolve, reject) => {
-        https.get(REGISTRY_API_URL, { headers: { 'User-Agent': 'DevOps-Pilot', 'Accept': 'application/vnd.github.v3+json' } }, (resp) => {
+        https.get(REGISTRY_API_URL, { headers: { 'User-Agent': 'Symphonee', 'Accept': 'application/vnd.github.v3+json' } }, (resp) => {
           let d = '';
           resp.on('data', c => { d += c; });
           resp.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });

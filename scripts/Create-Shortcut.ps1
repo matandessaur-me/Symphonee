@@ -5,7 +5,9 @@ param(
 $electronExe = Join-Path $RepoDir "node_modules\electron\dist\electron.exe"
 $iconPath = Join-Path $RepoDir "dashboard\public\icon.ico"
 $desktopPath = [Environment]::GetFolderPath("Desktop")
-$shortcutPath = Join-Path $desktopPath "DevOps Pilot.lnk"
+$shortcutPath = Join-Path $desktopPath "Symphonee.lnk"
+$oldShortcutPath = Join-Path $desktopPath "DevOps Pilot.lnk"
+if (Test-Path $oldShortcutPath) { Remove-Item $oldShortcutPath -Force -ErrorAction SilentlyContinue }
 
 # Generate .ico from PNG if ico doesn't exist
 if (-not (Test-Path $iconPath)) {
@@ -38,7 +40,7 @@ $shortcut.Arguments = "."
 $shortcut.WorkingDirectory = $RepoDir
 # Point icon to electron.exe itself (stamped by rcedit during install) — Windows trusts exe-embedded icons
 $shortcut.IconLocation = "$electronExe,0"
-$shortcut.Description = "DevOps Pilot - AI-powered Azure DevOps workstation"
+$shortcut.Description = "Symphonee - Execution Engine for AI Workflows"
 $shortcut.Save()
 
 Write-Host "  [OK] Desktop shortcut created: $shortcutPath"

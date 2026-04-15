@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Permission Engine
+ * Symphonee -- Permission Engine
  *
  * Actions the engine evaluates:
  *   { type: 'cmd',    value: 'git push origin HEAD' }

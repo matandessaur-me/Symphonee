@@ -1,5 +1,5 @@
 /**
- * DevOps Pilot -- Graph Runs (BETA)
+ * Symphonee -- Graph Runs (BETA)
  *
  * Durable multi-step workflow engine. Lets you define a graph of nodes,
  * each with typed inputs and outputs, that flow state through the run.
@@ -31,7 +31,7 @@ class GraphRunsEngine extends EventEmitter {
     this.apiHost = apiHost;
     this.apiPort = apiPort;
     this.injectToTerminal = injectToTerminal;
-    this.runsDir = path.join(repoRoot, '.devops-pilot', 'graph-runs');
+    this.runsDir = path.join(repoRoot, '.symphonee', 'graph-runs');
     this.walPath = path.join(this.runsDir, 'events.jsonl');
     this.runs = new Map(); // runId -> run object (in memory + persisted)
     this.approvalWaiters = new Map(); // `${runId}:${nodeId}` -> resolver

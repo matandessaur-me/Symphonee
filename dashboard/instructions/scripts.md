@@ -1,6 +1,6 @@
 # Pre-Made Scripts
 
-Use these before writing anything custom. They handle the common DevOps Pilot operations.
+Use these before writing anything custom. They handle the common Symphonee operations.
 
 **From bash**, prefix with: `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/<Name>.ps1"` (or `-Command` with args). Plugin scripts live under `./dashboard/plugins/<plugin-id>/scripts/<Name>.ps1`.
 
@@ -15,7 +15,7 @@ Use these before writing anything custom. They handle the common DevOps Pilot op
 | `Save-Note.ps1` / `save-note.js` | Save a note (use `node scripts/save-note.js` from bash) |
 | `Search-Notes.ps1 -Query '...'` | Hybrid search across notes + learnings |
 | `Get-RepoMap.ps1` | Generate symbol map for the active repo |
-| `Create-Shortcut.ps1` | Create a desktop shortcut to DevOps Pilot |
+| `Create-Shortcut.ps1` | Create a desktop shortcut to Symphonee |
 | `Run-Query.ps1 -File path/to/query.ps1` | Run a generic query script |
 | `Get-PluginInstructions.ps1 [-Plugin <id>]` | Fetch AI instructions from installed plugins |
 

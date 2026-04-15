@@ -1,6 +1,6 @@
 # Permissions (Runtime-Enforced)
 
-Permissions are enforced by the DevOps Pilot server, not by self-regulation. Current mode lives in `config.json` under `Permissions.mode`. Visible in the header chip. Read at any time: `curl -s http://127.0.0.1:3800/api/permissions`.
+Permissions are enforced by the Symphonee server, not by self-regulation. Current mode lives in `config.json` under `Permissions.mode`. Visible in the header chip. Read at any time: `curl -s http://127.0.0.1:3800/api/permissions`.
 
 ## Modes
 

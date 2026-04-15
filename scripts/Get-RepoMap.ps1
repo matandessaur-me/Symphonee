@@ -8,7 +8,7 @@ param(
 #
 # Usage:
 #   ./scripts/Get-RepoMap.ps1                       # uses active repo
-#   ./scripts/Get-RepoMap.ps1 -Repo "DevOps-Pilot"
+#   ./scripts/Get-RepoMap.ps1 -Repo "Symphonee"
 #   ./scripts/Get-RepoMap.ps1 -Budget 8000          # bigger output
 
 if (-not $Repo) {

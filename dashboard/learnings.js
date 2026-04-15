@@ -1,5 +1,5 @@
 /**
- * Learnings — Collective intelligence for DevOps Pilot
+ * Learnings — Collective intelligence for Symphonee
  *
  * Records generic technical learnings (CLI flags, shell quirks, platform issues)
  * and syncs them across installations via the plugin registry repo.
@@ -286,7 +286,7 @@ class Learnings {
 
       // Push to GitHub
       await this._pushSharedFile(JSON.stringify(shared, null, 2) + '\n', sha, pat,
-        `Add ${added} learning(s) from DevOps Pilot instance`);
+        `Add ${added} learning(s) from Symphonee instance`);
 
       // Mark as synced
       for (const l of unsynced) l.synced = true;
@@ -348,10 +348,10 @@ class Learnings {
 
   /** Fetch the raw file + sha from GitHub */
   _fetchSharedFile() {
-    const REPO_API = '/repos/matandessaur-me/devops-pilot-plugins/contents/learnings.json';
+    const REPO_API = '/repos/matandessaur-me/Symphonee-plugins/contents/learnings.json';
     return new Promise((resolve, reject) => {
       const cfg = this.getConfig();
-      const headers = { 'User-Agent': 'DevOps-Pilot', 'Accept': 'application/vnd.github.v3+json' };
+      const headers = { 'User-Agent': 'Symphonee', 'Accept': 'application/vnd.github.v3+json' };
       if (cfg.GitHubPAT) headers['Authorization'] = 'token ' + cfg.GitHubPAT;
       https.get({ hostname: 'api.github.com', path: REPO_API, headers }, (resp) => {
         let d = '';
@@ -370,7 +370,7 @@ class Learnings {
 
   /** Push file content to GitHub */
   _pushSharedFile(content, sha, pat, message) {
-    const REPO_API = '/repos/matandessaur-me/devops-pilot-plugins/contents/learnings.json';
+    const REPO_API = '/repos/matandessaur-me/Symphonee-plugins/contents/learnings.json';
     return new Promise((resolve, reject) => {
       const body = JSON.stringify({
         message,
@@ -382,7 +382,7 @@ class Learnings {
         path: REPO_API,
         method: 'PUT',
         headers: {
-          'User-Agent': 'DevOps-Pilot',
+          'User-Agent': 'Symphonee',
           'Accept': 'application/vnd.github.v3+json',
           'Authorization': 'token ' + pat,
           'Content-Type': 'application/json',

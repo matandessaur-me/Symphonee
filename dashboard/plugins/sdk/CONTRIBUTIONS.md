@@ -1,6 +1,6 @@
 # Plugin Contribution Types
 
-The `contributions` object in `plugin.json` tells DevOps Pilot what surfaces a plugin extends. The shell hosts a terminal, file tree, diff viewer, git, notes, recipes, and orchestrator. **Everything else is a plugin.**
+The `contributions` object in `plugin.json` tells Symphonee what surfaces a plugin extends. The shell hosts a terminal, file tree, diff viewer, git, notes, recipes, and orchestrator. **Everything else is a plugin.**
 
 Set `"sdkVersion": 2` in `plugin.json` to use any v2 contribution. v1 plugins continue to work unchanged.
 
@@ -8,7 +8,7 @@ Set `"sdkVersion": 2` in `plugin.json` to use any v2 contribution. v1 plugins co
 
 ## Tabs: pinned, popup, ephemeral
 
-DevOps Pilot has two tab columns: the **center column** (main work area) and the **right intel column** (side panels). In both columns, a plugin tab is one of three kinds:
+Symphonee has two tab columns: the **center column** (main work area) and the **right intel column** (side panels). In both columns, a plugin tab is one of three kinds:
 
 ### Pinned tab
 
@@ -99,7 +99,7 @@ Same pinned vs ephemeral split, declared under `rightTabs` instead of `centerTab
 | `settingsHtml` | string  | Path to an HTML file rendered inside the Plugins tab of Settings.   |
 | `centerTabs`   | array   | `[{id,label,icon,html?,claims?,pinned?,position?}]` center-column tabs. |
 | `routes`       | string  | Path to a `routes.js` file registering `/api/plugins/<id>/*` routes.|
-| `mcp`          | object  | MCP tool definitions exposed via the DevOps Pilot MCP server.       |
+| `mcp`          | object  | MCP tool definitions exposed via the Symphonee MCP server.       |
 
 ## v2 (requires `sdkVersion: 2`)
 

@@ -1,7 +1,9 @@
 /**
- * DevOps Pilot -- Plugin SDK
+ * Symphonee -- Plugin SDK
  * Include this in plugin iframes: <script src="/plugins/sdk/devops-pilot-sdk.js"></script>
  * Provides: DevOpsPilot.getContext(), .switchTab(), .askAi(), .toast(), .api(), .on()
+ * Note: the JS global and message-key names (DevOpsPilot / __devopsPilot / devops-pilot:*)
+ * are preserved for plugin compatibility. The product is branded Symphonee.
  */
 (function () {
   'use strict';

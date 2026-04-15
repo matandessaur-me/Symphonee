@@ -12,9 +12,9 @@ inputs:
     required: true
 ---
 
-You are smoke-testing the plugin-first DevOps Pilot shell for `{{ inputs.repo }}`.
+You are smoke-testing the plugin-first Symphonee shell for `{{ inputs.repo }}`.
 
-Run everything from the DevOps Pilot directory. Do not edit files, commit, push, install plugins, uninstall plugins, or change settings. Use `Invoke-RestMethod` in PowerShell or `curl` in bash. Plain ASCII only.
+Run everything from the Symphonee directory. Do not edit files, commit, push, install plugins, uninstall plugins, or change settings. Use `Invoke-RestMethod` in PowerShell or `curl` in bash. Plain ASCII only.
 
 ## Checks
 
@@ -79,4 +79,4 @@ Print a concise report with:
 - **Pure-shell gaps**: anything still hardcoded in core.
 - **Verdict**: `ready`, `ready with caveats`, or `not ready`.
 
-Do not use terminal `git diff`. If the user asks to inspect changes visually, run `.\scripts\Show-Diff.ps1 -Repo "{{ inputs.repo }}"` from the DevOps Pilot directory.
+Do not use terminal `git diff`. If the user asks to inspect changes visually, run `.\scripts\Show-Diff.ps1 -Repo "{{ inputs.repo }}"` from the Symphonee directory.

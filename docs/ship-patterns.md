@@ -1,6 +1,6 @@
-# DevOps Pilot Ship Patterns
+# Symphonee Ship Patterns
 
-Conventions for shipping new features to DevOps Pilot. These reduce the blast radius of big changes and let us merge early without committing the whole app to an unstable code path.
+Conventions for shipping new features to Symphonee. These reduce the blast radius of big changes and let us merge early without committing the whole app to an unstable code path.
 
 ## BETA feature-flag pattern
 
