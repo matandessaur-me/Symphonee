@@ -13,7 +13,7 @@ DevOps Pilot is a desktop application that brings together Azure DevOps project 
 
 ### Core
 - **Sprint & Work Item Management** — Board, backlog, burndown, velocity. Create, update, and move work items through their lifecycle.
-- **Multi-AI Terminal** — Run Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, or Grok directly inside the app. Agents get full context of your Azure DevOps project at session start.
+- **Multi-AI Terminal** — Run Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Grok, or Qwen Code directly inside the app. Agents get full context of your Azure DevOps project at session start.
 - **Git Operations** — Switch branches, pull, push, compare, and commit through the built-in UI. Side-by-side diff viewer with syntax highlighting.
 - **File Browser & Monaco Code Viewer** — Browse repository files, search across codebases, view and edit files with full Monaco editor (the editor that powers VS Code).
 - **Markdown Notes** — Built-in scratchpad. AI agents can read and write notes too.
