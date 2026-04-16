@@ -82,7 +82,7 @@
     }
 
     /* ── Theme: Industrial Blue (default) ────────────────────────────────── */
-    :root, [data-theme="industrial-blue"] {
+    [data-theme="industrial-blue"] {
       --crust:    #0d0d0d;  --mantle:   #131314;  --base:     #1b1b1f;
       --surface0: #232328;  --surface1: #2b2b31;  --surface2: #35353b;
       --overlay0: #44444c;  --overlay1: #5c5c66;
@@ -2851,7 +2851,7 @@
         <li>All custom themes, notes, recipes, and learnings</li>
         <li>Display preferences (sidebar widths, etc.)</li>
       </ul>
-      <p style="margin:0;color:var(--subtext1);"><strong>You cannot undo this.</strong> Export first if you want to keep anything.</p>
+      <p style="margin:0 0 16px;color:var(--subtext1);"><strong>You cannot undo this.</strong> Export first if you want to keep anything.</p>
     </div>
     <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="modal-btn" onclick="closeFactoryResetModal()">Cancel</button>
@@ -9479,6 +9479,17 @@ async function factoryResetConfirm() {
     const r = await fetch('/api/config/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
     const d = await r.json();
     if (!r.ok || !d.ok) { hideLoading(); toast(d.error || 'Reset failed', 'error'); return; }
+    // Wipe every client-side preference (custom themes, active theme, open
+    // tabs, expanded parents, etc.) so the app relaunches truly from scratch
+    // with the industrial-blue default rather than a stale localStorage entry.
+    try {
+      const toRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('symphonee-')) toRemove.push(k);
+      }
+      toRemove.forEach(k => localStorage.removeItem(k));
+    } catch (_) {}
     toast('Reset complete. Restarting...', 'success');
     setTimeout(() => restartApp(), 600);
   } catch (e) {
@@ -9644,8 +9655,8 @@ let _editorMode = 'dark';
 
 // Built-in theme definitions: simplified to mode + tint + text + accent
 const BUILTIN_THEMES = [
-  { id: 'warm-metallic',    name: 'Warm Metallic',    mode: 'dark',  tint: '#9E8C6C', text: '#e8e4dc', accent: '#d97757' },
   { id: 'industrial-blue',  name: 'Industrial Blue',  mode: 'dark',  tint: '#5577BB', text: '#e3e3e8', accent: '#078efa' },
+  { id: 'warm-metallic',    name: 'Warm Metallic',    mode: 'dark',  tint: '#9E8C6C', text: '#e8e4dc', accent: '#d97757' },
   { id: 'futuristic-green', name: 'Futuristic Green', mode: 'dark',  tint: '#50A088', text: '#ececf1', accent: '#10a37f' },
   { id: 'arctic-frost',     name: 'Arctic Frost',     mode: 'light', tint: '#6699CC', text: '#1a2332', accent: '#2563eb' },
   { id: 'warm-sand',        name: 'Warm Sand',        mode: 'light', tint: '#CC9966', text: '#2d2418', accent: '#c2703e' },
