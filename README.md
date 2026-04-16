@@ -6,7 +6,7 @@
 
 **Run your work like a system.** Symphonee is a local-first execution engine that conducts multiple AI CLIs and plugins as one unified workflow. No switching. No copy-paste. Your whole stack, in concert.
 
-*DO it more. REpeat less. MIss nothing.*
+*DO more. REpeat less. MIss nothing.*
 
 > Created and maintained by **[Matan Dessaur](https://github.com/M8N-MatanDessaur)**
 
