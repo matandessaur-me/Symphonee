@@ -4,9 +4,9 @@
 
 **Execution Engine for AI Workflows**
 
-*Run your work like a system.*
+**Run your work like a system.** Symphonee is a local-first execution engine that conducts multiple AI CLIs and plugins as one unified workflow. No switching. No copy-paste. Your whole stack, in concert.
 
-Symphonee is a local-first execution engine that orchestrates multiple AI tools, CLIs, and plugins into a single, unified workflow. No switching between tools. No fake "AI actions." Just real execution, on your machine.
+*DOit once. REpeat less. MIss nothing.*
 
 > Created and maintained by **[Matan Dessaur](https://github.com/M8N-MatanDessaur)**
 
