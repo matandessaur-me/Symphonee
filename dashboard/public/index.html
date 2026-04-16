@@ -6,24 +6,28 @@
   <link rel="icon" href="/logo.svg" type="image/svg+xml">
   <style>@import url('https://fonts.googleapis.com/css2?family=BJ+Cree:wght@400;500;600;700&display=swap');</style>
   <script>
-    // One-time localStorage migration: symphonee-* -> symphonee-*
+    // One-time localStorage migration from the legacy product name.
+    // NOTE: the legacy prefix is assembled from parts so future global
+    // find-and-replace sweeps cannot silently mangle it again.
     (function() {
       try {
-        if (localStorage.getItem('symphonee-migrated-v1')) return;
+        var LEGACY = 'devops' + '-' + 'pilot' + '-';
+        var NEW = 'symphonee-';
+        if (localStorage.getItem(NEW + 'migrated-v2')) return;
         var keys = [];
         for (var i = 0; i < localStorage.length; i++) {
           var k = localStorage.key(i);
-          if (k && k.indexOf('symphonee-') === 0) keys.push(k);
+          if (k && k.indexOf(LEGACY) === 0) keys.push(k);
         }
         for (var j = 0; j < keys.length; j++) {
           var oldK = keys[j];
-          var newK = 'symphonee-' + oldK.substring('symphonee-'.length);
+          var newK = NEW + oldK.substring(LEGACY.length);
           if (localStorage.getItem(newK) === null) {
             localStorage.setItem(newK, localStorage.getItem(oldK));
           }
           localStorage.removeItem(oldK);
         }
-        localStorage.setItem('symphonee-migrated-v1', '1');
+        localStorage.setItem(NEW + 'migrated-v2', '1');
       } catch(_) {}
     })();
   </script>
