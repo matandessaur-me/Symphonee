@@ -25,5 +25,6 @@ QWEN.md
 OPENCODE.md
 OPENHANDS.md
 CHANGELOG.md
-.devops-pilot/
 .symphonee/
+symphonee-settings*.json
+docs/

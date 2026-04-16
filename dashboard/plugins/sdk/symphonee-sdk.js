@@ -2,22 +2,15 @@
  * Symphonee -- Plugin SDK
  * Include this in plugin iframes: <script src="/plugins/sdk/symphonee-sdk.js"></script>
  * Provides: Symphonee.getContext(), .switchTab(), .askAi(), .toast(), .api(), .on()
- *
- * Backwards compatibility:
- *   - Plugins that still reference the legacy globals (DevOpsPilot, __devopsPilot,
- *     'devops-pilot:*' events) keep working. Both message-key shapes and both
- *     event prefixes are handled so live plugin iframes do not break during
- *     upgrade.
  */
 (function () {
   'use strict';
   var pending = new Map();
   var reqId = 0;
 
-  // Listen for messages from the host app. Accept both the new and legacy keys.
   window.addEventListener('message', function (event) {
     var msg = event.data;
-    if (!msg || (!msg.__symphonee && !msg.__devopsPilot)) return;
+    if (!msg || !msg.__symphonee) return;
 
     if (msg.type === 'contextResponse' && pending.has(msg.requestId)) {
       pending.get(msg.requestId)(msg.data);
@@ -26,15 +19,12 @@
 
     var eventTypes = ['repoChanged', 'tabActivated', 'configChanged', 'iterationChanged'];
     if (eventTypes.indexOf(msg.type) !== -1) {
-      // Emit the new event; mirror to the legacy name so existing listeners still fire.
       window.dispatchEvent(new CustomEvent('symphonee:' + msg.type, { detail: msg.data }));
-      window.dispatchEvent(new CustomEvent('devops-pilot:' + msg.type, { detail: msg.data }));
     }
   });
 
   function postToHost(msg) {
     msg.__symphonee = true;
-    msg.__devopsPilot = true; // legacy key, host still accepts both
     window.parent.postMessage(msg, '*');
   }
 
@@ -108,6 +98,4 @@
   };
 
   window.Symphonee = api;
-  // Legacy alias -- remove once no installed plugin references DevOpsPilot.
-  window.DevOpsPilot = api;
 })();

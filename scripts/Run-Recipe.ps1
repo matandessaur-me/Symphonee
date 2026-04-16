@@ -7,7 +7,7 @@ param(
 )
 
 # Run a recipe with the given inputs.
-# Reads $env:DEVOPS_PILOT_TERM_ID so the worker result is delivered back
+# Reads $env:SYMPHONEE_TERM_ID so the worker result is delivered back
 # to the terminal that launched it (just like graph runs do).
 #
 # Usage:
@@ -17,7 +17,7 @@ param(
 try { $inputsObj = $Inputs | ConvertFrom-Json -AsHashtable } catch { Write-Error "Invalid -Inputs JSON: $_"; exit 1 }
 
 $body = @{ id = $Id; inputs = $inputsObj }
-if ($env:DEVOPS_PILOT_TERM_ID) { $body.originTermId = $env:DEVOPS_PILOT_TERM_ID }
+if ($env:SYMPHONEE_TERM_ID) { $body.originTermId = $env:SYMPHONEE_TERM_ID }
 $json = $body | ConvertTo-Json -Depth 6
 
 try {

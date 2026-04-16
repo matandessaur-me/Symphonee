@@ -41,8 +41,8 @@ if (-not $def.name) { $def | Add-Member -NotePropertyName name -NotePropertyValu
 
 # Pass the current Symphonee terminal id so the engine can inject the
 # final result back into this terminal when the run completes.
-if ($env:DEVOPS_PILOT_TERM_ID) {
-  $def | Add-Member -NotePropertyName originTermId -NotePropertyValue $env:DEVOPS_PILOT_TERM_ID -Force
+if ($env:SYMPHONEE_TERM_ID) {
+  $def | Add-Member -NotePropertyName originTermId -NotePropertyValue $env:SYMPHONEE_TERM_ID -Force
 }
 
 $body = $def | ConvertTo-Json -Depth 12

@@ -179,8 +179,6 @@
 
   window.Symphonee = window.Symphonee || {};
   window.Symphonee.contributions = api;
-  // Legacy alias for plugins that still reference the old global.
-  window.DevOpsPilot = window.Symphonee;
 
   // Kick off an initial load; don't block anything if it fails.
   refresh();

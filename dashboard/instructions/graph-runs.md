@@ -41,7 +41,7 @@ Each node may declare `dependsOn: [nodeId, ...]`. Nodes run when all deps are `c
 
 ## Result delivery
 
-When a run terminates, the engine injects a one-line summary back into the PTY that launched it (via `DEVOPS_PILOT_TERM_ID`). Supervisor agents pick that up and continue.
+When a run terminates, the engine injects a one-line summary back into the PTY that launched it (via `SYMPHONEE_TERM_ID`). Supervisor agents pick that up and continue.
 
 ## Example
 

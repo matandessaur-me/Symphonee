@@ -11639,7 +11639,7 @@ function notifyPluginIframes(eventType, data) {
 window.addEventListener('message', function (event) {
   if (event.origin !== location.origin) return;
   var msg = event.data;
-  if (!msg || (!msg.__symphonee && !msg.__devopsPilot)) return;
+  if (!msg || !msg.__symphonee) return;
 
   switch (msg.type) {
     case 'switchTab':

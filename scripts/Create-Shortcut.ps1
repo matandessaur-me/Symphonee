@@ -6,8 +6,6 @@ $electronExe = Join-Path $RepoDir "node_modules\electron\dist\electron.exe"
 $iconPath = Join-Path $RepoDir "dashboard\public\icon.ico"
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktopPath "Symphonee.lnk"
-$oldShortcutPath = Join-Path $desktopPath "DevOps Pilot.lnk"
-if (Test-Path $oldShortcutPath) { Remove-Item $oldShortcutPath -Force -ErrorAction SilentlyContinue }
 
 # Generate .ico from PNG if ico doesn't exist
 if (-not (Test-Path $iconPath)) {

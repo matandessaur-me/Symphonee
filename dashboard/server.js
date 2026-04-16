@@ -62,28 +62,6 @@ const PORT = 3800;
 const HOST = '127.0.0.1';
 const repoRoot = path.resolve(__dirname, '..');
 
-// One-time filesystem migration: .devops-pilot -> .symphonee (home + repo root).
-// Safe no-op after the first run. Avoids data loss from the rebrand.
-(function migrateSymphoneeDirs() {
-  try {
-    const os = require('os');
-    const candidates = [
-      { from: path.join(os.homedir(), '.devops-pilot'), to: path.join(os.homedir(), '.symphonee') },
-      { from: path.join(repoRoot, '.devops-pilot'),    to: path.join(repoRoot, '.symphonee') },
-    ];
-    for (const { from, to } of candidates) {
-      if (!fs.existsSync(from)) continue;
-      if (fs.existsSync(to)) continue;
-      try {
-        fs.renameSync(from, to);
-        console.log(`  Migrated ${from} -> ${to}`);
-      } catch (e) {
-        console.warn(`  [migrate] ${from} -> ${to} failed: ${e.message}`);
-      }
-    }
-  } catch (_) { /* best-effort */ }
-})();
-
 const publicDir = path.join(__dirname, 'public');
 const nodeModules = path.join(repoRoot, 'node_modules');
 const configPath = path.join(repoRoot, 'config', 'config.json');
@@ -2267,7 +2245,7 @@ function createTerminal(termId, cols = 120, rows = 30, cwd = repoRoot) {
       COLORTERM: 'truecolor',
       FORCE_COLOR: '1',
       SystemRoot: process.env.SystemRoot || 'C:\\Windows',
-      DEVOPS_PILOT_TERM_ID: termId,
+      SYMPHONEE_TERM_ID: termId,
     },
   });
 
