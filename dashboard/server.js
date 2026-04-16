@@ -805,10 +805,11 @@ function getSensitiveKeys() {
 
 function handleExportConfig(res) {
   const cfg = getConfig();
-  // Strip machine-specific fields only (repos have local paths)
+  // Strip machine-specific fields only (repos have local paths).
+  // Secrets (PATs, API keys, OAuth tokens) are kept: exports are for the user's own
+  // machine-to-machine transfer (USB, etc.) and never meant to be shared or committed.
   const exportCfg = { ...cfg };
   delete exportCfg.Repos;
-  for (const key of getSensitiveKeys()) delete exportCfg[key];
   exportCfg._exportedAt = new Date().toISOString();
   exportCfg._exportedFrom = 'Symphonee';
   // Collect plugin configs
@@ -821,7 +822,6 @@ function handleExportConfig(res) {
         if (fs.existsSync(cfgFile)) {
           try {
             const pcfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
-            for (const key of getSensitiveKeys()) delete pcfg[key];
             pluginConfigs[dir] = pcfg;
           } catch (_) {}
         }
