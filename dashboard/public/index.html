@@ -5938,8 +5938,8 @@ function sendNoteToAi() {
   if (!currentNote) return;
   const content = document.getElementById('noteTextarea').value;
   if (!content.trim()) { toast('Note is empty', 'info'); return; }
-  const truncated = content.length > 3000 ? content.slice(0, 3000) + '\n\n[truncated]' : content;
-  askAi(`Read and analyze the following note called "${currentNote}". Use this as context for our conversation — I may ask you to expand on it, update it, or take action based on it.\n\n---\n${truncated}\n---`);
+  const name = currentNote;
+  askAi(`Fetch the Symphonee note named "${name}" via GET /api/notes/read?name=${encodeURIComponent(name)} and use its content as context for our conversation. I may ask you to expand on it, update it, or take action based on it.`);
 }
 
 function exportCurrentNote() {
