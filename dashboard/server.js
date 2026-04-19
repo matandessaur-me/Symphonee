@@ -776,6 +776,23 @@ function persistPluginConfigKeys(config) {
   return rootConfig;
 }
 
+const LEGACY_ROOT_CONFIG_KEYS = [
+  'YoloMode',
+  'YoloCliList',
+  'GemmaEnabled',
+  'GemmaModel',
+  'GemmaOllamaHost',
+  'GemmaOllamaPort',
+];
+
+function normalizeRootConfig(config) {
+  const rootConfig = persistPluginConfigKeys(config);
+  for (const key of LEGACY_ROOT_CONFIG_KEYS) {
+    delete rootConfig[key];
+  }
+  return rootConfig;
+}
+
 // ── Incognito Mode guard ─────────────────────────────────────────────────
 function isIncognito() { return getConfig().IncognitoMode === true; }
 function incognitoGuard(res, action) {
@@ -818,7 +835,7 @@ async function handleSaveConfig(req, res) {
   try { template = JSON.parse(fs.readFileSync(templatePath, 'utf8')); } catch (_) {}
   let existing = {};
   try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
-  const config = persistPluginConfigKeys({ ...template, ...existing, ...incoming });
+  const config = normalizeRootConfig({ ...template, ...existing, ...incoming });
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   atomicWriteSync(configPath, JSON.stringify(config, null, 2));
   // Immediately clear all caches so the next request uses the new config
@@ -1051,7 +1068,7 @@ async function handleImportConfig(req, res) {
   for (const key of getSensitiveKeys()) {
     if (!incoming[key] && existing[key]) merged[key] = existing[key];
   }
-  const config = persistPluginConfigKeys(merged);
+  const config = normalizeRootConfig(merged);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   atomicWriteSync(configPath, JSON.stringify(config, null, 2));
   swrGit.clear(); swrPlugins.clear();
@@ -1302,7 +1319,7 @@ async function handleSaveRepo(req, res) {
   try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
   cfg.Repos = cfg.Repos || {};
   cfg.Repos[name] = repoPath;
-  atomicWriteSync(configPath, JSON.stringify(persistPluginConfigKeys(cfg), null, 2));
+  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
   broadcast({ type: 'config-changed' });
   json(res, { ok: true });
 }
@@ -2553,10 +2570,10 @@ loadedPlugins = loadPlugins(pluginsDir, {
 if (loadedPlugins.length) console.log(`  Loaded ${loadedPlugins.length} plugin(s)`);
 try {
   const rootCfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
-  const migratedRootCfg = persistPluginConfigKeys(rootCfg);
+  const migratedRootCfg = normalizeRootConfig(rootCfg);
   if (JSON.stringify(migratedRootCfg) !== JSON.stringify(rootCfg)) {
     atomicWriteSync(configPath, JSON.stringify(migratedRootCfg, null, 2));
-    console.log('  Migrated plugin-owned config keys into plugin config files');
+    console.log('  Migrated root config');
   }
 } catch (_) {}
 writePluginHints();
