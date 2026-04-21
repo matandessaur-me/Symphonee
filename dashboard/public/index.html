@@ -690,6 +690,37 @@
     .orch-cta-title { font-size: 12px; font-weight: 600; color: var(--text); }
     .orch-cta-sub { font-size: 11px; color: var(--subtext0); }
 
+    /* ── Onboarding panel ─────────────────────────────────────────────── */
+    .onboarding-panel {
+      position: fixed; z-index: 4000;
+      width: 280px; padding: 12px 14px;
+      background: var(--surface0); border: 1px solid var(--surface2);
+      border-radius: 10px; box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+      font: 12px var(--font-ui); color: var(--text);
+    }
+    .ob-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .ob-head strong { font-size: 12px; }
+    .ob-dismiss {
+      background: transparent; border: none; color: var(--subtext0);
+      font: 11px var(--font-ui); cursor: pointer; padding: 2px 4px;
+    }
+    .ob-dismiss:hover { color: var(--text); }
+    .ob-steps { display: flex; flex-direction: column; gap: 6px; }
+    .ob-step {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 6px 8px; border-radius: 6px; background: var(--surface1);
+    }
+    .ob-step.done { opacity: 0.6; }
+    .ob-step.done .ob-step-label { text-decoration: line-through; }
+    .ob-step i { color: var(--accent); margin-top: 1px; flex-shrink: 0; }
+    .ob-step.done i { color: var(--green); }
+    .ob-step-main { flex: 1; min-width: 0; }
+    .ob-step-label { font-size: 12px; color: var(--text); }
+    .ob-step-hint { font-size: 10px; color: var(--subtext0); margin-top: 1px; }
+
     /* ── Floating action buttons (runtime-added by the AI) ──────────────── */
     .fab-layer {
       position: fixed; bottom: 72px; right: 18px; z-index: 9500;
@@ -2323,6 +2354,10 @@
     <kbd>Ctrl+K</kbd>
   </div>
   <div class="header-right">
+    <div id="onboardingChip" style="display:none;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:color-mix(in srgb, var(--accent) 14%, var(--surface0));border:1px solid color-mix(in srgb, var(--accent) 40%, var(--surface2));color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:6px;cursor:pointer;" onclick="toggleOnboardingPanel(event)" title="Getting started">
+      <i data-lucide="sparkles" style="width:12px;height:12px;color:var(--accent);"></i>
+      <span id="onboardingChipText">0 of 4</span>
+    </div>
     <div id="incognitoIndicator" style="display:none;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--accent);color:var(--accent);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:4px;">
       <i data-lucide="shield" style="width:13px;height:13px;"></i>
       <span>INCOGNITO</span>
@@ -4044,6 +4079,87 @@ requestAnimationFrame(fitTerminalNow);
       reconnectTimer = setTimeout(connect, 2500);
     };
   }
+
+// ── Onboarding checklist ────────────────────────────────────────────────
+// Small dismissible chip in the header showing "N of M complete". Clicking
+// it opens a popover with the full checklist. Completion is inferred from
+// persistent signals (did the user launch an AI? open notes? open palette?)
+// and persisted in localStorage so progress sticks across sessions.
+
+const ONBOARDING_STEPS = [
+  { id: 'palette',  label: 'Open the command palette',     hint: 'Press Ctrl+K',    test: () => !!localStorage.getItem('symphonee-ob-palette') },
+  { id: 'launch',   label: 'Launch your first AI session', hint: 'Terminal tab',    test: () => !!localStorage.getItem('symphonee-ob-launch') },
+  { id: 'note',     label: 'Create or open a note',        hint: 'Notes tab',       test: () => !!localStorage.getItem('symphonee-ob-note') },
+  { id: 'shortcut', label: 'Try a sequence shortcut',      hint: 'Press g then t',  test: () => !!localStorage.getItem('symphonee-ob-shortcut') },
+];
+
+function markOnboarding(id) {
+  try { localStorage.setItem('symphonee-ob-' + id, '1'); } catch (_) {}
+  renderOnboardingChip();
+}
+
+function renderOnboardingChip() {
+  const chip = document.getElementById('onboardingChip');
+  const text = document.getElementById('onboardingChipText');
+  if (!chip || !text) return;
+  const dismissed = localStorage.getItem('symphonee-ob-dismissed') === '1';
+  const done = ONBOARDING_STEPS.filter(s => s.test()).length;
+  const total = ONBOARDING_STEPS.length;
+  if (dismissed || done === total) {
+    chip.style.display = 'none';
+    return;
+  }
+  chip.style.display = 'inline-flex';
+  text.textContent = done + ' of ' + total;
+}
+
+function toggleOnboardingPanel(ev) {
+  if (ev) ev.stopPropagation();
+  let panel = document.getElementById('onboardingPanel');
+  if (panel) { panel.remove(); return; }
+  panel = document.createElement('div');
+  panel.id = 'onboardingPanel';
+  panel.className = 'onboarding-panel';
+  const steps = ONBOARDING_STEPS.map((s, i) => {
+    const done = s.test();
+    return '<div class="ob-step' + (done ? ' done' : '') + '">' +
+      '<i data-lucide="' + (done ? 'check-circle' : 'circle') + '" style="width:14px;height:14px;"></i>' +
+      '<div class="ob-step-main"><div class="ob-step-label">' + esc(s.label) + '</div><div class="ob-step-hint">' + esc(s.hint) + '</div></div>' +
+    '</div>';
+  }).join('');
+  panel.innerHTML =
+    '<div class="ob-head">' +
+      '<strong>Getting started</strong>' +
+      '<button onclick="dismissOnboarding()" class="ob-dismiss" title="Dismiss">Dismiss</button>' +
+    '</div>' +
+    '<div class="ob-steps">' + steps + '</div>';
+  document.body.appendChild(panel);
+  // Position below the chip.
+  const chip = document.getElementById('onboardingChip');
+  if (chip) {
+    const r = chip.getBoundingClientRect();
+    panel.style.top = (r.bottom + 8) + 'px';
+    panel.style.right = (window.innerWidth - r.right) + 'px';
+  }
+  try { lucide.createIcons({ nodes: [panel] }); } catch (_) {}
+  const close = (e) => { if (!panel.contains(e.target) && e.target !== chip) { panel.remove(); document.removeEventListener('mousedown', close); } };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+function dismissOnboarding() {
+  localStorage.setItem('symphonee-ob-dismissed', '1');
+  const p = document.getElementById('onboardingPanel');
+  if (p) p.remove();
+  renderOnboardingChip();
+}
+
+// Refresh chip on significant actions.
+setInterval(renderOnboardingChip, 4000);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', renderOnboardingChip, { once: true });
+} else {
+  renderOnboardingChip();
+}
 
 // ── Runtime UI Mutations ────────────────────────────────────────────────
 // The AI can POST to /api/ui/mutate to add tabs, FABs, or collapse panels
@@ -6127,6 +6243,7 @@ async function loadNotesList() {
   try {
     const res = await fetch('/api/notes');
     const notes = await res.json();
+    window._notesListCache = Array.isArray(notes) ? notes : [];
     const container = document.getElementById('notesList');
     container.innerHTML = notes.map(n => `
       <div class="note-item ${currentNote === n.name ? 'active' : ''}" onclick="openNote('${esc(n.name)}')" oncontextmenu="event.preventDefault();showNoteContextMenu(event,'${esc(n.name)}')">
@@ -6137,6 +6254,7 @@ async function loadNotesList() {
 }
 
 async function openNote(name, opts) {
+  try { markOnboarding('note'); } catch (_) {}
   if (noteDirty && currentNote) await saveCurrentNote();
   try {
     const res = await fetch(`/api/notes/read?name=${encodeURIComponent(name)}`);
@@ -6202,6 +6320,7 @@ function onNoteInput() {
   noteDirty = true;
   document.getElementById('noteSaveBtn').style.display = '';
   _maybeOpenNoteSlashMenu();
+  _maybeOpenNoteMentionMenu();
 }
 
 // ── Note slash menu: typing "/" at the start of a line opens a quick menu
@@ -6312,6 +6431,135 @@ document.addEventListener('keydown', (e) => {
     _runNoteSlashAction(active.dataset.key, parseInt(menu.dataset.lineStart, 10));
   } else if (e.key === 'Escape') {
     e.preventDefault(); _closeNoteSlashMenu();
+  }
+}, true);
+
+// ── Note @-mentions: link to another note, recipe, or repo ───────────────
+// Typing "@" pops a grouped picker. Selecting an item inserts a markdown
+// reference like "[Note: my-note](note:my-note)". The AI can treat these
+// as explicit cross-document pointers without needing fuzzy matching.
+function _gatherMentionCandidates() {
+  const out = { notes: [], recipes: [], repos: [] };
+  try {
+    if (Array.isArray(window._notesListCache)) {
+      out.notes = window._notesListCache.slice(0, 30).map(n => ({ key: 'note:' + n.name, label: n.name, category: 'Notes', icon: 'file-text', insert: '[Note: ' + n.name + '](note:' + encodeURIComponent(n.name) + ')' }));
+    }
+  } catch (_) {}
+  try {
+    if (Array.isArray(_recipesCache)) {
+      out.recipes = _recipesCache.slice(0, 30).map(r => ({ key: 'recipe:' + r.id, label: r.name, category: 'Recipes', icon: r.icon || 'book-open', insert: '[Recipe: ' + r.name + '](recipe:' + encodeURIComponent(r.id) + ')' }));
+    }
+  } catch (_) {}
+  try {
+    if (configData && configData.Repos) {
+      out.repos = Object.keys(configData.Repos).slice(0, 20).map(name => ({ key: 'repo:' + name, label: name, category: 'Repos', icon: 'git-branch', insert: '[Repo: ' + name + '](repo:' + encodeURIComponent(name) + ')' }));
+    }
+  } catch (_) {}
+  return [...out.notes, ...out.recipes, ...out.repos];
+}
+
+function _maybeOpenNoteMentionMenu() {
+  const ta = document.getElementById('noteTextarea');
+  if (!ta) return;
+  const caret = ta.selectionStart;
+  if (caret == null) return;
+  const v = ta.value;
+  // Look back for the nearest "@" that starts the current mention token.
+  let start = caret - 1;
+  while (start >= 0 && v[start] !== '@' && v[start] !== '\n' && v[start] !== ' ' && v[start] !== '\t') start--;
+  if (start < 0 || v[start] !== '@') { _closeNoteMentionMenu(); return; }
+  const token = v.slice(start + 1, caret);
+  if (/\s/.test(token)) { _closeNoteMentionMenu(); return; }
+  _openNoteMentionMenu(token.toLowerCase(), start);
+}
+
+function _openNoteMentionMenu(q, atIndex) {
+  const candidates = _gatherMentionCandidates();
+  const matches = q
+    ? candidates.filter(c => c.label.toLowerCase().includes(q))
+    : candidates;
+  if (!matches.length) { _closeNoteMentionMenu(); return; }
+
+  let menu = document.getElementById('noteMentionMenu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'noteMentionMenu';
+    menu.className = 'note-slash-menu';
+    document.body.appendChild(menu);
+  }
+  // Group by category, preserve first 10 per group.
+  const groups = {};
+  for (const m of matches) { (groups[m.category] = groups[m.category] || []).push(m); }
+  let first = null;
+  const html = Object.keys(groups).map(cat => {
+    const rows = groups[cat].slice(0, 10).map(m => {
+      if (!first) first = m;
+      return '<div class="note-slash-item" data-mkey="' + esc(m.key) + '">' +
+        '<i data-lucide="' + esc(m.icon) + '" style="width:13px;height:13px;"></i>' +
+        '<span>' + esc(m.label) + '</span>' +
+        '<span class="note-slash-hint">' + esc(cat) + '</span>' +
+      '</div>';
+    }).join('');
+    return rows;
+  }).join('');
+  menu.innerHTML = html;
+  menu.querySelectorAll('.note-slash-item').forEach((el, i) => {
+    if (i === 0) el.classList.add('active');
+    el.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();
+      const key = el.dataset.mkey;
+      const m = matches.find(x => x.key === key);
+      if (m) _insertNoteMention(m, atIndex);
+    });
+  });
+  try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+  const ta = document.getElementById('noteTextarea');
+  const r = ta.getBoundingClientRect();
+  menu.style.top = (r.top + 10) + 'px';
+  menu.style.left = (r.left + 24) + 'px';
+  menu.style.display = 'block';
+  menu.dataset.atIndex = String(atIndex);
+}
+
+function _closeNoteMentionMenu() {
+  const m = document.getElementById('noteMentionMenu');
+  if (m) m.style.display = 'none';
+}
+
+function _insertNoteMention(match, atIndex) {
+  const ta = document.getElementById('noteTextarea');
+  if (!ta) return;
+  const caret = ta.selectionStart;
+  const before = ta.value.slice(0, atIndex);
+  const after  = ta.value.slice(caret);
+  const inserted = match.insert + ' ';
+  ta.value = before + inserted + after;
+  const pos = before.length + inserted.length;
+  ta.selectionStart = ta.selectionEnd = pos;
+  _closeNoteMentionMenu();
+  onNoteInput(); // mark dirty + update highlights
+}
+
+// Arrow/Enter/Escape handling for the mention menu.
+document.addEventListener('keydown', (e) => {
+  const menu = document.getElementById('noteMentionMenu');
+  if (!menu || menu.style.display === 'none') return;
+  if (document.activeElement?.id !== 'noteTextarea') return;
+  const items = menu.querySelectorAll('.note-slash-item');
+  if (!items.length) return;
+  let idx = Array.from(items).findIndex(el => el.classList.contains('active'));
+  if (idx < 0) idx = 0;
+  if (e.key === 'ArrowDown') { e.preventDefault(); idx = (idx + 1) % items.length; items.forEach(i => i.classList.remove('active')); items[idx].classList.add('active'); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); idx = (idx - 1 + items.length) % items.length; items.forEach(i => i.classList.remove('active')); items[idx].classList.add('active'); }
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    const active = items[idx] || items[0];
+    const key = active.dataset.mkey;
+    const all = _gatherMentionCandidates();
+    const match = all.find(x => x.key === key);
+    if (match) _insertNoteMention(match, parseInt(menu.dataset.atIndex, 10));
+  } else if (e.key === 'Escape') {
+    e.preventDefault(); _closeNoteMentionMenu();
   }
 }, true);
 
@@ -6992,7 +7240,12 @@ function renderOrchTasks() {
         outputBlock +
         (resultBlock ? '<div class="orch-accordion' + accOpen('Result', true) + '" onclick="event.stopPropagation();this.classList.toggle(\'open\')"><div class="orch-accordion-head">' + accHead + 'Result</div><div class="orch-accordion-body">' + resultBlock + '</div></div>' : '') +
         (errorBlock ? '<div class="orch-accordion' + accOpen('Error', true) + '" onclick="event.stopPropagation();this.classList.toggle(\'open\')"><div class="orch-accordion-head">' + accHead + 'Error</div><div class="orch-accordion-body">' + errorBlock + '</div></div>' : '') +
-        ('<div class="orch-task-actions-row">' + viewBtn + (isRunning ? '<button class="orch-task-btn cancel" onclick="event.stopPropagation();orchCancelTask(\'' + t.id + '\')">Cancel</button>' : '<button class="orch-task-btn cancel" onclick="event.stopPropagation();orchDeleteTask(\'' + t.id + '\')">Delete</button>') + '</div>') +
+        ('<div class="orch-task-actions-row">' + viewBtn +
+          (isRunning
+            ? '<button class="orch-task-btn cancel" onclick="event.stopPropagation();orchCancelTask(\'' + t.id + '\')">Cancel</button>'
+            : '<button class="orch-task-btn" onclick="event.stopPropagation();orchShareTask(\'' + t.id + '\')" title="Copy this task as markdown">Share</button>' +
+              '<button class="orch-task-btn cancel" onclick="event.stopPropagation();orchDeleteTask(\'' + t.id + '\')">Delete</button>') +
+        '</div>') +
       '</div>' +
     '</div>';
   }).join('');
@@ -7051,6 +7304,57 @@ async function orchDeleteTask(taskId) {
   });
   _orchTaskOutput.delete(taskId);
   orchRefreshTasks();
+}
+
+// Copy a completed task as clean markdown: prompt + result + metadata. Gives
+// the user a one-click share surface without standing up a real share server.
+async function orchShareTask(taskId) {
+  const t = orchTasks.find(x => x.id === taskId);
+  if (!t) { toast('Task not found', 'error'); return; }
+  const cliLabel = t.cli ? (CLI_CONFIG[t.cli]?.label || t.cli) : t.type;
+  const dur = (t.completedAt && t.startedAt) ? formatOrchDuration(t.completedAt - t.startedAt) : '';
+  const prompt = String(t.prompt || '').replace(/\[ORCHESTRATOR TASK [^\]]*\]/g, '').trim();
+  const parts = [
+    '# Symphonee task: ' + (prompt.split(/[.\n]/)[0] || 'untitled').slice(0, 80),
+    '',
+    '- Runner: ' + cliLabel + (t.model ? ' (' + t.model + ')' : ''),
+    '- Status: ' + (t.state || 'unknown'),
+    dur ? '- Duration: ' + dur : '',
+    '',
+    '## Prompt',
+    '',
+    prompt || '(empty)',
+    '',
+    '## Result',
+    '',
+    String(t.result || t.error || '(no output)').trim(),
+  ].filter(Boolean);
+  const md = parts.join('\n');
+  try {
+    await navigator.clipboard.writeText(md);
+    toast('Copied task as markdown', 'success', {
+      action: { label: 'Save as note', onClick: () => _saveTaskAsNote(t, md) },
+    });
+  } catch (err) {
+    toast('Clipboard blocked: ' + err.message, 'error');
+  }
+}
+
+async function _saveTaskAsNote(t, md) {
+  const slug = String((t.prompt || '').split(/[.\n]/)[0] || 'task').trim()
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'task';
+  const name = 'task-' + slug + '-' + String(t.id).slice(-6);
+  try {
+    await fetch('/api/notes/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, content: md }),
+    });
+    toast('Saved note: ' + name, 'success', {
+      action: { label: 'Open', onClick: () => { switchTab('notes'); setTimeout(() => openNote(name), 80); } },
+    });
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
 }
 
 async function orchCleanup() {
@@ -7569,6 +7873,7 @@ const YOLO_FLAGS = {
 };
 
 function launchAiWith(cli) {
+  try { markOnboarding('launch'); } catch (_) {}
   document.getElementById('aiPickerMenu')?.classList.remove('open');
   const cfg = CLI_CONFIG[cli];
   const termId = activeTermId;
@@ -11580,6 +11885,7 @@ let _seqPrefix = null;
 let _seqTimer = null;
 function _clearSeq() { _seqPrefix = null; if (_seqTimer) { clearTimeout(_seqTimer); _seqTimer = null; } }
 function _runSeqKey(key) {
+  try { markOnboarding('shortcut'); } catch (_) {}
   const map = {
     t: () => switchTab('terminal'),
     f: () => switchTab('files'),
@@ -11859,6 +12165,7 @@ function openCmdPalette() {
   filterCmdPalette();
   renderPaletteSuggestions();
   setTimeout(() => input.focus(), 50);
+  try { markOnboarding('palette'); } catch (_) {}
 }
 
 // ── Starter suggestions shown above the command list when input is empty.
