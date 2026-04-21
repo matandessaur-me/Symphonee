@@ -139,6 +139,41 @@ function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeout
   });
 }
 
+function httpStream({ hostname, path, method = 'POST', headers = {}, body, onChunk, timeoutMs = 90000 }) {
+  return new Promise((resolve, reject) => {
+    const payload = body ? JSON.stringify(body) : '';
+    const req = https.request({
+      method, hostname, path,
+      headers: { 'content-type': 'application/json', ...headers, 'content-length': Buffer.byteLength(payload) },
+      timeout: timeoutMs,
+      agent: false,
+    }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        let err = '';
+        res.on('data', c => { err += c; });
+        res.on('end', () => reject(new Error(`${hostname} ${res.statusCode}: ${err.slice(0, 600)}`)));
+        return;
+      }
+      let buf = '';
+      res.on('data', chunk => {
+        buf += chunk.toString();
+        const parts = buf.split('\n');
+        buf = parts.pop();
+        for (const line of parts) { try { onChunk(line); } catch (_) {} }
+      });
+      res.on('end', () => {
+        if (buf.trim()) { try { onChunk(buf); } catch (_) {} }
+        resolve();
+      });
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error(hostname + ' stream timed out')));
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
 function shortenContent(text, n = 4000) {
   if (!text) return '';
   const s = String(text);
@@ -252,6 +287,42 @@ function makeAnthropicAdapter() {
       const toolCalls = content.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, name: b.name, args: b.input || {} }));
       return { text, toolCalls, raw: content };
     },
+    async callStream({ messages, apiKey, model, systemPrompt }, onToken) {
+      const tools = BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));
+      const trimmed = trimHistory(messages, 1);
+      const blocks = {};
+      let textContent = '';
+      await httpStream({
+        hostname: 'api.anthropic.com', path: '/v1/messages',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: { model: model || this.defaultModel, max_tokens: DEFAULT_MAX_TOKENS, system: systemPrompt || BASE_SYSTEM_PROMPT, tools, messages: trimmed, stream: true },
+        onChunk(line) {
+          if (!line.startsWith('data: ')) return;
+          let evt; try { evt = JSON.parse(line.slice(6)); } catch (_) { return; }
+          if (evt.type === 'content_block_start') {
+            blocks[evt.index] = { ...evt.content_block, _argsJson: '' };
+          } else if (evt.type === 'content_block_delta') {
+            const blk = blocks[evt.index];
+            if (!blk) return;
+            if (blk.type === 'text' && evt.delta.type === 'text_delta') {
+              textContent += evt.delta.text; onToken(evt.delta.text);
+            } else if (blk.type === 'tool_use' && evt.delta.type === 'input_json_delta') {
+              blk._argsJson += evt.delta.partial_json;
+            }
+          }
+        },
+      });
+      const raw = [];
+      if (textContent) raw.push({ type: 'text', text: textContent });
+      for (const blk of Object.values(blocks)) {
+        if (blk.type === 'tool_use') {
+          let input = {}; try { input = JSON.parse(blk._argsJson || '{}'); } catch (_) {}
+          raw.push({ type: 'tool_use', id: blk.id, name: blk.name, input });
+        }
+      }
+      const toolCalls = raw.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, name: b.name, args: b.input || {} }));
+      return { text: textContent.trim(), toolCalls, raw };
+    },
   };
 }
 
@@ -306,6 +377,52 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
       }) : [];
       return { text: msg.content || '', toolCalls, raw: msg };
     },
+    async callStream({ messages, apiKey, model, systemPrompt }, onToken) {
+      const tools = BROWSER_TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+      const trimmed = trimHistory(messages, 2);
+      if (systemPrompt && trimmed.length && trimmed[0].role === 'system') trimmed[0].content = systemPrompt;
+      let text = '';
+      const tcMap = {};
+      await httpStream({
+        hostname: baseHost, path: basePath,
+        headers: { [authHeader]: authPrefix + apiKey },
+        body: { model: model || defaultModel, messages: trimmed, tools, tool_choice: 'auto', max_tokens: DEFAULT_MAX_TOKENS, stream: true },
+        onChunk(line) {
+          if (!line.startsWith('data: ')) return;
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') return;
+          let evt; try { evt = JSON.parse(raw); } catch (_) { return; }
+          const delta = evt.choices && evt.choices[0] && evt.choices[0].delta;
+          if (!delta) return;
+          if (delta.content) { text += delta.content; onToken(delta.content); }
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              if (!tcMap[tc.index]) tcMap[tc.index] = { id: '', name: '', argsJson: '' };
+              if (tc.id) tcMap[tc.index].id = tc.id;
+              if (tc.function && tc.function.name) tcMap[tc.index].name = tc.function.name;
+              if (tc.function && tc.function.arguments) tcMap[tc.index].argsJson += tc.function.arguments;
+            }
+          }
+        },
+      });
+      const toolCalls = Object.values(tcMap).map(tc => {
+        let args = {}; try { args = JSON.parse(tc.argsJson || '{}'); } catch (_) {}
+        return { id: tc.id, name: tc.name, args };
+      });
+      const rawMsg = {
+        role: 'assistant', content: text || null,
+        tool_calls: toolCalls.length ? toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args) } })) : undefined,
+      };
+      return { text, toolCalls, raw: rawMsg };
+    },
+    appendVision(messages, visionItems) {
+      if (!visionItems.length) return;
+      const content = visionItems.flatMap(v => [
+        { type: 'image_url', image_url: { url: `data:${v.mimeType};base64,${v.base64}` } },
+        { type: 'text', text: 'Screenshot from browser (tool result above).' },
+      ]);
+      messages.push({ role: 'user', content });
+    },
   };
 }
 
@@ -358,6 +475,48 @@ function makeGeminiAdapter() {
         args: p.functionCall.args || {},
       }));
       return { text, toolCalls, raw: parts };
+    },
+    async callStream({ messages, apiKey, model, systemPrompt }, onToken) {
+      const tools = [{ functionDeclarations: BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }];
+      const mdl = model || this.defaultModel;
+      const trimmed = trimHistory(messages, 1);
+      let fullText = '';
+      const allParts = [];
+      await httpStream({
+        hostname: 'generativelanguage.googleapis.com',
+        path: `/v1beta/models/${mdl}:streamGenerateContent?key=${encodeURIComponent(apiKey)}&alt=sse`,
+        body: {
+          systemInstruction: { parts: [{ text: systemPrompt || BASE_SYSTEM_PROMPT }] },
+          contents: trimmed,
+          tools,
+          generationConfig: { maxOutputTokens: DEFAULT_MAX_TOKENS },
+        },
+        onChunk(line) {
+          if (!line.startsWith('data: ')) return;
+          let evt; try { evt = JSON.parse(line.slice(6)); } catch (_) { return; }
+          const cand = evt.candidates && evt.candidates[0];
+          const parts = (cand && cand.content && cand.content.parts) || [];
+          for (const part of parts) {
+            allParts.push(part);
+            if (part.text) { fullText += part.text; onToken(part.text); }
+          }
+        },
+      });
+      const text = fullText.trim();
+      const toolCalls = allParts.filter(p => p.functionCall).map((p, i) => ({
+        id: 'g_' + Date.now() + '_' + i,
+        name: p.functionCall.name,
+        args: p.functionCall.args || {},
+      }));
+      return { text, toolCalls, raw: allParts };
+    },
+    appendVision(messages, visionItems) {
+      if (!visionItems.length) return;
+      const parts = visionItems.flatMap(v => [
+        { inlineData: { mimeType: v.mimeType, data: v.base64 } },
+        { text: 'Screenshot from browser (tool result above).' },
+      ]);
+      messages.push({ role: 'user', parts });
     },
   };
 }
@@ -854,12 +1013,21 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
 
       let resp;
       try {
-        resp = await providerEntry.adapter.call({
-          messages: thread.messages,
-          apiKey: providerEntry.apiKey,
-          model,
-          systemPrompt,
-        });
+        if (typeof providerEntry.adapter.callStream === 'function') {
+          resp = await providerEntry.adapter.callStream({
+            messages: thread.messages,
+            apiKey: providerEntry.apiKey,
+            model,
+            systemPrompt,
+          }, (delta) => emit({ kind: 'token', text: delta }));
+        } else {
+          resp = await providerEntry.adapter.call({
+            messages: thread.messages,
+            apiKey: providerEntry.apiKey,
+            model,
+            systemPrompt,
+          });
+        }
       } catch (e) {
         const msg = e.message || '';
         if (msg.includes('429')) {
@@ -903,7 +1071,13 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
           const telemetry = beforeState ? await captureActionTelemetry(agent, beforeState) : null;
           const report = buildActionReport({ name: tc.name, args: tc.args, result, telemetry });
           if (report.markdown) actionReports.push(report);
-          pairs.push({ toolUseId: tc.id, name: tc.name, blocks: providerEntry.adapter.buildToolResultBlocks(tc.name, result), isError: false });
+          pairs.push({
+            toolUseId: tc.id, name: tc.name,
+            blocks: providerEntry.adapter.buildToolResultBlocks(tc.name, result),
+            isError: false,
+            visionData: (tc.name === 'screenshot' && result && result.base64)
+              ? { base64: result.base64, mimeType: result.mimeType || 'image/png' } : null,
+          });
           emit({ kind: 'observation', tool: tc.name, ok: true, markdown: report.markdown, structured: report });
           if (tc.name === 'finish') { finished = true; finalSummary = (tc.args && tc.args.summary) || 'Done.'; break; }
           if (tc.name === 'wait_for_user') {
@@ -924,7 +1098,13 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
           emit({ kind: 'observation', tool: tc.name, ok: false, error: e.message });
         }
       }
-      if (pairs.length) providerEntry.adapter.appendToolResults(thread.messages, pairs);
+      if (pairs.length) {
+        providerEntry.adapter.appendToolResults(thread.messages, pairs);
+        if (typeof providerEntry.adapter.appendVision === 'function') {
+          const visionItems = pairs.filter(p => !p.isError && p.visionData).map(p => p.visionData);
+          if (visionItems.length) providerEntry.adapter.appendVision(thread.messages, visionItems);
+        }
+      }
       if (finished) break;
     }
     if (!finalSummary) finalSummary = iter >= MAX_ITERATIONS ? `Stopped after ${MAX_ITERATIONS} steps.` : 'Done.';
