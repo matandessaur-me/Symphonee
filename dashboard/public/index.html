@@ -2829,6 +2829,10 @@
       </button>
       <div id="spaceSwitcherMenu" class="space-menu"></div>
     </div>
+    <button id="branchChip" class="space-chip" onclick="openGitModal('branches')" title="Current branch (click to manage)" style="display:none;margin-left:6px;">
+      <i data-lucide="git-branch" style="width:13px;height:13px;"></i>
+      <span id="branchChipLabel">branch</span>
+    </button>
     <div id="permModeSlot" style="display:inline-flex;align-items:center;min-width:110px;margin-left:12px;">
       <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
         <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
@@ -5538,7 +5542,41 @@ function handleGitChanged(repoName, branch) {
   }
   const branchLabel = document.getElementById('gitCurrentBranch');
   if (branchLabel && branch) branchLabel.textContent = branch;
+  // Keep the header branch chip in sync whenever the active repo's branch moves.
+  if (repoName && repoName === activeRepo) {
+    if (branch) _setBranchChip(branch);
+    else refreshBranchChip();
+  }
 }
+
+// ── Header branch chip ────────────────────────────────────────────────────
+function _setBranchChip(branchName) {
+  const chip = document.getElementById('branchChip');
+  const label = document.getElementById('branchChipLabel');
+  if (!chip || !label) return;
+  if (!activeRepo || !branchName) {
+    chip.style.display = 'none';
+    label.textContent = '';
+    return;
+  }
+  label.textContent = branchName;
+  chip.style.display = '';
+  chip.title = 'Branch: ' + branchName + ' (click to manage)';
+}
+async function refreshBranchChip() {
+  const chip = document.getElementById('branchChip');
+  if (!chip) return;
+  if (!activeRepo) { _setBranchChip(''); return; }
+  try {
+    const r = await fetch('/api/git/branches?repo=' + encodeURIComponent(activeRepo));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    _setBranchChip(data && data.current ? data.current : '');
+  } catch (_) {
+    _setBranchChip('');
+  }
+}
+document.addEventListener('DOMContentLoaded', () => { setTimeout(refreshBranchChip, 300); });
 
 // ── File Browser ────────────────────────────────────────────────────────
 let filesCurrentRepo = '';
@@ -11748,6 +11786,7 @@ function selectRepo(name) {
   }
 
   try { _refreshSpaceSwitcher(); } catch (_) {}
+  try { refreshBranchChip(); } catch (_) {}
 
   const gitActions = document.getElementById('sidebarGitActions');
   if (!name) {
