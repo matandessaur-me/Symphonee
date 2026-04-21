@@ -64,10 +64,146 @@
       --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace;
       --radius:    6px;
       --radius-lg: 10px;
+      --radius-xl: 14px;
+      --radius-pill: 999px;
       --sidebar-w: 250px;
       --intel-w:   420px;
       --header-h:  46px;
       --term-bar-h: 40px;
+
+      /* Steve-style design tokens: map shadcn semantic names onto our
+         existing theme vars so the .sy-* primitives below follow the active
+         theme automatically without touching the per-theme blocks. */
+      --sy-ring:  color-mix(in srgb, var(--accent) 55%, transparent);
+      --sy-ring-offset: 2px;
+    }
+
+    /* ── .sy-btn: shadcn-style button system ─────────────────────────────
+       Variants: default | outline | ghost | destructive | secondary | link.
+       Sizes:    -sm | (default) | -lg | -icon.
+       All buttons get a consistent focus-visible ring that respects the
+       current theme's accent color. Existing Symphonee buttons are
+       untouched -- this is an additive primitive for new UI. */
+    .sy-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      white-space: nowrap; user-select: none;
+      height: 30px; padding: 0 12px;
+      background: var(--accent); color: var(--crust);
+      border: 1px solid var(--accent); border-radius: var(--radius-lg);
+      font: 600 12px var(--font-ui); letter-spacing: 0.1px;
+      cursor: pointer; transition: filter 0.12s, background 0.12s, border-color 0.12s, transform 0.06s, box-shadow 0.12s;
+    }
+    .sy-btn:hover  { filter: brightness(1.08); }
+    .sy-btn:active { transform: translateY(1px); }
+    .sy-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 var(--sy-ring-offset) var(--base), 0 0 0 calc(var(--sy-ring-offset) + 2px) var(--sy-ring);
+    }
+    .sy-btn:disabled, .sy-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; filter: none; }
+    .sy-btn svg, .sy-btn i { width: 14px; height: 14px; flex-shrink: 0; }
+
+    .sy-btn-outline {
+      background: transparent; color: var(--text);
+      border-color: var(--surface2);
+    }
+    .sy-btn-outline:hover { background: var(--surface1); border-color: var(--overlay0); }
+
+    .sy-btn-ghost {
+      background: transparent; color: var(--subtext1);
+      border-color: transparent;
+    }
+    .sy-btn-ghost:hover { background: var(--surface1); color: var(--text); }
+
+    .sy-btn-secondary {
+      background: var(--surface1); color: var(--text);
+      border-color: var(--surface2);
+    }
+    .sy-btn-secondary:hover { background: var(--surface2); }
+
+    .sy-btn-destructive {
+      background: var(--red); color: var(--crust); border-color: var(--red);
+    }
+    .sy-btn-destructive:hover { filter: brightness(1.08); }
+
+    .sy-btn-link {
+      background: transparent; color: var(--accent); border: none;
+      padding: 0; height: auto; text-decoration: underline;
+      text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+      text-underline-offset: 3px;
+    }
+    .sy-btn-link:hover { text-decoration-color: var(--accent); }
+
+    .sy-btn-sm   { height: 26px; padding: 0 10px; font-size: 11px; border-radius: var(--radius); }
+    .sy-btn-lg   { height: 38px; padding: 0 18px; font-size: 13px; border-radius: var(--radius-lg); }
+    .sy-btn-icon { width: 30px; height: 30px; padding: 0; }
+    .sy-btn-icon.sy-btn-sm { width: 26px; height: 26px; }
+    .sy-btn-icon.sy-btn-lg { width: 38px; height: 38px; }
+
+    /* ── .sy-badge: rounded-full status pills ──────────────────────────── */
+    .sy-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: var(--radius-pill);
+      font: 600 10px var(--font-ui); letter-spacing: 0.25px;
+      border: 1px solid transparent; text-transform: uppercase;
+      background: var(--accent); color: var(--crust);
+    }
+    .sy-badge-outline     { background: transparent; color: var(--subtext1); border-color: var(--surface2); text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .sy-badge-secondary   { background: var(--surface1); color: var(--text); border-color: var(--surface2); }
+    .sy-badge-success     { background: color-mix(in srgb, var(--green) 18%, var(--surface0)); color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+    .sy-badge-warning     { background: color-mix(in srgb, var(--yellow) 18%, var(--surface0)); color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
+    .sy-badge-destructive { background: color-mix(in srgb, var(--red) 18%, var(--surface0));   color: var(--red);   border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+    .sy-badge-muted       { background: var(--surface0); color: var(--subtext0); border-color: var(--surface1); text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .sy-badge i { width: 10px; height: 10px; }
+
+    /* ── .sy-card: shadcn-style card with header + content + footer ────── */
+    .sy-card {
+      background: var(--surface0);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.18), 0 4px 10px rgba(0,0,0,0.12);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .sy-card-header  { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 10px; }
+    .sy-card-title   { font: 600 14px var(--font-ui); color: var(--text); letter-spacing: -0.1px; }
+    .sy-card-desc    { font: 12px var(--font-ui); color: var(--subtext0); }
+    .sy-card-content { padding: 10px 16px 14px; }
+    .sy-card-footer  { display: flex; align-items: center; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--surface1); background: var(--mantle); }
+
+    .sy-card.sy-card-interactive { cursor: pointer; transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s; }
+    .sy-card.sy-card-interactive:hover {
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--surface2));
+      transform: translateY(-1px);
+      box-shadow: 0 2px 0 rgba(0,0,0,0.22), 0 10px 24px rgba(0,0,0,0.32);
+    }
+
+    /* ── .sy-empty: centered empty-state hero ──────────────────────────── */
+    .sy-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px; padding: 32px 20px; text-align: center;
+      color: var(--subtext0);
+    }
+    .sy-empty-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 44px; height: 44px; margin-bottom: 6px;
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--accent) 10%, var(--surface0));
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--surface2));
+      color: var(--accent);
+    }
+    .sy-empty-icon i, .sy-empty-icon svg { width: 20px; height: 20px; stroke-width: 1.75; }
+    .sy-empty-title { font: 600 13px var(--font-ui); color: var(--text); }
+    .sy-empty-desc  { font: 12px var(--font-ui); color: var(--subtext0); max-width: 380px; line-height: 1.5; }
+    .sy-empty-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
+
+    /* ── .sy-kbd: keycap pill ──────────────────────────────────────────── */
+    .sy-kbd {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 20px; height: 20px; padding: 0 6px;
+      background: var(--surface2); border: 1px solid var(--overlay0);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      font: 600 10px var(--font-mono); color: var(--text);
     }
 
     /* ── Theme: Warm Metallic ────────────────────────────────────────────── */
@@ -676,31 +812,42 @@
     }
     .orch-empty-state i { width: 48px; height: 48px; stroke-width: 1; }
     .orch-cta-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 10px; width: 100%; max-width: 640px; margin-top: 4px;
     }
     .orch-cta-card {
       display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
       padding: 14px 16px; background: var(--surface0); border: 1px solid var(--surface2);
-      border-radius: 10px; color: var(--text); text-align: left; cursor: pointer;
-      transition: all 0.12s;
+      border-radius: var(--radius-lg); color: var(--text); text-align: left; cursor: pointer;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.18), 0 4px 10px rgba(0,0,0,0.12);
+      transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
     }
-    .orch-cta-card:hover { background: var(--surface1); border-color: var(--overlay0); transform: translateY(-1px); }
-    .orch-cta-card i { width: 18px; height: 18px; color: var(--accent); stroke-width: 1.8; margin-bottom: 2px; }
+    .orch-cta-card:hover {
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--surface2));
+      transform: translateY(-1px);
+      box-shadow: 0 2px 0 rgba(0,0,0,0.22), 0 10px 24px rgba(0,0,0,0.32);
+    }
+    .orch-cta-card i {
+      width: 32px; height: 32px; padding: 6px;
+      margin-bottom: 6px; border-radius: 8px;
+      background: color-mix(in srgb, var(--accent) 12%, var(--surface0));
+      color: var(--accent); stroke-width: 1.8;
+    }
     .orch-cta-title { font-size: 12px; font-weight: 600; color: var(--text); }
-    .orch-cta-sub { font-size: 11px; color: var(--subtext0); }
+    .orch-cta-sub { font-size: 11px; color: var(--subtext0); line-height: 1.4; }
 
     /* ── Activity stats cards + sparkline ─────────────────────────────── */
     .stat-card {
-      padding: 12px 14px; background: var(--surface1);
-      border: 1px solid var(--surface2); border-radius: 8px;
+      padding: 14px 16px; background: var(--surface1);
+      border: 1px solid var(--surface2); border-radius: var(--radius-lg);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.18);
     }
-    .stat-value { font-size: 18px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-    .stat-label { font-size: 10px; color: var(--subtext0); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+    .stat-value { font-size: 22px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.4px; }
+    .stat-label { font-size: 10px; color: var(--subtext0); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 3px; font-weight: 500; }
     .stat-sparkline {
       display: flex; align-items: flex-end; gap: 6px;
       height: 48px; padding: 4px 2px; background: var(--surface1);
-      border: 1px solid var(--surface2); border-radius: 8px;
+      border: 1px solid var(--surface2); border-radius: var(--radius-lg);
     }
     .stat-bar {
       flex: 1; background: var(--accent); border-radius: 2px 2px 0 0;
@@ -743,12 +890,13 @@
     .ob-dismiss:hover { color: var(--text); }
     .ob-steps { display: flex; flex-direction: column; gap: 6px; }
     .ob-step {
-      display: flex; align-items: flex-start; gap: 8px;
-      padding: 6px 8px; border-radius: 6px; background: var(--surface1);
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 10px; border-radius: var(--radius);
+      background: var(--surface1); border: 1px solid var(--surface2);
     }
-    .ob-step.done { opacity: 0.6; }
-    .ob-step.done .ob-step-label { text-decoration: line-through; }
-    .ob-step i { color: var(--accent); margin-top: 1px; flex-shrink: 0; }
+    .ob-step.done { opacity: 0.7; background: transparent; border-color: transparent; }
+    .ob-step.done .ob-step-label { text-decoration: line-through; color: var(--subtext0); }
+    .ob-step i { color: var(--subtext0); margin-top: 2px; flex-shrink: 0; }
     .ob-step.done i { color: var(--green); }
     .ob-step-main { flex: 1; min-width: 0; }
     .ob-step-label { font-size: 12px; color: var(--text); }
@@ -761,14 +909,33 @@
     }
     .quick-ask-pill {
       display: inline-flex; align-items: center; gap: 7px;
-      padding: 8px 14px; background: var(--surface1);
-      border: 1px solid var(--overlay0); border-radius: 999px;
+      padding: 7px 14px 7px 12px;
+      background: color-mix(in srgb, var(--surface1) 92%, transparent);
+      border: 1px solid var(--surface2); border-radius: var(--radius-pill);
       color: var(--text); font: 600 12px var(--font-ui);
-      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-      transition: all 0.12s;
+      cursor: pointer;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.04) inset,
+        0 6px 18px rgba(0,0,0,0.35);
+      backdrop-filter: blur(14px);
+      transition: border-color 0.12s, transform 0.12s, background 0.12s;
     }
-    .quick-ask-pill:hover { background: var(--surface2); border-color: var(--overlay1); transform: translateY(-1px); }
+    .quick-ask-pill:hover {
+      background: var(--surface1);
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--surface2));
+      transform: translateY(-1px);
+    }
     .quick-ask-pill i { color: var(--accent); }
+    .quick-ask-pill::after {
+      content: 'Ctrl J';
+      margin-left: 6px;
+      font: 500 10px var(--font-mono);
+      color: var(--subtext0);
+      background: var(--surface2);
+      border: 1px solid var(--overlay0);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
     .quick-ask-panel {
       display: none;
       width: 360px; max-width: calc(100vw - 36px);
@@ -796,15 +963,23 @@
     }
     .fab {
       display: inline-flex; align-items: center; gap: 8px;
-      padding: 10px 16px; background: var(--accent); color: var(--crust);
-      border: none; border-radius: 999px;
-      font: 600 12px var(--font-ui); cursor: pointer;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      padding: 10px 16px;
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--accent) 100%, white) 0%,
+        var(--accent) 100%);
+      color: var(--crust);
+      border: 1px solid color-mix(in srgb, var(--accent) 65%, black);
+      border-radius: var(--radius-pill);
+      font: 600 12px var(--font-ui); cursor: pointer; letter-spacing: 0.2px;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.22) inset,
+        0 8px 22px rgba(0,0,0,0.4);
       pointer-events: auto; transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
     }
-    .fab:hover { transform: translateY(-1px); filter: brightness(1.1); box-shadow: 0 10px 28px rgba(0,0,0,0.55); }
+    .fab:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 10px 26px rgba(0,0,0,0.5); }
+    .fab:active { transform: translateY(0); }
     .fab i { width: 14px; height: 14px; }
-    .fab .fab-label { font-size: 12px; letter-spacing: 0.2px; }
+    .fab .fab-label { font-size: 12px; }
     .orch-task-result {
       padding: 8px 10px; background: var(--crust);
       border-radius: var(--radius); font-size: 11px; color: var(--subtext1);
@@ -2039,20 +2214,38 @@
     /* ── Command Palette (Ctrl+K) ────────────────────────────────────────── */
     .cmd-palette-overlay {
       display: none; position: fixed; inset: 0; z-index: 500;
-      background: rgba(0,0,0,0.5); align-items: flex-start; justify-content: center;
-      padding-top: 12vh;
+      background: color-mix(in srgb, #000 58%, transparent);
+      backdrop-filter: blur(6px);
+      align-items: flex-start; justify-content: center;
+      padding-top: 10vh;
+      animation: cmdPaletteFade 0.16s ease-out;
     }
     .cmd-palette-overlay.open { display: flex; }
     .cmd-palette {
-      width: 560px; max-height: 420px; background: var(--base);
-      border: 1px solid var(--surface1); border-radius: 12px;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.4); display: flex; flex-direction: column;
-      overflow: hidden;
+      width: 620px; max-height: 480px;
+      background: color-mix(in srgb, var(--base) 96%, transparent);
+      border: 1px solid var(--surface2); border-radius: var(--radius-xl);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.04) inset,
+        0 24px 60px rgba(0,0,0,0.55);
+      backdrop-filter: blur(14px);
+      display: flex; flex-direction: column; overflow: hidden;
+      animation: cmdPalettePop 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    @keyframes cmdPaletteFade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes cmdPalettePop {
+      from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
     }
     .cmd-palette-input {
-      width: 100%; padding: 14px 16px; font: 15px var(--font-ui); color: var(--text);
-      background: transparent; border: none; border-bottom: 1px solid var(--surface0);
+      width: 100%; padding: 14px 16px 14px 42px;
+      font: 14px var(--font-ui); color: var(--text);
+      background: transparent; border: none;
+      border-bottom: 1px solid var(--surface1);
       outline: none; box-sizing: border-box;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239e9ea8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+      background-repeat: no-repeat;
+      background-position: 14px center;
     }
     .cmd-palette-input::placeholder { color: var(--subtext0); }
     .cmd-palette-list {
@@ -2060,12 +2253,19 @@
     }
     .cmd-palette-item {
       display: flex; align-items: center; gap: 10px; padding: 8px 12px;
-      border-radius: var(--radius); cursor: pointer; transition: background 0.08s;
+      border-radius: var(--radius); cursor: pointer;
+      transition: background 0.08s, color 0.08s;
       font: 13px var(--font-ui); color: var(--text);
     }
-    .cmd-palette-item:hover, .cmd-palette-item.selected { background: var(--surface0); }
-    .cmd-palette-item.selected { outline: 1px solid var(--accent); }
-    .cmd-palette-item svg { width: 16px; height: 16px; color: var(--subtext0); flex-shrink: 0; }
+    .cmd-palette-item:hover, .cmd-palette-item.selected {
+      background: color-mix(in srgb, var(--accent) 10%, var(--surface1));
+    }
+    .cmd-palette-item.selected {
+      outline: none;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .cmd-palette-item svg { width: 15px; height: 15px; color: var(--subtext0); flex-shrink: 0; }
+    .cmd-palette-item.selected svg { color: var(--accent); }
     .cmd-palette-item .cmd-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cmd-palette-item .cmd-hint {
       font-size: 10px; color: var(--subtext0); font-family: var(--font-mono); flex-shrink: 0;
@@ -2088,15 +2288,16 @@
       display: flex; flex-wrap: wrap; gap: 6px;
     }
     .cmd-suggest-chip {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 9px; background: var(--surface0);
-      border: 1px solid var(--surface2); border-radius: 999px;
-      color: var(--subtext1); font: 11px var(--font-ui);
-      cursor: pointer; transition: all 0.12s;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px; background: var(--surface0);
+      border: 1px solid var(--surface2); border-radius: var(--radius-pill);
+      color: var(--subtext1); font: 500 11px var(--font-ui);
+      cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
     }
     .cmd-suggest-chip:hover {
-      background: var(--surface1); color: var(--text);
-      border-color: var(--overlay0);
+      background: color-mix(in srgb, var(--accent) 10%, var(--surface1));
+      color: var(--text);
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--surface2));
     }
     .cmd-suggest-chip svg { color: var(--accent); }
     .cmd-recent-list {
@@ -2139,12 +2340,16 @@
       padding: 20px; text-align: center; font-size: 12px; color: var(--subtext0);
     }
     .cmd-palette-footer {
-      display: flex; gap: 12px; padding: 8px 16px; font-size: 10px; color: var(--subtext0);
-      border-top: 1px solid var(--surface0); background: var(--mantle);
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 14px; font-size: 10px; color: var(--subtext0);
+      border-top: 1px solid var(--surface1);
+      background: color-mix(in srgb, var(--mantle) 60%, transparent);
     }
-    .cmd-palette-footer kbd {
-      font: 9px var(--font-mono); background: var(--surface0);
-      border: 1px solid var(--surface1); border-radius: 3px; padding: 1px 5px;
+    .cmd-palette-footer > span { display: inline-flex; align-items: center; gap: 4px; }
+    .cmd-palette-footer .sy-kbd { height: 18px; min-width: 18px; padding: 0 5px; font-size: 9px; }
+    .cmd-palette-footer kbd { /* legacy passthrough */
+      font: 9px var(--font-mono); background: var(--surface2);
+      border: 1px solid var(--overlay0); border-radius: 4px; padding: 1px 5px;
     }
 
     /* ── Activity Timeline ────────────────────────────────────────────────── */
@@ -2219,11 +2424,13 @@
       min-width: 280px; max-width: 420px;
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px 10px 14px;
-      background: color-mix(in srgb, var(--surface1) 95%, transparent);
-      border: 1px solid var(--overlay0);
-      border-radius: 10px; color: var(--text);
+      background: color-mix(in srgb, var(--surface1) 92%, transparent);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-lg); color: var(--text);
       font: 12px/1.35 var(--font-ui);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.04) inset,
+        0 12px 36px rgba(0,0,0,0.5);
       backdrop-filter: blur(14px);
       pointer-events: auto;
       animation: richToastIn 0.22s cubic-bezier(0.22, 1, 0.36, 1);
@@ -2239,13 +2446,14 @@
     .rich-toast.warning .rich-toast-icon { color: var(--yellow); }
     .rich-toast-msg { flex: 1; min-width: 0; word-break: break-word; }
     .rich-toast-action {
-      margin-left: 4px; padding: 4px 10px;
-      background: transparent; border: 1px solid var(--overlay0);
-      border-radius: 6px; color: var(--text);
+      margin-left: 4px; padding: 5px 11px;
+      background: transparent; border: 1px solid var(--surface2);
+      border-radius: 6px; color: var(--accent);
       font: 600 11px var(--font-ui); letter-spacing: 0.3px;
       cursor: pointer; white-space: nowrap; text-transform: uppercase;
+      transition: background 0.12s, border-color 0.12s;
     }
-    .rich-toast-action:hover { background: var(--surface2); border-color: var(--overlay1); }
+    .rich-toast-action:hover { background: color-mix(in srgb, var(--accent) 12%, var(--surface1)); border-color: color-mix(in srgb, var(--accent) 50%, var(--surface2)); }
     .rich-toast-close {
       background: transparent; border: none; color: var(--subtext0);
       cursor: pointer; padding: 2px; line-height: 0; border-radius: 4px;
@@ -2971,7 +3179,7 @@
             <span style="font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;">Task Queue</span>
             <input id="orchTaskSearch" type="text" placeholder="Filter by title, prompt, CLI..." oninput="renderOrchTasks()" onkeydown="if(event.key==='Escape'){this.value='';renderOrchTasks();}" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:var(--radius);font-size:11px;padding:3px 8px;outline:none;width:220px;margin-left:10px;">
             <div style="flex:1;"></div>
-            <button onclick="openActivityStats()" class="tab-bar-btn" title="This week's activity" style="padding:3px 10px;">Stats</button>
+            <button onclick="openActivityStats()" class="sy-btn sy-btn-sm sy-btn-outline" title="This week's activity"><i data-lucide="bar-chart-3"></i>Stats</button>
             <select id="orchTaskFilter" onchange="orchRefreshTasks()" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:var(--radius);font-size:11px;padding:3px 8px;outline:none;">
               <option value="">All</option>
               <option value="running">Running</option>
@@ -2983,9 +3191,9 @@
           </div>
           <div class="orch-task-list" id="orchTaskList">
             <div class="orch-empty-state" id="orchEmptyState">
-              <i data-lucide="radio-tower"></i>
-              <div style="font-size:13px;font-weight:500;">No tasks yet</div>
-              <div style="font-size:11px;color:var(--subtext0);margin-bottom:14px;">Dispatch a task to another AI agent or spawn a headless job</div>
+              <div class="sy-empty-icon"><i data-lucide="radio-tower"></i></div>
+              <div class="sy-empty-title">No tasks yet</div>
+              <div class="sy-empty-desc" style="margin-bottom:14px;">Dispatch a task to another AI agent, ask a question, or spawn a headless job in the background.</div>
               <div class="orch-cta-grid">
                 <button class="orch-cta-card" onclick="openCmdPalette();setTimeout(()=>{const i=document.getElementById('cmdPaletteInput');if(i){i.value='';filterCmdPalette();i.focus();}},60);">
                   <i data-lucide="sparkles"></i>
@@ -3732,7 +3940,7 @@
     <div class="quick-ask-foot">
       <span id="quickAskCliLabel" style="font-size:11px;color:var(--subtext0);"></span>
       <div style="flex:1;"></div>
-      <button onclick="quickAskSend()" class="tab-bar-btn" style="background:var(--accent);color:var(--crust);border-color:var(--accent);">Send</button>
+      <button onclick="quickAskSend()" class="sy-btn sy-btn-sm"><i data-lucide="arrow-up"></i>Send</button>
     </div>
   </div>
 </div>
@@ -3748,9 +3956,11 @@
     </div>
     <div class="cmd-palette-list" id="cmdPaletteList"></div>
     <div class="cmd-palette-footer">
-      <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
-      <span><kbd>Enter</kbd> select</span>
-      <span><kbd>Esc</kbd> close</span>
+      <span><span class="sy-kbd">&uarr;</span><span class="sy-kbd">&darr;</span> navigate</span>
+      <span><span class="sy-kbd">Enter</span> select</span>
+      <span><span class="sy-kbd">Esc</span> close</span>
+      <span style="flex:1;"></span>
+      <span style="color:var(--subtext0);">Ask anything, no match needed</span>
     </div>
   </div>
 </div>
@@ -4356,9 +4566,9 @@ async function openJobsModal() {
         '<div class="job-meta">' + esc(cliLabel) + ' - ' + esc(j.schedule) + ' - next ' + _fmtWhen(j.nextRun) + '</div>' +
       '</div>' +
       '<div class="job-actions">' +
-        '<button class="orch-task-btn" onclick="runJobNow(\'' + j.id + '\')">Run</button>' +
-        '<button class="orch-task-btn" onclick="openJobEditor(\'' + j.id + '\')">Edit</button>' +
-        '<button class="orch-task-btn cancel" onclick="deleteJob(\'' + j.id + '\')">Delete</button>' +
+        '<button class="sy-btn sy-btn-sm sy-btn-secondary" onclick="runJobNow(\'' + j.id + '\')">Run</button>' +
+        '<button class="sy-btn sy-btn-sm sy-btn-outline" onclick="openJobEditor(\'' + j.id + '\')">Edit</button>' +
+        '<button class="sy-btn sy-btn-sm sy-btn-ghost" onclick="deleteJob(\'' + j.id + '\')" style="color:var(--red);">Delete</button>' +
       '</div>' +
     '</div>';
   }).join('') : '<div style="padding:26px 12px;text-align:center;color:var(--subtext0);font-size:12px;">No scheduled jobs yet. Create one to run an AI prompt on a recurring schedule.</div>';
@@ -4368,7 +4578,7 @@ async function openJobsModal() {
         '<i data-lucide="calendar-clock" style="width:18px;height:18px;color:var(--accent);"></i>' +
         '<strong style="font-size:14px;">Scheduled Jobs</strong>' +
         '<div style="flex:1;"></div>' +
-        '<button onclick="openJobEditor()" class="tab-bar-btn" style="padding:4px 12px;">+ New</button>' +
+        '<button onclick="openJobEditor()" class="sy-btn sy-btn-sm"><i data-lucide="plus"></i>New Job</button>' +
         '<button onclick="document.getElementById(\'jobsOverlay\').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button>' +
       '</div>' +
       '<div style="overflow-y:auto;padding:8px 10px;">' + rows + '</div>' +
@@ -4406,8 +4616,8 @@ async function openJobEditor(id) {
         '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--subtext1);"><input id="jobEnabled" type="checkbox"' + (existing && existing.enabled === false ? '' : ' checked') + '> Enabled</label>' +
       '</div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">' +
-        '<button onclick="document.getElementById(\'jobEditorOverlay\').remove()" class="tab-bar-btn">Cancel</button>' +
-        '<button onclick="saveJobFromEditor(' + (existing ? '\'' + existing.id + '\'' : 'null') + ')" class="tab-bar-btn" style="background:var(--accent);color:var(--crust);border-color:var(--accent);">Save</button>' +
+        '<button onclick="document.getElementById(\'jobEditorOverlay\').remove()" class="sy-btn sy-btn-ghost">Cancel</button>' +
+        '<button onclick="saveJobFromEditor(' + (existing ? '\'' + existing.id + '\'' : 'null') + ')" class="sy-btn">Save</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(overlay);
@@ -12712,7 +12922,7 @@ function openShortcutHelp() {
   overlay.id = 'shortcutHelpOverlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4500;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-  const row = (k, label) => '<div style="display:flex;align-items:center;gap:12px;padding:5px 0;"><kbd style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--overlay0);border-radius:5px;padding:2px 8px;font:11px var(--font-mono);color:var(--text);min-width:68px;justify-content:center;">' + k + '</kbd><span style="color:var(--subtext1);font-size:12px;">' + label + '</span></div>';
+  const row = (k, label) => '<div style="display:flex;align-items:center;gap:12px;padding:5px 0;"><span class="sy-kbd" style="min-width:74px;">' + k + '</span><span style="color:var(--subtext1);font-size:12px;">' + label + '</span></div>';
   overlay.innerHTML =
     '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:10px;padding:18px 22px;width:560px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,0.5);">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
