@@ -681,6 +681,110 @@ const internalWebviewDriver = {
     return { base64: buf.toString('base64'), mimeType: 'image/png' };
   },
 
+  async evaluate(code) {
+    const wc = await _ensureBrowserTab();
+    const js = `(async function(){ try { var __r = await (async function(){ ${code} })(); return { ok: true, value: __r }; } catch (e) { return { ok: false, error: e && e.message ? e.message : String(e) }; } })();`;
+    const r = await _exec(wc, js);
+    if (r && r.ok === false) throw new Error(r.error || 'script error');
+    return r && 'value' in r ? r.value : r;
+  },
+
+  async removeElement(selector, { all = false } = {}) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var sel = ${JSON.stringify(selector)};
+      var nodes = ${all ? 'Array.from(document.querySelectorAll(sel))' : '[document.querySelector(sel)].filter(Boolean)'};
+      var removed = 0;
+      nodes.forEach(function(n){ if (n && n.parentNode) { n.parentNode.removeChild(n); removed++; } });
+      return { removed: removed, matched: nodes.length };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async setStyle(selector, styles, { all = false } = {}) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var sel = ${JSON.stringify(selector)};
+      var styles = ${JSON.stringify(styles || {})};
+      var nodes = ${all ? 'Array.from(document.querySelectorAll(sel))' : '[document.querySelector(sel)].filter(Boolean)'};
+      if (!nodes.length) throw new Error('No element matched ' + sel);
+      function toCamel(k){ return k.replace(/-([a-z])/g, function(_, c){ return c.toUpperCase(); }); }
+      Object.keys(styles).forEach(function(key){
+        var val = styles[key];
+        nodes.forEach(function(n){ try { n.style[toCamel(key)] = val == null ? '' : String(val); } catch(_){} });
+      });
+      return { applied: Object.keys(styles).length, matched: nodes.length };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async setAttribute(selector, name, value) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element matched ' + ${JSON.stringify(selector)});
+      var v = ${JSON.stringify(value == null ? null : String(value))};
+      if (v == null || v === '') el.removeAttribute(${JSON.stringify(name)});
+      else el.setAttribute(${JSON.stringify(name)}, v);
+      return { matched: 1 };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async setText(selector, text) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element matched ' + ${JSON.stringify(selector)});
+      el.textContent = ${JSON.stringify(String(text == null ? '' : text))};
+      return { matched: 1 };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async setHtml(selector, html) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element matched ' + ${JSON.stringify(selector)});
+      el.innerHTML = ${JSON.stringify(String(html == null ? '' : html))};
+      return { matched: 1 };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async scrollTo(selector, { block = 'center' } = {}) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element matched ' + ${JSON.stringify(selector)});
+      el.scrollIntoView({ behavior: 'smooth', block: ${JSON.stringify(block)} });
+      return { matched: 1 };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async getComputedStyle(selector, properties) {
+    const wc = await _ensureBrowserTab();
+    const defaults = [
+      'color', 'background-color', 'background-image', 'font-family', 'font-size',
+      'font-weight', 'line-height', 'letter-spacing', 'text-transform',
+      'border-color', 'border-radius', 'box-shadow', 'opacity',
+      'padding', 'margin', 'width', 'height', 'display', 'position',
+    ];
+    const props = (Array.isArray(properties) && properties.length) ? properties : defaults;
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element matched ' + ${JSON.stringify(selector)});
+      var cs = getComputedStyle(el);
+      var keys = ${JSON.stringify(props)};
+      var out = {};
+      keys.forEach(function(k){ try { out[k] = cs.getPropertyValue(k); } catch(_){} });
+      return { properties: out };
+    })();`;
+    return await _exec(wc, js);
+  },
+
   async readPage({ selector } = {}) {
     const wc = await _ensureBrowserTab();
     const js = `(function(){
@@ -1173,6 +1277,130 @@ if (!gotLock) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
       if (win) win.close();
+    });
+
+    // ── Browser emulation + issues (CDP-backed) ──────────────────────────
+    const _reBody = (req) => new Promise((resolve) => {
+      let b = '';
+      req.on('data', (c) => { b += c.toString(); });
+      req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch (_) { resolve({}); } });
+      req.on('error', () => resolve({}));
+    });
+    const _reJson = (res, code, obj) => {
+      res.writeHead(code, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(obj));
+    };
+    // In-memory store of observed issues per webContents.
+    const _browserIssueState = new WeakMap();
+    function _getIssueState(wc) {
+      let s = _browserIssueState.get(wc);
+      if (!s) {
+        s = { listening: false, issues: [] };
+        _browserIssueState.set(wc, s);
+      }
+      return s;
+    }
+
+    addRoute('POST', '/api/browser/emulate/device', async (req, res) => {
+      try {
+        const body = await _reBody(req);
+        const wc = await _ensureBrowserTab();
+        await _ensureDebugger(wc);
+        if (body.reset) {
+          await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride').catch(() => {});
+          await wc.debugger.sendCommand('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
+          return _reJson(res, 200, { ok: true, reset: true });
+        }
+        const width = Math.max(50, Math.min(4096, Number(body.width) || 390));
+        const height = Math.max(50, Math.min(4096, Number(body.height) || 844));
+        const dpr = Math.max(0.5, Math.min(5, Number(body.deviceScaleFactor) || 2));
+        const mobile = body.mobile !== false;
+        await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+          width, height, deviceScaleFactor: dpr, mobile,
+        });
+        await wc.debugger.sendCommand('Emulation.setTouchEmulationEnabled', {
+          enabled: !!body.touch || mobile,
+        });
+        _reJson(res, 200, { ok: true, width, height, dpr, mobile });
+      } catch (e) { _reJson(res, 500, { error: e.message || String(e) }); }
+    });
+
+    addRoute('POST', '/api/browser/emulate/media', async (req, res) => {
+      try {
+        const body = await _reBody(req);
+        const wc = await _ensureBrowserTab();
+        await _ensureDebugger(wc);
+        const features = [];
+        if (body.colorScheme) features.push({ name: 'prefers-color-scheme', value: body.colorScheme });
+        if (body.reducedMotion) features.push({ name: 'prefers-reduced-motion', value: body.reducedMotion });
+        if (body.contrast) features.push({ name: 'prefers-contrast', value: body.contrast });
+        if (body.forcedColors) features.push({ name: 'forced-colors', value: body.forcedColors });
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+          media: body.media || '',
+          features,
+        });
+        _reJson(res, 200, { ok: true, features });
+      } catch (e) { _reJson(res, 500, { error: e.message || String(e) }); }
+    });
+
+    addRoute('POST', '/api/browser/emulate/throttle', async (req, res) => {
+      try {
+        const body = await _reBody(req);
+        const wc = await _ensureBrowserTab();
+        await _ensureDebugger(wc);
+        if (body.cpuRate != null) {
+          await wc.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: Math.max(1, Math.min(20, Number(body.cpuRate) || 1)) });
+        }
+        if (body.network) {
+          const presets = {
+            'offline':      { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 },
+            'slow-3g':      { offline: false, latency: 400, downloadThroughput: 50 * 1024, uploadThroughput: 50 * 1024 },
+            'fast-3g':      { offline: false, latency: 150, downloadThroughput: 180 * 1024, uploadThroughput: 85 * 1024 },
+            '4g':           { offline: false, latency: 40, downloadThroughput: 4 * 1024 * 1024, uploadThroughput: 1.5 * 1024 * 1024 },
+            'no-throttle':  { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
+          };
+          const p = presets[body.network] || presets['no-throttle'];
+          await wc.debugger.sendCommand('Network.enable').catch(() => {});
+          await wc.debugger.sendCommand('Network.emulateNetworkConditions', p);
+        }
+        _reJson(res, 200, { ok: true });
+      } catch (e) { _reJson(res, 500, { error: e.message || String(e) }); }
+    });
+
+    addRoute('POST', '/api/browser/issues/start', async (req, res) => {
+      try {
+        const wc = await _ensureBrowserTab();
+        await _ensureDebugger(wc);
+        const state = _getIssueState(wc);
+        if (!state.listening) {
+          wc.debugger.on('message', (_event, method, params) => {
+            if (method === 'Audits.issueAdded' && params && params.issue) {
+              state.issues.push({ at: Date.now(), ...params.issue });
+              if (state.issues.length > 500) state.issues.splice(0, state.issues.length - 500);
+            }
+          });
+          state.listening = true;
+        }
+        await wc.debugger.sendCommand('Audits.enable').catch(() => {});
+        _reJson(res, 200, { ok: true });
+      } catch (e) { _reJson(res, 500, { error: e.message || String(e) }); }
+    });
+
+    addRoute('GET', '/api/browser/issues', async (req, res) => {
+      try {
+        const wc = await _ensureBrowserTab();
+        const state = _getIssueState(wc);
+        _reJson(res, 200, { issues: state.issues.slice(-200), count: state.issues.length });
+      } catch (e) { _reJson(res, 500, { error: e.message || String(e) }); }
+    });
+
+    addRoute('POST', '/api/browser/issues/clear', async (req, res) => {
+      try {
+        const wc = await _ensureBrowserTab();
+        const state = _getIssueState(wc);
+        state.issues = [];
+        _reJson(res, 200, { ok: true });
+      } catch (e) { _reJson(res, 500, { error: e.message || String(e) }); }
     });
 
     server.on('listening', () => {

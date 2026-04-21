@@ -1546,22 +1546,41 @@ function getRepoPath(repoName) {
   return repos[repoName] || null;
 }
 
+const FILE_BROWSER_SKIP = new Set([
+  '.git',
+  '.ai-workspace',
+  '.symphonee',
+  'node_modules',
+  '__pycache__',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  'coverage',
+  '.cache',
+  'bin',
+  'obj'
+]);
+
+function resolveRepoSubPath(repoPath, subPath = '') {
+  const repoRoot = path.resolve(repoPath);
+  const targetPath = path.resolve(path.join(repoRoot, subPath || ''));
+  if (targetPath !== repoRoot && !targetPath.startsWith(repoRoot + path.sep)) return null;
+  return targetPath;
+}
+
 function handleFileTree(url, res) {
   const repoName = url.searchParams.get('repo');
   const subPath = url.searchParams.get('path') || '';
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-  const fullPath = path.join(repoPath, subPath);
-  const resolved = path.resolve(fullPath);
-  if (!resolved.startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+  const resolved = resolveRepoSubPath(repoPath, subPath);
+  if (!resolved) return json(res, { error: 'Invalid path' }, 403);
 
   try {
     const entries = fs.readdirSync(resolved, { withFileTypes: true })
-      .filter(e => {
-        const SKIP = ['.git', 'node_modules', '__pycache__', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache'];
-        return !SKIP.includes(e.name);
-      })
+      .filter(e => !FILE_BROWSER_SKIP.has(e.name))
       .map(e => ({
         name: e.name,
         isDir: e.isDirectory(),
@@ -1581,14 +1600,22 @@ function handleFileTree(url, res) {
 function handleFileSearch(url, res) {
   const repoName = url.searchParams.get('repo');
   const query = (url.searchParams.get('q') || '').toLowerCase();
+  const scopePath = (url.searchParams.get('path') || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
   if (!query) return json(res, { results: [] });
 
-  const SKIP = new Set(['.git', 'node_modules', '__pycache__', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache', 'bin', 'obj']);
   const BINARY_EXTS = new Set(['png','jpg','jpeg','gif','webp','ico','bmp','mp4','webm','ogg','mov','avi','zip','tar','gz','exe','dll','woff','woff2','ttf','eot','pdf','lock']);
   const results = [];
   const MAX = 80;
+  const rootDir = resolveRepoSubPath(repoPath, scopePath);
+  if (!rootDir) return json(res, { error: 'Invalid path' }, 403);
+
+  try {
+    if (!fs.statSync(rootDir).isDirectory()) return json(res, { error: 'Search path must be a directory' }, 400);
+  } catch (_) {
+    return json(res, { error: 'Search path not found' }, 404);
+  }
 
   function walk(dir, rel) {
     if (results.length >= MAX) return;
@@ -1596,7 +1623,7 @@ function handleFileSearch(url, res) {
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entries) {
       if (results.length >= MAX) return;
-      if (SKIP.has(e.name)) continue;
+      if (FILE_BROWSER_SKIP.has(e.name)) continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         walk(path.join(dir, e.name), childRel);
@@ -1609,7 +1636,7 @@ function handleFileSearch(url, res) {
       }
     }
   }
-  walk(repoPath, '');
+  walk(rootDir, scopePath);
   json(res, { results });
 }
 
@@ -1617,11 +1644,11 @@ function handleFileSearch(url, res) {
 function handleFileGrep(url, res) {
   const repoName = url.searchParams.get('repo');
   const query = url.searchParams.get('q') || '';
+  const scopePath = (url.searchParams.get('path') || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
   if (!query || query.length < 2) return json(res, { results: [] });
 
-  const SKIP = new Set(['.git', 'node_modules', '__pycache__', 'dist', 'build', '.next', '.nuxt', 'coverage', '.cache', 'bin', 'obj']);
   const BINARY_EXTS = new Set(['png','jpg','jpeg','gif','webp','ico','bmp','mp4','webm','ogg','mov','avi','zip','tar','gz','exe','dll','woff','woff2','ttf','eot','pdf','lock','map']);
   const results = [];
   const MAX_FILES = 50;
@@ -1629,6 +1656,14 @@ function handleFileGrep(url, res) {
   let fileCount = 0;
   const queryLower = query.toLowerCase();
   const queryWords = queryLower.split(/\s+/).filter(Boolean);
+  const rootDir = resolveRepoSubPath(repoPath, scopePath);
+  if (!rootDir) return json(res, { error: 'Invalid path' }, 403);
+
+  try {
+    if (!fs.statSync(rootDir).isDirectory()) return json(res, { error: 'Search path must be a directory' }, 400);
+  } catch (_) {
+    return json(res, { error: 'Search path not found' }, 404);
+  }
 
   function lineMatches(lineLower) {
     if (queryWords.length <= 1) return lineLower.includes(queryLower);
@@ -1641,7 +1676,7 @@ function handleFileGrep(url, res) {
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
     for (const e of entries) {
       if (results.length >= MAX_MATCHES) return;
-      if (SKIP.has(e.name)) continue;
+      if (FILE_BROWSER_SKIP.has(e.name)) continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         walk(path.join(dir, e.name), childRel);
@@ -1666,7 +1701,7 @@ function handleFileGrep(url, res) {
       }
     }
   }
-  walk(repoPath, '');
+  walk(rootDir, scopePath);
   json(res, { results });
 }
 

@@ -60,6 +60,22 @@ const BROWSER_TOOLS = [
     parameters: { type: 'object', properties: { limit: { type: 'number' } } } },
   { name: 'screenshot',     description: 'Capture a PNG screenshot of the visible viewport.',
     parameters: { type: 'object', properties: {} } },
+  { name: 'execute_js',     description: 'Run arbitrary JavaScript in the page and return the (JSON-serializable) result. Use this for anything the specialized tools don\'t cover: modifying the DOM, setting styles, removing elements, reading computed styles, triggering events. The code runs in the page context as an IIFE; use `return <value>` to send data back. Runtime exceptions are returned as { ok:false, error }.',
+    parameters: { type: 'object', properties: { code: { type: 'string', description: 'JavaScript source. Treated as the body of an async function; use `return value;` to return data.' } }, required: ['code'] } },
+  { name: 'remove_element', description: 'Remove the first DOM element matching the CSS selector from the page.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, all: { type: 'boolean', description: 'If true, remove every matching element instead of just the first.' } }, required: ['selector'] } },
+  { name: 'set_style',      description: 'Set inline CSS styles on the first matching element. Pass styles as an object like {color:"red", display:"none"}.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, styles: { type: 'object', description: 'CSS property -> value map. Use camelCase (backgroundColor) or kebab-case (background-color).' }, all: { type: 'boolean' } }, required: ['selector', 'styles'] } },
+  { name: 'set_attribute',  description: 'Set an HTML attribute on the first matching element. Pass null/empty value to remove the attribute.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, name: { type: 'string' }, value: { type: 'string' } }, required: ['selector', 'name'] } },
+  { name: 'set_text',       description: 'Replace the textContent of the first matching element with the given string.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, text: { type: 'string' } }, required: ['selector', 'text'] } },
+  { name: 'set_html',       description: 'Replace the innerHTML of the first matching element. Use carefully -- overwrites all children.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, html: { type: 'string' } }, required: ['selector', 'html'] } },
+  { name: 'scroll_to',      description: 'Smooth-scroll the page so the first matching element is in view.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, block: { type: 'string', description: 'center|start|end|nearest (default center).' } }, required: ['selector'] } },
+  { name: 'get_computed_style', description: 'Return computed style values for the first matching element. Pass an array of properties to limit what comes back; omit to get a broad default set useful for design/brand work.',
+    parameters: { type: 'object', properties: { selector: { type: 'string' }, properties: { type: 'array', items: { type: 'string' } } }, required: ['selector'] } },
   { name: 'finish',         description: 'Stop the loop and return a final message.',
     parameters: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
   { name: 'wait_for_user',  description: 'Pause automation and ask the user to take a manual action (e.g. solve CAPTCHA, log in). The user will click Resume when ready.',
@@ -69,6 +85,18 @@ const BROWSER_TOOLS = [
 ];
 
 const BASE_SYSTEM_PROMPT = `You drive the user's in-app web browser on their behalf. You are intelligent and autonomous — act like a skilled human who knows the web, not like a script runner.
+
+You have full control of this browser. You can do anything a human sitting at the keyboard could do: navigate, click, type, scroll, fill forms, inspect the DOM, modify page content, extract information, follow multi-step flows. Act directly. Do not ask for permission on routine browser actions — just do them and report what happened. The only things that require explicit user confirmation are the items listed under "General rules" (payments, sending messages, creating accounts).
+
+## DOM modification
+You CAN modify the live page. Never tell the user you can't. Prefer the specific primitives when they fit:
+- remove_element(selector[, all]) — delete a node.
+- set_style(selector, styles[, all]) — set inline CSS ({color:'red', display:'none'}).
+- set_attribute / set_text / set_html — mutate attributes or content.
+- scroll_to(selector) — bring a node into view.
+- get_computed_style(selector[, properties]) — read resolved styles (useful for brand/palette extraction).
+- execute_js(code) — run arbitrary JS in the page as an async IIFE. Use \`return value;\` to send data back. Reach for this whenever the specific primitives don't fit (complex queries, event dispatch, framework-specific tricks, reading shadow DOM, etc.). Keep returned values JSON-serializable.
+Changes made through these tools are live in the user's browser tab, exactly as if the user had opened DevTools and done it themselves. They DO NOT modify the underlying source files or survive a reload.
 
 ## Navigation strategy (follow this order)
 1. If you know the direct URL for the destination page, navigate there immediately. Do not click menus when a URL exists.
@@ -113,7 +141,28 @@ function buildSystemPrompt(learnings, savedAccounts) {
 }
 
 // ── HTTP helper ────────────────────────────────────────────────────────────
-function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeoutMs = 60000 }) {
+function bindAbort(req, signal, reject, label) {
+  if (!signal) return () => {};
+  const onAbort = () => {
+    try { req.destroy(new Error(label || 'Request aborted')); } catch (_) {}
+    try { reject(new Error(label || 'Request aborted')); } catch (_) {}
+  };
+  if (signal.aborted) {
+    onAbort();
+    return () => {};
+  }
+  signal.addEventListener('abort', onAbort, { once: true });
+  return () => {
+    try { signal.removeEventListener('abort', onAbort); } catch (_) {}
+  };
+}
+
+function isAbortError(err) {
+  const msg = String((err && err.message) || err || '');
+  return msg.includes('request aborted') || msg.includes('stream aborted') || msg.includes('aborted');
+}
+
+function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeoutMs = 60000, signal }) {
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : '';
     const req = https.request({
@@ -132,14 +181,16 @@ function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeout
         }
       });
     });
+    const cleanupAbort = bindAbort(req, signal, reject, `${hostname} request aborted`);
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(new Error(hostname + ' request timed out')); });
     if (payload) req.write(payload);
     req.end();
+    req.on('close', cleanupAbort);
   });
 }
 
-function httpStream({ hostname, path, method = 'POST', headers = {}, body, onChunk, timeoutMs = 90000 }) {
+function httpStream({ hostname, path, method = 'POST', headers = {}, body, onChunk, timeoutMs = 90000, signal }) {
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : '';
     const req = https.request({
@@ -167,10 +218,12 @@ function httpStream({ hostname, path, method = 'POST', headers = {}, body, onChu
       });
       res.on('error', reject);
     });
+    const cleanupAbort = bindAbort(req, signal, reject, `${hostname} stream aborted`);
     req.on('error', reject);
     req.on('timeout', () => req.destroy(new Error(hostname + ' stream timed out')));
     if (payload) req.write(payload);
     req.end();
+    req.on('close', cleanupAbort);
   });
 }
 
@@ -274,20 +327,21 @@ function makeAnthropicAdapter() {
         content: pairs.map(p => ({ type: 'tool_result', tool_use_id: p.toolUseId, is_error: p.isError || undefined, content: p.blocks })),
       });
     },
-    async call({ messages, apiKey, model, systemPrompt }) {
+    async call({ messages, apiKey, model, systemPrompt, signal }) {
       const tools = BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));
       const trimmed = trimHistory(messages, 1);
       const resp = await httpJsonWithRetry({
         hostname: 'api.anthropic.com', path: '/v1/messages',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: { model: model || this.defaultModel, max_tokens: DEFAULT_MAX_TOKENS, system: systemPrompt || BASE_SYSTEM_PROMPT, tools, messages: trimmed },
+        signal,
       });
       const content = resp.content || [];
       const text = content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
       const toolCalls = content.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, name: b.name, args: b.input || {} }));
       return { text, toolCalls, raw: content };
     },
-    async callStream({ messages, apiKey, model, systemPrompt }, onToken) {
+    async callStream({ messages, apiKey, model, systemPrompt, signal }, onToken) {
       const tools = BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));
       const trimmed = trimHistory(messages, 1);
       const blocks = {};
@@ -296,6 +350,7 @@ function makeAnthropicAdapter() {
         hostname: 'api.anthropic.com', path: '/v1/messages',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: { model: model || this.defaultModel, max_tokens: DEFAULT_MAX_TOKENS, system: systemPrompt || BASE_SYSTEM_PROMPT, tools, messages: trimmed, stream: true },
+        signal,
         onChunk(line) {
           if (!line.startsWith('data: ')) return;
           let evt; try { evt = JSON.parse(line.slice(6)); } catch (_) { return; }
@@ -322,6 +377,15 @@ function makeAnthropicAdapter() {
       }
       const toolCalls = raw.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, name: b.name, args: b.input || {} }));
       return { text: textContent.trim(), toolCalls, raw };
+    },
+    async refine({ draft, selection, apiKey, model, signal }) {
+      const resp = await httpJsonWithRetry({
+        hostname: 'api.anthropic.com', path: '/v1/messages',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: { model: model || this.defaultModel, max_tokens: 512, system: REFINE_SYSTEM_PROMPT, messages: [{ role: 'user', content: buildRefineUserText(draft, selection) }] },
+        signal,
+      });
+      return ((resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n') || '').trim();
     },
   };
 }
@@ -356,7 +420,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
         messages.push({ role: 'tool', tool_call_id: p.toolUseId, content: typeof p.blocks === 'string' ? p.blocks : JSON.stringify(p.blocks) });
       }
     },
-    async call({ messages, apiKey, model, systemPrompt }) {
+    async call({ messages, apiKey, model, systemPrompt, signal }) {
       const tools = BROWSER_TOOLS.map(t => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters },
@@ -368,6 +432,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
         hostname: baseHost, path: basePath,
         headers: { [authHeader]: authPrefix + apiKey },
         body: { model: model || defaultModel, messages: trimmed, tools, tool_choice: 'auto', max_tokens: DEFAULT_MAX_TOKENS },
+        signal,
       });
       const msg = (resp.choices && resp.choices[0] && resp.choices[0].message) || {};
       const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls.map(tc => {
@@ -377,7 +442,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
       }) : [];
       return { text: msg.content || '', toolCalls, raw: msg };
     },
-    async callStream({ messages, apiKey, model, systemPrompt }, onToken) {
+    async callStream({ messages, apiKey, model, systemPrompt, signal }, onToken) {
       const tools = BROWSER_TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
       const trimmed = trimHistory(messages, 2);
       if (systemPrompt && trimmed.length && trimmed[0].role === 'system') trimmed[0].content = systemPrompt;
@@ -387,6 +452,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
         hostname: baseHost, path: basePath,
         headers: { [authHeader]: authPrefix + apiKey },
         body: { model: model || defaultModel, messages: trimmed, tools, tool_choice: 'auto', max_tokens: DEFAULT_MAX_TOKENS, stream: true },
+        signal,
         onChunk(line) {
           if (!line.startsWith('data: ')) return;
           const raw = line.slice(6).trim();
@@ -423,6 +489,21 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
       ]);
       messages.push({ role: 'user', content });
     },
+    async refine({ draft, selection, apiKey, model, signal }) {
+      const resp = await httpJsonWithRetry({
+        hostname: baseHost, path: basePath,
+        headers: { [authHeader]: authPrefix + apiKey },
+        body: {
+          model: model || defaultModel, max_tokens: 512,
+          messages: [
+            { role: 'system', content: REFINE_SYSTEM_PROMPT },
+            { role: 'user', content: buildRefineUserText(draft, selection) },
+          ],
+        },
+        signal,
+      });
+      return ((resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content) || '').trim();
+    },
   };
 }
 
@@ -452,7 +533,7 @@ function makeGeminiAdapter() {
         parts: pairs.map(p => ({ functionResponse: { name: p.name, response: typeof p.blocks === 'object' ? p.blocks : { result: p.blocks } } })),
       });
     },
-    async call({ messages, apiKey, model, systemPrompt }) {
+    async call({ messages, apiKey, model, systemPrompt, signal }) {
       const tools = [{ functionDeclarations: BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }];
       const mdl = model || this.defaultModel;
       const trimmed = trimHistory(messages, 1);
@@ -465,6 +546,7 @@ function makeGeminiAdapter() {
           tools,
           generationConfig: { maxOutputTokens: DEFAULT_MAX_TOKENS },
         },
+        signal,
       });
       const cand = resp.candidates && resp.candidates[0];
       const parts = (cand && cand.content && cand.content.parts) || [];
@@ -476,7 +558,7 @@ function makeGeminiAdapter() {
       }));
       return { text, toolCalls, raw: parts };
     },
-    async callStream({ messages, apiKey, model, systemPrompt }, onToken) {
+    async callStream({ messages, apiKey, model, systemPrompt, signal }, onToken) {
       const tools = [{ functionDeclarations: BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.parameters })) }];
       const mdl = model || this.defaultModel;
       const trimmed = trimHistory(messages, 1);
@@ -491,6 +573,7 @@ function makeGeminiAdapter() {
           tools,
           generationConfig: { maxOutputTokens: DEFAULT_MAX_TOKENS },
         },
+        signal,
         onChunk(line) {
           if (!line.startsWith('data: ')) return;
           let evt; try { evt = JSON.parse(line.slice(6)); } catch (_) { return; }
@@ -518,6 +601,22 @@ function makeGeminiAdapter() {
       ]);
       messages.push({ role: 'user', parts });
     },
+    async refine({ draft, selection, apiKey, model, signal }) {
+      const mdl = model || this.defaultModel;
+      const resp = await httpJsonWithRetry({
+        hostname: 'generativelanguage.googleapis.com',
+        path: `/v1beta/models/${mdl}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        body: {
+          systemInstruction: { parts: [{ text: REFINE_SYSTEM_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: buildRefineUserText(draft, selection) }] }],
+          generationConfig: { maxOutputTokens: 512 },
+        },
+        signal,
+      });
+      const cand = resp.candidates && resp.candidates[0];
+      const parts = (cand && cand.content && cand.content.parts) || [];
+      return parts.filter(p => p.text).map(p => p.text).join('\n').trim();
+    },
   };
 }
 
@@ -535,6 +634,27 @@ function formatElements(elements) {
     return `${i + 1}. <${e.tag}> ${attrs.join(' ')}${text ? ` :: "${text}"` : ''}`;
   });
   return `Found ${elements.length} element(s):\n${lines.join('\n')}`;
+}
+
+// ── Refine helper (shared by all adapters) ─────────────────────────────────
+const REFINE_SYSTEM_PROMPT = `You rewrite short, rough requests into clear, specific prompts for an AI agent that drives a web browser on the user's behalf.
+
+Your job: take the user's rough idea and produce a single refined prompt that the browser agent can execute unambiguously. Preserve the user's intent and references. If the user mentioned a selected element, keep that reference (the agent already has the JSON of the selection). Be concrete about which UI element, which value, which page, or which criteria. Do not ask questions. Do not add filler, framing, or headers. Do not wrap the answer in quotes or code fences. Output ONLY the refined prompt text.
+
+Keep it as short as possible while still being specific. One or two sentences is usually enough.`;
+
+function buildRefineUserText(draft, selection) {
+  const parts = [];
+  if (selection) {
+    parts.push('A page element is currently selected (the agent will receive this JSON). Treat "this"/"it"/"selected" references as pointing to it.');
+    parts.push('```json');
+    parts.push(JSON.stringify(selection, null, 2));
+    parts.push('```');
+    parts.push('');
+  }
+  parts.push('Rough request to refine:');
+  parts.push(String(draft || '').trim());
+  return parts.join('\n');
 }
 
 // ── Provider registry & selection ──────────────────────────────────────────
@@ -585,6 +705,14 @@ async function executeTool(agent, name, args, credentials) {
     case 'get_network_body': return await agent.getNetworkBody(args.requestId);
     case 'get_console_log': return await agent.getConsoleLog({ limit: args.limit });
     case 'screenshot':     return await agent.screenshot();
+    case 'execute_js':     return await agent.executeJs(args.code);
+    case 'remove_element': return await agent.removeElement(args.selector, { all: !!args.all });
+    case 'set_style':      return await agent.setStyle(args.selector, args.styles || {}, { all: !!args.all });
+    case 'set_attribute':  return await agent.setAttribute(args.selector, args.name, args.value);
+    case 'set_text':       return await agent.setText(args.selector, args.text);
+    case 'set_html':       return await agent.setHtml(args.selector, args.html);
+    case 'scroll_to':      return await agent.scrollTo(args.selector, { block: args.block });
+    case 'get_computed_style': return await agent.getComputedStyle(args.selector, args.properties);
     case 'finish':         return { ok: true, finished: true, summary: args.summary || '' };
     case 'wait_for_user':  return { ok: true, waiting: true, message: args.message || '' };
     case 'fill_saved_credentials': {
@@ -627,6 +755,14 @@ function describeAction(name, args) {
     case 'get_network_body': return `Get network body: ${args.requestId || ''}`;
     case 'get_console_log': return `Get console log${args.limit ? ` (limit ${args.limit})` : ''}`;
     case 'screenshot':     return 'Take screenshot';
+    case 'execute_js':     return `Execute JS: ${String(args.code || '').replace(/\s+/g, ' ').slice(0, 60)}`;
+    case 'remove_element': return `Remove ${args.all ? 'all ' : ''}${args.selector || ''}`;
+    case 'set_style':      return `Style ${args.selector || ''} <- ${Object.keys(args.styles || {}).slice(0, 3).join(', ')}`;
+    case 'set_attribute':  return `Attr ${args.selector || ''} [${args.name}${args.value == null ? ' remove' : ' = "' + String(args.value).slice(0, 30) + '"'}]`;
+    case 'set_text':       return `Set text ${args.selector || ''} <- "${String(args.text || '').slice(0, 40)}"`;
+    case 'set_html':       return `Set HTML ${args.selector || ''} (${String(args.html || '').length} chars)`;
+    case 'scroll_to':      return `Scroll to ${args.selector || ''}`;
+    case 'get_computed_style': return `Computed style ${args.selector || ''}${Array.isArray(args.properties) ? ` [${args.properties.slice(0, 4).join(', ')}]` : ''}`;
     case 'finish':         return `Finish: ${args.summary || ''}`;
     case 'wait_for_user':  return `Waiting for user: ${args.message || ''}`;
     case 'fill_saved_credentials': return `Fill saved credentials: ${args.account || ''}`;
@@ -644,6 +780,13 @@ const MUTATING_TOOLS = new Set([
   'fill_handle',
   'press_key',
   'fill_saved_credentials',
+  'execute_js',
+  'remove_element',
+  'set_style',
+  'set_attribute',
+  'set_text',
+  'set_html',
+  'scroll_to',
 ]);
 
 function isMutatingTool(name) {
@@ -920,7 +1063,9 @@ class ChatThread {
     this.providerKind = null;
     this.messages = [];
     this.stopped = false;
+    this.resumed = false;
     this.running = false;
+    this.abortController = null;
     this.createdAt = Date.now();
   }
 }
@@ -1013,12 +1158,14 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
 
       let resp;
       try {
+        thread.abortController = new AbortController();
         if (typeof providerEntry.adapter.callStream === 'function') {
           resp = await providerEntry.adapter.callStream({
             messages: thread.messages,
             apiKey: providerEntry.apiKey,
             model,
             systemPrompt,
+            signal: thread.abortController.signal,
           }, (delta) => emit({ kind: 'token', text: delta }));
         } else {
           resp = await providerEntry.adapter.call({
@@ -1026,16 +1173,23 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
             apiKey: providerEntry.apiKey,
             model,
             systemPrompt,
+            signal: thread.abortController.signal,
           });
         }
       } catch (e) {
         const msg = e.message || '';
+        if (thread.stopped && isAbortError(e)) {
+          emit({ kind: 'stopped' });
+          return { ok: true, stopped: true };
+        }
         if (msg.includes('429')) {
           saveBrowserLearning('Rate limit hit mid-task. Reduce steps: prefer direct URL navigation over multi-step UI clicks. Use Haiku model for browser tasks.');
         }
         emit({ kind: 'error', message: providerEntry.adapter.label + ' API error: ' + msg });
         thread.running = false;
         return { ok: false, error: msg };
+      } finally {
+        thread.abortController = null;
       }
 
       if (resp.text) emit({ kind: 'message', text: resp.text });
@@ -1164,6 +1318,7 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
     const thread = getThread(threadId);
     if (thread.running) return json(res, { error: 'Thread already running. Stop it first.' }, 409);
     thread.stopped = false;
+    thread.resumed = false;
     const model = body.model || entry.adapter.defaultModel;
 
     const credentials = getConfig().BrowserCredentials || {};
@@ -1176,6 +1331,13 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
     try { body = await readBody(req); } catch (_) {}
     const thread = getThread(body.threadId || 'default');
     thread.stopped = true;
+    thread.resumed = false;
+    if (thread.abortController) {
+      try { thread.abortController.abort(); } catch (_) {}
+    }
+    if (typeof broadcast === 'function') {
+      broadcast({ type: 'browser-agent-step', threadId: thread.id, kind: 'stopped', at: Date.now() });
+    }
     json(res, { ok: true });
   });
 
@@ -1187,12 +1349,45 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
     json(res, { ok: true });
   });
 
+  addRoute('POST', '/api/browser/agent/refine', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const draft = String(body.draft || '').trim();
+    if (!draft) return json(res, { error: 'draft required' }, 400);
+    const registry = buildRegistry();
+    const entry = pickProvider(registry, body.provider);
+    if (!entry) return json(res, { error: 'No AI provider configured.' }, 400);
+    if (typeof entry.adapter.refine !== 'function') return json(res, { error: 'Refine not supported for this provider.' }, 400);
+    const model = body.model || entry.adapter.defaultModel;
+    try {
+      const refined = await entry.adapter.refine({
+        draft,
+        selection: body.selection || null,
+        apiKey: entry.apiKey,
+        model,
+      });
+      json(res, { ok: true, refined: refined || draft, provider: entry.adapter.kind });
+    } catch (e) {
+      json(res, { error: e && e.message ? e.message : String(e) }, 500);
+    }
+  });
+
   addRoute('POST', '/api/browser/agent/reset', async (req, res) => {
     let body = {};
     try { body = await readBody(req); } catch (_) {}
     const id = body.threadId || 'default';
     const t = threads.get(id);
-    if (t) { t.messages = []; t.providerKind = null; t.stopped = false; }
+    if (t) {
+      t.messages = [];
+      t.providerKind = null;
+      t.stopped = false;
+      t.resumed = false;
+      if (t.abortController) {
+        try { t.abortController.abort(); } catch (_) {}
+        t.abortController = null;
+      }
+    }
     json(res, { ok: true });
   });
 

@@ -625,6 +625,91 @@ function makePlaywrightDriver() {
       const buf = await page.screenshot({ type: 'png', fullPage: false });
       return { base64: buf.toString('base64'), mimeType: 'image/png' };
     },
+    async evaluate(code) {
+      _ensurePage();
+      return await page.evaluate(async (src) => {
+        const fn = new Function('return (async function(){' + src + '})();');
+        return await fn();
+      }, String(code));
+    },
+    async removeElement(selector, { all = false } = {}) {
+      _ensurePage();
+      return await page.evaluate(({ sel, removeAll }) => {
+        const nodes = removeAll ? document.querySelectorAll(sel) : [document.querySelector(sel)].filter(Boolean);
+        let removed = 0;
+        nodes.forEach((n) => { if (n && n.parentNode) { n.parentNode.removeChild(n); removed++; } });
+        return { removed, matched: nodes.length };
+      }, { sel: selector, removeAll: all });
+    },
+    async setStyle(selector, styles, { all = false } = {}) {
+      _ensurePage();
+      return await page.evaluate(({ sel, styleMap, applyAll }) => {
+        const nodes = applyAll ? Array.from(document.querySelectorAll(sel)) : [document.querySelector(sel)].filter(Boolean);
+        if (!nodes.length) throw new Error('No element matched ' + sel);
+        const toCamel = (k) => k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        Object.keys(styleMap || {}).forEach((key) => {
+          const val = styleMap[key];
+          nodes.forEach((n) => {
+            try { n.style[toCamel(key)] = val == null ? '' : String(val); } catch (_) {}
+          });
+        });
+        return { applied: Object.keys(styleMap || {}).length, matched: nodes.length };
+      }, { sel: selector, styleMap: styles || {}, applyAll: all });
+    },
+    async setAttribute(selector, name, value) {
+      _ensurePage();
+      return await page.evaluate(({ sel, attrName, attrValue }) => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('No element matched ' + sel);
+        if (attrValue == null || attrValue === '') el.removeAttribute(attrName);
+        else el.setAttribute(attrName, String(attrValue));
+        return { matched: 1 };
+      }, { sel: selector, attrName: name, attrValue: value });
+    },
+    async setText(selector, text) {
+      _ensurePage();
+      return await page.evaluate(({ sel, t }) => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('No element matched ' + sel);
+        el.textContent = t;
+        return { matched: 1 };
+      }, { sel: selector, t: String(text == null ? '' : text) });
+    },
+    async setHtml(selector, html) {
+      _ensurePage();
+      return await page.evaluate(({ sel, h }) => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('No element matched ' + sel);
+        el.innerHTML = h;
+        return { matched: 1 };
+      }, { sel: selector, h: String(html == null ? '' : html) });
+    },
+    async scrollTo(selector, { block = 'center' } = {}) {
+      _ensurePage();
+      return await page.evaluate(({ sel, b }) => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('No element matched ' + sel);
+        el.scrollIntoView({ behavior: 'smooth', block: b });
+        return { matched: 1 };
+      }, { sel: selector, b: block });
+    },
+    async getComputedStyle(selector, properties) {
+      _ensurePage();
+      return await page.evaluate(({ sel, props }) => {
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('No element matched ' + sel);
+        const cs = getComputedStyle(el);
+        const keys = (Array.isArray(props) && props.length) ? props : [
+          'color', 'background-color', 'background-image', 'font-family', 'font-size',
+          'font-weight', 'line-height', 'letter-spacing', 'text-transform',
+          'border-color', 'border-radius', 'box-shadow', 'opacity',
+          'padding', 'margin', 'width', 'height', 'display', 'position',
+        ];
+        const out = {};
+        keys.forEach((k) => { try { out[k] = cs.getPropertyValue(k); } catch (_) {} });
+        return { properties: out };
+      }, { sel: selector, props: properties });
+    },
     async readPage({ selector } = {}) {
       _ensurePage();
       const content = await page.evaluate((sel) => {
@@ -812,6 +897,87 @@ class BrowserAgent {
   async screenshot() {
     const r = await this._driver().screenshot();
     return { ok: true, base64: r.base64, mimeType: r.mimeType || 'image/png' };
+  }
+
+  async executeJs(code) {
+    if (typeof code !== 'string' || !code.trim()) return { ok: false, error: 'code is required' };
+    try {
+      const value = await this._driver().evaluate(code);
+      return { ok: true, value };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async removeElement(selector, opts = {}) {
+    if (!selector) return { ok: false, error: 'selector is required' };
+    try {
+      const r = await this._driver().removeElement(selector, opts);
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async setStyle(selector, styles, opts = {}) {
+    if (!selector) return { ok: false, error: 'selector is required' };
+    if (!styles || typeof styles !== 'object') return { ok: false, error: 'styles must be an object' };
+    try {
+      const r = await this._driver().setStyle(selector, styles, opts);
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async setAttribute(selector, name, value) {
+    if (!selector || !name) return { ok: false, error: 'selector and name are required' };
+    try {
+      const r = await this._driver().setAttribute(selector, name, value);
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async setText(selector, text) {
+    if (!selector) return { ok: false, error: 'selector is required' };
+    try {
+      const r = await this._driver().setText(selector, String(text == null ? '' : text));
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async setHtml(selector, html) {
+    if (!selector) return { ok: false, error: 'selector is required' };
+    try {
+      const r = await this._driver().setHtml(selector, String(html == null ? '' : html));
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async scrollTo(selector, opts = {}) {
+    if (!selector) return { ok: false, error: 'selector is required' };
+    try {
+      const r = await this._driver().scrollTo(selector, opts);
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  async getComputedStyle(selector, properties) {
+    if (!selector) return { ok: false, error: 'selector is required' };
+    try {
+      const r = await this._driver().getComputedStyle(selector, properties);
+      return { ok: true, ...(r || {}) };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
   }
 
   async readPage(opts = {}) {
