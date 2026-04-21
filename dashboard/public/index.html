@@ -617,6 +617,21 @@
     .orch-task-left-bottom {
       font-size: 10px; color: var(--overlay1); font-family: var(--font-mono);
     }
+    .orch-task-step {
+      font-size: 11px; color: var(--subtext1); font-family: var(--font-mono);
+      margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 500px; font-style: italic; opacity: 0.9;
+    }
+    .orch-task.running .orch-task-step::before {
+      content: ''; display: inline-block; width: 6px; height: 6px;
+      border-radius: 50%; background: var(--yellow);
+      margin-right: 6px; vertical-align: middle;
+      animation: stepPulse 1.2s ease-in-out infinite;
+    }
+    @keyframes stepPulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
     .orch-task-right {
       display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
       flex-shrink: 0; margin-left: 12px;
@@ -660,6 +675,38 @@
       flex: 1; color: var(--overlay0); gap: 8px;
     }
     .orch-empty-state i { width: 48px; height: 48px; stroke-width: 1; }
+    .orch-cta-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px; width: 100%; max-width: 640px; margin-top: 4px;
+    }
+    .orch-cta-card {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+      padding: 14px 16px; background: var(--surface0); border: 1px solid var(--surface2);
+      border-radius: 10px; color: var(--text); text-align: left; cursor: pointer;
+      transition: all 0.12s;
+    }
+    .orch-cta-card:hover { background: var(--surface1); border-color: var(--overlay0); transform: translateY(-1px); }
+    .orch-cta-card i { width: 18px; height: 18px; color: var(--accent); stroke-width: 1.8; margin-bottom: 2px; }
+    .orch-cta-title { font-size: 12px; font-weight: 600; color: var(--text); }
+    .orch-cta-sub { font-size: 11px; color: var(--subtext0); }
+
+    /* ── Floating action buttons (runtime-added by the AI) ──────────────── */
+    .fab-layer {
+      position: fixed; bottom: 72px; right: 18px; z-index: 9500;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+      pointer-events: none;
+    }
+    .fab {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 16px; background: var(--accent); color: var(--crust);
+      border: none; border-radius: 999px;
+      font: 600 12px var(--font-ui); cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      pointer-events: auto; transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
+    }
+    .fab:hover { transform: translateY(-1px); filter: brightness(1.1); box-shadow: 0 10px 28px rgba(0,0,0,0.55); }
+    .fab i { width: 14px; height: 14px; }
+    .fab .fab-label { font-size: 12px; letter-spacing: 0.2px; }
     .orch-task-result {
       padding: 8px 10px; background: var(--crust);
       border-radius: var(--radius); font-size: 11px; color: var(--subtext1);
@@ -1929,6 +1976,67 @@
       font-size: 9px; font-weight: 600; color: var(--subtext0); text-transform: uppercase;
       letter-spacing: 0.5px; flex-shrink: 0;
     }
+    /* ── Palette suggestion chips ────────────────────────────────────── */
+    .cmd-suggest-block {
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid var(--surface1);
+    }
+    .cmd-suggest-heading {
+      font-size: 10px; color: var(--overlay1);
+      text-transform: uppercase; letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+    .cmd-suggest-chips {
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .cmd-suggest-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 9px; background: var(--surface0);
+      border: 1px solid var(--surface2); border-radius: 999px;
+      color: var(--subtext1); font: 11px var(--font-ui);
+      cursor: pointer; transition: all 0.12s;
+    }
+    .cmd-suggest-chip:hover {
+      background: var(--surface1); color: var(--text);
+      border-color: var(--overlay0);
+    }
+    .cmd-suggest-chip svg { color: var(--accent); }
+    .cmd-recent-list {
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .cmd-recent-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 6px; border-radius: 5px;
+      color: var(--subtext1); font: 12px var(--font-ui); cursor: pointer;
+    }
+    .cmd-recent-item:hover { background: var(--surface1); color: var(--text); }
+    .cmd-recent-item svg { color: var(--subtext0); flex-shrink: 0; }
+    .cmd-recent-cat {
+      margin-left: auto; font-size: 10px; color: var(--overlay1);
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+
+    /* ── Note slash menu ─────────────────────────────────────────────── */
+    .note-slash-menu {
+      position: fixed; display: none; z-index: 3200;
+      min-width: 260px; max-width: 320px;
+      background: var(--surface0); border: 1px solid var(--surface2);
+      border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+      padding: 4px; font: 12px var(--font-ui);
+    }
+    .note-slash-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 5px;
+      color: var(--subtext1); cursor: pointer; user-select: none;
+    }
+    .note-slash-item.active, .note-slash-item:hover {
+      background: var(--surface1); color: var(--text);
+    }
+    .note-slash-item svg { color: var(--accent); flex-shrink: 0; }
+    .note-slash-hint {
+      margin-left: auto; font: 10px var(--font-mono); color: var(--overlay1);
+    }
+
     .cmd-palette-empty {
       padding: 20px; text-align: center; font-size: 12px; color: var(--subtext0);
     }
@@ -2002,6 +2110,56 @@
     .toast-error { border-left: 3px solid var(--red); }
     .toast-info { border-left: 3px solid var(--blue); }
     @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ── Rich toast with action button (inspired by sonner) ──────────────── */
+    .rich-toast-stack {
+      position: fixed; bottom: 18px; right: 18px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+      pointer-events: none;
+    }
+    .rich-toast {
+      min-width: 280px; max-width: 420px;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px 10px 14px;
+      background: color-mix(in srgb, var(--surface1) 95%, transparent);
+      border: 1px solid var(--overlay0);
+      border-radius: 10px; color: var(--text);
+      font: 12px/1.35 var(--font-ui);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+      backdrop-filter: blur(14px);
+      pointer-events: auto;
+      animation: richToastIn 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .rich-toast.leaving { animation: richToastOut 0.18s ease forwards; }
+    .rich-toast.success { border-left: 3px solid var(--green); }
+    .rich-toast.error   { border-left: 3px solid var(--red); }
+    .rich-toast.warning { border-left: 3px solid var(--yellow); }
+    .rich-toast.info    { border-left: 3px solid var(--accent); }
+    .rich-toast-icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--subtext1); }
+    .rich-toast.success .rich-toast-icon { color: var(--green); }
+    .rich-toast.error   .rich-toast-icon { color: var(--red); }
+    .rich-toast.warning .rich-toast-icon { color: var(--yellow); }
+    .rich-toast-msg { flex: 1; min-width: 0; word-break: break-word; }
+    .rich-toast-action {
+      margin-left: 4px; padding: 4px 10px;
+      background: transparent; border: 1px solid var(--overlay0);
+      border-radius: 6px; color: var(--text);
+      font: 600 11px var(--font-ui); letter-spacing: 0.3px;
+      cursor: pointer; white-space: nowrap; text-transform: uppercase;
+    }
+    .rich-toast-action:hover { background: var(--surface2); border-color: var(--overlay1); }
+    .rich-toast-close {
+      background: transparent; border: none; color: var(--subtext0);
+      cursor: pointer; padding: 2px; line-height: 0; border-radius: 4px;
+    }
+    .rich-toast-close:hover { color: var(--text); background: var(--surface2); }
+    @keyframes richToastIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes richToastOut {
+      to { opacity: 0; transform: translateY(6px) scale(0.96); }
+    }
 
     /* ── Empty state ──────────────────────────────────────────────────────── */
     .empty-state {
@@ -2723,7 +2881,24 @@
             <div class="orch-empty-state" id="orchEmptyState">
               <i data-lucide="radio-tower"></i>
               <div style="font-size:13px;font-weight:500;">No tasks yet</div>
-              <div style="font-size:11px;">Dispatch a task to another AI agent or spawn a headless job</div>
+              <div style="font-size:11px;color:var(--subtext0);margin-bottom:14px;">Dispatch a task to another AI agent or spawn a headless job</div>
+              <div class="orch-cta-grid">
+                <button class="orch-cta-card" onclick="openCmdPalette();setTimeout(()=>{const i=document.getElementById('cmdPaletteInput');if(i){i.value='';filterCmdPalette();i.focus();}},60);">
+                  <i data-lucide="sparkles"></i>
+                  <div class="orch-cta-title">Ask AI anything</div>
+                  <div class="orch-cta-sub">Ctrl+K, type a question, press Enter</div>
+                </button>
+                <button class="orch-cta-card" onclick="switchTab('terminal');setTimeout(()=>{try{launchAi();}catch(_){}},50);">
+                  <i data-lucide="play"></i>
+                  <div class="orch-cta-title">Launch an AI session</div>
+                  <div class="orch-cta-sub">Full terminal with Claude, Gemini, Codex, or Grok</div>
+                </button>
+                <button class="orch-cta-card" onclick="openCmdPalette();setTimeout(()=>{const i=document.getElementById('cmdPaletteInput');if(i){i.value='recipe';filterCmdPalette();i.focus();}},60);">
+                  <i data-lucide="book-open"></i>
+                  <div class="orch-cta-title">Run a recipe</div>
+                  <div class="orch-cta-sub">Saved prompts for routine work</div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3434,6 +3609,7 @@
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
+<div class="rich-toast-stack" id="richToastStack"></div>
 
 <!-- ═══ Command Palette ═══════════════════════════════════════════════ -->
 <div class="cmd-palette-overlay" id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
@@ -3856,6 +4032,9 @@ requestAnimationFrame(fitTerminalNow);
         case 'orchestrator-event':
           handleOrchestratorEvent(msg);
           break;
+        case 'ui-mutate':
+          handleUiMutate(msg.ops || []);
+          break;
       }
     };
 
@@ -3865,6 +4044,163 @@ requestAnimationFrame(fitTerminalNow);
       reconnectTimer = setTimeout(connect, 2500);
     };
   }
+
+// ── Runtime UI Mutations ────────────────────────────────────────────────
+// The AI can POST to /api/ui/mutate to add tabs, FABs, or collapse panels
+// LIVE while the user is inside Symphonee. Mutations persist to localStorage
+// so they survive reloads without editing source files. Non-destructive: a
+// "reset" op wipes them all; the Settings tab lists them for manual removal.
+
+const UI_MUT_KEY = 'symphonee-ui-mutations-v1';
+
+function _loadUiMutations() {
+  try { return JSON.parse(localStorage.getItem(UI_MUT_KEY) || '[]'); } catch (_) { return []; }
+}
+function _saveUiMutations(list) {
+  try { localStorage.setItem(UI_MUT_KEY, JSON.stringify(list)); } catch (_) {}
+}
+function _addUiMutation(op) {
+  if (!op || op.op === 'reset') { _saveUiMutations([]); return; }
+  const list = _loadUiMutations();
+  // Merge strategy: if the op has an id, replace any prior op with the same id+type.
+  const idx = (op.id)
+    ? list.findIndex(x => x.id === op.id && x.op === op.op)
+    : -1;
+  if (idx >= 0) list[idx] = op; else list.push(op);
+  _saveUiMutations(list);
+}
+
+function handleUiMutate(ops) {
+  if (!Array.isArray(ops)) return;
+  for (const op of ops) {
+    try { applyUiMutation(op); _addUiMutation(op); }
+    catch (e) { console.error('ui-mutate failed:', e); toast('UI mutation failed: ' + e.message, 'error'); }
+  }
+  try { lucide.createIcons(); } catch (_) {}
+}
+
+function applyUiMutation(op) {
+  if (!op || typeof op !== 'object') return;
+  switch (op.op) {
+    case 'addTab': {
+      if (!op.id || !op.label) throw new Error('addTab requires id and label');
+      const safeId = String(op.id).replace(/[^a-zA-Z0-9_-]/g, '-');
+      const bar = document.getElementById('tabBarScroll');
+      if (bar && !document.querySelector('button.tab-btn[data-tab="' + safeId + '"][data-user-tab="1"]')) {
+        const btn = document.createElement('button');
+        btn.className = 'tab-btn';
+        btn.dataset.tab = safeId;
+        btn.dataset.userTab = '1';
+        btn.onclick = () => switchTab(safeId);
+        btn.innerHTML = esc(op.label) + ' <span style="opacity:0.5;font-size:13px;margin-left:6px;cursor:pointer;" onclick="event.stopPropagation();removeUserTab(\'' + safeId + '\')" title="Remove">x</span>';
+        bar.appendChild(btn);
+      }
+      const center = document.querySelector('.center');
+      if (center && !document.getElementById('panel-' + safeId)) {
+        const panel = document.createElement('div');
+        panel.className = 'tab-panel';
+        panel.id = 'panel-' + safeId;
+        panel.dataset.userTab = '1';
+        panel.style.padding = '16px 20px';
+        panel.style.overflowY = 'auto';
+        panel.innerHTML = op.bodyHtml ? String(op.bodyHtml) : '<div class="empty-state"><i data-lucide="layout"></i><div class="empty-state-text">' + esc(op.label) + '</div></div>';
+        center.appendChild(panel);
+      }
+      return;
+    }
+    case 'removeTab': {
+      if (!op.id) return;
+      const safeId = String(op.id).replace(/[^a-zA-Z0-9_-]/g, '-');
+      document.querySelectorAll('button.tab-btn[data-tab="' + safeId + '"][data-user-tab="1"]').forEach(b => b.remove());
+      const p = document.getElementById('panel-' + safeId);
+      if (p && p.dataset.userTab === '1') p.remove();
+      return;
+    }
+    case 'setTabHidden': {
+      const safeId = String(op.id || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+      const btn = document.querySelector('button.tab-btn[data-tab="' + safeId + '"]');
+      if (btn) btn.style.display = op.hidden ? 'none' : '';
+      return;
+    }
+    case 'addFab': {
+      if (!op.id) throw new Error('addFab requires id');
+      const safeId = String(op.id).replace(/[^a-zA-Z0-9_-]/g, '-');
+      let host = document.getElementById('fabLayer');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'fabLayer';
+        host.className = 'fab-layer';
+        document.body.appendChild(host);
+      }
+      let btn = document.getElementById('fab-' + safeId);
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'fab-' + safeId;
+        btn.className = 'fab';
+        host.appendChild(btn);
+      }
+      const icon = (op.icon || 'sparkles').replace(/[^a-z0-9-]/gi, '');
+      btn.innerHTML = '<i data-lucide="' + icon + '"></i><span class="fab-label">' + esc(op.label || 'Action') + '</span>';
+      btn.onclick = () => {
+        if (op.prompt) askAIFromPalette(String(op.prompt));
+        else if (op.href) window.open(op.href, '_blank');
+        else if (op.tab) switchTab(String(op.tab));
+      };
+      return;
+    }
+    case 'removeFab': {
+      const safeId = String(op.id || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+      const b = document.getElementById('fab-' + safeId);
+      if (b) b.remove();
+      return;
+    }
+    case 'setCollapsed': {
+      if (!op.target) return;
+      try {
+        document.querySelectorAll(String(op.target)).forEach(el => {
+          if (op.collapsed) { el.dataset._prevDisplay = el.style.display || ''; el.style.display = 'none'; }
+          else { el.style.display = el.dataset._prevDisplay || ''; delete el.dataset._prevDisplay; }
+        });
+      } catch (_) {}
+      return;
+    }
+    case 'reset': {
+      // Remove all user-added tabs, FABs and unhide anything we hid.
+      document.querySelectorAll('button.tab-btn[data-user-tab="1"]').forEach(b => b.remove());
+      document.querySelectorAll('.tab-panel[data-user-tab="1"]').forEach(p => p.remove());
+      const host = document.getElementById('fabLayer');
+      if (host) host.innerHTML = '';
+      return;
+    }
+    default:
+      throw new Error('Unknown ui-mutate op: ' + op.op);
+  }
+}
+
+function removeUserTab(id) {
+  handleUiMutate([{ op: 'removeTab', id }]);
+  // If the removed tab was active, fall back to Terminal.
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab;
+  if (!activeTab || activeTab === id) switchTab('terminal');
+  toast('Tab removed', 'info');
+}
+
+// Replay persisted mutations on load so customizations survive refresh.
+(function _replayUiMutations() {
+  try {
+    const run = () => {
+      const list = _loadUiMutations();
+      if (!list.length) return;
+      for (const op of list) { try { applyUiMutation(op); } catch (e) { console.warn('replay mutation failed:', e); } }
+      try { lucide.createIcons(); } catch (_) {}
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+    } else {
+      run();
+    }
+  } catch (_) {}
+})();
 
 // ── Background Task Pills System ────────────────────────────────────────
 // Shows running operations as small pills at the bottom of the center panel.
@@ -5865,7 +6201,119 @@ function toggleNoteMode() {
 function onNoteInput() {
   noteDirty = true;
   document.getElementById('noteSaveBtn').style.display = '';
+  _maybeOpenNoteSlashMenu();
 }
+
+// ── Note slash menu: typing "/" at the start of a line opens a quick menu
+// of AI actions that run on the current note content. Close with Escape or
+// any non-slash keypress. Inspired by agent-native's ComposeSlashMenu.
+const NOTE_SLASH_ACTIONS = [
+  { key: 'summarize', label: 'Summarize this note', icon: 'list',
+    build: (text) => 'Summarize this note in 5 bullets. Keep it tight.\n\n---\n' + text },
+  { key: 'rewrite',   label: 'Rewrite cleanly',     icon: 'wand-2',
+    build: (text) => 'Rewrite the following note so it reads clearly and professionally. Preserve the meaning, fix grammar, keep the same length.\n\n---\n' + text },
+  { key: 'todos',     label: 'Extract action items',icon: 'check-square',
+    build: (text) => 'Extract every action item from this note as a markdown checklist. Use concrete verbs.\n\n---\n' + text },
+  { key: 'email',     label: 'Turn into an email',  icon: 'mail',
+    build: (text) => 'Turn this note into a polite, concise email. Suggest a subject line. Keep it under 200 words.\n\n---\n' + text },
+  { key: 'expand',    label: 'Expand with details', icon: 'maximize-2',
+    build: (text) => 'Expand this note with sensible detail, examples, and structure. Preserve my voice.\n\n---\n' + text },
+  { key: 'translate-fr', label: 'Translate to French', icon: 'languages',
+    build: (text) => 'Translate this note into natural, idiomatic French. Preserve formatting.\n\n---\n' + text },
+];
+
+function _maybeOpenNoteSlashMenu() {
+  const ta = document.getElementById('noteTextarea');
+  if (!ta) return;
+  const caret = ta.selectionStart;
+  if (caret == null) return;
+  const v = ta.value;
+  // Look backwards for the start of the current line.
+  const lineStart = v.lastIndexOf('\n', caret - 1) + 1;
+  const lineSoFar = v.slice(lineStart, caret);
+  // Only fire when the line starts with "/" and has no spaces -- keep the
+  // menu pattern predictable instead of surprising.
+  if (lineSoFar === '/' || /^\/[a-zA-Z-]*$/.test(lineSoFar)) {
+    _openNoteSlashMenu(lineSoFar, lineStart);
+  } else {
+    _closeNoteSlashMenu();
+  }
+}
+
+function _openNoteSlashMenu(lineSoFar, lineStart) {
+  let menu = document.getElementById('noteSlashMenu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'noteSlashMenu';
+    menu.className = 'note-slash-menu';
+    document.body.appendChild(menu);
+  }
+  const query = lineSoFar.slice(1).toLowerCase();
+  const matches = NOTE_SLASH_ACTIONS.filter(a => !query || a.key.startsWith(query) || a.label.toLowerCase().includes(query));
+  if (!matches.length) { _closeNoteSlashMenu(); return; }
+  menu.innerHTML = matches.map((a, i) =>
+    '<div class="note-slash-item' + (i === 0 ? ' active' : '') + '" data-key="' + a.key + '">' +
+      '<i data-lucide="' + a.icon + '" style="width:13px;height:13px;"></i>' +
+      '<span>' + esc(a.label) + '</span>' +
+      '<span class="note-slash-hint">/' + a.key + '</span>' +
+    '</div>'
+  ).join('');
+  try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+  // Anchor under the textarea. We don't compute caret coordinates -- pinning
+  // to the editor's top-left corner is predictable and avoids line-wrap math.
+  const ta = document.getElementById('noteTextarea');
+  const r = ta.getBoundingClientRect();
+  menu.style.top = (r.top + 10) + 'px';
+  menu.style.left = (r.left + 24) + 'px';
+  menu.style.display = 'block';
+  menu.dataset.lineStart = String(lineStart);
+  menu.querySelectorAll('.note-slash-item').forEach(el => {
+    el.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();
+      _runNoteSlashAction(el.dataset.key, parseInt(menu.dataset.lineStart, 10));
+    });
+  });
+}
+
+function _closeNoteSlashMenu() {
+  const m = document.getElementById('noteSlashMenu');
+  if (m) m.style.display = 'none';
+}
+
+function _runNoteSlashAction(key, lineStart) {
+  const action = NOTE_SLASH_ACTIONS.find(a => a.key === key);
+  const ta = document.getElementById('noteTextarea');
+  if (!action || !ta) return;
+  // Remove the slash trigger from the textarea (everything from lineStart to caret).
+  const caret = ta.selectionStart;
+  const before = ta.value.slice(0, lineStart);
+  const after  = ta.value.slice(caret);
+  ta.value = before + after;
+  ta.selectionStart = ta.selectionEnd = lineStart;
+  _closeNoteSlashMenu();
+  const content = ta.value.trim();
+  if (!content) { toast('Note is empty -- nothing to act on', 'warning'); return; }
+  askAIFromPalette(action.build(content));
+}
+
+// Arrow-key + Enter support for the slash menu.
+document.addEventListener('keydown', (e) => {
+  const menu = document.getElementById('noteSlashMenu');
+  if (!menu || menu.style.display === 'none') return;
+  if (document.activeElement?.id !== 'noteTextarea') return;
+  const items = menu.querySelectorAll('.note-slash-item');
+  if (!items.length) return;
+  let idx = Array.from(items).findIndex(el => el.classList.contains('active'));
+  if (e.key === 'ArrowDown') { e.preventDefault(); idx = (idx + 1) % items.length; items.forEach(i => i.classList.remove('active')); items[idx].classList.add('active'); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); idx = (idx - 1 + items.length) % items.length; items.forEach(i => i.classList.remove('active')); items[idx].classList.add('active'); }
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    const active = items[idx] || items[0];
+    _runNoteSlashAction(active.dataset.key, parseInt(menu.dataset.lineStart, 10));
+  } else if (e.key === 'Escape') {
+    e.preventDefault(); _closeNoteSlashMenu();
+  }
+}, true);
 
 async function saveCurrentNote() {
   if (!currentNote) return;
@@ -6511,6 +6959,17 @@ function renderOrchTasks() {
       ? '<button class="orch-task-btn view" onclick="event.stopPropagation();orchSelectAgent(\'' + t.targetTermId + '\')">View Terminal</button>'
       : '';
 
+    // Current step: last non-empty line of the streaming output, trimmed.
+    // Pulled live via the websocket feed the same way Live Output is.
+    let currentStep = '';
+    if (isRunning && liveOutput) {
+      const lines = liveOutput.replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length) currentStep = lines[lines.length - 1].slice(0, 120);
+    }
+    const stepLine = currentStep
+      ? '<div class="orch-task-step" data-step-id="' + t.id + '" title="' + currentStep.replace(/"/g, '&quot;') + '">' + currentStep.replace(/</g, '&lt;') + '</div>'
+      : (isRunning ? '<div class="orch-task-step" data-step-id="' + t.id + '">Working...</div>' : '');
+
     return '<div class="orch-task ' + t.state + expanded + '" data-id="' + t.id + '" onclick="orchToggleTask(this)">' +
       '<div class="orch-task-header">' +
         '<div class="orch-task-left">' +
@@ -6519,6 +6978,7 @@ function renderOrchTasks() {
             (fromLabel ? '<span>' + fromLabel + '</span>' : '') +
           '</div>' +
           '<div style="font-size:12px;color:var(--text);font-weight:500;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:500px;">' + taskTitle + '</div>' +
+          stepLine +
           '<div class="orch-task-left-bottom">' + t.type + ' / ' + t.id + '</div>' +
           (isRunning ? '<div class="orch-watcher-status" style="font-size:10px;color:var(--yellow);font-family:var(--font-mono);margin-top:2px;display:none;"></div>' : '') +
         '</div>' +
@@ -6772,6 +7232,17 @@ function handleOrchestratorEvent(msg) {
   if (msg.event === 'task-output' && msg.taskId) {
     const prev = _orchTaskOutput.get(msg.taskId) || '';
     _orchTaskOutput.set(msg.taskId, prev + (msg.chunk || ''));
+    // Keep the in-card "current step" line in sync without a full re-render.
+    const stepEl = document.querySelector(`.orch-task-step[data-step-id="${msg.taskId}"]`);
+    if (stepEl) {
+      const full = _orchTaskOutput.get(msg.taskId);
+      const lines = full.replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length) {
+        const last = lines[lines.length - 1].slice(0, 120);
+        stepEl.textContent = last;
+        stepEl.title = last;
+      }
+    }
     const outputEl = document.querySelector(`.orch-task-output[data-output-id="${msg.taskId}"]`);
     if (outputEl) {
       const full = _orchTaskOutput.get(msg.taskId);
@@ -11029,19 +11500,61 @@ function confirmDialog(message, { confirmText = 'Confirm', cancelText = 'Cancel'
   });
 }
 
-function toast(msg, type = 'info') {
-  // Route all toasts through the floating task pill system
+function toast(msg, type = 'info', options) {
+  // Rich path: when an action or explicit rich flag is supplied, render a
+  // full-width card with an optional action button. Otherwise keep the tiny
+  // task-pill UX for the high-volume background-status case.
+  if (options && (options.action || options.rich)) {
+    return richToast(msg, type, options);
+  }
   const id = 'toast-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
   const icon = type === 'success' ? 'check' : type === 'error' ? 'alert-circle' : type === 'warning' ? 'alert-triangle' : 'info';
   const status = type === 'success' ? 'done' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info';
   _bgTasks.set(id, { label: msg, status, startTime: Date.now(), endTime: Date.now(), icon });
   renderTaskPills();
-  // Auto-remove after 3.5s with animation
+  const dur = (options && options.duration) || 3500;
   setTimeout(() => {
     const el = document.querySelector(`.task-pill[data-id="${id}"]`);
     if (el) el.classList.add('leaving');
     setTimeout(() => { _bgTasks.delete(id); renderTaskPills(); }, 300);
-  }, 3500);
+  }, dur);
+  return id;
+}
+
+function richToast(msg, type = 'info', options = {}) {
+  const stack = document.getElementById('richToastStack');
+  if (!stack) return null;
+  const id = 'rt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
+  const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : type === 'warning' ? 'alert-triangle' : 'info';
+  const el = document.createElement('div');
+  el.className = 'rich-toast ' + type;
+  el.dataset.id = id;
+  el.innerHTML =
+    '<i data-lucide="' + iconName + '" class="rich-toast-icon"></i>' +
+    '<div class="rich-toast-msg"></div>' +
+    (options.action ? '<button class="rich-toast-action" data-role="action">' + esc(options.action.label || 'Action') + '</button>' : '') +
+    '<button class="rich-toast-close" data-role="close" title="Dismiss"><i data-lucide="x" style="width:12px;height:12px;"></i></button>';
+  el.querySelector('.rich-toast-msg').textContent = String(msg);
+  stack.appendChild(el);
+  try { lucide.createIcons({ nodes: [el] }); } catch (_) {}
+
+  const close = () => {
+    if (!el.isConnected) return;
+    el.classList.add('leaving');
+    setTimeout(() => { el.remove(); }, 180);
+  };
+
+  el.querySelector('[data-role="close"]').addEventListener('click', close);
+  if (options.action) {
+    el.querySelector('[data-role="action"]').addEventListener('click', () => {
+      try { options.action.onClick && options.action.onClick(); } catch (e) { console.error('toast action:', e); }
+      if (!options.action.keepOpen) close();
+    });
+  }
+
+  const duration = options.duration || (options.action ? 6000 : 3500);
+  if (duration > 0) setTimeout(close, duration);
+  return { id, close };
 }
 
 // ── Re-focus terminal when window regains focus ─────────────────────────
@@ -11060,14 +11573,68 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
+// ── Sequence shortcuts (vim-style: press "g", then next key) ─────────────
+// g t -> Terminal, g f -> Files, g n -> Notes, g o -> Orchestrator,
+// g g -> Git, g s -> Settings, g k -> Palette, g b -> Backlog (if plugin).
+let _seqPrefix = null;
+let _seqTimer = null;
+function _clearSeq() { _seqPrefix = null; if (_seqTimer) { clearTimeout(_seqTimer); _seqTimer = null; } }
+function _runSeqKey(key) {
+  const map = {
+    t: () => switchTab('terminal'),
+    f: () => switchTab('files'),
+    n: () => switchTab('notes'),
+    o: () => {
+      const btn = document.getElementById('orchestratorTabBtn');
+      if (btn && btn.style.display !== 'none') switchTab('orchestrator');
+      else toast('Orchestrator is hidden', 'warning');
+    },
+    g: () => { try { openGitModal('branches'); } catch (_) { toast('Git modal unavailable', 'warning'); } },
+    s: () => { try { openSettings(); } catch (_) {} },
+    k: () => openCmdPalette(),
+    b: () => {
+      const btn = document.getElementById('backlogTabBtn');
+      if (btn && btn.style.display !== 'none') switchTab('backlog');
+      else toast('Backlog requires a work-item plugin', 'warning');
+    },
+    r: () => {
+      const btn = document.getElementById('recipeEditorTabBtn');
+      if (btn && btn.style.display !== 'none') switchTab('recipe-editor');
+      else { document.getElementById('cmdPaletteInput'); openCmdPalette(); setTimeout(() => { const i = document.getElementById('cmdPaletteInput'); if (i) { i.value = 'recipe'; filterCmdPalette(); } }, 60); }
+    },
+  };
+  const fn = map[key];
+  if (fn) { try { fn(); } catch (_) {} }
+}
+
 // ── Keyboard shortcut: Escape closes modals ─────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    _clearSeq();
   }
 
   // Don't intercept when typing in inputs/textareas (unless it's a specific shortcut)
   const inInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT';
+
+  // Sequence: first "g" arms, a second key within 1.5s fires the nav.
+  if (!inInput && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    if (_seqPrefix === 'g') {
+      const k = e.key.toLowerCase();
+      if (/^[a-z]$/.test(k)) {
+        e.preventDefault();
+        _clearSeq();
+        _runSeqKey(k);
+        return;
+      }
+      _clearSeq();
+    } else if (e.key === 'g') {
+      // Avoid swallowing terminal usage: only arm on an empty window focus.
+      _seqPrefix = 'g';
+      _seqTimer = setTimeout(_clearSeq, 1500);
+      return;
+    }
+  }
 
   // Work-item shortcuts are gated on a workItemProvider being installed.
   // Without one, Ctrl+B / Ctrl+R / Ctrl+Shift+N / Ctrl+Shift+F are no-ops so
@@ -11077,6 +11644,10 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
     // Ctrl+K → Command Palette (works from anywhere, even inputs)
     if (e.key === 'k') { e.preventDefault(); openCmdPalette(); return; }
+    // Ctrl+I → Focus AI on the current selection (or open palette blank)
+    if (e.key === 'i') { e.preventDefault(); openAIFocusPalette(); return; }
+    // Ctrl+/ → Keyboard shortcut cheatsheet
+    if (e.key === '/') { e.preventDefault(); openShortcutHelp(); return; }
     // Ctrl+B → Board (requires workItemProvider)
     if (e.key === 'b' && !inInput && _hasWIProvider) { e.preventDefault(); switchTab('backlog'); }
     // Ctrl+T → Terminal
@@ -11272,6 +11843,13 @@ async function loadPluginCmdItems() {
   }
 }
 
+const PALETTE_SUGGESTIONS = [
+  'Summarize the current note',
+  'What changed in the active repo today',
+  'Draft an email from my last note',
+  'Plan tomorrow from my recent notes',
+];
+
 function openCmdPalette() {
   const el = document.getElementById('cmdPalette');
   el.classList.add('open');
@@ -11279,7 +11857,161 @@ function openCmdPalette() {
   input.value = '';
   _cmdSelectedIdx = 0;
   filterCmdPalette();
+  renderPaletteSuggestions();
   setTimeout(() => input.focus(), 50);
+}
+
+// ── Starter suggestions shown above the command list when input is empty.
+// Gives new users (and non-devs) an obvious on-ramp without reading docs.
+function renderPaletteSuggestions() {
+  const list = document.getElementById('cmdPaletteList');
+  if (!list) return;
+  const input = document.getElementById('cmdPaletteInput');
+  if (input && input.value.trim()) return;
+
+  // Recents row: quick re-run of the last 5 palette picks.
+  const recents = _getRecentPaletteActions();
+  let recentsBlock = '';
+  if (recents.length) {
+    const items = recents.map((r, i) =>
+      '<div class="cmd-recent-item" data-recent-idx="' + i + '">' +
+        '<i data-lucide="' + (r.icon || 'clock') + '" style="width:12px;height:12px;"></i>' +
+        '<span>' + esc(r.label) + '</span>' +
+        '<span class="cmd-recent-cat">' + esc(r.category || '') + '</span>' +
+      '</div>'
+    ).join('');
+    recentsBlock =
+      '<div class="cmd-suggest-block">' +
+        '<div class="cmd-suggest-heading">Recent</div>' +
+        '<div class="cmd-recent-list">' + items + '</div>' +
+      '</div>';
+  }
+
+  const chips = PALETTE_SUGGESTIONS.map(s =>
+    '<button class="cmd-suggest-chip" data-prompt="' + s.replace(/"/g, '&quot;') + '">' +
+      '<i data-lucide="sparkles" style="width:11px;height:11px;"></i>' + esc(s) +
+    '</button>'
+  ).join('');
+  const suggestBlock =
+    '<div class="cmd-suggest-block">' +
+      '<div class="cmd-suggest-heading">Try asking</div>' +
+      '<div class="cmd-suggest-chips">' + chips + '</div>' +
+    '</div>';
+
+  list.insertAdjacentHTML('afterbegin', recentsBlock + suggestBlock);
+
+  list.querySelectorAll('.cmd-suggest-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const p = el.dataset.prompt || '';
+      askAIFromPalette(p);
+    });
+  });
+  list.querySelectorAll('.cmd-recent-item').forEach((el) => {
+    el.addEventListener('click', () => {
+      const i = parseInt(el.dataset.recentIdx, 10);
+      const live = recents[i];
+      if (live) { closeCmdPalette(); try { live.action(); } catch (e) { console.error(e); } }
+    });
+  });
+  try { lucide.createIcons({ nodes: [list] }); } catch (_) {}
+}
+
+// ── Cmd+I: open palette seeded with the current selection ───────────────
+function openAIFocusPalette() {
+  let selected = '';
+  try {
+    selected = String(window.getSelection ? window.getSelection().toString() : '').trim();
+  } catch (_) {}
+  if (!selected) {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+      const start = ae.selectionStart, end = ae.selectionEnd;
+      if (start != null && end != null && end > start) selected = String(ae.value).slice(start, end);
+    }
+  }
+  openCmdPalette();
+  if (!selected) return;
+  // Trim to something reasonable for a prompt seed.
+  const seed = selected.length > 600 ? selected.slice(0, 600) + '...' : selected;
+  setTimeout(() => {
+    const input = document.getElementById('cmdPaletteInput');
+    if (!input) return;
+    input.value = seed;
+    filterCmdPalette();
+    // Bias selection to the "Ask AI" row (last AI-category entry).
+    const aiIdx = _cmdFiltered.findIndex(a => a.category === 'AI' && a.label.startsWith('Ask AI:'));
+    if (aiIdx >= 0) { _cmdSelectedIdx = aiIdx; renderCmdPalette(); }
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, 60);
+}
+
+// ── Shortcut help modal -- small cheatsheet overlay ─────────────────────
+function openShortcutHelp() {
+  let overlay = document.getElementById('shortcutHelpOverlay');
+  if (overlay) { overlay.remove(); return; }
+  overlay = document.createElement('div');
+  overlay.id = 'shortcutHelpOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4500;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const row = (k, label) => '<div style="display:flex;align-items:center;gap:12px;padding:5px 0;"><kbd style="display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--overlay0);border-radius:5px;padding:2px 8px;font:11px var(--font-mono);color:var(--text);min-width:68px;justify-content:center;">' + k + '</kbd><span style="color:var(--subtext1);font-size:12px;">' + label + '</span></div>';
+  overlay.innerHTML =
+    '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:10px;padding:18px 22px;width:560px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,0.5);">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+        '<i data-lucide="keyboard" style="width:18px;height:18px;color:var(--accent);"></i>' +
+        '<strong style="font-size:13px;">Keyboard shortcuts</strong>' +
+        '<div style="flex:1;"></div>' +
+        '<button onclick="document.getElementById(\'shortcutHelpOverlay\').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 28px;">' +
+        '<div>' +
+          '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Core</div>' +
+          row('Ctrl+K', 'Command palette') +
+          row('Ctrl+I', 'Ask AI about selection') +
+          row('Ctrl+/', 'This help') +
+          row('Ctrl+T', 'Go to Terminal') +
+          row('Esc',    'Close modals') +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Go to (press g, then...)</div>' +
+          row('g t', 'Terminal') +
+          row('g f', 'Files') +
+          row('g n', 'Notes') +
+          row('g o', 'Orchestrator') +
+          row('g g', 'Git') +
+          row('g s', 'Settings') +
+          row('g b', 'Backlog') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  try { lucide.createIcons({ nodes: [overlay] }); } catch (_) {}
+}
+
+// ── Palette AI fallback: dispatch a free-text query to the active CLI ───
+async function askAIFromPalette(query) {
+  closeCmdPalette();
+  if (!query || !query.trim()) return;
+  const cli = activeCli || 'claude';
+  const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli;
+  try {
+    const res = await fetch('/api/orchestrator/spawn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cli, prompt: query, from: 'palette' }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(text || ('HTTP ' + res.status));
+    }
+    const orchBtn = document.getElementById('orchestratorTabBtn');
+    const canShow = orchBtn && orchBtn.style.display !== 'none';
+    toast('Sent to ' + cliLabel, 'success', {
+      action: canShow ? { label: 'View', onClick: () => switchTab('orchestrator') } : undefined,
+    });
+    try { orchRefreshTasks(); } catch (_) {}
+  } catch (err) {
+    toast('Failed to dispatch: ' + (err.message || err), 'error');
+  }
 }
 
 function closeCmdPalette() {
@@ -11325,6 +12057,27 @@ function filterCmdPalette() {
     _cmdFiltered = all.filter(a => a.label.toLowerCase().includes(q) || a.category.toLowerCase().includes(q));
   } else {
     _cmdFiltered = all;
+  }
+
+  // AI fallback: if the user typed a query and nothing useful matched, offer
+  // to forward it to the active CLI as a prompt. Shown at the bottom when
+  // there are a few matches, or as the sole option when nothing matches -- so
+  // a question like "what's in my inbox" still resolves to a useful action.
+  if (q && q.length >= 2 && !findMatch) {
+    const aiLabel = 'Ask AI: ' + raw.trim();
+    const already = _cmdFiltered.some(a => a.label === aiLabel);
+    if (!already) {
+      const cliLabel = (CLI_CONFIG[activeCli] && CLI_CONFIG[activeCli].label) || activeCli;
+      const aiRow = {
+        label: aiLabel,
+        icon: 'sparkles',
+        action: () => askAIFromPalette(raw.trim()),
+        category: 'AI',
+        hint: 'Send to ' + cliLabel,
+      };
+      if (_cmdFiltered.length === 0) _cmdFiltered = [aiRow];
+      else _cmdFiltered.push(aiRow);
+    }
   }
 
   _cmdSelectedIdx = 0;
@@ -11711,8 +12464,38 @@ function cmdPaletteKeydown(e) {
 function executeCmdPalette(idx) {
   const cmd = _cmdFiltered[idx];
   if (!cmd) return;
+  // Record the pick into the recent-commands queue so future palette opens
+  // surface it at the top. Skip ephemeral entries (search results, "Ask AI"
+  // prompts) -- those belong in their own history if we ever add one.
+  try {
+    if (cmd.label && cmd.category !== 'Search' && !/^Ask AI:/.test(cmd.label)) {
+      const key = 'symphonee-palette-recents-v1';
+      const prev = JSON.parse(localStorage.getItem(key) || '[]');
+      const entry = { label: cmd.label, icon: cmd.icon, category: cmd.category, hint: cmd.hint };
+      const next = [entry, ...prev.filter(e => e.label !== entry.label)].slice(0, 5);
+      localStorage.setItem(key, JSON.stringify(next));
+    }
+  } catch (_) {}
   closeCmdPalette();
   cmd.action();
+}
+
+function _getRecentPaletteActions() {
+  try {
+    const key = 'symphonee-palette-recents-v1';
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
+    if (!Array.isArray(stored) || !stored.length) return [];
+    const all = getCmdActions();
+    // Reconnect each stored stub to a live action by matching its label. If
+    // the command is no longer available (repo removed, plugin uninstalled),
+    // silently skip it.
+    const out = [];
+    for (const s of stored) {
+      const live = all.find(a => a.label === s.label);
+      if (live) out.push(live);
+    }
+    return out;
+  } catch (_) { return []; }
 }
 
 // ── Activity Timeline ───────────────────────────────────────────────────

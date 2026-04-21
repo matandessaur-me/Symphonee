@@ -599,6 +599,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ui/view-plugin' && req.method === 'POST')   return handleUiAction(req, res, 'view-plugin');
     if (url.pathname === '/api/ui/context' && req.method === 'GET')         return json(res, getUiContextWithPath());
     if (url.pathname === '/api/ui/context' && req.method === 'POST')        return handleUiContextUpdate(req, res);
+    if (url.pathname === '/api/ui/mutate' && req.method === 'POST')         return handleUiMutate(req, res);
 
     // ── Bootstrap: one call returns everything an AI CLI needs to start ─
     // The instructions tell every CLI (Claude, Gemini, Codex, Copilot, Grok)
@@ -2116,6 +2117,32 @@ async function handleUiAction(req, res, action) {
   }
   broadcast({ type: 'ui-action', action, ...data });
   json(res, { ok: true, action });
+}
+
+// Runtime UI mutation: the AI sends a spec (add a tab, show a FAB, collapse a
+// panel) and we broadcast it to every connected dashboard. The client applies
+// the mutation in-memory and persists it to localStorage so it survives a
+// reload without touching source files.
+//
+// Accepted ops:
+//   { op: 'addTab',        id, label, bodyHtml }
+//   { op: 'removeTab',     id }
+//   { op: 'setTabHidden',  id, hidden }
+//   { op: 'addFab',        id, label, icon?, prompt? | href? }
+//   { op: 'removeFab',     id }
+//   { op: 'setCollapsed',  target, collapsed }   // CSS selector
+//   { op: 'reset' }                              // clear all mutations
+//
+// `bodyHtml` is sanitized client-side; we do not eval anything on the server.
+async function handleUiMutate(req, res) {
+  const data = await readBody(req);
+  const ops = Array.isArray(data.ops) ? data.ops : (data.op ? [data] : []);
+  if (!ops.length) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'No ops supplied. Pass { op, ... } or { ops: [...] }.' }));
+  }
+  broadcast({ type: 'ui-mutate', ops });
+  json(res, { ok: true, count: ops.length });
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
