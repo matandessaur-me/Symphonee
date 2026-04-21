@@ -1,5 +1,5 @@
 /**
- * Symphonee -- Graph Runs (BETA)
+ * Symphonee -- Graph Runs
  *
  * Durable multi-step workflow engine. Lets you define a graph of nodes,
  * each with typed inputs and outputs, that flow state through the run.
@@ -9,7 +9,7 @@
  * One-shot spawns (/api/orchestrator/spawn) are unchanged and do not
  * use this engine.
  *
- * Scope for v1 (BETA):
+ * Scope for v1:
  *   - Node types: worker, approval, branch
  *   - Storage: per-run JSON snapshot + append-only events WAL
  *   - Reducer: deep-merge (state writes merge into existing state)
@@ -536,8 +536,8 @@ function readPath(obj, p) {
 function evalSafe(expr, state) {
   // Evaluate a simple JS expression against `state`. Expression is untrusted
   // (it came from the graph definition), so we use Function constructor with
-  // a minimal scope. This is BETA; a proper sandbox (vm.Script) will replace
-  // this in a follow-up.
+  // a minimal scope. A proper sandbox (vm.Script) will replace this in a
+  // follow-up.
   const fn = new Function('state', `"use strict"; return (${expr});`);
   return fn(state);
 }

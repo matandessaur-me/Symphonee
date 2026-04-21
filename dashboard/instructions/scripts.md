@@ -19,7 +19,7 @@ Use these before writing anything custom. They handle the common Symphonee opera
 | `Run-Query.ps1 -File path/to/query.ps1` | Run a generic query script |
 | `Get-PluginInstructions.ps1 [-Plugin <id>]` | Fetch AI instructions from installed plugins |
 
-## Graph Runs (BETA -- see graph-runs.md)
+## Graph Runs (see graph-runs.md)
 
 | Script | Purpose |
 |---|---|

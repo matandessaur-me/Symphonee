@@ -149,7 +149,7 @@ You are a Supervisor. Other CLIs (Gemini, Codex, Grok, Copilot) are your workers
 <!-- ORCHESTRATION_END -->
 
 <!-- GRAPH_RUNS_START -->
-## Graph Runs (BETA)
+## Graph Runs
 
 Durable multi-step workflows for tasks that need branching, approval gates, or multi-hour survival. One-shot spawns are unchanged. Full details at `/api/instructions/graph-runs`.
 

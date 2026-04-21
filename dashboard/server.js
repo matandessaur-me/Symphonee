@@ -310,7 +310,6 @@ const server = http.createServer(async (req, res) => {
             const t = terminals.get(termId);
             if (t && t.pty) try { t.pty.write(text); } catch (_) {}
           },
-          getOrchestrateMode: () => getConfig().OrchestrateMode === true,
         }));
       } catch (e) { return json(res, { error: e.message }, 400); }
     }
@@ -462,12 +461,8 @@ const server = http.createServer(async (req, res) => {
       try { return json(res, await mcpClient.refresh(decodeURIComponent(mcpRefreshMatch[1]))); }
       catch (e) { return json(res, { error: e.message }, 400); }
     }
-    // ── Graph Runs (gated by config.OrchestrateMode; graph runs are
-    //    part of the AI Orchestration BETA, not a separate feature) ─────
+    // ── Graph Runs ────────────────────────────────────────────────────
     if (url.pathname.startsWith('/api/graph-runs')) {
-      if (getConfig().OrchestrateMode !== true) {
-        return json(res, { error: 'Graph Runs requires AI Orchestration. Enable it in Settings -> Other.' }, 501);
-      }
       if (url.pathname === '/api/graph-runs' && req.method === 'GET') {
         return json(res, graphRuns.listRuns());
       }
@@ -656,13 +651,8 @@ const server = http.createServer(async (req, res) => {
         const instrDir = path.join(__dirname, 'instructions');
         let instructions = '';
         try {
-          const orchestrationEnabled = cfg.OrchestrateMode === true;
           const priorityOrder = ['workflows.md', 'orchestrator.md', 'api-reference.md'];
-          const files = fs.readdirSync(instrDir).filter(f => {
-            if (!f.endsWith('.md')) return false;
-            if (f === 'orchestrator.md' && !orchestrationEnabled) return false;
-            return true;
-          }).sort((a, b) => {
+          const files = fs.readdirSync(instrDir).filter(f => f.endsWith('.md')).sort((a, b) => {
             const ai = priorityOrder.indexOf(a), bi = priorityOrder.indexOf(b);
             if (ai !== -1 && bi !== -1) return ai - bi;
             if (ai !== -1) return -1;
@@ -688,8 +678,8 @@ const server = http.createServer(async (req, res) => {
           context, instructions, plugins, learnings, permissions: permissionsData,
           loadedAt: new Date().toISOString(),
           features: {
-            orchestrateMode: cfg.OrchestrateMode === true,
-            graphRunsMode: cfg.OrchestrateMode === true,
+            orchestrateMode: true,
+            graphRunsMode: true,
             incognitoMode: cfg.IncognitoMode === true,
           },
         };
@@ -2842,18 +2832,12 @@ function writePluginHints() {
   ];
   const START = '<!-- PLUGIN_INSTRUCTIONS_START -->';
   const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
-  const ORCH_START = '<!-- ORCHESTRATION_START -->';
-  const ORCH_END = '<!-- ORCHESTRATION_END -->';
   const REPO_START = '<!-- REPO_CONTEXT_START -->';
   const REPO_END = '<!-- REPO_CONTEXT_END -->';
   const INCOGNITO_START = '<!-- INCOGNITO_START -->';
   const INCOGNITO_END = '<!-- INCOGNITO_END -->';
-  const GRAPH_START = '<!-- GRAPH_RUNS_START -->';
-  const GRAPH_END = '<!-- GRAPH_RUNS_END -->';
   const cfg = getConfig();
-  const orchestrationEnabled = cfg.OrchestrateMode === true; // default: off
-  // Graph runs are part of orchestration; same toggle controls both.
-  const graphRunsEnabled = orchestrationEnabled;
+  // Orchestration (and Graph Runs) are always on; BETA toggle is gone.
   const uiCtx = getUiContextWithPath();
   const hasRepo = !!uiCtx.activeRepo;
   const incognitoActive = cfg.IncognitoMode === true;
@@ -2868,22 +2852,9 @@ function writePluginHints() {
     try {
       // Replace the filename placeholder
       let content = template.replace('{{FILENAME}}', filename);
-      // Strip orchestration section if disabled
-      if (!orchestrationEnabled) {
-        const orchStart = content.indexOf(ORCH_START);
-        const orchEnd = content.indexOf(ORCH_END);
-        if (orchStart !== -1 && orchEnd !== -1) {
-          content = content.substring(0, orchStart) + content.substring(orchEnd + ORCH_END.length);
-        }
-      }
-      // Strip graph-runs BETA section if disabled
-      if (!graphRunsEnabled) {
-        const gStart = content.indexOf(GRAPH_START);
-        const gEnd = content.indexOf(GRAPH_END);
-        if (gStart !== -1 && gEnd !== -1) {
-          content = content.substring(0, gStart) + content.substring(gEnd + GRAPH_END.length);
-        }
-      }
+      // Orchestration and Graph Runs are always on -- the ORCH_* and GRAPH_*
+      // marker pairs are always kept. Markers themselves get cleaned up by
+      // the generic pass below so they don't leak into the rendered file.
       // Strip repo-specific context when in No Repo mode (handles multiple marker pairs)
       if (!hasRepo) {
         let rStart, rEnd;
@@ -3051,15 +3022,9 @@ writePluginHints();
   // Merged: returns all instruction files concatenated (config-aware)
   addRoute('GET', '/api/instructions', (req, res) => {
     try {
-      const cfg = getConfig();
-      const orchestrationEnabled = cfg.OrchestrateMode === true;
       // Order: behavioral rules first (survive compaction better), reference tables last
       const priorityOrder = ['workflows.md', 'orchestrator.md', 'api-reference.md'];
-      const files = fs.readdirSync(instrDir).filter(f => {
-        if (!f.endsWith('.md')) return false;
-        if (f === 'orchestrator.md' && !orchestrationEnabled) return false;
-        return true;
-      }).sort((a, b) => {
+      const files = fs.readdirSync(instrDir).filter(f => f.endsWith('.md')).sort((a, b) => {
         const ai = priorityOrder.indexOf(a), bi = priorityOrder.indexOf(b);
         if (ai !== -1 && bi !== -1) return ai - bi;
         if (ai !== -1) return -1;

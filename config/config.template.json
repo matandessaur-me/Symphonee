@@ -1,6 +1,5 @@
 {
   "WhisperKey": "",
-  "OrchestrateMode": false,
   "DefaultCli": "claude",
   "IncognitoMode": false,
   "AiApiKeys": {},

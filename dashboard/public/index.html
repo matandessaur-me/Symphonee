@@ -1624,13 +1624,17 @@
     .space-menu-item .sm-icon { color: var(--accent); flex-shrink: 0; }
     .space-menu-item .sm-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .space-menu-item .sm-desc { color: var(--subtext0); font-size: 10px; margin-top: 1px; }
-    .space-menu-item .sm-del {
+    .space-menu-item .sm-del,
+    .space-menu-item .sm-gear {
       background: transparent; border: 1px solid transparent; border-radius: 4px;
       color: var(--subtext0); cursor: pointer; padding: 2px; opacity: 0;
       transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+      display: inline-flex; align-items: center; justify-content: center;
     }
-    .space-menu-item:hover .sm-del { opacity: 1; }
+    .space-menu-item:hover .sm-del,
+    .space-menu-item:hover .sm-gear { opacity: 1; }
     .space-menu-item .sm-del:hover { color: var(--red); border-color: var(--surface2); }
+    .space-menu-item .sm-gear:hover { color: var(--accent); border-color: var(--surface2); }
     .space-menu-footer {
       display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--surface1);
     }
@@ -3057,6 +3061,7 @@
     .sidebar-bottom-hints {
       flex-shrink: 0; padding: 0 0 6px;
     }
+    /* Sidebar hint row (Switch Screen button, etc.) */
     .voice-hint {
       display: none; margin: 4px 10px; padding: 8px 10px;
       background: var(--surface0); border: 1px solid var(--surface1);
@@ -3065,10 +3070,30 @@
     }
     .voice-hint.visible { display: flex; }
     .voice-hint svg { width: 13px; height: 13px; flex-shrink: 0; }
-    .voice-hint kbd {
+
+    /* Voice input status indicator shown inside the Whisper settings section. */
+    .voice-status {
+      display: flex; align-items: center; gap: 8px;
+      margin: 6px 0 10px; padding: 6px 10px;
+      background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); font: 11px var(--font-ui); color: var(--subtext0);
+      user-select: none;
+    }
+    .voice-status svg { width: 13px; height: 13px; flex-shrink: 0; }
+    .voice-status kbd {
       font: 10px var(--font-mono); background: var(--mantle);
       border: 1px solid var(--surface0); border-radius: 4px;
       padding: 3px 7px; color: var(--subtext1);
+    }
+    .voice-status .voice-status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--overlay0); flex-shrink: 0;
+      box-shadow: 0 0 0 0 transparent;
+    }
+    .voice-status.active { color: var(--text); border-color: color-mix(in srgb, var(--green) 40%, var(--surface2)); }
+    .voice-status.active .voice-status-dot {
+      background: var(--green);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
     }
 
     /* ── Command Palette (Ctrl+K) ────────────────────────────────────────── */
@@ -3365,6 +3390,15 @@
     .notif-item-time {
       font: 10px var(--font-mono); color: var(--overlay1); flex-shrink: 0;
     }
+    .notif-item-del {
+      flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; margin-left: 2px; padding: 0;
+      background: transparent; border: none; border-radius: 4px;
+      color: var(--overlay1); cursor: pointer; opacity: 0.7;
+      transition: background 0.12s, color 0.12s, opacity 0.12s;
+    }
+    .notif-item-del:hover { background: var(--surface1); color: var(--red); opacity: 1; }
+    .notif-item-del svg { width: 12px; height: 12px; }
     .notif-item-body {
       font: 11px var(--font-ui); color: var(--subtext1); line-height: 1.45;
       max-height: 3.6em; overflow: hidden; position: relative;
@@ -3699,7 +3733,7 @@
       <div class="sidebar-ctx-section">
         <button id="spaceSwitcherChip" class="sidebar-ctx-row" onclick="openSpaceModal()" title="Switch space">
           <i id="spaceChipIcon" data-lucide="layers" style="width:13px;height:13px;"></i>
-          <span id="spaceSwitcherLabel" class="ctx-row-label">Select space</span>
+          <span id="spaceSwitcherLabel" class="ctx-row-label">All spaces</span>
           <i data-lucide="chevron-right" style="width:11px;height:11px;opacity:0.4;flex-shrink:0;"></i>
         </button>
         <button id="repoChip" class="sidebar-ctx-row" onclick="openRepoModal()" title="Switch repo" style="display:none;">
@@ -3707,7 +3741,7 @@
           <span id="repoChipLabel" class="ctx-row-label">No repo</span>
           <i data-lucide="chevron-right" style="width:11px;height:11px;opacity:0.4;flex-shrink:0;"></i>
         </button>
-        <button id="branchChip" class="sidebar-ctx-row" onclick="openBranchModal()" title="Current branch" style="display:none;">
+        <button id="branchChip" class="sidebar-ctx-row" onclick="openGitModal('branches')" title="Current branch" style="display:none;">
           <i data-lucide="git-branch" style="width:13px;height:13px;"></i>
           <span id="branchChipLabel" class="ctx-row-label">...</span>
           <i data-lucide="chevron-right" style="width:11px;height:11px;opacity:0.4;flex-shrink:0;"></i>
@@ -3716,10 +3750,6 @@
       <div class="voice-hint" id="switchScreenHint" onclick="switchScreen()" style="cursor:pointer;">
         <i data-lucide="monitor"></i>
         <span>Switch Screen</span>
-      </div>
-      <div class="voice-hint" id="voiceHint">
-        <i data-lucide="mic"></i>
-        <span>Hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd> to talk</span>
       </div>
       <button onclick="openSettings()" title="Settings" style="display:flex;align-items:center;gap:6px;margin:4px 10px;padding:8px 10px;width:calc(100% - 20px);background:var(--surface1);border:1px solid var(--overlay0);border-radius:var(--radius);color:var(--text);font:11px var(--font-ui);cursor:pointer;justify-content:center;transition:all 0.12s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--overlay0)'">
         <i data-lucide="settings" style="width:13px;height:13px;flex-shrink:0"></i>
@@ -3739,7 +3769,7 @@
         <button class="tab-scroll-arrow left" id="tabScrollLeft" onclick="scrollTabs(-200)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
         <div class="tab-bar-scroll" id="tabBarScroll">
           <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
-          <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')" style="display:none;">Orchestrator <span style="font-size:9px;opacity:0.6;font-weight:400;margin-left:2px;">[BETA]</span></button>
+          <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')">Orchestrator</button>
           <button class="tab-btn" data-tab="browser" id="browserTabBtn" onclick="switchTab('browser')">Browser</button>
           <button class="tab-btn" data-tab="backlog" data-plugin-id="azure-devops" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
           <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
@@ -4826,15 +4856,9 @@
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
-            <div class="settings-section-title">AI Orchestration <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--yellow, #f5b800);color:#000;letter-spacing:0.5px;">BETA</span></div>
-            <div class="settings-section-desc">Enables the lead AI to dispatch tasks to other AI CLIs (Gemini, Codex, Grok, Copilot) AND unlocks Graph Runs (durable multi-step workflows with branching, approval gates, and crash recovery). When disabled, the AI works alone without spawning other agents and Graph Runs are not available.</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" id="settingsOrchestrateMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="toggleOrchClis();checkSettingsNeedRestart()">
-                <span style="font-size:12px;color:var(--text);">Enable orchestration mode</span>
-              </label>
-            </div>
-            <div id="orchCliList" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);border:1px solid var(--surface1);">
+            <div class="settings-section-title">AI Orchestration</div>
+            <div class="settings-section-desc">The lead AI dispatches tasks to other installed CLIs and can run Graph Runs (durable multi-step workflows with branching, approval gates, and crash recovery). Pick which CLIs the orchestrator is allowed to dispatch to.</div>
+            <div id="orchCliList" style="margin-top:4px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);border:1px solid var(--surface1);">
               <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">Select which AIs the orchestrator can dispatch to:</div>
               <div style="display:flex;flex-wrap:wrap;gap:8px 16px;">
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text);">
@@ -4885,6 +4909,11 @@
           <div class="settings-section">
             <div class="settings-section-title">Voice Input (OpenAI Whisper)</div>
             <div class="settings-section-desc">Hold Ctrl+Shift to talk, release to transcribe. Uses OpenAI Whisper API ($0.006/min).</div>
+            <div id="voiceHint" class="voice-status" role="status">
+              <span class="voice-status-dot"></span>
+              <i data-lucide="mic"></i>
+              <span class="voice-status-text">Add a key to enable voice input</span>
+            </div>
             <div class="modal-field">
               <label>OpenAI API Key</label>
               <div style="display:flex;gap:0;"><input id="settingsWispr" type="password" placeholder="sk-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsWispr',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
@@ -5786,6 +5815,15 @@ function notifClearAll() {
   renderNotifBadge();
   renderNotifList();
 }
+function notifDelete(id) {
+  if (!id) return;
+  const before = _notifs.length;
+  _notifs = _notifs.filter(n => n.id !== id);
+  if (_notifs.length === before) return;
+  _saveNotifs();
+  renderNotifBadge();
+  renderNotifList();
+}
 function renderNotifBadge() {
   const bell = document.getElementById('notifBell');
   const badge = document.getElementById('notifBadge');
@@ -5826,6 +5864,9 @@ function renderNotifList() {
         '<span class="notif-item-icon"><i data-lucide="' + esc(n.icon || 'bell') + '"></i></span>' +
         '<span class="notif-item-title" title="' + esc(n.title) + '">' + esc(n.title) + '</span>' +
         '<span class="notif-item-time">' + _relTime(n.createdAt) + '</span>' +
+        '<button class="notif-item-del" data-act="delete" title="Dismiss" aria-label="Dismiss notification">' +
+          '<i data-lucide="x"></i>' +
+        '</button>' +
       '</div>' +
       '<div class="notif-item-body">' + esc(n.body) + '</div>' +
       actions +
@@ -5833,8 +5874,14 @@ function renderNotifList() {
   }).join('');
   el.querySelectorAll('.notif-item').forEach(row => {
     row.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('.notif-item-del');
       const btn = e.target.closest('.notif-item-btn');
       const id = row.dataset.id;
+      if (delBtn) {
+        e.stopPropagation();
+        notifDelete(id);
+        return;
+      }
       const n = _notifs.find(x => x.id === id);
       if (!n) return;
       n.read = true;
@@ -6855,7 +6902,7 @@ async function runFilesSearch(query) {
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(filePath)}</span>
           <span style="margin-left:auto;color:var(--subtext0);font-weight:400;">${matches.length}</span>
         </div>`;
-        for (const m of matches.slice(0, 5)) {
+        for (const m of matches) {
           const qWords = query.trim().split(/\s+/).filter(Boolean);
           const highlightPattern = qWords.length > 1
             ? qWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
@@ -6865,9 +6912,6 @@ async function runFilesSearch(query) {
             <span class="search-result-line">L${m.line}</span>
             <div class="search-result-text">${highlighted}</div>
           </div>`;
-        }
-        if (matches.length > 5) {
-          html += `<div style="padding:2px 10px 4px 34px;font-size:9px;color:var(--subtext0);">+${matches.length - 5} more matches</div>`;
         }
       }
       resultsEl.innerHTML = html;
@@ -7537,9 +7581,9 @@ async function openSpaceModal() {
   const escAttr = s => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let html = '';
-  const allActive = (!activeSpace && !activeRepo) ? ' active' : '';
+  const allActive = !activeSpace ? ' active' : '';
   html += `<button class="ctx-pick-item${allActive}" data-pick-space="__all__">
-    <i data-lucide="circle-slash" style="width:15px;height:15px;"></i>
+    <i data-lucide="layers" style="width:15px;height:15px;"></i>
     <span class="cpi-name">All spaces</span>
   </button>`;
   for (const [name, sv] of Object.entries(spaces)) {
@@ -10187,7 +10231,17 @@ function setOrchestrationMode(active) {
 // ── Bottom Hints Visibility ─────────────────────────────────────────────
 function updateVoiceHint() {
   const hint = document.getElementById('voiceHint');
-  if (hint) hint.classList.toggle('visible', !!(configData.WhisperKey));
+  if (hint) {
+    const active = !!(configData.WhisperKey);
+    hint.classList.toggle('active', active);
+    const label = hint.querySelector('.voice-status-text');
+    if (label) {
+      label.innerHTML = active
+        ? 'Hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd> to talk'
+        : 'Add a key to enable voice input';
+    }
+    try { lucide.createIcons({ nodes: [hint] }); } catch (_) {}
+  }
   updateScreenHint();
 }
 
@@ -10840,7 +10894,7 @@ async function loadConfig(autoSelectSprint) {
     if (gitPullBtn) gitPullBtn.style.display = gitAuthOk ? '' : 'none';
     if (gitPushBtn) gitPushBtn.style.display = gitAuthOk ? '' : 'none';
     if (gitNoPatHint) gitNoPatHint.style.display = gitAuthOk ? 'none' : '';
-    document.getElementById('orchestratorTabBtn').style.display = configData.OrchestrateMode === true ? '' : 'none';
+    document.getElementById('orchestratorTabBtn').style.display = '';
     const incogEl = document.getElementById('incognitoIndicator');
     if (incogEl) { incogEl.style.display = isIncognito ? 'flex' : 'none'; }
     document.body.classList.toggle('incognito-active', isIncognito);
@@ -15567,7 +15621,7 @@ async function _refreshSpaceSwitcher() {
     ]);
   } catch (_) {}
   // Space row: show active space name or fallback
-  spaceLabel.textContent = activeSpace || 'Select space';
+  spaceLabel.textContent = activeSpace || 'All spaces';
   // Space icon: custom space icon or default layers
   let iconName = 'layers';
   if (activeSpace && spaces[activeSpace] && spaces[activeSpace].icon) iconName = spaces[activeSpace].icon;
@@ -15637,14 +15691,15 @@ function _renderSpaceSwitcherMenu(spaces, repos) {
       '<div class="sm-label">' + esc(sName) + (kids.length ? '<span style="color:var(--subtext0);font-weight:400;"> · ' + kids.length + '</span>' : '') + '</div>' +
       (desc ? '<span style="font-size:9px;color:var(--subtext0);">' + esc(desc) + '</span>' : '') +
       '<span style="font-size:9px;font-weight:600;color:var(--accent);letter-spacing:0.4px;flex-shrink:0;opacity:0.7;margin-left:6px;">SPACE</span>' +
+      '<button class="sm-gear" data-manage-space="' + esc(sName) + '" title="Space settings"><i data-lucide="settings" style="width:11px;height:11px;"></i></button>' +
       '<button class="sm-del" data-del-space="' + esc(sName) + '" title="Delete space"><i data-lucide="x" style="width:11px;height:11px;"></i></button>' +
     '</div>';
     return head + kids.map(r => repoRow(r, true)).join('');
   };
 
-  const noneItem = '<div class="space-menu-item' + ((!activeSpace && !activeRepo) ? ' active' : '') + '" data-select-space="">' +
-    '<i class="sm-icon" data-lucide="circle-slash" style="width:13px;height:13px;"></i>' +
-    '<div class="sm-label">All (no filter)</div></div>';
+  const noneItem = '<div class="space-menu-item' + (!activeSpace ? ' active' : '') + '" data-select-space="">' +
+    '<i class="sm-icon" data-lucide="layers" style="width:13px;height:13px;"></i>' +
+    '<div class="sm-label">All spaces</div></div>';
 
   const spacesBlockHtml = spaceNames.length
     ? '<div class="space-menu-section">Spaces</div>' + spaceNames.map(spaceBlock).join('')
@@ -15670,9 +15725,19 @@ function _renderSpaceSwitcherMenu(spaces, repos) {
   menu.querySelectorAll('[data-select-space]').forEach(el => {
     el.addEventListener('click', (ev) => {
       if (ev.target.closest('.sm-del')) return;
+      if (ev.target.closest('.sm-gear')) return;
       const name = el.dataset.selectSpace || '';
       selectSpace(name);
       menu.classList.remove('open');
+    });
+  });
+  menu.querySelectorAll('.sm-gear').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const name = btn.dataset.manageSpace;
+      if (!name) return;
+      menu.classList.remove('open');
+      openManageSpaceDialog(name);
     });
   });
   menu.querySelectorAll('[data-select-repo]').forEach(el => {
@@ -15739,12 +15804,11 @@ async function loadRepoList() {
     if (activeSpace && !spaces[activeSpace]) { activeSpace = ''; localStorage.removeItem('symphonee-space'); }
     if (activeRepo && !repoNames.includes(activeRepo)) { activeRepo = ''; localStorage.removeItem('symphonee-repo'); }
 
-    // If an activeRepo is set and belongs to a space, make that space active
-    // too -- but ONLY on the very first call of this session. Re-running the
-    // snap on every loadRepoList() call makes it impossible to explicitly
-    // choose "All spaces": selectSpace('') would clear activeSpace, then this
-    // block immediately restores it to the repo's owner.
-    if (activeRepo && !loadRepoList._snappedOwnerOnce) {
+    // If an activeRepo is set and belongs to a space, snap to that space on
+    // very first boot only (i.e. when the user has no stored space preference
+    // at all). After that, spaces and repos are fully independent -- an
+    // explicit "All spaces" choice (stored as "") must survive reloads.
+    if (activeRepo && !loadRepoList._snappedOwnerOnce && localStorage.getItem('symphonee-space') === null) {
       const owner = _findSpaceForRepo(spaces, activeRepo);
       if (owner && owner !== activeSpace) {
         activeSpace = owner;
@@ -15849,19 +15913,10 @@ function selectRepo(name) {
   activeRepo = name;
   filesCurrentRepo = name;
 
-  // Picking a repo that belongs to a space implicitly switches to that space.
-  if (name) {
-    fetch('/api/spaces').then(r => r.json()).catch(() => ({})).then(spaces => {
-      const owner = _findSpaceForRepo(spaces, name);
-      if (owner && owner !== activeSpace) {
-        activeSpace = owner;
-        localStorage.setItem('symphonee-space', activeSpace);
-        try { _refreshSpaceSwitcher(); } catch (_) {}
-        try { refreshNotesForSpace(); } catch (_) {}
-        try { applyPluginSpaceFilter(); } catch (_) {}
-      }
-    });
-  }
+  // Spaces and repos are independent selections. Picking a repo from "All
+  // spaces" (or from a different space) must NOT auto-switch the space --
+  // that forced users out of All-spaces mode whenever they chose a repo
+  // that happened to belong to a space.
 
   try { _refreshSpaceSwitcher(); } catch (_) {}
   try { refreshBranchChip(); } catch (_) {}
@@ -16165,8 +16220,10 @@ async function applyPluginSpaceFilter() {
 // it; otherwise clear activeRepo so the user can pick one explicitly.
 async function selectSpace(name) {
   activeSpace = name || '';
-  if (activeSpace) localStorage.setItem('symphonee-space', activeSpace);
-  else localStorage.removeItem('symphonee-space');
+  // Always store the choice (even "" for "All spaces") so the preference
+  // survives reloads. A missing key means "never chose", which triggers the
+  // first-boot snap-to-owner-space; "" means the user explicitly opted out.
+  localStorage.setItem('symphonee-space', activeSpace);
 
   // If the currently-active repo doesn't belong to the new space, clear it.
   try {
@@ -16399,7 +16456,6 @@ function openSettings(tab) {
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
   document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
-  document.getElementById('settingsOrchestrateMode').checked = configData.OrchestrateMode === true;
   document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
   // AI API keys
   const aiKeys = configData.AiApiKeys || {};
@@ -16411,7 +16467,6 @@ function openSettings(tab) {
   // Populate orchestrator CLI checkboxes
   var orchList = Array.isArray(configData.OrchestrateCliList) ? configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok', 'qwen'];
   document.querySelectorAll('.orch-cli-cb').forEach(function(cb) { cb.checked = orchList.includes(cb.value); });
-  toggleOrchClis();
   document.getElementById('settingsDefaultCli').value = configData.DefaultCli || activeCli || 'claude';
   document.getElementById('settingsTeam').value = configData.DefaultTeam || '';
   // Initialize projects list from config
@@ -16724,17 +16779,11 @@ function _renderGitHubRepoList(repos, ctx, mode) { return _renderPluginRepoList(
 async function _showGitHubPicker(ctx, mode) { return _showPluginClonePicker(_repoSourceById('github'), ctx, mode); }
 
 // Track which settings require an app restart when changed
-function toggleOrchClis() {
-  var on = document.getElementById('settingsOrchestrateMode').checked;
-  document.getElementById('orchCliList').style.display = on ? 'block' : 'none';
-}
-
 function checkSettingsNeedRestart() {
   const btn = document.getElementById('settingsSaveBtn');
   if (!btn) return;
-  const orchChanged = document.getElementById('settingsOrchestrateMode').checked !== (configData.OrchestrateMode === true);
   const incogChanged = document.getElementById('settingsIncognitoMode').checked !== (configData.IncognitoMode === true);
-  const needsRestart = orchChanged || incogChanged;
+  const needsRestart = incogChanged;
   btn.textContent = needsRestart ? 'Save & Restart' : 'Save';
   btn._needsRestart = needsRestart;
 }
@@ -16804,7 +16853,6 @@ async function saveSettings() {
       DefaultUser: _txt('settingsUser'),
       GitHubPAT: _txt('settingsGitHubPAT'),
       WhisperKey: _txt('settingsWispr'),
-      OrchestrateMode: _chk('settingsOrchestrateMode'),
       OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
       IncognitoMode: _chk('settingsIncognitoMode'),
       AiApiKeys: {
@@ -21781,24 +21829,11 @@ function setIconPickerValue(name) {
 }
 
 async function refreshDispatchAvailability() {
-  let orchOn = false;
-  try {
-    const r = await fetch('/api/config');
-    const cfg = await r.json();
-    orchOn = cfg.OrchestrateMode === true;
-  } catch (_) {}
   const cb = document.getElementById('reDispatch');
   const lbl = document.getElementById('reDispatchLabel');
-  if (orchOn) {
-    cb.disabled = false;
-    if (lbl) lbl.style.opacity = '1';
-    if (lbl) lbl.title = '';
-  } else {
-    cb.disabled = true;
-    cb.checked = false;
-    if (lbl) lbl.style.opacity = '0.5';
-    if (lbl) lbl.title = 'Enable AI Orchestration in Settings -> Other to use dispatch mode.';
-  }
+  if (!cb) return;
+  cb.disabled = false;
+  if (lbl) { lbl.style.opacity = '1'; lbl.title = ''; }
 }
 
 function closeRecipeEditor() {

@@ -50,8 +50,8 @@ Most AI tools stop at the suggestion. They write a plan and hand you a chat wind
 
 ### The Orchestra (AI tooling)
 - **Permission Modes.** Four modes (`review` / `edit` / `trusted` / `bypass`) gate every spawn, write, and external call at the server level. Pattern-based allow/ask/deny rules with one-click "always allow this pattern" promotion.
-- **AI Orchestration** (BETA). The conductor dispatches work to other players (Codex, Gemini, Grok, Copilot) with circuit breaker, retry, escalation ladder, fan-out, worktree isolation, and durable graph runs.
-- **Graph Runs** (BETA). Define multi-step workflows with worker, approval, and branch nodes. Survive app restarts. Auto-fallback to a different CLI on rate-limit or quota errors. Results auto-inject back into the launching terminal.
+- **AI Orchestration.** The conductor dispatches work to other players (Codex, Gemini, Grok, Copilot) with circuit breaker, retry, escalation ladder, fan-out, worktree isolation, and durable graph runs.
+- **Graph Runs.** Define multi-step workflows with worker, approval, and branch nodes. Survive app restarts. Auto-fallback to a different CLI on rate-limit or quota errors. Results auto-inject back into the launching terminal.
 - **Model Router.** Picks the right CLI and model for each task intent (`quick-summary`, `deep-code`, `web-research`, etc.) based on your subscriptions and API keys. Auto-promotes to large-context models when input exceeds 200k tokens.
 - **Recipes.** Reusable AI workflows declared as markdown files. Built-in editor (Monaco + variable library + icon picker + preview). Three universal defaults ship: Explain Codebase, Brainstorm Feature, Review My Changes.
 - **MCP Server + Client.** Exposes Symphonee to Claude Desktop, Cursor, VS Code, Zed, etc. Consume external MCP servers (GitHub, Postgres, Slack, Linear, and so on) right inside the app.
@@ -163,7 +163,7 @@ Open the right intel panel -> **Recipes** tab to browse, create, edit, duplicate
 
 **Two delivery modes**:
 - `inject` (default): rendered prompt is typed into the active terminal so the AI you're already working with handles it.
-- `dispatch`: spawns a fresh headless worker via the orchestrator (requires AI Orchestration enabled).
+- `dispatch`: spawns a fresh headless worker via the orchestrator.
 
 Recipes can be invoked via the Recipes panel, the command palette (Ctrl+K), `./scripts/Run-Recipe.ps1`, or any MCP client that has the Symphonee MCP server connected (`run_recipe`, `list_recipes`, `preview_recipe`, etc.).
 

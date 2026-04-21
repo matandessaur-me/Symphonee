@@ -1,6 +1,6 @@
-# Graph Runs (BETA)
+# Graph Runs
 
-Part of the AI Orchestration BETA. Gated by the same `OrchestrateMode` config flag — when AI Orchestration is enabled in Settings -> Other, graph runs are available too. If disabled, `/api/graph-runs` returns 501.
+Durable multi-step workflows built on top of AI Orchestration. Always available.
 
 Use graph runs for multi-step workflows that need:
 - durability across app restarts

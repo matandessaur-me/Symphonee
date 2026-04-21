@@ -224,11 +224,10 @@ function loadRecipe(id, preferredScope = null) {
 // ── Run a recipe ────────────────────────────────────────────────────────────
 // Two delivery modes:
 //   - 'inject' (default): write the rendered prompt into the active terminal
-//     as if the user typed it. Works whether orchestration is on or off; the
-//     currently-running AI (Claude Code, Codex, Gemini, etc.) handles it.
-//   - 'dispatch': spawn a headless worker via /api/orchestrator/spawn. Only
-//     works when OrchestrateMode is on. Set in the recipe via `dispatch: true`.
-async function runRecipe({ id, inputs, originTermId, injectToTerminal, getOrchestrateMode, apiHost = '127.0.0.1', apiPort = 3800 }) {
+//     as if the user typed it. The currently-running AI handles it.
+//   - 'dispatch': spawn a headless worker via /api/orchestrator/spawn. Set
+//     in the recipe via `dispatch: true`.
+async function runRecipe({ id, inputs, originTermId, injectToTerminal, apiHost = '127.0.0.1', apiPort = 3800 }) {
   const recipe = loadRecipe(id);
   if (!recipe) throw new Error(`Recipe not found: ${id}`);
 
@@ -256,12 +255,8 @@ async function runRecipe({ id, inputs, originTermId, injectToTerminal, getOrches
 
   // Decide delivery mode
   const wantsDispatch = recipe.meta && recipe.meta.dispatch === true;
-  const orchestrationOn = typeof getOrchestrateMode === 'function' ? !!getOrchestrateMode() : false;
 
   if (wantsDispatch) {
-    if (!orchestrationOn) {
-      throw new Error(`Recipe '${recipe.id}' uses dispatch mode but AI Orchestration is disabled. Enable it in Settings -> Other, or remove dispatch:true from the recipe to run in the active terminal instead.`);
-    }
     // Resolve cli/model: explicit > router via intent > default
     let cli = recipe.cli;
     let model = recipe.model;

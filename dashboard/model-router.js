@@ -182,16 +182,12 @@ function loadConfig(configPath) {
 }
 
 function availableClis(cfg) {
-  // Orchestration allowlist trumps everything. If orchestration mode is off,
-  // assume the user's primary CLI is available (they run Symphonee alone).
-  if (cfg.OrchestrateMode === true) {
-    const list = Array.isArray(cfg.OrchestrateCliList) ? cfg.OrchestrateCliList : [];
-    return new Set(list);
+  // Orchestration is always on. Honor the user's OrchestrateCliList if set;
+  // otherwise assume every catalog CLI is available.
+  if (Array.isArray(cfg.OrchestrateCliList) && cfg.OrchestrateCliList.length) {
+    return new Set(cfg.OrchestrateCliList);
   }
-  // Orchestration off: assume all catalog CLIs available (user will tell us if not).
-  // DefaultCli is always available.
-  const s = new Set(Object.keys(CATALOG));
-  return s;
+  return new Set(Object.keys(CATALOG));
 }
 
 function modelAvailable(cli, modelKey, cfg) {

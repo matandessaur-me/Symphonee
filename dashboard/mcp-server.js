@@ -166,7 +166,7 @@ const TOOLS = [
   },
   {
     name: 'start_graph_run',
-    description: 'BETA. Start a durable multi-step graph run. Requires AI Orchestration enabled in Settings -> Other (graph runs are part of orchestration). Node types: worker (spawn a CLI), approval (human gate), branch (expression decides next path). Prompt templates use {{ state.foo }} substitution; node output auto-merges into state.results[nodeId].',
+    description: 'Start a durable multi-step graph run. Node types: worker (spawn a CLI), approval (human gate), branch (expression decides next path). Prompt templates use {{ state.foo }} substitution; node output auto-merges into state.results[nodeId].',
     inputSchema: {
       type: 'object',
       properties: {
@@ -180,13 +180,13 @@ const TOOLS = [
   },
   {
     name: 'list_graph_runs',
-    description: 'BETA. List all graph runs with summary info.',
+    description: 'List all graph runs with summary info.',
     inputSchema: { type: 'object', properties: {} },
     handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/graph-runs'), null, 2)),
   },
   {
     name: 'get_graph_run',
-    description: 'BETA. Get full detail of a graph run including state, nodes, outputs.',
+    description: 'Get full detail of a graph run including state, nodes, outputs.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string' } },
@@ -283,7 +283,7 @@ const TOOLS = [
   },
   {
     name: 'approve_graph_node',
-    description: 'BETA. Resolve a pending approval node in a graph run.',
+    description: 'Resolve a pending approval node in a graph run.',
     inputSchema: {
       type: 'object',
       properties: {
