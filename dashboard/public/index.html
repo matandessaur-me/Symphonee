@@ -420,34 +420,66 @@
       position: relative;
     }
 
-    /* ── Tab bar ───────────────────────────────────────────────────────────── */
+    /* ── Tab bar (Chrome-style) ───────────────────────────────────────────── */
     .tab-bar {
-      display: flex; align-items: center; gap: 0;
+      display: flex; align-items: flex-end; gap: 0;
       height: var(--term-bar-h); padding: 0 0 0 4px;
       background: var(--tab-bar-bg); border-bottom: 1px solid var(--surface0); flex-shrink: 0;
       min-width: 0; overflow: visible; position: relative; z-index: 10;
     }
     .tab-bar-scroll {
-      display: flex; align-items: center; gap: 0; flex: 1; min-width: 0;
+      display: flex; align-items: flex-end; gap: 4px; flex: 1; min-width: 0;
+      height: 100%; padding-top: 4px;
       overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
     }
     .tab-bar-scroll::-webkit-scrollbar { display: none; }
+    .tab-btn.dragging { opacity: 0.4; cursor: grabbing; }
+    .tab-btn.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+    .tab-btn.drop-after  { box-shadow: inset -2px 0 0 var(--accent); }
     .tab-btn {
-      display: inline-flex; align-items: center; gap: 0;
-      padding: 0 14px; height: 100%; background: transparent; border: none;
-      color: var(--subtext0); font: 12px var(--font-ui); cursor: pointer;
-      transition: all 0.12s;
+      position: relative;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px 0 14px; height: calc(100% - 4px);
+      min-width: 120px; max-width: 220px;
+      background: var(--mantle);
+      border: 1px solid var(--surface0); border-bottom: none;
+      border-radius: 10px 10px 0 0;
+      color: var(--subtext0); font: 12px var(--font-ui);
+      cursor: grab;
+      transition: background 0.12s, color 0.12s, box-shadow 0.12s;
       white-space: nowrap; flex-shrink: 0;
+      -webkit-user-drag: element; user-select: none;
+      margin-bottom: -1px;  /* overlap border-bottom so active tab blends with panel */
     }
-    .tab-btn:hover { color: var(--text); }
-    .tab-btn.active { color: var(--accent); font-weight: 600; }
+    .tab-btn:active { cursor: grabbing; }
+    .tab-btn:hover {
+      color: var(--text);
+      background: color-mix(in srgb, var(--surface0) 70%, var(--mantle));
+    }
+    .tab-btn.active {
+      color: var(--text); font-weight: 600;
+      background: var(--base);
+      border-color: var(--surface1);
+      z-index: 2;
+    }
+    .tab-btn.active::after {
+      /* accent underline for the active tab, chrome-style hint */
+      content: ''; position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px;
+      background: var(--accent); border-radius: 2px 2px 0 0;
+    }
+    .tab-btn > span:not(.tab-close):not(.tab-dot) {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    }
     .tab-btn .tab-close {
-      display: none; margin-left: 8px; padding: 0;
-      font-size: 16px; line-height: 1; color: var(--overlay1);
-      cursor: pointer; background: none; border: none;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; margin-left: 4px; padding: 0;
+      font-size: 14px; line-height: 1; color: var(--overlay1);
+      cursor: pointer; background: transparent; border: none; border-radius: 50%;
+      transition: background 0.12s, color 0.12s;
+      flex-shrink: 0;
     }
-    .tab-btn .tab-close:hover { color: var(--red); }
-    .tab-btn.closable:hover .tab-close { display: flex; align-items: center; }
+    .tab-btn .tab-close:hover { color: var(--text); background: var(--surface2); }
+    .tab-btn.closable .tab-close { display: inline-flex; }
     .tab-bar-middle { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; overflow: hidden; }
     .tab-scroll-arrow {
       display: none; align-items: center; justify-content: center;
@@ -608,6 +640,7 @@
     body.incognito-active .intel #incognitoIntelMsg { display: flex !important; }
     /* Plugin tabs with external connections: hidden via JS (incognitoAware flag) */
     body.incognito-active .plugin-tab-incognito { display: none !important; }
+    .plugin-space-hidden { display: none !important; }
 
     /* ── Orchestration mode badge ────────────────────────────────────────── */
     .orch-mode-badge {
@@ -684,6 +717,35 @@
     .term-instance.active { display: block; }
     .tab-panel#panel-files.active { display: flex; }
     .tab-panel#panel-notes.active { display: flex; }
+    /* ── In-app browser tab ───────────────────────────────────────────── */
+    .tab-panel#panel-browser { flex-direction: column; }
+    .tab-panel#panel-browser.active { display: flex; }
+    .inapp-browser { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    .inapp-browser-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; background: var(--mantle);
+      border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+    }
+    .inapp-browser-bar input {
+      flex: 1; min-width: 0; padding: 5px 10px;
+      background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: var(--radius); color: var(--text);
+      font: 12px var(--font-mono); outline: none;
+    }
+    .inapp-browser-bar input:focus { border-color: var(--accent); }
+    .inapp-browser-bar .tab-bar-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 4px; line-height: 1; flex-shrink: 0; height: 26px;
+    }
+    .inapp-browser-bar .tab-bar-btn i { display: inline-flex; }
+    .inapp-browser-frame {
+      flex: 1; min-height: 0; background: var(--base);
+      display: flex; flex-direction: column;
+    }
+    .inapp-browser-frame webview { flex: 1; width: 100%; height: 100%; border: 0; background: white; }
+    .inapp-browser-frame .inapp-empty {
+      margin: auto; color: var(--subtext0); font: 12px var(--font-ui);
+    }
     .tab-panel#panel-orchestrator.active { display: flex; flex-direction: column; }
 
     /* ── Orchestrator panel ─────────────────────────────────────────────── */
@@ -901,63 +963,81 @@
     .ob-step-main { flex: 1; min-width: 0; }
     .ob-step-label { font-size: 12px; color: var(--text); }
     .ob-step-hint { font-size: 10px; color: var(--subtext0); margin-top: 1px; }
+    .ob-progress {
+      display: flex; gap: 4px; margin-bottom: 10px;
+    }
+    .ob-progress-dot {
+      flex: 1; height: 3px; border-radius: 999px; background: var(--surface2);
+      transition: background 0.2s;
+    }
+    .ob-progress-dot.done { background: var(--accent); }
+    .ob-all-done {
+      padding: 10px 4px; text-align: center; color: var(--subtext1); font-size: 12px;
+    }
+    .ob-all-done strong { color: var(--accent); }
 
-    /* ── Quick-Ask bubble (bottom-left mini composer) ─────────────────── */
-    .quick-ask {
-      position: fixed; bottom: 18px; left: 18px; z-index: 9400;
-      font: 12px var(--font-ui);
+    /* ── Space switcher (header chip, top-left) ──────────────────────── */
+    .space-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; height: 26px;
+      background: var(--surface1); border: 1px solid var(--surface2);
+      border-radius: var(--radius);
+      color: var(--text); font: 600 11px var(--font-ui);
+      cursor: pointer; max-width: 240px;
+      transition: border-color 0.12s, background 0.12s;
     }
-    .quick-ask-pill {
-      display: inline-flex; align-items: center; gap: 7px;
-      padding: 7px 14px 7px 12px;
-      background: color-mix(in srgb, var(--surface1) 92%, transparent);
-      border: 1px solid var(--surface2); border-radius: var(--radius-pill);
-      color: var(--text); font: 600 12px var(--font-ui);
-      cursor: pointer;
-      box-shadow:
-        0 1px 0 rgba(255,255,255,0.04) inset,
-        0 6px 18px rgba(0,0,0,0.35);
-      backdrop-filter: blur(14px);
-      transition: border-color 0.12s, transform 0.12s, background 0.12s;
+    .space-chip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface1)); }
+    .space-chip i { color: var(--accent); flex-shrink: 0; }
+    .space-chip #spaceSwitcherLabel {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;
     }
-    .quick-ask-pill:hover {
-      background: var(--surface1);
-      border-color: color-mix(in srgb, var(--accent) 45%, var(--surface2));
-      transform: translateY(-1px);
-    }
-    .quick-ask-pill i { color: var(--accent); }
-    .quick-ask-pill::after {
-      content: 'Ctrl J';
-      margin-left: 6px;
-      font: 500 10px var(--font-mono);
-      color: var(--subtext0);
-      background: var(--surface2);
-      border: 1px solid var(--overlay0);
-      border-radius: 4px;
-      padding: 1px 5px;
-    }
-    .quick-ask-panel {
-      display: none;
-      width: 360px; max-width: calc(100vw - 36px);
-      padding: 10px 12px;
+    .space-menu {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 9400;
+      min-width: 260px; max-height: 420px; overflow: hidden;
       background: var(--surface0); border: 1px solid var(--surface2);
       border-radius: 10px; box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+      flex-direction: column;
     }
-    .quick-ask.open .quick-ask-pill { display: none; }
-    .quick-ask.open .quick-ask-panel { display: block; animation: richToastIn 0.18s ease; }
-    .quick-ask-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-    #quickAskInput {
-      width: 100%; resize: none;
-      background: var(--crust); color: var(--text);
-      border: 1px solid var(--surface2); border-radius: 6px;
-      padding: 8px 10px; font: 13px var(--font-ui); outline: none;
+    .space-menu.open { display: flex; animation: cmdPalettePop 0.16s ease-out; }
+    .space-menu-body { overflow-y: auto; padding: 6px; flex: 1; }
+    .space-menu-section {
+      font: 600 10px var(--font-ui); color: var(--overlay1);
+      text-transform: uppercase; letter-spacing: 0.6px;
+      padding: 8px 8px 4px;
     }
-    #quickAskInput:focus { border-color: var(--accent); }
-    .quick-ask-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .space-menu-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 6px; cursor: pointer;
+      color: var(--text); font: 12px var(--font-ui);
+      transition: background 0.12s;
+    }
+    .space-menu-item:hover { background: var(--surface1); }
+    .space-menu-item.active { background: color-mix(in srgb, var(--accent) 14%, var(--surface0)); color: var(--accent); }
+    .space-menu-item .sm-icon { color: var(--accent); flex-shrink: 0; }
+    .space-menu-item .sm-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .space-menu-item .sm-desc { color: var(--subtext0); font-size: 10px; margin-top: 1px; }
+    .space-menu-item .sm-del {
+      background: transparent; border: 1px solid transparent; border-radius: 4px;
+      color: var(--subtext0); cursor: pointer; padding: 2px; opacity: 0;
+      transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .space-menu-item:hover .sm-del { opacity: 1; }
+    .space-menu-item .sm-del:hover { color: var(--red); border-color: var(--surface2); }
+    .space-menu-footer {
+      display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--surface1);
+    }
+    .space-menu-footer button {
+      flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 6px 10px; background: var(--surface1); border: 1px solid var(--surface2);
+      border-radius: var(--radius); color: var(--text); font: 500 11px var(--font-ui);
+      cursor: pointer; transition: border-color 0.12s, background 0.12s;
+    }
+    .space-menu-footer button:hover { border-color: var(--accent); }
+    .space-menu-empty { padding: 10px 12px; color: var(--subtext0); font: 11px var(--font-ui); }
 
     /* ── Floating action buttons (runtime-added by the AI) ──────────────── */
     .fab-layer {
-      position: fixed; bottom: 72px; right: 18px; z-index: 9500;
+      position: fixed; bottom: 18px; right: 18px; z-index: 9500;
       display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
       pointer-events: none;
     }
@@ -2249,13 +2329,14 @@
     }
     .cmd-palette-input::placeholder { color: var(--subtext0); }
     .cmd-palette-list {
-      flex: 1; overflow-y: auto; padding: 6px;
+      flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px;
     }
     .cmd-palette-item {
       display: flex; align-items: center; gap: 10px; padding: 8px 12px;
       border-radius: var(--radius); cursor: pointer;
       transition: background 0.08s, color 0.08s;
       font: 13px var(--font-ui); color: var(--text);
+      min-width: 0;
     }
     .cmd-palette-item:hover, .cmd-palette-item.selected {
       background: color-mix(in srgb, var(--accent) 10%, var(--surface1));
@@ -2274,6 +2355,19 @@
       font-size: 9px; font-weight: 600; color: var(--subtext0); text-transform: uppercase;
       letter-spacing: 0.5px; flex-shrink: 0;
     }
+    .cmd-palette-item .cmd-del,
+    .cmd-recent-item .cmd-recent-del {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent; border: 1px solid transparent; border-radius: 4px;
+      color: var(--subtext0); cursor: pointer; padding: 2px;
+      opacity: 0; transition: opacity 0.12s, border-color 0.12s, color 0.12s;
+      flex-shrink: 0;
+    }
+    .cmd-palette-item:hover .cmd-del,
+    .cmd-palette-item.selected .cmd-del,
+    .cmd-recent-item:hover .cmd-recent-del { opacity: 1; }
+    .cmd-palette-item .cmd-del:hover,
+    .cmd-recent-item .cmd-recent-del:hover { border-color: var(--surface2); color: var(--red); }
     /* ── Palette suggestion chips ────────────────────────────────────── */
     .cmd-suggest-block {
       padding: 10px 14px 8px;
@@ -2293,6 +2387,7 @@
       border: 1px solid var(--surface2); border-radius: var(--radius-pill);
       color: var(--subtext1); font: 500 11px var(--font-ui);
       cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .cmd-suggest-chip:hover {
       background: color-mix(in srgb, var(--accent) 10%, var(--surface1));
@@ -2307,12 +2402,16 @@
       display: flex; align-items: center; gap: 8px;
       padding: 4px 6px; border-radius: 5px;
       color: var(--subtext1); font: 12px var(--font-ui); cursor: pointer;
+      min-width: 0;
     }
     .cmd-recent-item:hover { background: var(--surface1); color: var(--text); }
     .cmd-recent-item svg { color: var(--subtext0); flex-shrink: 0; }
+    .cmd-recent-item > span:not(.cmd-recent-cat) {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .cmd-recent-cat {
       margin-left: auto; font-size: 10px; color: var(--overlay1);
-      text-transform: uppercase; letter-spacing: 0.4px;
+      text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0;
     }
 
     /* ── Note slash menu ─────────────────────────────────────────────── */
@@ -2400,6 +2499,118 @@
     .tl-daily-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; justify-content: flex-end; }
     .tl-daily-bar { width: 100%; border-radius: 3px 3px 0 0; transition: height 0.4s ease; min-height: 2px; }
     .tl-daily-label { font-size: 9px; color: var(--subtext0); white-space: nowrap; }
+
+    /* ── @mention autocomplete (skills + repos) ─────────────────────────── */
+    .mention-menu {
+      position: fixed; z-index: 9700; display: none;
+      min-width: 260px; max-width: 340px;
+      background: var(--surface0); border: 1px solid var(--surface2);
+      border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+      padding: 4px; font: 12px var(--font-ui);
+    }
+    .mention-menu.open { display: block; animation: cmdPalettePop 0.14s ease-out; }
+    .mention-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 5px; cursor: pointer;
+      color: var(--subtext1); user-select: none; min-width: 0;
+    }
+    .mention-item.active, .mention-item:hover {
+      background: var(--surface1); color: var(--text);
+    }
+    .mention-item .mention-ico { color: var(--accent); flex-shrink: 0; }
+    .mention-item .mention-ico svg { width: 13px; height: 13px; }
+    .mention-item .mention-label {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-weight: 600;
+    }
+    .mention-item .mention-desc {
+      font-size: 10px; color: var(--overlay1); flex-shrink: 0;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+
+    /* ── Notification center (persistent) ───────────────────────────────── */
+    .notif-bell {
+      position: relative; display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+      color: var(--subtext0); transition: color 0.12s, background 0.12s;
+    }
+    .notif-bell:hover { color: var(--text); background: var(--surface0); }
+    .notif-bell svg { width: 14px; height: 14px; }
+    .notif-bell .notif-badge {
+      position: absolute; top: 1px; right: 1px;
+      min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box;
+      border-radius: 999px; background: var(--accent); color: var(--crust);
+      font: 600 9px var(--font-ui); display: none;
+      align-items: center; justify-content: center; line-height: 1;
+    }
+    .notif-bell.has-unread .notif-badge { display: inline-flex; }
+    .notif-panel {
+      position: fixed; top: 48px; right: 12px; z-index: 9600;
+      width: 380px; max-height: 70vh; display: none; flex-direction: column;
+      background: color-mix(in srgb, var(--base) 96%, transparent);
+      border: 1px solid var(--surface2); border-radius: var(--radius-xl);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 50px rgba(0,0,0,0.55);
+      backdrop-filter: blur(14px); overflow: hidden;
+    }
+    .notif-panel.open { display: flex; animation: cmdPalettePop 0.16s ease-out; }
+    .notif-panel-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px; border-bottom: 1px solid var(--surface1);
+    }
+    .notif-panel-title { font: 600 12px var(--font-ui); color: var(--text); flex: 1; }
+    .notif-panel-clear {
+      background: transparent; border: 1px solid var(--surface2); border-radius: 6px;
+      color: var(--subtext0); font: 500 10px var(--font-ui);
+      padding: 3px 8px; cursor: pointer;
+    }
+    .notif-panel-clear:hover { color: var(--text); border-color: var(--overlay0); }
+    .notif-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px; }
+    .notif-empty { padding: 28px 14px; text-align: center; color: var(--subtext0); font-size: 12px; }
+    .notif-item {
+      padding: 10px 12px; border-radius: 8px; cursor: pointer;
+      border: 1px solid transparent; margin-bottom: 4px;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .notif-item:hover { background: var(--surface0); }
+    .notif-item.unread { border-color: color-mix(in srgb, var(--accent) 35%, var(--surface2)); }
+    .notif-item-head {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+    }
+    .notif-item-icon { color: var(--accent); flex-shrink: 0; }
+    .notif-item-icon svg { width: 13px; height: 13px; }
+    .notif-item-title {
+      flex: 1; min-width: 0; font: 600 12px var(--font-ui); color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .notif-item-time {
+      font: 10px var(--font-mono); color: var(--overlay1); flex-shrink: 0;
+    }
+    .notif-item-body {
+      font: 11px var(--font-ui); color: var(--subtext1); line-height: 1.45;
+      max-height: 3.6em; overflow: hidden; position: relative;
+    }
+    .notif-item-actions {
+      display: flex; gap: 6px; margin-top: 8px;
+    }
+    .notif-item-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; font: 500 11px var(--font-ui);
+      background: var(--surface0); border: 1px solid var(--surface2);
+      border-radius: var(--radius); color: var(--text); cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .notif-item-btn:hover { border-color: var(--overlay0); background: var(--surface1); }
+    .notif-item-btn.primary {
+      background: color-mix(in srgb, var(--accent) 18%, var(--surface0));
+      border-color: color-mix(in srgb, var(--accent) 50%, var(--surface2));
+    }
+    .notif-item-btn.primary:hover {
+      background: color-mix(in srgb, var(--accent) 28%, var(--surface0));
+      border-color: var(--accent);
+    }
+    .notif-item.expanded .notif-item-body {
+      max-height: none; white-space: pre-wrap; word-break: break-word;
+    }
 
     /* ── Toast notifications ──────────────────────────────────────────────── */
     .toast-container { display: none; } /* Replaced by floating task pills */
@@ -2610,8 +2821,16 @@
   <div class="header-left" style="position:relative;">
     <img src="/logo.svg" class="header-logo" alt="">
     <span class="header-title">Symphonee</span>
+    <div id="spaceSwitcherSlot" style="display:inline-flex;align-items:center;margin-left:10px;position:relative;">
+      <button id="spaceSwitcherChip" class="space-chip" onclick="toggleSpaceSwitcher(event)" title="Switch space / repo">
+        <i data-lucide="layers" style="width:13px;height:13px;"></i>
+        <span id="spaceSwitcherLabel">No space</span>
+        <i data-lucide="chevron-down" style="width:11px;height:11px;opacity:0.7;"></i>
+      </button>
+      <div id="spaceSwitcherMenu" class="space-menu"></div>
+    </div>
     <div id="permModeSlot" style="display:inline-flex;align-items:center;min-width:110px;margin-left:12px;">
-      <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--subtext0);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
+      <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
         <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
         <span id="permModeLabel">EDIT</span>
       </div>
@@ -2639,6 +2858,10 @@
     </div>
     <div class="status-dot" id="statusDot"></div>
     <span id="connectionStatus">Connecting...</span>
+    <div class="notif-bell" id="notifBell" onclick="toggleNotifPanel(event)" title="Notifications">
+      <i data-lucide="bell"></i>
+      <span class="notif-badge" id="notifBadge">0</span>
+    </div>
     <button onclick="restartApp()" title="Restart App" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="rotate-cw" style="width:14px;height:14px;"></i></button>
     <div class="window-controls">
       <button onclick="fetch('/api/window/minimize',{method:'POST'})" title="Minimize"><i data-lucide="minus" style="width:16px;height:16px;"></i></button>
@@ -2699,11 +2922,6 @@
       </div>
 
       <div id="sidebarPluginSections"></div>
-
-      <div class="divider"></div>
-      <div class="section-title">Repos</div>
-      <div id="repoList"></div>
-      <button class="btn btn-sm" onclick="openSettings('repos')"><i data-lucide="plus"></i> Add Repo</button>
     </div>
     <div class="sidebar-bottom-hints">
       <div class="voice-hint" id="switchScreenHint" onclick="switchScreen()" style="cursor:pointer;">
@@ -2735,12 +2953,13 @@
           <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')" style="display:none;">Orchestrator <span style="font-size:9px;opacity:0.6;font-weight:400;margin-left:2px;">[BETA]</span></button>
           <button class="tab-btn" data-tab="backlog" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
           <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
-          <button class="tab-btn" data-tab="recipe-editor" id="recipeEditorTabBtn" onclick="switchTab('recipe-editor')" style="display:none;">Recipe Editor <span style="opacity:0.5;font-size:14px;margin-left:4px;cursor:pointer;" onclick="event.stopPropagation();closeRecipeEditor();" title="Close">×</span></button>
+          <button class="tab-btn closable" data-tab="recipe-editor" id="recipeEditorTabBtn" onclick="switchTab('recipe-editor')" style="display:none;"><span>Recipe Editor</span><span class="tab-close" onclick="event.stopPropagation();closeRecipeEditor();" title="Close">&times;</span></button>
           <button class="tab-btn" data-tab="activity" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
           <button class="tab-btn" data-tab="prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
           <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
           <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
           <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
+          <button class="tab-btn closable" data-tab="browser" id="browserTabBtn" onclick="switchTab('browser')"><span>Browser</span><span class="tab-close" onclick="event.stopPropagation();closeBrowserTab();" title="Close">&times;</span></button>
         </div>
         <button class="tab-scroll-arrow right" id="tabScrollRight" onclick="scrollTabs(200)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div>
@@ -3106,7 +3325,7 @@
       <div class="notes-container">
         <div class="notes-sidebar">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:38px;border-bottom:1px solid var(--surface0);background:var(--mantle);flex-shrink:0;">
-            <span style="font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;">Notes</span>
+            <span id="notesSpaceLabel" style="font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;">Notes</span>
             <div style="display:flex;align-items:center;gap:2px;">
               <button onclick="importNotesFromFile()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:2px 4px;display:flex;align-items:center;" title="Import notes from JSON or Markdown"><i data-lucide="download" style="width:13px;height:13px;"></i></button>
               <button onclick="exportAllNotes()" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:2px 4px;display:flex;align-items:center;" title="Export all notes"><i data-lucide="upload" style="width:13px;height:13px;"></i></button>
@@ -3153,6 +3372,21 @@
         </div>
       </div>
     </div>
+    <!-- Browser (in-app webview) -->
+    <div class="tab-panel" id="panel-browser">
+      <div class="inapp-browser">
+        <div class="inapp-browser-bar">
+          <button class="tab-bar-btn" onclick="inappBrowserBack()" title="Back"><i data-lucide="arrow-left" style="width:13px;height:13px;"></i></button>
+          <button class="tab-bar-btn" onclick="inappBrowserForward()" title="Forward"><i data-lucide="arrow-right" style="width:13px;height:13px;"></i></button>
+          <button class="tab-bar-btn" onclick="inappBrowserReload()" title="Reload"><i data-lucide="rotate-cw" style="width:13px;height:13px;"></i></button>
+          <input id="inappBrowserUrl" type="text" placeholder="Enter a URL or search" onkeydown="if(event.key==='Enter')inappBrowserGo()" />
+          <button class="tab-bar-btn" onclick="inappBrowserGo()"><i data-lucide="arrow-right-circle" style="width:13px;height:13px;"></i> Go</button>
+          <button class="tab-bar-btn" onclick="inappBrowserOpenExternal()" title="Open in system browser"><i data-lucide="external-link" style="width:13px;height:13px;"></i></button>
+        </div>
+        <div class="inapp-browser-frame" id="inappBrowserFrame"></div>
+      </div>
+    </div>
+
     <!-- Orchestrator -->
     <div class="tab-panel" id="panel-orchestrator">
       <div class="orch-header">
@@ -3180,6 +3414,10 @@
             <input id="orchTaskSearch" type="text" placeholder="Filter by title, prompt, CLI..." oninput="renderOrchTasks()" onkeydown="if(event.key==='Escape'){this.value='';renderOrchTasks();}" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:var(--radius);font-size:11px;padding:3px 8px;outline:none;width:220px;margin-left:10px;">
             <div style="flex:1;"></div>
             <button onclick="openActivityStats()" class="sy-btn sy-btn-sm sy-btn-outline" title="This week's activity"><i data-lucide="bar-chart-3"></i>Stats</button>
+            <select id="orchScopeFilter" onchange="this.dataset.userTouched='1';orchRefreshTasks();" title="Scope: all tasks or only the current space" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:var(--radius);font-size:11px;padding:3px 8px;outline:none;">
+              <option value="all">All spaces</option>
+              <option value="space">This space</option>
+            </select>
             <select id="orchTaskFilter" onchange="orchRefreshTasks()" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:var(--radius);font-size:11px;padding:3px 8px;outline:none;">
               <option value="">All</option>
               <option value="running">Running</option>
@@ -3484,6 +3722,16 @@
 
         <!-- Repositories Tab -->
         <div class="settings-tab" id="settingsTab-repos">
+          <div class="settings-section">
+            <div class="settings-section-title">Spaces</div>
+            <div class="settings-section-desc">Group repositories by context (Personal, Business, Freelance). A space can also hold plugins and notes without owning any repo.</div>
+            <div id="settingsSpacesList"></div>
+            <div style="margin-top:8px;">
+              <button class="modal-btn" onclick="openAddSpaceDialog()" style="padding:6px 12px;font-size:11px;display:flex;align-items:center;justify-content:center;gap:4px;">
+                <i data-lucide="layers" style="width:13px;height:13px;"></i> Add Space
+              </button>
+            </div>
+          </div>
           <div class="settings-section">
             <div class="settings-section-title">Repositories</div>
             <div class="settings-section-desc">Add local repositories to browse files, view diffs, and create pull requests.</div>
@@ -3914,6 +4162,30 @@
   </div>
 </div>
 
+<!-- ═══ Space Editor Dialog ═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="spaceEditorModal">
+  <div class="modal" style="width:440px;">
+    <div class="modal-title" id="spaceEditorTitle">New Space</div>
+    <div class="modal-field">
+      <label>Name</label>
+      <input id="spaceEditorName" type="text" placeholder="e.g. Personal, Business, Freelance">
+    </div>
+    <div class="modal-field">
+      <label>Description (optional)</label>
+      <input id="spaceEditorDesc" type="text" placeholder="Short description">
+    </div>
+    <div class="modal-field">
+      <label>Icon</label>
+      <input id="spaceEditorIcon" type="text" placeholder="layers" value="layers">
+      <div style="font-size:10px;color:var(--subtext0);margin-top:4px;">Lucide icon name (e.g. user, briefcase, coins, layers, folder, rocket).</div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeSpaceEditor(false)">Cancel</button>
+      <button class="modal-btn modal-btn-primary" onclick="closeSpaceEditor(true)">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ Voice Recording Indicator ════════════════════════════════════════ -->
 <div class="voice-indicator" id="voiceIndicator">
   <div class="voice-dot"></div>
@@ -3923,32 +4195,23 @@
 <div class="toast-container" id="toastContainer"></div>
 <div class="rich-toast-stack" id="richToastStack"></div>
 
-<!-- ═══ Quick-Ask bubble (always-visible mini composer) ═════════════════ -->
-<div class="quick-ask" id="quickAsk">
-  <button class="quick-ask-pill" id="quickAskPill" onclick="toggleQuickAsk()" title="Ask AI (Ctrl+J)">
-    <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
-    <span>Ask AI</span>
-  </button>
-  <div class="quick-ask-panel" id="quickAskPanel">
-    <div class="quick-ask-head">
-      <i data-lucide="sparkles" style="width:13px;height:13px;color:var(--accent);"></i>
-      <span style="font-size:11px;color:var(--subtext0);font-weight:600;letter-spacing:0.3px;text-transform:uppercase;">Quick Ask</span>
-      <div style="flex:1;"></div>
-      <button onclick="toggleQuickAsk()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px;"><i data-lucide="x" style="width:12px;height:12px;"></i></button>
-    </div>
-    <textarea id="quickAskInput" placeholder="Ask anything. Enter to send, Shift+Enter for newline." rows="3"></textarea>
-    <div class="quick-ask-foot">
-      <span id="quickAskCliLabel" style="font-size:11px;color:var(--subtext0);"></span>
-      <div style="flex:1;"></div>
-      <button onclick="quickAskSend()" class="sy-btn sy-btn-sm"><i data-lucide="arrow-up"></i>Send</button>
-    </div>
+<!-- ═══ @mention autocomplete menu (shared) ══════════════════════════════ -->
+<div class="mention-menu" id="mentionMenu"></div>
+
+<!-- ═══ Notification panel ═══════════════════════════════════════════════ -->
+<div class="notif-panel" id="notifPanel" onclick="event.stopPropagation()">
+  <div class="notif-panel-head">
+    <i data-lucide="bell" style="width:13px;height:13px;color:var(--accent);"></i>
+    <span class="notif-panel-title">Notifications</span>
+    <button class="notif-panel-clear" onclick="notifClearAll()">Clear all</button>
   </div>
+  <div class="notif-list" id="notifList"></div>
 </div>
 
 <!-- ═══ Command Palette ═══════════════════════════════════════════════ -->
 <div class="cmd-palette-overlay" id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
   <div class="cmd-palette">
-    <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
+    <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Ask AI, or type a command..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
     <div id="cmdPaletteCmdBadge" style="display:none;align-items:center;gap:6px;padding:6px 14px;border-bottom:1px solid var(--surface1);background:color-mix(in srgb, var(--accent) 8%, transparent);font-size:11px;color:var(--accent);">
       <i data-lucide="search" style="width:11px;height:11px;"></i>
       <span style="background:color-mix(in srgb, var(--accent) 22%, var(--surface0));border:1px solid var(--accent);color:var(--accent);font-weight:600;border-radius:11px;padding:1px 9px;font-size:11px;" id="cmdPaletteCmdBadgeText">find</span>
@@ -4354,6 +4617,8 @@ requestAnimationFrame(fitTerminalNow);
         }
         case 'config-changed':
           loadConfig();
+          try { loadRepoList(); } catch (_) {}
+          try { applyPluginSpaceFilter(); } catch (_) {}
           notifyPluginIframes('configChanged', {});
           break;
         case 'ui-action':
@@ -4370,6 +4635,17 @@ requestAnimationFrame(fitTerminalNow);
           break;
         case 'ui-mutate':
           handleUiMutate(msg.ops || []);
+          break;
+        case 'notification':
+          if (typeof notify === 'function') {
+            notify(msg.title || 'Notification', msg.body || '', {
+              icon: msg.icon || 'bell',
+              source: msg.source || null,
+            });
+          }
+          break;
+        case 'app-state-set':
+          if (typeof _onAppStateSet === 'function') _onAppStateSet(msg.key, msg.value);
           break;
       }
     };
@@ -4459,40 +4735,232 @@ function openActivityStats() {
   try { lucide.createIcons({ nodes: [overlay] }); } catch (_) {}
 }
 
-// ── Quick-Ask bubble ────────────────────────────────────────────────────
-// Always-visible bottom-left pill. Ctrl+J also toggles it. Sends to the
-// active CLI via the same orchestrator path as the palette.
-function toggleQuickAsk() {
-  const root = document.getElementById('quickAsk');
-  if (!root) return;
-  const open = root.classList.toggle('open');
-  if (open) {
-    const label = document.getElementById('quickAskCliLabel');
-    if (label) label.textContent = 'Runner: ' + ((CLI_CONFIG[activeCli] && CLI_CONFIG[activeCli].label) || activeCli);
-    setTimeout(() => document.getElementById('quickAskInput')?.focus(), 60);
+// ── Notification center ─────────────────────────────────────────────────
+// Persistent, dismissable messages. Different from toasts (auto-dismiss).
+// Stored in localStorage so they survive reloads. Capped at 50 entries.
+const NOTIF_KEY = 'symphonee-notifications';
+const NOTIF_MAX = 50;
+let _notifs = [];
+// Tracks tasks dispatched from the palette / quick-ask so the orchestrator
+// WebSocket handler knows to surface their completion in the notif center.
+const _paletteNotifyTasks = new Set();
+function _loadNotifs() {
+  try { _notifs = JSON.parse(localStorage.getItem(NOTIF_KEY) || '[]'); }
+  catch (_) { _notifs = []; }
+}
+function _saveNotifs() {
+  try { localStorage.setItem(NOTIF_KEY, JSON.stringify(_notifs.slice(0, NOTIF_MAX))); } catch (_) {}
+}
+function notify(title, body, opts) {
+  opts = opts || {};
+  _notifs.unshift({
+    id: 'n-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    title: String(title || '').slice(0, 160),
+    body: String(body || ''),
+    icon: opts.icon || 'sparkles',
+    source: opts.source || null,
+    taskId: opts.taskId || null,
+    createdAt: Date.now(),
+    read: false,
+  });
+  _notifs = _notifs.slice(0, NOTIF_MAX);
+  _saveNotifs();
+  renderNotifBadge();
+  // If the panel is open, re-render to show the new one at top.
+  const panel = document.getElementById('notifPanel');
+  if (panel && panel.classList.contains('open')) renderNotifList();
+}
+function notifClearAll() {
+  _notifs = [];
+  _saveNotifs();
+  renderNotifBadge();
+  renderNotifList();
+}
+function renderNotifBadge() {
+  const bell = document.getElementById('notifBell');
+  const badge = document.getElementById('notifBadge');
+  if (!bell || !badge) return;
+  const unread = _notifs.filter(n => !n.read).length;
+  if (unread > 0) {
+    bell.classList.add('has-unread');
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+  } else {
+    bell.classList.remove('has-unread');
   }
 }
-async function quickAskSend() {
-  const ta = document.getElementById('quickAskInput');
-  if (!ta) return;
-  const v = (ta.value || '').trim();
-  if (!v) return;
-  await askAIFromPalette(v);
-  ta.value = '';
-  document.getElementById('quickAsk')?.classList.remove('open');
+function _relTime(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
 }
+function renderNotifList() {
+  const el = document.getElementById('notifList');
+  if (!el) return;
+  if (!_notifs.length) {
+    el.innerHTML = '<div class="notif-empty">No notifications yet.</div>';
+    return;
+  }
+  el.innerHTML = _notifs.map(n => {
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const hasTask = !!n.taskId;
+    const actions = hasTask
+      ? '<div class="notif-item-actions">' +
+          '<button class="notif-item-btn" data-act="open" data-task="' + esc(n.taskId) + '"><i data-lucide="external-link" style="width:11px;height:11px;"></i>Open</button>' +
+          '<button class="notif-item-btn primary" data-act="reply" data-task="' + esc(n.taskId) + '"><i data-lucide="corner-down-left" style="width:11px;height:11px;"></i>Reply</button>' +
+        '</div>'
+      : '';
+    return '<div class="notif-item ' + (n.read ? '' : 'unread') + '" data-id="' + n.id + '">' +
+      '<div class="notif-item-head">' +
+        '<span class="notif-item-icon"><i data-lucide="' + esc(n.icon || 'bell') + '"></i></span>' +
+        '<span class="notif-item-title" title="' + esc(n.title) + '">' + esc(n.title) + '</span>' +
+        '<span class="notif-item-time">' + _relTime(n.createdAt) + '</span>' +
+      '</div>' +
+      '<div class="notif-item-body">' + esc(n.body) + '</div>' +
+      actions +
+    '</div>';
+  }).join('');
+  el.querySelectorAll('.notif-item').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('.notif-item-btn');
+      const id = row.dataset.id;
+      const n = _notifs.find(x => x.id === id);
+      if (!n) return;
+      n.read = true;
+      row.classList.remove('unread');
+      _saveNotifs();
+      renderNotifBadge();
+      if (btn) {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        const tid = btn.dataset.task;
+        if (act === 'open' && tid) _openOrchestratorTask(tid);
+        else if (act === 'reply' && tid) _replyToTask(tid);
+        document.getElementById('notifPanel')?.classList.remove('open');
+        return;
+      }
+      // Default: clicking the row toggles expanded body; if there's a task,
+      // also jump to the orchestrator so the user can see the full thread.
+      if (n.taskId) { _openOrchestratorTask(n.taskId); document.getElementById('notifPanel')?.classList.remove('open'); }
+      else row.classList.toggle('expanded');
+    });
+  });
+  try { lucide.createIcons({ nodes: [el] }); } catch (_) {}
+}
+// Click a task notification -> switch to the orchestrator tab and scroll the
+// task card into view, flashing it so the user can spot it.
+function _openOrchestratorTask(taskId) {
+  try {
+    const orchBtn = document.getElementById('orchestratorTabBtn');
+    if (orchBtn && orchBtn.style.display !== 'none' && typeof switchTab === 'function') {
+      switchTab('orchestrator');
+    }
+  } catch (_) {}
+  // Give the tab a tick to render, then scroll + flash.
+  setTimeout(() => {
+    const card = document.querySelector('.orch-task[data-id="' + taskId + '"]');
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.style.transition = 'box-shadow 0.2s, border-color 0.2s';
+    const prevShadow = card.style.boxShadow;
+    card.style.boxShadow = '0 0 0 2px var(--accent)';
+    setTimeout(() => { card.style.boxShadow = prevShadow; }, 1400);
+  }, 80);
+}
+// Open the command palette in reply mode so a follow-up is routed through
+// /api/orchestrator/followup and the worker sees the prior Q/A as context
+// (tasks themselves are one-shot).
+let _pendingFollowupParentId = null;
+let _pendingFollowupPriorPrompt = '';
+async function _replyToTask(taskId) {
+  _pendingFollowupParentId = taskId;
+  _pendingFollowupPriorPrompt = '';
+  try {
+    const r = await fetch('/api/orchestrator/task?id=' + encodeURIComponent(taskId));
+    if (r.ok) {
+      const t = await r.json();
+      _pendingFollowupPriorPrompt = (t && (t.prompt || '')).replace(/\[ORCHESTRATOR TASK [^\]]*\]/g, '').trim();
+    }
+  } catch (_) {}
+  if (typeof openCmdPalette === 'function') openCmdPalette();
+  setTimeout(() => {
+    try { renderReplyChip(); } catch (_) {}
+    const input = document.getElementById('cmdPaletteInput');
+    if (input) {
+      input.placeholder = _pendingFollowupPriorPrompt
+        ? 'Reply to: "' + _pendingFollowupPriorPrompt.slice(0, 80) + '"...'
+        : 'Type your reply...';
+      input.focus();
+    }
+  }, 80);
+}
+// Renders (or clears) the "replying to task" chip inside the cmd palette.
+function renderReplyChip() {
+  const palette = document.querySelector('.cmd-palette');
+  if (!palette) return;
+  let chip = document.getElementById('cmdPaletteReplyChip');
+  if (!_pendingFollowupParentId) {
+    if (chip) chip.remove();
+    const input = document.getElementById('cmdPaletteInput');
+    if (input) input.placeholder = 'Ask AI, or type a command...';
+    return;
+  }
+  if (!chip) {
+    chip = document.createElement('div');
+    chip.id = 'cmdPaletteReplyChip';
+    chip.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 14px;border-bottom:1px solid var(--surface1);background:color-mix(in srgb, var(--accent) 8%, transparent);font-size:11px;color:var(--accent);';
+    const input = document.getElementById('cmdPaletteInput');
+    if (input && input.nextSibling) palette.insertBefore(chip, input.nextSibling);
+    else palette.appendChild(chip);
+  }
+  const prior = _pendingFollowupPriorPrompt
+    ? ' &mdash; "' + esc(_pendingFollowupPriorPrompt.slice(0, 60)) + (_pendingFollowupPriorPrompt.length > 60 ? '...' : '') + '"'
+    : '';
+  chip.innerHTML =
+    '<i data-lucide="corner-down-right" style="width:11px;height:11px;"></i>' +
+    '<span style="background:color-mix(in srgb, var(--accent) 22%, var(--surface0));border:1px solid var(--accent);color:var(--accent);font-weight:600;border-radius:11px;padding:1px 9px;font-size:11px;">Reply</span>' +
+    '<span style="color:var(--subtext0);">to task ' + esc(String(_pendingFollowupParentId).slice(0, 8)) + prior + '</span>' +
+    '<span style="flex:1;"></span>' +
+    '<button onclick="_cancelFollowup()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px;" title="Cancel reply"><i data-lucide="x" style="width:11px;height:11px;"></i></button>';
+  try { lucide.createIcons({ nodes: [chip] }); } catch (_) {}
+}
+function _cancelFollowup() {
+  _pendingFollowupParentId = null;
+  _pendingFollowupPriorPrompt = '';
+  renderReplyChip();
+}
+function toggleNotifPanel(e) {
+  if (e) e.stopPropagation();
+  const panel = document.getElementById('notifPanel');
+  if (!panel) return;
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen) {
+    renderNotifList();
+    // Mark all as read on open (they stay visible; badge clears)
+    _notifs.forEach(n => { n.read = true; });
+    _saveNotifs();
+    renderNotifBadge();
+  }
+}
+// Click outside closes the panel.
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('notifPanel');
+  const bell = document.getElementById('notifBell');
+  if (!panel || !panel.classList.contains('open')) return;
+  if (bell && bell.contains(e.target)) return;
+  if (panel.contains(e.target)) return;
+  panel.classList.remove('open');
+});
+_loadNotifs();
+// Render initial state after DOM ready (deferred; header may not exist yet).
+document.addEventListener('DOMContentLoaded', renderNotifBadge);
 document.addEventListener('keydown', (e) => {
-  // Ctrl+J toggles the quick-ask bubble.
+  // Ctrl+J opens the command palette (same entry point as Ctrl+K).
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === 'j') {
-    e.preventDefault(); toggleQuickAsk(); return;
-  }
-  // Enter in the quick-ask textarea submits (Shift+Enter = newline).
-  if (e.key === 'Enter' && !e.shiftKey && document.activeElement?.id === 'quickAskInput') {
     e.preventDefault();
-    quickAskSend();
-  } else if (e.key === 'Escape' && document.activeElement?.id === 'quickAskInput') {
-    e.preventDefault();
-    document.getElementById('quickAsk')?.classList.remove('open');
+    if (typeof openCmdPalette === 'function') openCmdPalette();
+    return;
   }
 }, true);
 
@@ -4513,7 +4981,63 @@ function _pushFocus(patch) {
       body: JSON.stringify(body),
     }).catch(() => {});
   }, 250);
+  // Also mirror into the 'navigation' application-state key so AI agents get
+  // the agent-native shape (view, repo, selection) without extra endpoints.
+  _pushNavigation({
+    view: patch.activeTab,
+    repo: patch.activeRepo,
+    selection: patch.selection,
+    updatedAt: Date.now(),
+  });
 }
+
+// ── Application state (agent-native pattern) ───────────────────────────
+// The UI writes a 'navigation' snapshot so the AI knows what you're looking
+// at. The AI writes 'navigate' commands which we act on and delete.
+let _pushNavTimer = null;
+let _pendingNav = null;
+function _pushNavigation(patch) {
+  _pendingNav = Object.assign(_pendingNav || {}, patch || {});
+  clearTimeout(_pushNavTimer);
+  _pushNavTimer = setTimeout(() => {
+    const body = { value: _pendingNav };
+    _pendingNav = null;
+    fetch('/api/application-state/navigation', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }, 200);
+}
+// Central dispatcher for 'app-state-set' WS events.
+function _onAppStateSet(key, value) {
+  if (key === 'navigate' && value) _handleNavigateCommand(value);
+}
+function _handleNavigateCommand(cmd) {
+  try {
+    // Possible fields: view (tab id), repo (repo name), path (URL-style).
+    if (cmd.view && typeof switchTab === 'function') switchTab(cmd.view);
+    if (cmd.repo && typeof selectRepo === 'function') {
+      selectRepo(cmd.repo);
+    }
+    if (cmd.path && typeof cmd.path === 'string') {
+      // Reserved for future router wiring; log for now.
+      console.log('[app-state] navigate to path:', cmd.path);
+    }
+    notify('Agent navigated', 'View: ' + (cmd.view || cmd.path || cmd.repo || 'unknown'), { icon: 'navigation' });
+  } catch (e) { console.warn('[app-state] navigate failed', e); }
+  // One-shot: clear the command so it doesn't fire twice.
+  fetch('/api/application-state/navigate', { method: 'DELETE' }).catch(() => {});
+}
+// On boot, check if there's a pending 'navigate' command we missed before
+// the WS connected.
+(async () => {
+  try {
+    const r = await fetch('/api/application-state/navigate');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (j && j.value) _handleNavigateCommand(j.value);
+  } catch (_) {}
+})();
 
 // Capture non-trivial text selections anywhere in the app. Debounced so we
 // don't ship a POST per character drag.
@@ -4725,6 +5249,11 @@ function toggleOnboardingPanel(ev) {
   panel = document.createElement('div');
   panel.id = 'onboardingPanel';
   panel.className = 'onboarding-panel';
+  const doneCount = ONBOARDING_STEPS.filter(s => s.test()).length;
+  const total = ONBOARDING_STEPS.length;
+  const progressDots = ONBOARDING_STEPS.map((_, i) =>
+    '<div class="ob-progress-dot ' + (i < doneCount ? 'done' : '') + '"></div>'
+  ).join('');
   const steps = ONBOARDING_STEPS.map((s, i) => {
     const done = s.test();
     return '<div class="ob-step' + (done ? ' done' : '') + '">' +
@@ -4732,12 +5261,16 @@ function toggleOnboardingPanel(ev) {
       '<div class="ob-step-main"><div class="ob-step-label">' + esc(s.label) + '</div><div class="ob-step-hint">' + esc(s.hint) + '</div></div>' +
     '</div>';
   }).join('');
+  const allDone = doneCount === total;
   panel.innerHTML =
     '<div class="ob-head">' +
-      '<strong>Getting started</strong>' +
+      '<strong>Getting started ' + doneCount + '/' + total + '</strong>' +
       '<button onclick="dismissOnboarding()" class="ob-dismiss" title="Dismiss">Dismiss</button>' +
     '</div>' +
-    '<div class="ob-steps">' + steps + '</div>';
+    '<div class="ob-progress">' + progressDots + '</div>' +
+    (allDone
+      ? '<div class="ob-all-done">All set. <strong>Nice work.</strong></div>'
+      : '<div class="ob-steps">' + steps + '</div>');
   document.body.appendChild(panel);
   // Position below the chip.
   const chip = document.getElementById('onboardingChip');
@@ -6846,7 +7379,7 @@ let noteDirty = false;
 
 async function loadNotesList() {
   try {
-    const res = await fetch('/api/notes');
+    const res = await notesFetch('/api/notes');
     const notes = await res.json();
     window._notesListCache = Array.isArray(notes) ? notes : [];
     const container = document.getElementById('notesList');
@@ -6863,7 +7396,7 @@ async function openNote(name, opts) {
   try { _pushFocus({ currentNote: name }); } catch (_) {}
   if (noteDirty && currentNote) await saveCurrentNote();
   try {
-    const res = await fetch(`/api/notes/read?name=${encodeURIComponent(name)}`);
+    const res = await notesFetch(`/api/notes/read?name=${encodeURIComponent(name)}`);
     const data = await res.json();
     currentNote = name;
     noteDirty = false;
@@ -7173,7 +7706,7 @@ async function saveCurrentNote() {
   if (!currentNote) return;
   const content = document.getElementById('noteTextarea').value;
   try {
-    await fetch('/api/notes/save', {
+    await notesFetch('/api/notes/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: currentNote, content }),
@@ -7203,7 +7736,7 @@ async function confirmCreateNote() {
   const name = input.value.trim();
   if (!name) return;
   try {
-    const res = await fetch('/api/notes/create', {
+    const res = await notesFetch('/api/notes/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -7220,7 +7753,7 @@ async function deleteNote(name) {
   const ok = await customConfirm('Delete Note', `Delete "${name}"? This cannot be undone.`, 'Delete');
   if (!ok) return;
   try {
-    await fetch('/api/notes/delete', {
+    await notesFetch('/api/notes/delete', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -7241,13 +7774,13 @@ function sendNoteToAi() {
   const content = document.getElementById('noteTextarea').value;
   if (!content.trim()) { toast('Note is empty', 'info'); return; }
   const name = currentNote;
-  askAi(`Fetch the Symphonee note named "${name}" via GET /api/notes/read?name=${encodeURIComponent(name)} and use its content as context for our conversation. I may ask you to expand on it, update it, or take action based on it.`);
+  askAi(`Fetch the Symphonee note named "${name}" via GET /api/notes/read?name=${encodeURIComponent(name)}&ns=${encodeURIComponent(currentNotesNs())} and use its content as context for our conversation. I may ask you to expand on it, update it, or take action based on it.`);
 }
 
 function exportCurrentNote() {
   if (!currentNote) { toast('No note selected', 'info'); return; }
   const a = document.createElement('a');
-  a.href = '/api/notes/export?name=' + encodeURIComponent(currentNote);
+  a.href = '/api/notes/export?name=' + encodeURIComponent(currentNote) + '&ns=' + encodeURIComponent(currentNotesNs());
   a.download = currentNote + '.md';
   document.body.appendChild(a); a.click(); a.remove();
 }
@@ -7283,7 +7816,7 @@ async function onNotesImportFileChosen(ev) {
   }
   if (!Object.keys(notes).length) { toast('No notes to import', 'info'); return; }
   try {
-    const r = await fetch('/api/notes/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes }) });
+    const r = await notesFetch('/api/notes/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes }) });
     const d = await r.json();
     if (d.ok) { toast('Imported ' + d.written + ' note(s)' + (d.skipped ? ', ' + d.skipped + ' skipped' : ''), 'success'); loadNotes(); }
     else toast(d.error || 'Import failed', 'error');
@@ -7400,7 +7933,7 @@ async function deleteNoteFromContext() {
   const ok = await customConfirm('Delete Note', `Delete "${contextNoteName}"? This cannot be undone.`, 'Delete');
   if (!ok) return;
   try {
-    await fetch('/api/notes/delete', {
+    await notesFetch('/api/notes/delete', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: contextNoteName }),
@@ -7423,11 +7956,11 @@ async function renameNoteFromContext() {
   if (!newName || newName === contextNoteName) return;
   try {
     // Read old, create new, delete old
-    const res = await fetch(`/api/notes/read?name=${encodeURIComponent(contextNoteName)}`);
+    const res = await notesFetch(`/api/notes/read?name=${encodeURIComponent(contextNoteName)}`);
     const data = await res.json();
-    await fetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
-    await fetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, content: data.content }) });
-    await fetch('/api/notes/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: contextNoteName }) });
+    await notesFetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
+    await notesFetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, content: data.content }) });
+    await notesFetch('/api/notes/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: contextNoteName }) });
     if (currentNote === contextNoteName) currentNote = newName;
     loadNotesList();
     if (currentNote === newName) document.getElementById('noteTitle').textContent = newName;
@@ -7440,10 +7973,10 @@ async function duplicateNoteFromContext() {
   const newName = await customPrompt('Duplicate Note', contextNoteName + ' (copy)');
   if (!newName) return;
   try {
-    const res = await fetch(`/api/notes/read?name=${encodeURIComponent(contextNoteName)}`);
+    const res = await notesFetch(`/api/notes/read?name=${encodeURIComponent(contextNoteName)}`);
     const data = await res.json();
-    await fetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
-    await fetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, content: data.content }) });
+    await notesFetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
+    await notesFetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, content: data.content }) });
     loadNotesList();
     toast(`Duplicated as "${newName}"`, 'success');
   } catch (_) { toast('Failed to duplicate', 'error'); }
@@ -7668,7 +8201,21 @@ let orchTasks = [];
 let orchAgents = [];
 
 async function orchRefresh() {
+  // Sync the scope filter default to the current space before fetching so the
+  // first render already reflects "this space" when a space is active.
+  try { syncOrchScopeFilter(); } catch (_) {}
   await Promise.all([orchRefreshAgents(), orchRefreshTasks()]);
+}
+
+// Keep the orchestrator scope <select> default aligned with the active space.
+// When a space is active, default to 'space'; otherwise 'all'. Preserves the
+// user's choice within a session (only overrides if the current value is no
+// longer sensible -- e.g. they had 'space' selected and then cleared the space).
+function syncOrchScopeFilter() {
+  const el = document.getElementById('orchScopeFilter');
+  if (!el) return;
+  if (!activeSpace && el.value === 'space') el.value = 'all';
+  else if (activeSpace && !el.dataset.userTouched) el.value = 'space';
 }
 
 async function orchRefreshAgents() {
@@ -7682,7 +8229,14 @@ async function orchRefreshAgents() {
 async function orchRefreshTasks() {
   try {
     const filter = document.getElementById('orchTaskFilter')?.value || '';
-    const url = '/api/orchestrator/tasks' + (filter ? '?state=' + filter : '');
+    const scopeEl = document.getElementById('orchScopeFilter');
+    const scope = scopeEl ? scopeEl.value : '';
+    const params = [];
+    if (filter) params.push('state=' + encodeURIComponent(filter));
+    // scope: '' or 'all' = unfiltered; 'space' = only tasks tagged with the
+    // currently active space.
+    if (scope === 'space' && activeSpace) params.push('space=' + encodeURIComponent(activeSpace));
+    const url = '/api/orchestrator/tasks' + (params.length ? '?' + params.join('&') : '');
     const tasks = await fetch(url).then(r => r.json());
     orchTasks = tasks;
     renderOrchTasks();
@@ -7970,7 +8524,7 @@ async function _saveTaskAsNote(t, md) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) || 'task';
   const name = 'task-' + slug + '-' + String(t.id).slice(-6);
   try {
-    await fetch('/api/notes/save', {
+    await notesFetch('/api/notes/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, content: md }),
     });
@@ -8120,7 +8674,7 @@ async function orchDoDispatch() {
       await fetch('/api/orchestrator/spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cli, prompt }),
+        body: JSON.stringify({ cli, prompt, space: activeSpace || null }),
       });
       toast('Task dispatched to ' + cli, 'success');
     } else {
@@ -8154,6 +8708,32 @@ function handleOrchestratorEvent(msg) {
           setTimeout(() => dot.remove(), 3000);
         }
         st.orchestrated = false;
+      }
+    }
+
+    // Palette / quick-ask tasks: push the final answer to the notification
+    // center when they complete. Matches by taskId captured at spawn time,
+    // or falls back to the task's `from` tag for cases where the spawn
+    // response wasn't tracked (e.g. reloads mid-flight).
+    if (task && task.state === 'completed') {
+      const tracked = _paletteNotifyTasks.has(task.id);
+      const fromTag = task.from === 'palette' || task.from === 'quick-ask';
+      if (tracked || fromTag) {
+        _paletteNotifyTasks.delete(task.id);
+        const cli = task.cli || 'AI';
+        const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli;
+        const promptSnippet = (task.prompt || '')
+          .replace(/\[ORCHESTRATOR TASK [^\]]*\]/g, '').trim()
+          .split(/[.\n]/)[0].slice(0, 90);
+        const answer = (task.result || task.error || '(no output captured)').toString();
+        notify(
+          cliLabel + ' answered: ' + (promptSnippet || 'your question'),
+          answer,
+          { icon: 'sparkles', source: task.from, taskId: task.id }
+        );
+      } else if (task.state === 'failed' && (_paletteNotifyTasks.has(task.id))) {
+        _paletteNotifyTasks.delete(task.id);
+        notify('AI task failed', (task.error || 'Unknown error').toString(), { icon: 'alert-circle' });
       }
     }
   }
@@ -8960,12 +9540,42 @@ function pushUiContext() {
     selectedIterationName: sel.selectedOptions[0]?.textContent || 'All Iterations',
     selectedArea: areaSel?.value || null,
     selectedAreaName: areaSel?.selectedOptions[0]?.textContent?.trim() || 'Team Default',
+    activeSpace: activeSpace || null,
     activeRepo: activeRepo || filesCurrentRepo || null,
   };
   fetch('/api/ui/context', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(ctx)
   }).catch(() => {});
+}
+
+// Current notes namespace -- what /api/notes calls should default to. '_global'
+// when no space is active; the space's slugged name otherwise.
+function currentNotesNs() {
+  if (!activeSpace) return '_global';
+  return String(activeSpace).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || '_global';
+}
+
+// Fetch wrapper that scopes notes API calls to the active space's namespace.
+// Adds ns= to GET querystrings and injects ns into POST/PUT/DELETE bodies.
+function notesFetch(url, init) {
+  const ns = currentNotesNs();
+  init = init || {};
+  const method = (init.method || 'GET').toUpperCase();
+  if (method === 'GET' || (method === 'DELETE' && !init.body)) {
+    const sep = url.includes('?') ? '&' : '?';
+    return fetch(url + sep + 'ns=' + encodeURIComponent(ns), init);
+  }
+  if (init.body && typeof init.body === 'string') {
+    try {
+      const obj = JSON.parse(init.body);
+      if (obj && typeof obj === 'object' && obj.ns === undefined) {
+        obj.ns = ns;
+        init = { ...init, body: JSON.stringify(obj) };
+      }
+    } catch (_) {}
+  }
+  return fetch(url, init);
 }
 
 // ── Work Items ──────────────────────────────────────────────────────────
@@ -10227,50 +10837,834 @@ function updateActivityFeed() {
   }).join('');
 }
 
-// ── Repos ───────────────────────────────────────────────────────────────
-let activeRepo = localStorage.getItem('symphonee-repo') || '';
+// ── Slash-menu (ComposeSlashMenu) ───────────────────────────────────────
+// Typing '/' at the start of a token opens a menu of composer actions:
+// send-to-ai, attach-file, navigate-to-view, etc. Each action is a function
+// that receives (input, match). Registered commands:
+const SLASH_COMMANDS = [
+  {
+    slug: 'ask',
+    label: 'Ask AI',
+    desc: 'Send the rest of the line to the active AI',
+    hint: 'Send',
+    run: (input) => {
+      const line = (input.value || '').replace(/^\/ask\s*/i, '').trim();
+      if (!line) return;
+      input.value = '';
+      if (typeof askAIFromPalette === 'function') askAIFromPalette(line, { from: 'quick-ask' });
+    },
+  },
+  {
+    slug: 'goto',
+    label: 'Go to view',
+    desc: 'Switch tabs: /goto terminal, /goto backlog, /goto notes',
+    hint: 'Navigate',
+    run: (input) => {
+      const view = (input.value || '').replace(/^\/goto\s*/i, '').trim().toLowerCase();
+      if (!view) return;
+      input.value = '';
+      if (typeof switchTab === 'function') switchTab(view);
+    },
+  },
+  {
+    slug: 'note',
+    label: 'Create note',
+    desc: 'Open Notes tab with a new note',
+    hint: 'Note',
+    run: (input) => {
+      input.value = '';
+      if (typeof switchTab === 'function') switchTab('notes');
+    },
+  },
+  {
+    slug: 'recipe',
+    label: 'Run recipe',
+    desc: 'Open the command palette seeded with a recipe search',
+    hint: 'Recipe',
+    run: (input) => {
+      input.value = '';
+      if (typeof openCmdPalette === 'function') {
+        openCmdPalette();
+        setTimeout(() => {
+          const i = document.getElementById('cmdPaletteInput');
+          if (i) { i.value = 'recipe '; i.dispatchEvent(new Event('input')); i.focus(); }
+        }, 60);
+      }
+    },
+  },
+];
+
+function attachSlashMenu(inputEl) {
+  if (!inputEl || inputEl._slashWired) return;
+  inputEl._slashWired = true;
+  const menu = document.getElementById('mentionMenu');
+  let activeIdx = 0;
+  let items = [];
+  let anchorStart = -1;
+  const close = () => {
+    if (!menu.classList.contains('open')) return;
+    if (menu.dataset.mode !== 'slash') return;
+    menu.classList.remove('open');
+    menu.removeAttribute('data-mode');
+    anchorStart = -1;
+    items = [];
+  };
+  const render = () => {
+    menu.dataset.mode = 'slash';
+    menu.innerHTML = items.map((it, i) =>
+      '<div class="mention-item ' + (i === activeIdx ? 'active' : '') + '" data-idx="' + i + '">' +
+        '<span class="mention-ico"><i data-lucide="slash"></i></span>' +
+        '<span class="mention-label">/' + it.slug + '</span>' +
+        '<span class="mention-desc">' + it.hint + '</span>' +
+      '</div>'
+    ).join('') || '<div class="mention-item" style="color:var(--overlay1);cursor:default;">no matches</div>';
+    try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+    menu.querySelectorAll('.mention-item').forEach(row => {
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const i = parseInt(row.dataset.idx || '-1', 10);
+        if (i >= 0) pick(i);
+      });
+    });
+  };
+  const pick = (i) => {
+    const it = items[i];
+    if (!it) return close();
+    // Replace '/query' with '/slug ' so the user can continue typing args.
+    const v = inputEl.value || '';
+    const caret = inputEl.selectionStart || v.length;
+    const prefix = v.slice(0, anchorStart);
+    const suffix = v.slice(caret);
+    const insert = '/' + it.slug + ' ';
+    inputEl.value = prefix + insert + suffix;
+    const newPos = (prefix + insert).length;
+    inputEl.setSelectionRange(newPos, newPos);
+    close();
+    inputEl.focus();
+  };
+  const refresh = () => {
+    const v = inputEl.value || '';
+    const caret = inputEl.selectionStart || v.length;
+    const slice = v.slice(0, caret);
+    // Only trigger at start-of-input (slash menu is line-start only).
+    const m = /^\/(\w*)$/.exec(slice);
+    if (!m) return close();
+    const q = m[1].toLowerCase();
+    items = SLASH_COMMANDS.filter(c => !q || c.slug.startsWith(q)).slice(0, 10);
+    anchorStart = 0;
+    activeIdx = 0;
+    const rect = inputEl.getBoundingClientRect();
+    menu.style.left = rect.left + 'px';
+    menu.style.top = (rect.top - 4) + 'px';
+    menu.style.transform = 'translateY(-100%)';
+    menu.classList.add('open');
+    render();
+  };
+  inputEl.addEventListener('input', refresh);
+  inputEl.addEventListener('keydown', (e) => {
+    if (menu.classList.contains('open') && menu.dataset.mode === 'slash') {
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % Math.max(1, items.length); render(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + items.length) % Math.max(1, items.length); render(); }
+      else if (e.key === 'Tab') { if (items.length) { e.preventDefault(); e.stopPropagation(); pick(activeIdx); } }
+      else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    }
+    // Enter executes the matched slash command against the current input.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const v = (inputEl.value || '').trimStart();
+      const m = /^\/(\w+)(?:\s|$)/.exec(v);
+      if (m) {
+        const cmd = SLASH_COMMANDS.find(c => c.slug === m[1].toLowerCase());
+        if (cmd) {
+          e.preventDefault();
+          e.stopPropagation();
+          close();
+          try { cmd.run(inputEl); } catch (err) { console.warn('[slash]', err); }
+        }
+      }
+    }
+  }, true);
+  inputEl.addEventListener('blur', () => setTimeout(close, 120));
+}
+document.addEventListener('DOMContentLoaded', () => {
+  attachSlashMenu(document.getElementById('cmdPaletteInput'));
+});
+
+// ── @mention autocomplete ───────────────────────────────────────────────
+// Attach to any textarea/input to pop a menu when the user types '@'. The
+// menu lists skills and repos; selecting inserts '@skill-slug ' into the
+// composer so the agent can read it and fetch the skill body.
+let _mentionSkillsCache = null;
+async function _mentionSkills() {
+  if (_mentionSkillsCache) return _mentionSkillsCache;
+  try {
+    const r = await fetch('/api/skills');
+    _mentionSkillsCache = r.ok ? await r.json() : [];
+  } catch (_) { _mentionSkillsCache = []; }
+  return _mentionSkillsCache;
+}
+function _mentionItems(query, repos) {
+  const q = (query || '').toLowerCase();
+  const out = [];
+  ( _mentionSkillsCache || []).forEach(s => {
+    if (!q || s.slug.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q)) {
+      out.push({ type: 'skill', slug: s.slug, label: s.slug, desc: 'SKILL', hint: s.description || '' });
+    }
+  });
+  Object.keys(repos || {}).forEach(name => {
+    if (!q || name.toLowerCase().includes(q)) {
+      out.push({ type: 'repo', slug: name, label: name, desc: 'REPO' });
+    }
+  });
+  return out.slice(0, 10);
+}
+function attachMentions(inputEl) {
+  if (!inputEl || inputEl._mentionsWired) return;
+  inputEl._mentionsWired = true;
+  const menu = document.getElementById('mentionMenu');
+  let activeIdx = 0;
+  let items = [];
+  let anchorStart = -1;
+  let reposCache = null;
+
+  const close = () => {
+    menu.classList.remove('open');
+    anchorStart = -1;
+    items = [];
+  };
+  const getTokenAt = () => {
+    const v = inputEl.value || '';
+    const caret = inputEl.selectionStart || v.length;
+    const slice = v.slice(0, caret);
+    const m = /@([A-Za-z0-9_-]*)$/.exec(slice);
+    if (!m) return null;
+    return { start: caret - m[0].length, query: m[1] };
+  };
+  const positionMenu = () => {
+    const rect = inputEl.getBoundingClientRect();
+    menu.style.left = rect.left + 'px';
+    menu.style.top = (rect.top - 4) + 'px';
+    menu.style.transform = 'translateY(-100%)';
+  };
+  const render = () => {
+    menu.innerHTML = items.map((it, i) =>
+      '<div class="mention-item ' + (i === activeIdx ? 'active' : '') + '" data-idx="' + i + '">' +
+        '<span class="mention-ico"><i data-lucide="' + (it.type === 'skill' ? 'sparkles' : 'git-branch') + '"></i></span>' +
+        '<span class="mention-label">' + it.label + '</span>' +
+        '<span class="mention-desc">' + it.desc + '</span>' +
+      '</div>'
+    ).join('') || '<div class="mention-item" style="color:var(--overlay1);cursor:default;">no matches</div>';
+    try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+    menu.querySelectorAll('.mention-item').forEach(row => {
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const i = parseInt(row.dataset.idx || '-1', 10);
+        if (i >= 0) pick(i);
+      });
+    });
+  };
+  const pick = (i) => {
+    const it = items[i];
+    if (!it || anchorStart < 0) return close();
+    const v = inputEl.value || '';
+    const caret = inputEl.selectionStart || v.length;
+    const prefix = v.slice(0, anchorStart);
+    const suffix = v.slice(caret);
+    const insert = '@' + it.slug + ' ';
+    inputEl.value = prefix + insert + suffix;
+    const newPos = (prefix + insert).length;
+    inputEl.setSelectionRange(newPos, newPos);
+    close();
+    inputEl.dispatchEvent(new Event('input'));
+    inputEl.focus();
+  };
+  const refresh = async () => {
+    const tok = getTokenAt();
+    if (!tok) return close();
+    if (!reposCache) {
+      try { reposCache = await fetch('/api/repos').then(r => r.ok ? r.json() : {}); }
+      catch (_) { reposCache = {}; }
+    }
+    await _mentionSkills();
+    anchorStart = tok.start;
+    items = _mentionItems(tok.query, reposCache);
+    activeIdx = 0;
+    positionMenu();
+    menu.classList.add('open');
+    render();
+  };
+  inputEl.addEventListener('input', refresh);
+  inputEl.addEventListener('keydown', (e) => {
+    if (!menu.classList.contains('open')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % Math.max(1, items.length); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + items.length) % Math.max(1, items.length); render(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') {
+      if (items.length) { e.preventDefault(); e.stopPropagation(); pick(activeIdx); }
+    } else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  }, true);
+  inputEl.addEventListener('blur', () => setTimeout(close, 120));
+}
+// Wire up known composers. (Others can call attachMentions on their own input.)
+document.addEventListener('DOMContentLoaded', () => {
+  attachMentions(document.getElementById('cmdPaletteInput'));
+});
+
+// ── Drag-to-reorder pinned tabs ─────────────────────────────────────────
+// Persists the order of .tab-btn elements inside #tabBarScroll. Order is
+// saved per-session to localStorage and re-applied on load.
+const TAB_ORDER_KEY = 'symphonee-tab-order';
+function _restoreTabOrder() {
+  try {
+    const order = JSON.parse(localStorage.getItem(TAB_ORDER_KEY) || '[]');
+    if (!Array.isArray(order) || !order.length) return;
+    const scroll = document.getElementById('tabBarScroll');
+    if (!scroll) return;
+    const byTab = new Map();
+    scroll.querySelectorAll('.tab-btn').forEach(el => {
+      if (el.dataset && el.dataset.tab) byTab.set(el.dataset.tab, el);
+    });
+    for (const t of order) {
+      const el = byTab.get(t);
+      if (el) scroll.appendChild(el);
+    }
+  } catch (_) {}
+}
+function _saveTabOrder() {
+  const scroll = document.getElementById('tabBarScroll');
+  if (!scroll) return;
+  const order = [...scroll.querySelectorAll('.tab-btn')]
+    .map(el => el.dataset && el.dataset.tab).filter(Boolean);
+  try { localStorage.setItem(TAB_ORDER_KEY, JSON.stringify(order)); } catch (_) {}
+}
+function _clearTabDropHints() {
+  document.querySelectorAll('.tab-btn.drop-before, .tab-btn.drop-after')
+    .forEach(el => el.classList.remove('drop-before', 'drop-after'));
+}
+function _initTabDrag() {
+  const scroll = document.getElementById('tabBarScroll');
+  if (!scroll) return;
+  if (!scroll._dragContainerWired) {
+    scroll._dragContainerWired = true;
+    // Scroll container as the drop zone so drops between tabs always land.
+    scroll.addEventListener('dragover', (e) => {
+      if (!scroll.querySelector('.tab-btn.dragging')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    scroll.addEventListener('drop', (e) => {
+      const dragging = scroll.querySelector('.tab-btn.dragging');
+      if (!dragging) return;
+      e.preventDefault();
+      _clearTabDropHints();
+      _saveTabOrder();
+    });
+  }
+  scroll.querySelectorAll('.tab-btn').forEach(el => {
+    if (el._dragWired) return;
+    el._dragWired = true;
+    el.setAttribute('draggable', 'true');
+    el.draggable = true;
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/tab-id', el.dataset.tab || '');
+      // Firefox requires some dataTransfer payload to actually start a drag.
+      try { e.dataTransfer.setData('text/plain', el.dataset.tab || ''); } catch (_) {}
+      el.classList.add('dragging');
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      _clearTabDropHints();
+      _saveTabOrder();
+    });
+    el.addEventListener('dragover', (e) => {
+      const dragging = scroll.querySelector('.tab-btn.dragging');
+      if (!dragging || dragging === el) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      _clearTabDropHints();
+      el.classList.add(before ? 'drop-before' : 'drop-after');
+      scroll.insertBefore(dragging, before ? el : el.nextSibling);
+    });
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('drop-before', 'drop-after');
+    });
+  });
+}
+// Run once after DOM is ready, and re-run whenever tabs are dynamically added.
+document.addEventListener('DOMContentLoaded', () => {
+  _restoreTabOrder();
+  _initTabDrag();
+});
+// Observe for new tab-btns (plugin tabs) and wire them up.
+(function observeTabs() {
+  const scroll = document.getElementById('tabBarScroll');
+  if (!scroll) { return setTimeout(observeTabs, 200); }
+  new MutationObserver(() => _initTabDrag()).observe(scroll, { childList: true });
+})();
+
+// ── In-app browser tab ─────────────────────────────────────────────────
+// Uses Electron's <webview> tag so we can render arbitrary URLs inside a
+// Symphonee tab. Gracefully degrades to an iframe when webview is unavailable
+// (e.g. when the app is loaded in a regular browser for dev).
+function _getInappWebview() {
+  return document.querySelector('#inappBrowserFrame webview, #inappBrowserFrame iframe');
+}
+function _ensureInappBrowser(initialUrl) {
+  const frame = document.getElementById('inappBrowserFrame');
+  if (!frame) return null;
+  let view = _getInappWebview();
+  if (view) return view;
+  const supportsWebview = typeof customElements !== 'undefined' && !!customElements.get('webview');
+  // Electron exposes webview as an HTML tag; createElement('webview') works.
+  const tag = supportsWebview ? 'webview' : 'iframe';
+  view = document.createElement(tag);
+  view.setAttribute('src', initialUrl || 'https://www.google.com');
+  view.setAttribute('allowpopups', '');
+  view.setAttribute('style', 'flex:1;width:100%;height:100%;border:0;background:white;');
+  if (tag === 'webview') {
+    view.addEventListener('did-navigate', (e) => _syncInappUrl(e.url));
+    view.addEventListener('did-navigate-in-page', (e) => _syncInappUrl(e.url));
+    view.addEventListener('page-title-updated', () => {/* could update tab title */});
+  } else {
+    view.addEventListener('load', () => {
+      try { _syncInappUrl(view.contentWindow.location.href); } catch (_) {}
+    });
+  }
+  frame.innerHTML = '';
+  frame.appendChild(view);
+  return view;
+}
+function _syncInappUrl(url) {
+  const input = document.getElementById('inappBrowserUrl');
+  if (input && url) input.value = url;
+}
+function _normalizeInappUrl(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return 'https://www.google.com';
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;
+  if (/^[\w-]+(\.[\w-]+)+(\/|$)/.test(s)) return 'https://' + s;
+  return 'https://www.google.com/search?q=' + encodeURIComponent(s);
+}
+function inappBrowserGo() {
+  const input = document.getElementById('inappBrowserUrl');
+  if (!input) return;
+  const url = _normalizeInappUrl(input.value);
+  const view = _ensureInappBrowser(url);
+  if (!view) return;
+  if (view.tagName.toLowerCase() === 'webview') {
+    try { view.loadURL(url); } catch (_) { view.src = url; }
+  } else {
+    view.src = url;
+  }
+  input.value = url;
+}
+function inappBrowserBack() {
+  const v = _getInappWebview(); if (!v) return;
+  if (v.tagName.toLowerCase() === 'webview') { try { v.goBack(); } catch (_) {} }
+  else { try { v.contentWindow.history.back(); } catch (_) {} }
+}
+function inappBrowserForward() {
+  const v = _getInappWebview(); if (!v) return;
+  if (v.tagName.toLowerCase() === 'webview') { try { v.goForward(); } catch (_) {} }
+  else { try { v.contentWindow.history.forward(); } catch (_) {} }
+}
+function inappBrowserReload() {
+  const v = _getInappWebview(); if (!v) return;
+  if (v.tagName.toLowerCase() === 'webview') { try { v.reload(); } catch (_) {} }
+  else { try { v.contentWindow.location.reload(); } catch (_) {} }
+}
+function inappBrowserOpenExternal() {
+  const input = document.getElementById('inappBrowserUrl');
+  const url = input && input.value ? input.value : 'https://www.google.com';
+  try { window.open(url, '_blank'); } catch (_) {}
+}
+// Open the browser tab (used by command palette / playwright automation).
+function openBrowserTab(initialUrl) {
+  const btn = document.getElementById('browserTabBtn');
+  if (btn) { btn.style.removeProperty('display'); btn.removeAttribute('hidden'); }
+  switchTab('browser');
+  if (initialUrl) {
+    const input = document.getElementById('inappBrowserUrl');
+    if (input) input.value = initialUrl;
+    setTimeout(() => { try { inappBrowserGo(); } catch (_) {} }, 50);
+  }
+}
+// Hide the browser tab. If it was active, fall back to terminal.
+function closeBrowserTab() {
+  const btn = document.getElementById('browserTabBtn');
+  if (!btn) return;
+  const wasActive = btn.classList.contains('active');
+  btn.style.display = 'none';
+  if (wasActive) switchTab('terminal');
+}
+// Lazy-create the webview on first tab activation so we do not pay the cost
+// at app boot.
+(function wireInappBrowserOnActivate() {
+  const panel = document.getElementById('panel-browser');
+  if (!panel) return;
+  const obs = new MutationObserver(() => {
+    if (panel.classList.contains('active')) {
+      _ensureInappBrowser();
+    }
+  });
+  obs.observe(panel, { attributes: true, attributeFilter: ['class'] });
+})();
+
+// ── Spaces (non-git workspaces) ─────────────────────────────────────────
+// Modal-based editor. window.prompt/confirm are blocked in Electron, so we
+// use a dedicated modal (spaceEditorModal) with a promise resolver.
+let _spaceEditorResolve = null;
+let _spaceEditorOriginalName = null;
+function openSpaceEditor({ name = '', description = '', icon = 'layers', edit = false } = {}) {
+  return new Promise((resolve) => {
+    _spaceEditorResolve = resolve;
+    _spaceEditorOriginalName = edit ? name : null;
+    document.getElementById('spaceEditorTitle').textContent = edit ? ('Edit Space: ' + name) : 'New Space';
+    document.getElementById('spaceEditorName').value = name;
+    document.getElementById('spaceEditorDesc').value = description;
+    document.getElementById('spaceEditorIcon').value = icon || 'layers';
+    document.getElementById('spaceEditorModal').classList.add('open');
+    setTimeout(() => {
+      const input = document.getElementById('spaceEditorName');
+      if (input) { input.focus(); input.select(); }
+    }, 50);
+  });
+}
+function closeSpaceEditor(ok) {
+  const modal = document.getElementById('spaceEditorModal');
+  if (ok) {
+    const name = (document.getElementById('spaceEditorName').value || '').trim();
+    if (!name) { toast('Space name is required', 'error'); return; }
+    const description = (document.getElementById('spaceEditorDesc').value || '').trim();
+    const icon = (document.getElementById('spaceEditorIcon').value || '').trim() || 'layers';
+    modal.classList.remove('open');
+    if (_spaceEditorResolve) {
+      _spaceEditorResolve({ name, description, icon, originalName: _spaceEditorOriginalName });
+      _spaceEditorResolve = null;
+    }
+  } else {
+    modal.classList.remove('open');
+    if (_spaceEditorResolve) { _spaceEditorResolve(null); _spaceEditorResolve = null; }
+  }
+  _spaceEditorOriginalName = null;
+}
+async function openAddSpaceDialog() {
+  const result = await openSpaceEditor();
+  if (!result) return;
+  const { name, description, icon } = result;
+  const res = await fetch('/api/spaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description, icon }),
+  });
+  if (!res.ok) { toast('Failed to create space', 'error'); return; }
+  toast('Space created: ' + name, 'success');
+  try { loadRepoList(); } catch (_) {}
+  try { _refreshSpaceSwitcher(); } catch (_) {}
+  try { renderSettingsSpaces(); } catch (_) {}
+}
+async function openEditSpaceDialog(name) {
+  const spaces = await fetch('/api/spaces').then(r => r.json()).catch(() => ({}));
+  const existing = spaces[name] || {};
+  const result = await openSpaceEditor({
+    name,
+    description: existing.description || '',
+    icon: existing.icon || 'layers',
+    edit: true,
+  });
+  if (!result) return;
+  // Name changes mean delete old + create new with carried-over repos/plugins.
+  if (result.originalName && result.name !== result.originalName) {
+    const carry = { repos: existing.repos || [], plugins: existing.plugins || [] };
+    await fetch('/api/spaces', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: result.originalName }),
+    });
+    await fetch('/api/spaces', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: result.name, description: result.description, icon: result.icon, repos: carry.repos, plugins: carry.plugins }),
+    });
+    if (activeSpace === result.originalName) {
+      activeSpace = result.name;
+      try { localStorage.setItem('symphonee-space', activeSpace); } catch (_) {}
+    }
+  } else {
+    await fetch('/api/spaces', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: result.name, description: result.description, icon: result.icon }),
+    });
+  }
+  toast('Space updated', 'success');
+  try { loadRepoList(); } catch (_) {}
+  try { _refreshSpaceSwitcher(); } catch (_) {}
+  try { renderSettingsSpaces(); } catch (_) {}
+}
+async function deleteSpace(name) {
+  if (!name) return;
+  const confirmed = await customConfirm('Delete Space', 'Delete space "' + name + '"? Repos inside it are not affected.', 'Delete');
+  if (!confirmed) return;
+  const res = await fetch('/api/spaces', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) { toast('Failed to delete space', 'error'); return; }
+  toast('Space removed', 'success');
+  if (activeSpace === name) { activeSpace = ''; try { localStorage.removeItem('symphonee-space'); } catch (_) {} }
+  try { loadRepoList(); } catch (_) {}
+  try { _refreshSpaceSwitcher(); } catch (_) {}
+  try { renderSettingsSpaces(); } catch (_) {}
+}
+// Settings-modal Spaces section renderer.
+async function renderSettingsSpaces() {
+  const host = document.getElementById('settingsSpacesList');
+  if (!host) return;
+  let spaces = {};
+  try { spaces = await fetch('/api/spaces').then(r => r.json()); } catch (_) {}
+  const names = Object.keys(spaces || {});
+  if (!names.length) {
+    host.innerHTML = '<div style="font-size:11px;color:var(--subtext0);padding:10px 12px;background:var(--surface0);border:1px dashed var(--surface2);border-radius:var(--radius);">No spaces yet. Use "Add Space" to create one.</div>';
+    return;
+  }
+  host.innerHTML = names.map(function(n) {
+    const s = spaces[n] || {};
+    const icon = s.icon || 'layers';
+    const repoCount = (s.repos || []).length;
+    const desc = s.description ? String(s.description) : '';
+    return (
+      '<div class="settings-space-row" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface1);border-radius:var(--radius);margin-bottom:6px;">' +
+        '<i data-lucide="' + esc(icon) + '" style="width:14px;height:14px;color:var(--accent);flex-shrink:0;"></i>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:12px;font-weight:600;color:var(--text);">' + esc(n) + '</div>' +
+          '<div style="font-size:10px;color:var(--subtext0);">' + repoCount + ' repo' + (repoCount === 1 ? '' : 's') + (desc ? ' &middot; ' + esc(desc) : '') + '</div>' +
+        '</div>' +
+        '<button class="modal-btn" onclick="openEditSpaceDialog(' + JSON.stringify(n).replace(/"/g, '&quot;') + ')" style="padding:4px 10px;font-size:10px;">Edit</button>' +
+        '<button class="modal-btn" onclick="deleteSpace(' + JSON.stringify(n).replace(/"/g, '&quot;') + ')" style="padding:4px 10px;font-size:10px;color:var(--red);">Delete</button>' +
+      '</div>'
+    );
+  }).join('');
+  try { lucide.createIcons({ nodes: [host] }); } catch (_) {}
+}
+
+// ── Space / repo switcher (header chip) ─────────────────────────────────
+async function _refreshSpaceSwitcher() {
+  const label = document.getElementById('spaceSwitcherLabel');
+  const chip = document.getElementById('spaceSwitcherChip');
+  if (!label || !chip) return;
+  let spaces = {}, repos = {};
+  try {
+    [repos, spaces] = await Promise.all([
+      fetch('/api/repos').then(r => r.json()).catch(() => ({})),
+      fetch('/api/spaces').then(r => r.json()).catch(() => ({})),
+    ]);
+  } catch (_) {}
+  // Label format: "Space / Repo", "Space", "Repo", or "No space"
+  let labelText;
+  if (activeSpace && activeRepo) labelText = activeSpace + ' / ' + activeRepo;
+  else if (activeSpace) labelText = activeSpace;
+  else if (activeRepo) labelText = activeRepo;
+  else labelText = 'No space';
+  label.textContent = labelText;
+  // Icon priority: active space's custom icon -> repo icon -> layers
+  let iconName = 'layers';
+  if (activeSpace && spaces[activeSpace] && spaces[activeSpace].icon) iconName = spaces[activeSpace].icon;
+  else if (activeRepo) iconName = 'folder-git-2';
+  const iconEl = chip.querySelector('i[data-lucide]');
+  if (iconEl) {
+    iconEl.setAttribute('data-lucide', iconName);
+    try { lucide.createIcons({ nodes: [chip] }); } catch (_) {}
+  }
+  const menu = document.getElementById('spaceSwitcherMenu');
+  if (menu && menu.classList.contains('open')) _renderSpaceSwitcherMenu(spaces, repos);
+}
+async function toggleSpaceSwitcher(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('spaceSwitcherMenu');
+  if (!menu) return;
+  const willOpen = !menu.classList.contains('open');
+  menu.classList.toggle('open', willOpen);
+  if (willOpen) {
+    const [repos, spaces] = await Promise.all([
+      fetch('/api/repos').then(r => r.json()).catch(() => ({})),
+      fetch('/api/spaces').then(r => r.json()).catch(() => ({})),
+    ]);
+    _renderSpaceSwitcherMenu(spaces, repos);
+  }
+}
+function _renderSpaceSwitcherMenu(spaces, repos) {
+  const menu = document.getElementById('spaceSwitcherMenu');
+  if (!menu) return;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const spaceNames = Object.keys(spaces || {});
+  const repoNames = Object.keys(repos || {});
+
+  // Bucket repos by their parent space; everything else goes in "unassigned".
+  const spaceRepos = {};
+  const unassigned = [];
+  for (const n of spaceNames) {
+    const list = (spaces[n] && Array.isArray(spaces[n].repos)) ? spaces[n].repos : [];
+    spaceRepos[n] = list.filter(r => repoNames.includes(r));
+  }
+  const inSomeSpace = new Set(Object.values(spaceRepos).flat());
+  for (const r of repoNames) if (!inSomeSpace.has(r)) unassigned.push(r);
+
+  // Render a single repo row, nested slightly under its space parent.
+  const repoRow = (name, nested) => {
+    const active = (name === activeRepo) ? ' active' : '';
+    const pad = nested ? 'padding-left:24px;' : '';
+    return '<div class="space-menu-item' + active + '" data-select-repo="' + esc(name) + '" data-repo-name="' + esc(name) + '" style="' + pad + '" title="Right-click to move to another space">' +
+      '<i class="sm-icon" data-lucide="folder-git-2" style="width:13px;height:13px;"></i>' +
+      '<div class="sm-label"><div>' + esc(name) + '</div></div>' +
+    '</div>';
+  };
+
+  // Render a space row (and its children, when expanded).
+  const spaceBlock = (name) => {
+    const s = spaces[name] || {};
+    const active = (name === activeSpace) ? ' active' : '';
+    const icon = s.icon || 'layers';
+    const desc = s.description || '';
+    const kids = spaceRepos[name] || [];
+    const head = '<div class="space-menu-item' + active + '" data-select-space="' + esc(name) + '">' +
+      '<i class="sm-icon" data-lucide="' + esc(icon) + '" style="width:13px;height:13px;"></i>' +
+      '<div class="sm-label"><div>' + esc(name) + (kids.length ? ' <span style="color:var(--subtext0);font-weight:400;">· ' + kids.length + '</span>' : '') + '</div>' +
+      (desc ? '<div class="sm-desc">' + esc(desc) + '</div>' : '') +
+      '</div>' +
+      '<button class="sm-del" data-del-space="' + esc(name) + '" title="Delete space"><i data-lucide="x" style="width:11px;height:11px;"></i></button>' +
+    '</div>';
+    return head + kids.map(r => repoRow(r, true)).join('');
+  };
+
+  const noneItem = '<div class="space-menu-item' + ((!activeSpace && !activeRepo) ? ' active' : '') + '" data-select-space="">' +
+    '<i class="sm-icon" data-lucide="circle-slash" style="width:13px;height:13px;"></i>' +
+    '<div class="sm-label">No space</div></div>';
+
+  const spacesBlockHtml = spaceNames.length
+    ? '<div class="space-menu-section">Spaces</div>' + spaceNames.map(spaceBlock).join('')
+    : '';
+  const unassignedHtml = unassigned.length
+    ? '<div class="space-menu-section">Unassigned repos</div>' + unassigned.map(r => repoRow(r, false)).join('')
+    : '';
+
+  const body = '<div class="space-menu-body">' + noneItem + spacesBlockHtml + unassignedHtml +
+    (!spaceNames.length && !repoNames.length
+      ? '<div class="space-menu-empty">No spaces or repos yet. Create one below.</div>' : '') +
+  '</div>';
+  const footer = '<div class="space-menu-footer">' +
+    '<button onclick="(async()=>{document.getElementById(\'spaceSwitcherMenu\').classList.remove(\'open\');await openAddSpaceDialog();})()"><i data-lucide="layers" style="width:12px;height:12px;"></i>New space</button>' +
+    '<button onclick="document.getElementById(\'spaceSwitcherMenu\').classList.remove(\'open\');openSettings(\'repos\');"><i data-lucide="plus" style="width:12px;height:12px;"></i>Add repo</button>' +
+    (activeSpace ? '<button onclick="document.getElementById(\'spaceSwitcherMenu\').classList.remove(\'open\');openManageSpaceDialog(\'' + esc(activeSpace) + '\');"><i data-lucide="settings" style="width:12px;height:12px;"></i>Manage</button>' : '') +
+  '</div>';
+  menu.innerHTML = body + footer;
+
+  menu.querySelectorAll('[data-select-space]').forEach(el => {
+    el.addEventListener('click', (ev) => {
+      if (ev.target.closest('.sm-del')) return;
+      const name = el.dataset.selectSpace || '';
+      selectSpace(name);
+      menu.classList.remove('open');
+    });
+  });
+  menu.querySelectorAll('[data-select-repo]').forEach(el => {
+    el.addEventListener('click', () => {
+      const name = el.dataset.selectRepo;
+      selectRepo(name);
+      menu.classList.remove('open');
+    });
+    el.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _openMoveRepoPopover(el.dataset.repoName, ev.clientX, ev.clientY, spaces);
+    });
+  });
+  menu.querySelectorAll('.sm-del').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      deleteSpace(btn.dataset.delSpace);
+    });
+  });
+  try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+}
+// Close on outside click
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('spaceSwitcherMenu');
+  const chip = document.getElementById('spaceSwitcherChip');
+  if (!menu || !menu.classList.contains('open')) return;
+  if (chip && chip.contains(e.target)) return;
+  if (menu.contains(e.target)) return;
+  menu.classList.remove('open');
+});
+document.addEventListener('DOMContentLoaded', () => { setTimeout(_refreshSpaceSwitcher, 200); });
+
+// ── Repos & Spaces ──────────────────────────────────────────────────────
+// Two independent active slots: activeSpace is the organizational container
+// (Business, Personal, ...); activeRepo is the working repo within it. A
+// repo can belong to at most one space; "No space" mode shows unassigned
+// repos only.
+let activeSpace = localStorage.getItem('symphonee-space') || '';
+let activeRepo  = localStorage.getItem('symphonee-repo')  || '';
 
 async function loadRepoList() {
   try {
-    const res = await fetch('/api/repos');
-    const repos = await res.json();
-    const container = document.getElementById('repoList');
-    // Validate saved repo still exists
+    const [repos, spaces] = await Promise.all([
+      fetch('/api/repos').then(r => r.json()).catch(() => ({})),
+      fetch('/api/spaces').then(r => r.json()).catch(() => ({})),
+    ]);
     const repoNames = Object.keys(repos);
+    const spaceNames = Object.keys(spaces);
+
+    // Legacy migration: before dual-state, activeRepo held either a space
+    // name or a repo name. Split them into their proper slots.
+    if (activeRepo && spaces[activeRepo]) {
+      activeSpace = activeRepo;
+      activeRepo = '';
+      localStorage.setItem('symphonee-space', activeSpace);
+      localStorage.removeItem('symphonee-repo');
+    }
+
+    // Validate saved values still exist
+    if (activeSpace && !spaces[activeSpace]) { activeSpace = ''; localStorage.removeItem('symphonee-space'); }
     if (activeRepo && !repoNames.includes(activeRepo)) { activeRepo = ''; localStorage.removeItem('symphonee-repo'); }
-    // Auto-select saved repo on first load
+
+    // If an activeRepo is set and belongs to a space, make that space active
+    // too. If it belongs to a different space than what's currently active,
+    // the repo wins (user explicitly picked it).
+    if (activeRepo) {
+      const owner = _findSpaceForRepo(spaces, activeRepo);
+      if (owner && owner !== activeSpace) {
+        activeSpace = owner;
+        localStorage.setItem('symphonee-space', activeSpace);
+      }
+    }
+
     if (activeRepo) filesCurrentRepo = activeRepo;
 
-    const noRepoActive = !activeRepo;
-    const noRepoItem = `<div class="repo-sidebar-item ${noRepoActive ? 'active' : ''}" onclick="selectRepo('')" title="No repository context">
-      <div class="repo-sidebar-name"><i data-lucide="circle-off"></i> No Repo</div>
-    </div>`;
-    container.innerHTML = noRepoItem + Object.entries(repos).map(([name, rpath]) => {
-      const isActive = name === activeRepo;
-      return `<div class="repo-sidebar-item ${isActive ? 'active' : ''}" onclick="selectRepo('${esc(name)}')" title="${esc(rpath)}">
-        <div class="repo-sidebar-name"><i data-lucide="git-branch"></i> ${esc(name)}</div>
-        ${isActive ? `<div class="repo-sidebar-branch" id="repoSidebarBranch">...</div>` : ''}
-      </div>`;
-    }).join('');
+    // Keep the header chip in sync.
+    try { _refreshSpaceSwitcher(); } catch (_) {}
     lucide.createIcons();
-    // Fetch branch for active repo
-    if (activeRepo) fetchRepoSidebarBranch(activeRepo);
 
     // On startup, if we have a saved repo, fetch+pull and load git status
     if (activeRepo && !loadRepoList._initialized) {
       loadRepoList._initialized = true;
-      // Fetch + pull in background to ensure we have latest changes
       fetchAndPullOnStartup(activeRepo);
       loadGitStatusForDiffTab(activeRepo);
     }
-    // Hide git actions when no repo selected
+    // Hide git actions when no repo selected (spaces alone have no git).
     const gitActions = document.getElementById('sidebarGitActions');
     if (gitActions) gitActions.style.display = activeRepo ? '' : 'none';
 
-    // Always push context after repo list loads (covers page-load restore from localStorage)
     pushUiContext();
     loadTerminalScripts();
   } catch (_) {}
+}
+
+// Find which space (if any) contains a given repo name.
+function _findSpaceForRepo(spaces, repoName) {
+  if (!spaces || !repoName) return null;
+  for (const [name, s] of Object.entries(spaces)) {
+    if (s && Array.isArray(s.repos) && s.repos.includes(repoName)) return name;
+  }
+  return null;
 }
 
 async function fetchRepoSidebarBranch(repoName) {
@@ -10339,7 +11733,22 @@ function selectRepo(name) {
   activeRepo = name;
   filesCurrentRepo = name;
 
-  // No Repo mode: hide git actions, clear repo-dependent UI
+  // Picking a repo that belongs to a space implicitly switches to that space.
+  if (name) {
+    fetch('/api/spaces').then(r => r.json()).catch(() => ({})).then(spaces => {
+      const owner = _findSpaceForRepo(spaces, name);
+      if (owner && owner !== activeSpace) {
+        activeSpace = owner;
+        localStorage.setItem('symphonee-space', activeSpace);
+        try { _refreshSpaceSwitcher(); } catch (_) {}
+        try { refreshNotesForSpace(); } catch (_) {}
+        try { applyPluginSpaceFilter(); } catch (_) {}
+      }
+    });
+  }
+
+  try { _refreshSpaceSwitcher(); } catch (_) {}
+
   const gitActions = document.getElementById('sidebarGitActions');
   if (!name) {
     localStorage.removeItem('symphonee-repo');
@@ -10377,6 +11786,284 @@ function selectRepo(name) {
 
   pushUiContext();
   notifyPluginIframes('repoChanged', { repo: name || null });
+  try { refreshNotesForSpace(); } catch (_) {}
+  try { applyPluginSpaceFilter(); } catch (_) {}
+}
+
+// Small popover anchored at (x, y) for moving a repo into (or out of) a space.
+// Writes via /api/spaces/attach-repo which enforces single-space membership.
+function _openMoveRepoPopover(repoName, x, y, spaces) {
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  document.getElementById('moveRepoPopover')?.remove();
+  const currentOwner = _findSpaceForRepo(spaces, repoName);
+  const pop = document.createElement('div');
+  pop.id = 'moveRepoPopover';
+  pop.style.cssText = 'position:fixed;z-index:9500;min-width:200px;max-height:300px;overflow:auto;background:var(--surface0);border:1px solid var(--surface2);border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,0.5);padding:4px;font:12px var(--font-ui);';
+  const spaceNames = Object.keys(spaces || {});
+  const header = '<div style="padding:6px 10px;color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:0.4px;">Move ' + esc(repoName) + ' to</div>';
+  const items = spaceNames.map(n => {
+    const isCurrent = n === currentOwner;
+    return '<div class="mrp-item" data-target="' + esc(n) + '" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:4px;cursor:pointer;' + (isCurrent ? 'color:var(--accent);' : '') + '" onmouseover="this.style.background=\'var(--surface1)\'" onmouseout="this.style.background=\'\'">' +
+      '<i data-lucide="' + esc((spaces[n] && spaces[n].icon) || 'layers') + '" style="width:13px;height:13px;"></i>' +
+      '<span style="flex:1;">' + esc(n) + '</span>' +
+      (isCurrent ? '<i data-lucide="check" style="width:12px;height:12px;"></i>' : '') +
+    '</div>';
+  }).join('');
+  const unassign = currentOwner
+    ? '<div style="border-top:1px solid var(--surface1);margin:4px 0;"></div>' +
+      '<div class="mrp-item" data-target="" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:4px;cursor:pointer;color:var(--subtext0);" onmouseover="this.style.background=\'var(--surface1)\'" onmouseout="this.style.background=\'\'">' +
+        '<i data-lucide="minus-circle" style="width:13px;height:13px;"></i>' +
+        '<span>Unassign (remove from ' + esc(currentOwner) + ')</span>' +
+      '</div>'
+    : '';
+  pop.innerHTML = header + items + unassign;
+  document.body.appendChild(pop);
+  // Keep inside viewport
+  const rect = pop.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  pop.style.left = Math.min(x, vw - rect.width - 8) + 'px';
+  pop.style.top = Math.min(y, vh - rect.height - 8) + 'px';
+  try { lucide.createIcons({ nodes: [pop] }); } catch (_) {}
+
+  pop.querySelectorAll('.mrp-item').forEach(row => {
+    row.addEventListener('click', async () => {
+      const target = row.dataset.target;
+      try {
+        const r = await fetch('/api/spaces/attach-repo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            space: target || currentOwner || '',
+            repo: repoName,
+            attach: target !== '' // empty target = detach from current
+          }),
+        });
+        if (!r.ok) throw new Error(await r.text().catch(() => 'HTTP ' + r.status));
+        pop.remove();
+        toast(target ? ('Moved ' + repoName + ' to ' + target) : ('Unassigned ' + repoName), 'success');
+        // Refresh the switcher menu if still open, and the sidebar list.
+        try { _refreshSpaceSwitcher(); } catch (_) {}
+        try { loadRepoList(); } catch (_) {}
+      } catch (err) {
+        toast('Move failed: ' + (err.message || err), 'error');
+      }
+    });
+  });
+
+  // Close on outside click / escape.
+  const closer = (ev) => {
+    if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('mousedown', closer); document.removeEventListener('keydown', keyCloser); }
+  };
+  const keyCloser = (ev) => {
+    if (ev.key === 'Escape') { pop.remove(); document.removeEventListener('mousedown', closer); document.removeEventListener('keydown', keyCloser); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', closer), 0);
+  document.addEventListener('keydown', keyCloser);
+}
+
+// Manage a space: edit description/icon, pick which repos belong to it, and
+// choose which plugins are surfaced while this space is active. Opens over the
+// main UI and writes changes through /api/spaces and /api/spaces/*.
+async function openManageSpaceDialog(name) {
+  if (!name) return;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let spaces = {}, repos = {}, plugins = [];
+  try {
+    [spaces, repos, plugins] = await Promise.all([
+      fetch('/api/spaces').then(r => r.json()).catch(() => ({})),
+      fetch('/api/repos').then(r => r.json()).catch(() => ({})),
+      fetch('/api/plugins').then(r => r.json()).catch(() => []),
+    ]);
+  } catch (_) {}
+  const s = spaces[name] || {};
+  const repoNames = Object.keys(repos);
+  const pluginList = Array.isArray(plugins) ? plugins : [];
+
+  let overlay = document.getElementById('manageSpaceOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'manageSpaceOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  const reposHtml = repoNames.length
+    ? repoNames.map(r => {
+        const checked = (s.repos || []).includes(r) ? 'checked' : '';
+        // Show the current owner of the repo (if any, and if it's not this space).
+        // Makes it clear when checking a box will move the repo OUT of another
+        // space (single-membership rule enforced server-side).
+        let owner = null;
+        for (const [n, other] of Object.entries(spaces)) {
+          if (n === name) continue;
+          if (other && Array.isArray(other.repos) && other.repos.includes(r)) { owner = n; break; }
+        }
+        const ownerHint = owner
+          ? '<span style="margin-left:auto;font-size:10px;color:var(--yellow,#d4a72c);">currently in ' + esc(owner) + '</span>'
+          : '';
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12px;cursor:pointer;border-radius:4px;" onmouseover="this.style.background=\'var(--surface1)\'" onmouseout="this.style.background=\'\'">' +
+          '<input type="checkbox" data-ms-repo="' + esc(r) + '" ' + checked + '>' +
+          '<i data-lucide="folder-git-2" style="width:12px;height:12px;color:var(--subtext0);"></i>' +
+          '<span>' + esc(r) + '</span>' +
+          ownerHint +
+        '</label>';
+      }).join('')
+    : '<div style="color:var(--subtext0);font-size:11px;padding:6px;">No repos configured.</div>';
+
+  const pluginsHtml = pluginList.length
+    ? pluginList.map(p => {
+        const checked = (s.plugins || []).includes(p.id) ? 'checked' : '';
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12px;cursor:pointer;border-radius:4px;" onmouseover="this.style.background=\'var(--surface1)\'" onmouseout="this.style.background=\'\'">' +
+          '<input type="checkbox" data-ms-plugin="' + esc(p.id) + '" ' + checked + '>' +
+          '<i data-lucide="' + esc(p.icon || 'puzzle') + '" style="width:12px;height:12px;color:var(--subtext0);"></i>' +
+          '<span>' + esc(p.name || p.id) + '</span>' +
+        '</label>';
+      }).join('')
+    : '<div style="color:var(--subtext0);font-size:11px;padding:6px;">No plugins installed.</div>';
+
+  overlay.innerHTML =
+    '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:10px;padding:18px 22px;width:560px;max-width:92vw;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.5);">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+        '<i data-lucide="' + esc(s.icon || 'layers') + '" style="width:18px;height:18px;color:var(--accent);"></i>' +
+        '<strong style="font-size:14px;">Manage space: ' + esc(name) + '</strong>' +
+        '<div style="flex:1;"></div>' +
+        '<button onclick="document.getElementById(\'manageSpaceOverlay\').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;overflow:auto;">' +
+        '<div>' +
+          '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Repos in this space</div>' +
+          '<div id="msRepoList" style="max-height:240px;overflow:auto;">' + reposHtml + '</div>' +
+          '<div style="font-size:10px;color:var(--subtext0);margin-top:4px;">A repo can only belong to one space at a time.</div>' +
+        '</div>' +
+        '<div>' +
+          '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Plugins surfaced here</div>' +
+          '<div id="msPluginList" style="max-height:240px;overflow:auto;">' + pluginsHtml + '</div>' +
+          '<div style="font-size:10px;color:var(--subtext0);margin-top:4px;">Leave all unchecked to show every plugin while this space is active.</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:16px;">' +
+        '<div style="flex:1;"></div>' +
+        '<button class="sy-btn" onclick="document.getElementById(\'manageSpaceOverlay\').remove()" style="background:var(--surface1);">Cancel</button>' +
+        '<button class="sy-btn sy-btn-primary" onclick="_saveManageSpace(\'' + esc(name) + '\')">Save</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  try { lucide.createIcons({ nodes: [overlay] }); } catch (_) {}
+}
+
+async function _saveManageSpace(name) {
+  const overlay = document.getElementById('manageSpaceOverlay');
+  if (!overlay) return;
+  const repos = [...overlay.querySelectorAll('[data-ms-repo]:checked')].map(el => el.dataset.msRepo);
+  const plugins = [...overlay.querySelectorAll('[data-ms-plugin]:checked')].map(el => el.dataset.msPlugin);
+  try {
+    const r = await fetch('/api/spaces', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, repos, plugins }),
+    });
+    if (!r.ok) throw new Error(await r.text().catch(() => 'HTTP ' + r.status));
+    toast('Space updated', 'success');
+    overlay.remove();
+    loadRepoList();
+    try { _refreshSpaceSwitcher(); } catch (_) {}
+    try { applyPluginSpaceFilter(); } catch (_) {}
+  } catch (err) {
+    toast('Save failed: ' + (err.message || err), 'error');
+  }
+}
+
+// Placeholders filled in by later tasks (notes/plugin scoping). Defined here
+// so selectSpace/selectRepo can call them without throwing before they're
+// fully wired up.
+function refreshNotesForSpace() {
+  // Close whatever note was open -- it may belong to a different space now.
+  try {
+    currentNote = null;
+    const title = document.getElementById('noteTitle');
+    if (title) title.textContent = 'No note selected';
+    const editor = document.getElementById('noteEditor');
+    if (editor) editor.style.display = 'none';
+    const preview = document.getElementById('notePreview');
+    if (preview) preview.style.display = 'none';
+    const empty = document.getElementById('noteEmpty');
+    if (empty) empty.style.display = '';
+  } catch (_) {}
+  // Update the sidebar label so the user knows which space's notebook they're in.
+  try {
+    const lbl = document.getElementById('notesSpaceLabel');
+    if (lbl) lbl.textContent = activeSpace ? 'Notes · ' + activeSpace : 'Notes';
+  } catch (_) {}
+  try { if (typeof loadNotesList === 'function') loadNotesList(); } catch (_) {}
+}
+// Hide or show UI elements contributed by each plugin based on the active
+// space's preset. A space with an empty plugins[] list shows everything (no
+// filter). "No space" also shows everything. Elements opt in by carrying a
+// data-plugin-id attribute; this walks the document and toggles their
+// visibility via a shared CSS class.
+async function applyPluginSpaceFilter() {
+  let allowed = null; // null = no filter (show all)
+  // Always refresh the shared spaces cache so other UI (e.g. the '+' tab menu)
+  // can consult it synchronously.
+  try {
+    window._spacesCache = await fetch('/api/spaces').then(r => r.json()).catch(() => ({})) || {};
+  } catch (_) { window._spacesCache = window._spacesCache || {}; }
+  if (activeSpace) {
+    const spaces = window._spacesCache;
+    const preset = spaces[activeSpace] && Array.isArray(spaces[activeSpace].plugins)
+      ? spaces[activeSpace].plugins : [];
+    if (preset.length) allowed = new Set(preset);
+  }
+  document.querySelectorAll('[data-plugin-id]').forEach(el => {
+    const id = el.getAttribute('data-plugin-id');
+    const hide = allowed && !allowed.has(id);
+    el.classList.toggle('plugin-space-hidden', !!hide);
+  });
+  // Filtering the currently-active tab into hiding would strand the user on a
+  // blank page -- fall back to terminal if that happens.
+  const active = document.querySelector('.tab-btn.active');
+  if (active && active.classList.contains('plugin-space-hidden')) {
+    try { switchTab('terminal'); } catch (_) {}
+  }
+}
+
+// Switch the active space. If the new space has a single repo, auto-select
+// it; otherwise clear activeRepo so the user can pick one explicitly.
+async function selectSpace(name) {
+  activeSpace = name || '';
+  if (activeSpace) localStorage.setItem('symphonee-space', activeSpace);
+  else localStorage.removeItem('symphonee-space');
+
+  // If the currently-active repo doesn't belong to the new space, clear it.
+  try {
+    const spaces = await fetch('/api/spaces').then(r => r.json()).catch(() => ({}));
+    const members = (spaces[activeSpace] && Array.isArray(spaces[activeSpace].repos)) ? spaces[activeSpace].repos : [];
+    if (activeRepo && !members.includes(activeRepo)) {
+      // Clear the repo when leaving its space (unless going to "No space",
+      // in which case unassigned repos are still valid).
+      if (activeSpace) {
+        activeRepo = '';
+        filesCurrentRepo = '';
+        localStorage.removeItem('symphonee-repo');
+      }
+    }
+    // Auto-select if the space has exactly one repo and none is active.
+    if (activeSpace && !activeRepo && members.length === 1) {
+      selectRepo(members[0]);
+      return;
+    }
+  } catch (_) {}
+
+  try { _refreshSpaceSwitcher(); } catch (_) {}
+  loadRepoList();
+  pushUiContext();
+  try { refreshNotesForSpace(); } catch (_) {}
+  try { applyPluginSpaceFilter(); } catch (_) {}
+  // Reset orchestrator scope default for the new space and re-fetch.
+  try {
+    const el = document.getElementById('orchScopeFilter');
+    if (el) delete el.dataset.userTouched;
+    syncOrchScopeFilter();
+    if (typeof orchRefreshTasks === 'function') orchRefreshTasks();
+  } catch (_) {}
+  notifyPluginIframes('spaceChanged', { space: activeSpace || null });
 }
 
 // ── Create Work Item Modal ──────────────────────────────────────────────
@@ -10563,6 +12250,7 @@ function switchSettingsTab(tabId, btn) {
   // Trigger AI detection when switching to AI tab
   if (tabId === 'ai') detectAiTools();
   if (tabId === 'theme') renderThemeList();
+  if (tabId === 'repos') { try { renderSettingsSpaces(); } catch (_) {} }
   // Semi-transparent overlay on theme tab so user can preview live
   const modal = document.getElementById('settingsModal');
   if (modal) modal.classList.toggle('theme-preview', tabId === 'theme');
@@ -12822,6 +14510,7 @@ function renderPaletteSuggestions() {
         '<i data-lucide="sparkles" style="width:12px;height:12px;"></i>' +
         '<span>' + esc((h.prompt || '').slice(0, 80)) + '</span>' +
         '<span class="cmd-recent-cat">Ask again</span>' +
+        '<button class="cmd-recent-del" data-del-hist="' + i + '" title="Remove from history"><i data-lucide="x" style="width:11px;height:11px;"></i></button>' +
       '</div>'
     ).join('');
     histBlock =
@@ -12871,7 +14560,18 @@ function renderPaletteSuggestions() {
   // Two kinds of recent rows coexist: recent palette actions (-recent-idx)
   // and recent AI prompts (-hist-idx). Differentiate by attribute.
   list.querySelectorAll('.cmd-recent-item').forEach((el) => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('.cmd-recent-del');
+      if (delBtn) {
+        e.stopPropagation();
+        const i = parseInt(delBtn.dataset.delHist, 10);
+        const h = aiHist[i];
+        if (h && h.prompt) {
+          _deleteAiHistoryEntry(h.prompt);
+          try { filterCmdPalette(); renderPaletteSuggestions(); } catch (_) { el.remove(); }
+        }
+        return;
+      }
       if (el.dataset.histIdx != null) {
         const h = aiHist[parseInt(el.dataset.histIdx, 10)];
         if (h && h.prompt) askAIFromPalette(h.prompt);
@@ -12936,7 +14636,7 @@ function openShortcutHelp() {
           '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Core</div>' +
           row('Ctrl+K', 'Command palette') +
           row('Ctrl+I', 'Ask AI about selection') +
-          row('Ctrl+J', 'Toggle Quick-Ask bubble') +
+          row('Ctrl+J', 'Command palette (alt)') +
           row('Ctrl+.', 'Re-run last AI prompt') +
           row('Ctrl+/', 'This help') +
           row('Ctrl+T', 'Go to Terminal') +
@@ -12959,39 +14659,128 @@ function openShortcutHelp() {
 }
 
 // ── Palette AI fallback: dispatch a free-text query to the active CLI ───
-function _recordAiHistory(query) {
+// History is keyed by active space so each space has its own "Recent prompts".
+// Legacy flat key (pre-spaces) is read once and merged into the global slot.
+function _aiHistoryKey() {
+  return 'symphonee-ai-history-v1:' + (activeSpace ? ('space:' + activeSpace) : 'global');
+}
+function _migrateLegacyAiHistory() {
+  if (_migrateLegacyAiHistory._done) return;
+  _migrateLegacyAiHistory._done = true;
   try {
-    const key = 'symphonee-ai-history-v1';
+    const legacy = localStorage.getItem('symphonee-ai-history-v1');
+    if (!legacy) return;
+    const dest = 'symphonee-ai-history-v1:global';
+    if (!localStorage.getItem(dest)) localStorage.setItem(dest, legacy);
+    localStorage.removeItem('symphonee-ai-history-v1');
+  } catch (_) {}
+}
+function _recordAiHistory(query) {
+  _migrateLegacyAiHistory();
+  try {
+    const key = _aiHistoryKey();
     const prev = JSON.parse(localStorage.getItem(key) || '[]');
-    const entry = { prompt: query, at: Date.now(), cli: activeCli };
+    const entry = { prompt: query, at: Date.now(), cli: activeCli, space: activeSpace || null };
     const next = [entry, ...prev.filter(e => e.prompt !== query)].slice(0, 25);
     localStorage.setItem(key, JSON.stringify(next));
   } catch (_) {}
 }
 function _readAiHistory() {
-  try { return JSON.parse(localStorage.getItem('symphonee-ai-history-v1') || '[]'); }
+  _migrateLegacyAiHistory();
+  try { return JSON.parse(localStorage.getItem(_aiHistoryKey()) || '[]'); }
   catch (_) { return []; }
 }
+// Read every AI-history bucket across all spaces, merged and sorted newest-first.
+// Used by the "/history all" palette command.
+function _readAllAiHistory() {
+  _migrateLegacyAiHistory();
+  const merged = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('symphonee-ai-history-v1:')) continue;
+      const suffix = k.slice('symphonee-ai-history-v1:'.length);
+      const space = suffix === 'global' ? null : (suffix.startsWith('space:') ? suffix.slice(6) : suffix);
+      try {
+        const arr = JSON.parse(localStorage.getItem(k) || '[]');
+        for (const e of arr) merged.push({ ...e, space: e.space || space });
+      } catch (_) {}
+    }
+  } catch (_) {}
+  merged.sort((a, b) => (b.at || 0) - (a.at || 0));
+  // Dedupe by prompt+space so the same question asked twice in one space only
+  // shows up once; but the same prompt in two different spaces stays as two rows.
+  const seen = new Set();
+  return merged.filter(e => {
+    const k = (e.space || 'global') + '::' + e.prompt;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, 25);
+}
+function _deleteAiHistoryEntry(prompt, fromSpace) {
+  // If `fromSpace` is given, only delete from that space's bucket. Otherwise
+  // delete from the currently-active bucket.
+  try {
+    const key = (fromSpace === undefined)
+      ? _aiHistoryKey()
+      : ('symphonee-ai-history-v1:' + (fromSpace ? 'space:' + fromSpace : 'global'));
+    const prev = JSON.parse(localStorage.getItem(key) || '[]');
+    const next = prev.filter(e => e.prompt !== prompt);
+    localStorage.setItem(key, JSON.stringify(next));
+  } catch (_) {}
+}
 
-async function askAIFromPalette(query) {
+async function askAIFromPalette(query, opts) {
+  opts = opts || {};
+  if (!query || !query.trim()) { closeCmdPalette(); return; }
+  // Capture reply context before closing the palette (which clears it).
+  const replyParentId = _pendingFollowupParentId;
+  _pendingFollowupParentId = null;
+  _pendingFollowupPriorPrompt = '';
   closeCmdPalette();
-  if (!query || !query.trim()) return;
   _recordAiHistory(query.trim());
   const cli = activeCli || 'claude';
   const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli;
+  const fromTag = opts.from || 'palette';
+  // Reply mode: route through /followup so the worker sees the prior Q/A.
+  if (replyParentId) {
+    const parentId = replyParentId;
+    try {
+      const r = await fetch('/api/orchestrator/followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentTaskId: parentId, prompt: query, space: activeSpace || null }),
+      });
+      if (!r.ok) throw new Error(await r.text().catch(() => 'HTTP ' + r.status));
+      const body = await r.json().catch(() => ({}));
+      const tid = body && (body.taskId || body.id);
+      if (tid) _paletteNotifyTasks.add(tid);
+      toast('Reply sent -- you will be notified when it answers', 'success');
+      try { orchRefreshTasks(); } catch (_) {}
+    } catch (err) {
+      toast('Follow-up failed: ' + (err.message || err), 'error');
+    }
+    return;
+  }
   try {
     const res = await fetch('/api/orchestrator/spawn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cli, prompt: query, from: 'palette' }),
+      body: JSON.stringify({ cli, prompt: query, from: fromTag, space: activeSpace || null }),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(text || ('HTTP ' + res.status));
     }
+    // Response shape: { taskId, ... }. Track so we can notify on completion.
+    let body = null;
+    try { body = await res.clone().json(); } catch (_) {}
+    const taskId = body && (body.taskId || body.id);
+    if (taskId) _paletteNotifyTasks.add(taskId);
     const orchBtn = document.getElementById('orchestratorTabBtn');
     const canShow = orchBtn && orchBtn.style.display !== 'none';
-    toast('Sent to ' + cliLabel, 'success', {
+    toast('Sent to ' + cliLabel + ' -- you will be notified when it answers', 'success', {
       action: canShow ? { label: 'View', onClick: () => switchTab('orchestrator') } : undefined,
     });
     try { orchRefreshTasks(); } catch (_) {}
@@ -13002,6 +14791,12 @@ async function askAIFromPalette(query) {
 
 function closeCmdPalette() {
   document.getElementById('cmdPalette').classList.remove('open');
+  // Closing without sending cancels any pending reply context.
+  if (_pendingFollowupParentId) {
+    _pendingFollowupParentId = null;
+    _pendingFollowupPriorPrompt = '';
+    try { renderReplyChip(); } catch (_) {}
+  }
 }
 
 var _cmdSearchTimer = null;
@@ -13017,18 +14812,23 @@ function filterCmdPalette() {
   const cmdMatch = raw.match(/^(\s*\/?(?:find|search))(\s+|$)/i);
   updatePalettePill(cmdMatch ? cmdMatch[1].replace(/^\s+/, '').replace(/^\//, '') : null);
 
-  // History command: "/history" or "/recent" lists the last 25 AI prompts.
-  if (/^\s*\/?(?:history|recent)\s*$/i.test(raw)) {
-    const hist = _readAiHistory();
+  // History command:
+  //   "/history"     -> last 25 prompts in the active space
+  //   "/history all" -> last 25 prompts across every space (labeled by space)
+  const histMatch = raw.match(/^\s*\/?(?:history|recent)(?:\s+(all|global|\*))?\s*$/i);
+  if (histMatch) {
+    const mode = histMatch[1] ? 'all' : 'current';
+    const hist = (mode === 'all') ? _readAllAiHistory() : _readAiHistory();
     _cmdFiltered = hist.length
       ? hist.map(h => ({
           label: h.prompt,
           icon: 'sparkles',
           action: () => askAIFromPalette(h.prompt),
-          category: 'History',
+          category: mode === 'all' ? ('History · ' + (h.space || 'global')) : 'History',
           hint: new Date(h.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          onDelete: () => { _deleteAiHistoryEntry(h.prompt, h.space); filterCmdPalette(); },
         }))
-      : [{ label: 'No AI history yet', icon: 'clock', action: () => {}, category: 'History' }];
+      : [{ label: mode === 'all' ? 'No AI history across any space yet' : 'No AI history yet', icon: 'clock', action: () => {}, category: 'History' }];
     _cmdSelectedIdx = 0;
     renderCmdPalette();
     return;
@@ -13257,13 +15057,13 @@ async function saveRepoMapAsNote() {
   const name = await customPrompt('Save Repo Map as Note', defaultName);
   if (!name) return;
   try {
-    const createRes = await fetch('/api/notes/create', {
+    const createRes = await notesFetch('/api/notes/create', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
     const created = await createRes.json();
     if (created.error && !/exists/i.test(created.error)) { toast(created.error, 'error'); return; }
-    const saveRes = await fetch('/api/notes/save', {
+    const saveRes = await notesFetch('/api/notes/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: created.name || name, content: _repoMapMarkdownText }),
     });
@@ -13430,6 +15230,7 @@ function renderCmdPalette() {
       <span class="cmd-label">${esc(cmd.label)}</span>
       ${cmd.hint ? `<span class="cmd-hint">${cmd.hint}</span>` : ''}
       <span class="cmd-category">${cmd.category}</span>
+      ${cmd.onDelete ? `<button class="cmd-del" data-del="${i}" title="Remove from history"><i data-lucide="x" style="width:11px;height:11px;"></i></button>` : ''}
     </div>
   `).join('');
   lucide.createIcons();
@@ -13440,7 +15241,20 @@ function renderCmdPalette() {
       el.classList.add('selected');
       _cmdSelectedIdx = parseInt(el.dataset.idx);
     });
-    el.addEventListener('click', () => executeCmdPalette(parseInt(el.dataset.idx)));
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.cmd-del')) return; // handled below
+      executeCmdPalette(parseInt(el.dataset.idx));
+    });
+  });
+  list.querySelectorAll('.cmd-del').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.del);
+      const row = _cmdFiltered[idx];
+      if (row && typeof row.onDelete === 'function') {
+        row.onDelete();
+      }
+    });
   });
   // Scroll selected into view
   const selected = list.querySelector('.selected');
@@ -13787,6 +15601,7 @@ function injectSidebarAction(plugin, action) {
 
   var btn = document.createElement('button');
   btn.className = 'btn';
+  btn.setAttribute('data-plugin-id', plugin.id);
   btn.innerHTML = '<i data-lucide="' + (action.icon || 'puzzle') + '"></i> ' + action.label;
   btn.onclick = function () { executePluginAction(plugin, action.action); };
   container.appendChild(btn);
@@ -13799,6 +15614,7 @@ function injectAiAction(plugin, action) {
 
   var btn = document.createElement('button');
   btn.className = 'btn';
+  btn.setAttribute('data-plugin-id', plugin.id);
   btn.innerHTML = '<i data-lucide="' + (action.icon || 'sparkles') + '"></i> ' + action.label;
   btn.onclick = function () { runPluginAiAction(plugin, action); };
   container.appendChild(btn);
@@ -13876,6 +15692,7 @@ function injectSidebarSection(plugin, section) {
   if (!container) return;
 
   var wrapper = document.createElement('div');
+  wrapper.setAttribute('data-plugin-id', plugin.id);
   var titleStyle = plugin.tint ? ' style="color: rgba(' + plugin.tint + ', 0.8);"' : '';
   wrapper.innerHTML = '<div class="divider"></div><div class="section-title"' + titleStyle + '>' + (section.title || plugin.name) + '</div>';
 
@@ -13905,6 +15722,7 @@ function injectCenterTab(plugin, tab) {
   btn.className = 'tab-btn closable' + (hideInIncognito ? ' plugin-tab-incognito' : '');
   btn.dataset.tab = tabId;
   btn.dataset.pluginId = plugin.id;
+  btn.setAttribute('data-plugin-id', plugin.id);
   btn.title = tab.label;
   if (plugin.tint) btn.dataset.tint = plugin.tint;
 
@@ -13941,6 +15759,7 @@ function injectCenterTab(plugin, tab) {
   var panel = document.createElement('div');
   panel.className = 'tab-panel';
   panel.id = 'panel-' + tabId;
+  panel.setAttribute('data-plugin-id', plugin.id);
   panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
     'style="width:100%;height:100%;border:none;" ' +
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
@@ -14270,6 +16089,7 @@ function injectPinnedCenterTab(plugin, tab, position, isIncognito) {
   var panel = document.createElement('div');
   panel.className = 'tab-panel';
   panel.id = 'panel-' + tabId;
+  panel.setAttribute('data-plugin-id', plugin.id);
   panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
     'style="width:100%;height:100%;border:none;" ' +
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
@@ -14352,10 +16172,20 @@ function toggleOpenTabMenu() {
   if (!isOpen) {
     menu.innerHTML = '';
     var isIncog = document.body.classList.contains('incognito-active');
+    // Gather the active space's plugin preset so we filter out plugins the
+    // user hasn't surfaced for this space. Empty preset / no space = no filter.
+    var allowed = null;
+    try {
+      if (activeSpace && window._spacesCache) {
+        var preset = window._spacesCache[activeSpace] && window._spacesCache[activeSpace].plugins;
+        if (Array.isArray(preset) && preset.length) allowed = new Set(preset);
+      }
+    } catch (_) {}
     for (var i = 0; i < pluginTabRegistry.length; i++) {
       (function(entry) {
         // Hide non-incognito-safe plugins in incognito mode
         if (isIncog && !entry.plugin.incognitoSafe) return;
+        if (allowed && !allowed.has(entry.plugin.id)) return;
         var open = isPluginTabOpen(entry.tabId);
         var item = document.createElement('button');
         item.className = 'tab-open-item';
@@ -14426,6 +16256,7 @@ function injectIntelPanel(plugin, ip) {
   btn.className = 'intel-tab closable';
   btn.dataset.itab = panelId;
   btn.dataset.pluginId = plugin.id;
+  btn.setAttribute('data-plugin-id', plugin.id);
   if (plugin.tint) btn.dataset.tint = plugin.tint;
 
   var label = document.createTextNode(ip.label);
@@ -14446,6 +16277,7 @@ function injectIntelPanel(plugin, ip) {
   var panel = document.createElement('div');
   panel.className = 'intel-panel';
   panel.id = 'ipanel-' + panelId;
+  panel.setAttribute('data-plugin-id', plugin.id);
   panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + ip.html + '" ' +
     'style="width:100%;height:100%;border:none;" ' +
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
@@ -14578,6 +16410,7 @@ async function refreshPluginActivation() {
         if (!container) return;
         var btn = document.createElement('button');
         btn.className = 'btn';
+        btn.setAttribute('data-plugin-id', p.id);
         btn.innerHTML = '<i data-lucide="' + (a.icon || 'puzzle') + '"></i> ' + a.label;
         btn.onclick = function () { runPluginAiAction(p, a); };
         container.appendChild(btn);
@@ -14617,6 +16450,9 @@ async function refreshPluginActivation() {
   // Signal readiness so loadConfig()'s post-step can safely re-run
   // applyPluginPinnedTabs against the now-populated _loadedPlugins.
   try { if (typeof _pluginsReadyResolve === 'function') _pluginsReadyResolve(); } catch (_) {}
+
+  // Apply any space-based plugin preset after the DOM is populated.
+  try { applyPluginSpaceFilter(); } catch (_) {}
 })();
 
 // Render plugin settings fields in the Settings > Plugins tab
@@ -15579,8 +17415,10 @@ async function runNotesSearch() {
   const host = document.getElementById('notesSearchResults');
   if (!q) { host.style.display = 'none'; host.innerHTML = ''; return; }
   try {
-    // Notes tab search is scoped to notes only. Cross-corpus search lives in the command palette.
-    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&kinds=note&limit=15');
+    // Notes tab search is scoped to notes in the active space's namespace;
+    // cross-corpus/cross-space search lives in the command palette.
+    const ns = currentNotesNs();
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&kinds=note&ns=' + encodeURIComponent(ns) + '&limit=15');
     const data = await r.json();
     if (!data.results || !data.results.length) {
       host.style.display = '';

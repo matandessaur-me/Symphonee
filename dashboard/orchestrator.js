@@ -493,7 +493,7 @@ class Orchestrator extends EventEmitter {
    * @param {boolean} [opts.autoPermit] — auto-approve all permissions
    * @returns {Task}
    */
-  spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, _retryAttempt = 0 }) {
+  spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, space, _retryAttempt = 0 }) {
     const cfg = HEADLESS_FLAGS[cli];
     if (!cfg) throw new Error(`Unknown CLI: "${cli}". Use: ${Object.keys(HEADLESS_FLAGS).join(', ')}`);
 
@@ -518,6 +518,7 @@ class Orchestrator extends EventEmitter {
       model: resolvedModel,
       prompt,
       from: from || null,
+      space: space || null,
       timeout: 0,  // Never timeout — AI runs as long as it needs
     });
 
@@ -674,7 +675,7 @@ class Orchestrator extends EventEmitter {
               const enhancedPrompt = checkpoint
                 ? `[Previous attempt partial result for context]:\n${checkpoint.partial.substring(0, 1000)}\n\n[Retry the task]:\n${prompt}`
                 : prompt;
-              const retryTask = this.spawnHeadless({ cli, prompt: enhancedPrompt, cwd, timeout, from, taskId: task.id, _retryAttempt: _retryAttempt + 1 });
+              const retryTask = this.spawnHeadless({ cli, prompt: enhancedPrompt, cwd, timeout, from, taskId: task.id, space: task.space, _retryAttempt: _retryAttempt + 1 });
               // Merge retry into original task
               Object.assign(task, { state: retryTask.state, _proc: retryTask._proc, startedAt: retryTask.startedAt });
             } catch (e) {
@@ -751,7 +752,7 @@ class Orchestrator extends EventEmitter {
    * @param {string} [opts.taskId]  — tie to existing task
    * @returns {Task}
    */
-  spawnVisible({ cli, prompt, cwd, timeout, from, taskId }) {
+  spawnVisible({ cli, prompt, cwd, timeout, from, taskId, space }) {
     const cfg = CLI_CONFIG[cli];
     if (!cfg) throw new Error(`Unknown CLI: "${cli}". Use: ${Object.keys(CLI_CONFIG).join(', ')}`);
     if (!this.createTerminal) throw new Error('createTerminal not available -- cannot spawn visible terminals');
@@ -773,6 +774,7 @@ class Orchestrator extends EventEmitter {
       cli,
       prompt,
       from: from || null,
+      space: space || null,
       timeout: 0,  // Never timeout — AI runs as long as it needs
       targetTermId: termId,
     });
@@ -1299,12 +1301,17 @@ class Orchestrator extends EventEmitter {
     return this._serializeTask(this.tasks.get(taskId));
   }
 
-  listTasks({ state, from, cli, limit } = {}) {
+  listTasks({ state, from, cli, space, limit } = {}) {
     let tasks = [...this.tasks.values()];
 
     if (state) tasks = tasks.filter(t => t.state === state);
     if (from) tasks = tasks.filter(t => t.from === from);
     if (cli) tasks = tasks.filter(t => t.cli === cli);
+    if (space !== undefined && space !== null && space !== '') {
+      // '*' means "ignore space filter" -- lets the UI default be "all tasks"
+      // even when a space is active.
+      if (space !== '*') tasks = tasks.filter(t => t.space === space);
+    }
 
     // Most recent first
     tasks.sort((a, b) => b.createdAt - a.createdAt);
@@ -1647,7 +1654,7 @@ class Orchestrator extends EventEmitter {
         ? `[Previous attempt by ${task.cli} produced partial results]:\n${checkpoint.partial.substring(0, 1000)}\n\n[Retry with ${nextCli}]:\n${task._escalationPrompt}`
         : task._escalationPrompt;
 
-      const newTask = this.spawnHeadless({ cli: nextCli, prompt: enhancedPrompt, cwd: task._escalationCwd, from: task.from, taskId: task.id });
+      const newTask = this.spawnHeadless({ cli: nextCli, prompt: enhancedPrompt, cwd: task._escalationCwd, from: task.from, taskId: task.id, space: task.space });
       // Transfer escalation chain to new attempt
       newTask._escalationChain = task._escalationChain;
       newTask._escalationPrompt = task._escalationPrompt;
@@ -1829,7 +1836,7 @@ class Orchestrator extends EventEmitter {
     return crypto.randomBytes(6).toString('hex');
   }
 
-  _createTask({ id, type, cli, prompt, from, timeout, targetTermId, model }) {
+  _createTask({ id, type, cli, prompt, from, timeout, targetTermId, model, space }) {
     const task = {
       id: id || this._id(),
       type,              // 'headless' | 'dispatch' | 'handoff'
@@ -1837,6 +1844,7 @@ class Orchestrator extends EventEmitter {
       model: model || null,
       prompt,
       from,
+      space: space || null,
       targetTermId: targetTermId || null,
       state: STATE.PENDING,
       result: null,
@@ -2045,7 +2053,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
 
   // ── POST /api/orchestrator/spawn ──────────────────────────────────────
   addRoute('POST', '/api/orchestrator/spawn', async (req, res) => {
-    const { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit } = await readBody(req);
+    const { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
     if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
     // Check if this CLI is allowed by the user's settings
     if (getConfig) {
@@ -2063,8 +2071,62 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
       const cliCfg = CLI_CONFIG[cli];
       const useVisible = visible === true || (visible !== false && cliCfg && !cliCfg.pipeMode);
       const task = useVisible
-        ? orch.spawnVisible({ cli, prompt, cwd, timeout, from, taskId })
-        : orch.spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit });
+        ? orch.spawnVisible({ cli, prompt, cwd, timeout, from, taskId, space })
+        : orch.spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, space });
+      json(res, orch._serializeTask(task));
+    } catch (err) {
+      json(res, { error: err.message }, 400);
+    }
+  });
+
+  // ── POST /api/orchestrator/followup ───────────────────────────────────
+  // Spawn a NEW task that includes the parent task's prompt + result as
+  // context, so the user can reply to an AI's question without losing the
+  // thread. Each task is still one-shot (stdin closes after write), so the
+  // "conversation" is recreated by replaying the prior Q/A inline.
+  addRoute('POST', '/api/orchestrator/followup', async (req, res) => {
+    const { parentTaskId, prompt, cli: cliOverride, autoPermit, space } = await readBody(req);
+    if (!parentTaskId || !prompt) return json(res, { error: 'parentTaskId and prompt required' }, 400);
+    const parent = orch.getTask(parentTaskId);
+    if (!parent) return json(res, { error: 'Parent task not found' }, 404);
+    const cli = cliOverride || parent.cli;
+    if (!cli) return json(res, { error: 'Could not resolve CLI for follow-up' }, 400);
+    const priorPrompt = String(parent.prompt || '').replace(/\[ORCHESTRATOR TASK [^\]]*\]/g, '').trim();
+    const priorResult = String(parent.result || parent.error || '').trim();
+    const combined =
+      'This is a follow-up to an earlier conversation.\n\n' +
+      '--- EARLIER PROMPT ---\n' + priorPrompt + '\n\n' +
+      '--- EARLIER RESPONSE ---\n' + priorResult + '\n\n' +
+      '--- USER REPLY ---\n' + String(prompt);
+    if (!await gateSpawn(res, { cli, label: `Follow-up to ${parentTaskId.slice(0, 8)}`, wait: !autoPermit })) return;
+    try {
+      const cliCfg = CLI_CONFIG[cli];
+      const useVisible = cliCfg && !cliCfg.pipeMode;
+      const inheritedSpace = space !== undefined ? space : (parent && parent.space) || null;
+      let task;
+      if (useVisible) {
+        // Visible PTY spawn types the prompt into a live terminal character-by-character.
+        // Embedded newlines in the combined context get interpreted as Enter keypresses
+        // and submit partial content, so the worker loses the prior conversation.
+        // Fix: write the full context to a file and give the worker a short single-line
+        // prompt that points at it.
+        const fs = require('fs');
+        const path = require('path');
+        const contextsDir = path.join(orch.workspaceDir, 'contexts');
+        try { fs.mkdirSync(contextsDir, { recursive: true }); } catch (_) {}
+        const contextFile = path.join(contextsDir, `followup-${parentTaskId}-${Date.now()}.md`);
+        fs.writeFileSync(contextFile, combined, 'utf8');
+        const contextPath = contextFile.replace(/\\/g, '/');
+        const singleLinePrompt =
+          `You have a follow-up reply from the user. Read the full prior conversation from ${contextPath} ` +
+          `(it contains the earlier prompt, your earlier response, and the user's new reply under --- USER REPLY ---), ` +
+          `then answer the user's reply.`;
+        task = orch.spawnVisible({ cli, prompt: singleLinePrompt, from: 'followup', space: inheritedSpace });
+      } else {
+        task = orch.spawnHeadless({ cli, prompt: combined, from: 'followup', autoPermit, space: inheritedSpace });
+      }
+      // Tag the parent so clients can display the thread.
+      try { task.parentTaskId = parentTaskId; } catch (_) {}
       json(res, orch._serializeTask(task));
     } catch (err) {
       json(res, { error: err.message }, 400);
@@ -2077,8 +2139,9 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     const state = url.searchParams.get('state');
     const from = url.searchParams.get('from');
     const cli = url.searchParams.get('cli');
+    const space = url.searchParams.get('space');
     const limit = parseInt(url.searchParams.get('limit')) || 50;
-    json(res, orch.listTasks({ state, from, cli, limit }));
+    json(res, orch.listTasks({ state, from, cli, space, limit }));
   });
 
   // ── GET /api/orchestrator/tasks/:id ───────────────────────────────────

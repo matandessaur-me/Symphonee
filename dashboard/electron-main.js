@@ -1,7 +1,7 @@
 /**
  * Electron main process — wraps the HTTP+WS server in a desktop window.
  */
-const { app, BrowserWindow, nativeImage, dialog, screen, shell } = require('electron');
+const { app, BrowserWindow, nativeImage, dialog, screen, shell, webContents: webContentsNS } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -11,6 +11,232 @@ const PORT = 3800;
 const HOST = '127.0.0.1';
 
 let win = null;
+
+// ── In-app browser automation driver ───────────────────────────────────────
+// Tracks the <webview> webContents inside panel-browser and exposes
+// navigate/click/fill/etc. ops that browser-agent.js can dispatch. Replaces
+// the external-playwright fallback so automation never opens a system browser.
+let _webviewContents = null;
+
+function _findWebviewContents() {
+  if (_webviewContents && !_webviewContents.isDestroyed()) return _webviewContents;
+  try {
+    const all = (webContentsNS && typeof webContentsNS.getAllWebContents === 'function')
+      ? webContentsNS.getAllWebContents()
+      : [];
+    for (const c of all) {
+      try {
+        if (c && !c.isDestroyed() && typeof c.getType === 'function' && c.getType() === 'webview') {
+          _webviewContents = c;
+          return c;
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return null;
+}
+
+function _broadcastToRenderer(msg) {
+  try { if (win && !win.isDestroyed()) win.webContents.send('browser-agent', msg); } catch (_) {}
+}
+
+async function _ensureBrowserTab() {
+  if (!win || win.isDestroyed()) throw new Error('Main window not available');
+  // Tell the renderer to open the Browser tab and create the webview if missing.
+  // We always pass 'about:blank' here -- the driver's navigate() is responsible
+  // for the real URL, so we avoid double-navigating the same URL.
+  await win.webContents.executeJavaScript(
+    `(function(){ try { if (typeof openBrowserTab === 'function') { openBrowserTab('about:blank'); } } catch(_){} })();`
+  );
+  const start = Date.now();
+  while (Date.now() - start < 3000) {
+    const wc = _findWebviewContents();
+    if (wc) return wc;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  const wc = _findWebviewContents();
+  if (!wc) throw new Error('In-app webview not ready');
+  return wc;
+}
+
+function _waitForLoad(wc, timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    const onStop = () => finish();
+    const onFinish = () => finish();
+    try { wc.once('did-stop-loading', onStop); } catch (_) {}
+    try { wc.once('did-finish-load', onFinish); } catch (_) {}
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+async function _exec(wc, code) {
+  return wc.executeJavaScript(code, true);
+}
+
+const internalWebviewDriver = {
+  kind: 'internal-webview',
+
+  async launch({ headless = false } = {}) {
+    // headless has no meaning here; we always drive the visible in-app tab.
+    await _ensureBrowserTab();
+    return { launchedVia: 'in-app webview' };
+  },
+
+  async navigate(url) {
+    const wc = await _ensureBrowserTab();
+    try { await wc.loadURL(url); } catch (_) { /* allow waitForLoad to settle */ }
+    await _waitForLoad(wc);
+    const title = await _exec(wc, 'document.title').catch(() => '');
+    _broadcastToRenderer({ type: 'navigated', url: wc.getURL() });
+    return { url: wc.getURL(), title };
+  },
+
+  async fill(selector, value) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element for selector: ' + ${JSON.stringify(selector)});
+      el.focus();
+      var v = ${JSON.stringify(String(value))};
+      var proto = Object.getPrototypeOf(el);
+      var setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+      if (setter) setter.call(el, v); else el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })();`;
+    await _exec(wc, js);
+  },
+
+  async click(selector) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('No element for selector: ' + ${JSON.stringify(selector)});
+      el.scrollIntoView({ block: 'center' });
+      el.click();
+      return true;
+    })();`;
+    await _exec(wc, js);
+    // Give the page up to 5s to settle if the click navigates
+    await Promise.race([_waitForLoad(wc, 5000), new Promise(r => setTimeout(r, 250))]);
+    return { url: wc.getURL() };
+  },
+
+  async type(selector, text) {
+    const wc = await _ensureBrowserTab();
+    await _exec(wc, `(function(){var el = document.querySelector(${JSON.stringify(selector)}); if (el) el.focus();})();`);
+    const str = String(text || '');
+    for (const ch of str) {
+      try { wc.sendInputEvent({ type: 'char', keyCode: ch }); } catch (_) {}
+      await new Promise(r => setTimeout(r, 10));
+    }
+  },
+
+  async pressKey(key) {
+    const wc = await _ensureBrowserTab();
+    try {
+      wc.sendInputEvent({ type: 'keyDown', keyCode: key });
+      wc.sendInputEvent({ type: 'keyUp', keyCode: key });
+    } catch (_) {}
+  },
+
+  async waitFor(selector, { timeout = 10000 } = {}) {
+    const wc = await _ensureBrowserTab();
+    const js = `new Promise(function(resolve, reject){
+      var sel = ${JSON.stringify(selector)};
+      var start = Date.now();
+      function tick(){
+        var el = document.querySelector(sel);
+        if (el) return resolve(true);
+        if (Date.now() - start > ${Number(timeout) || 10000}) return reject(new Error('waitFor timeout: ' + sel));
+        setTimeout(tick, 100);
+      }
+      tick();
+    })`;
+    await _exec(wc, js);
+  },
+
+  async screenshot() {
+    const wc = await _ensureBrowserTab();
+    const img = await wc.capturePage();
+    const buf = img.toPNG();
+    return { base64: buf.toString('base64'), mimeType: 'image/png' };
+  },
+
+  async readPage({ selector } = {}) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      var sel = ${JSON.stringify(selector || null)};
+      var el = sel ? document.querySelector(sel) : document.body;
+      if (!el) return { url: location.href, title: document.title, content: '' };
+      var clone = el.cloneNode(true);
+      clone.querySelectorAll('script, style, noscript, svg').forEach(function(n){ n.remove(); });
+      return { url: location.href, title: document.title, content: clone.innerText || clone.textContent || '' };
+    })();`;
+    return await _exec(wc, js);
+  },
+
+  async queryAll(selector) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){
+      return Array.from(document.querySelectorAll(${JSON.stringify(selector)})).slice(0, 50).map(function(el){
+        return {
+          tag: el.tagName.toLowerCase(),
+          text: (el.innerText || '').substring(0, 100),
+          type: el.type || null,
+          name: el.name || null,
+          id: el.id || null,
+          href: el.href || null,
+          placeholder: el.placeholder || null,
+        };
+      });
+    })();`;
+    const elements = await _exec(wc, js);
+    return { elements };
+  },
+
+  async getCookies() {
+    const wc = _findWebviewContents();
+    if (!wc) return { cookies: [] };
+    try {
+      const url = wc.getURL();
+      const cookies = await wc.session.cookies.get(url && url !== 'about:blank' ? { url } : {});
+      return { cookies };
+    } catch (_) {
+      return { cookies: [] };
+    }
+  },
+
+  async setCookies(cookies) {
+    const wc = await _ensureBrowserTab();
+    for (const c of (cookies || [])) {
+      try {
+        // Electron's cookies.set wants a url field. Reconstruct from domain.
+        const url = c.url || ((c.secure ? 'https://' : 'http://') + (c.domain || '').replace(/^\./, '') + (c.path || '/'));
+        await wc.session.cookies.set({
+          url,
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path,
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          expirationDate: c.expires || c.expirationDate,
+          sameSite: c.sameSite ? String(c.sameSite).toLowerCase() : undefined,
+        });
+      } catch (_) { /* best effort */ }
+    }
+  },
+
+  async close() {
+    const wc = _findWebviewContents();
+    if (wc) { try { await wc.loadURL('about:blank'); } catch (_) {} }
+    _broadcastToRenderer({ type: 'closed' });
+  },
+};
 
 // ── Display preference persistence ──────────────────────────────────────
 const displayPrefPath = path.join(__dirname, '..', 'config', 'display-pref.json');
@@ -102,6 +328,17 @@ if (!gotLock) {
     }
   });
 
+  // Track any <webview> webContents so the browser-agent driver can find them.
+  app.on('web-contents-created', (_event, contents) => {
+    try {
+      if (!contents || typeof contents.getType !== 'function') return;
+      if (contents.getType() === 'webview') {
+        _webviewContents = contents;
+        contents.on('destroyed', () => { if (_webviewContents === contents) _webviewContents = null; });
+      }
+    } catch (_) {}
+  });
+
   app.whenReady().then(() => {
     console.log('Electron ready, loading server...');
     let server, startServer, addRoute;
@@ -112,6 +349,17 @@ if (!gotLock) {
         `Failed to load server modules.\n\n${err.message}\n\nTry running "npm install" in the dashboard folder.`);
       app.quit();
       return;
+    }
+
+    // Install the in-app webview driver so /api/browser/* routes drive the
+    // Browser tab instead of launching a system Edge/Chrome window. Safe to
+    // call even if browser-agent was skipped (setter is a no-op then).
+    try {
+      const { setActiveBrowserDriver } = require('./browser-agent');
+      setActiveBrowserDriver(internalWebviewDriver);
+      console.log('  Browser automation bound to in-app webview');
+    } catch (err) {
+      console.log('  Browser driver install skipped:', err.message);
     }
 
     server.on('error', (err) => {
@@ -275,6 +523,7 @@ if (!gotLock) {
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
+          webviewTag: true,
         },
       });
       win.maximize();

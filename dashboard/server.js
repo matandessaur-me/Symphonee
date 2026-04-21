@@ -320,8 +320,9 @@ const server = http.createServer(async (req, res) => {
         const q = url.searchParams.get('q') || '';
         const kindsParam = url.searchParams.get('kinds') || '';
         const kinds = kindsParam ? kindsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+        const ns = url.searchParams.get('ns') || null;
         const limit = parseInt(url.searchParams.get('limit') || '20', 10);
-        return json(res, { query: q, kinds, results: hybridSearch.search(q, { kinds, limit }) });
+        return json(res, { query: q, kinds, ns, results: hybridSearch.search(q, { kinds, ns, limit }) });
       }
       if (url.pathname === '/api/search/reindex' && req.method === 'POST') {
         try { return json(res, await hybridSearch.reindex()); }
@@ -523,6 +524,19 @@ const server = http.createServer(async (req, res) => {
     // ── Repos ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/repos' && req.method === 'GET')  return handleGetRepos(res);
     if (url.pathname === '/api/repos' && req.method === 'POST') return handleSaveRepo(req, res);
+    // Spaces: non-git workspaces (Personal, Business, Freelance, ...). Stored
+    // like repos but flagged so the UI hides git actions. Live at a separate
+    // route so existing repo consumers are unaffected.
+    if (url.pathname === '/api/spaces' && req.method === 'GET')  return handleGetSpaces(res);
+    if (url.pathname === '/api/spaces' && req.method === 'POST') return handleSaveSpace(req, res);
+    if (url.pathname === '/api/spaces' && req.method === 'DELETE') return handleDeleteSpace(req, res);
+    if (url.pathname === '/api/spaces/attach-repo' && req.method === 'POST') return handleSpaceAttachRepo(req, res);
+    if (url.pathname === '/api/spaces/toggle-plugin' && req.method === 'POST') return handleSpaceTogglePlugin(req, res);
+    if (url.pathname === '/api/skills' && req.method === 'GET')  return handleGetSkills(res);
+    if (url.pathname.startsWith('/api/skills/') && req.method === 'GET') {
+      const slug = decodeURIComponent(url.pathname.slice('/api/skills/'.length));
+      return handleGetSkill(res, slug);
+    }
 
     // Azure DevOps routes (/api/workitems/*, /api/iterations, /api/teams,
     // /api/areas, /api/velocity, /api/burndown, /api/team-members,
@@ -534,7 +548,7 @@ const server = http.createServer(async (req, res) => {
     // registered -- no explicit gate needed in core.
 
     // ── Notes ─────────────────────────────────────────────────────────────
-    if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(res);
+    if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(url, res);
     if (url.pathname === '/api/notes/read' && req.method === 'GET') return handleReadNote(url, res);
     if (url.pathname === '/api/notes/save' && req.method === 'POST') return handleSaveNote(req, res);
     if (url.pathname === '/api/notes/delete' && req.method === 'DELETE') return handleDeleteNote(req, res);
@@ -602,6 +616,30 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ui/mutate' && req.method === 'POST')         return handleUiMutate(req, res);
     if (url.pathname === '/api/application-state/focus' && req.method === 'GET')  return json(res, _getFocusState());
     if (url.pathname === '/api/application-state/focus' && req.method === 'POST') return handleFocusUpdate(req, res);
+    // Generic key-value application-state store. Key is the last path segment.
+    // Pattern from agent-native: UI writes 'navigation' on every route change,
+    // AI writes 'navigate' as a one-shot command. GET reads; PUT sets;
+    // DELETE clears. Also supports GET /api/application-state (listing).
+    if (url.pathname === '/api/application-state' && req.method === 'GET') {
+      return json(res, _appStateStore);
+    }
+    if (url.pathname.startsWith('/api/application-state/') && req.method === 'GET') {
+      const key = decodeURIComponent(url.pathname.slice('/api/application-state/'.length));
+      if (!key) return json(res, { error: 'key required' }, 400);
+      return json(res, { key, value: _appStateStore[key] !== undefined ? _appStateStore[key] : null });
+    }
+    if (url.pathname.startsWith('/api/application-state/') && req.method === 'PUT') {
+      const key = decodeURIComponent(url.pathname.slice('/api/application-state/'.length));
+      if (!key || key === 'focus') return json(res, { error: key ? 'reserved key' : 'key required' }, 400);
+      return handleAppStateWrite(req, res, key);
+    }
+    if (url.pathname.startsWith('/api/application-state/') && req.method === 'DELETE') {
+      const key = decodeURIComponent(url.pathname.slice('/api/application-state/'.length));
+      if (!key || key === 'focus') return json(res, { error: key ? 'reserved key' : 'key required' }, 400);
+      delete _appStateStore[key];
+      broadcast({ type: 'app-state-set', key, value: null });
+      return json(res, { ok: true, key });
+    }
 
     // ── Bootstrap: one call returns everything an AI CLI needs to start ─
     // The instructions tell every CLI (Claude, Gemini, Codex, Copilot, Grok)
@@ -1322,6 +1360,124 @@ async function handleSaveRepo(req, res) {
   try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
   cfg.Repos = cfg.Repos || {};
   cfg.Repos[name] = repoPath;
+  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
+  broadcast({ type: 'config-changed' });
+  json(res, { ok: true });
+}
+
+function handleGetSpaces(res) {
+  const cfg = getConfig();
+  json(res, cfg.Spaces || {});
+}
+async function handleSaveSpace(req, res) {
+  const body = await readBody(req);
+  const { name, icon, description, repos, plugins } = body || {};
+  if (!name) return json(res, { error: 'name is required' }, 400);
+  let cfg = {};
+  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
+  cfg.Spaces = cfg.Spaces || {};
+  const prev = cfg.Spaces[name] || {};
+  cfg.Spaces[name] = {
+    icon: icon || prev.icon || 'layers',
+    description: description !== undefined ? description : (prev.description || ''),
+    repos: Array.isArray(repos) ? repos.filter(r => typeof r === 'string') : (prev.repos || []),
+    plugins: Array.isArray(plugins) ? plugins.filter(p => typeof p === 'string') : (prev.plugins || []),
+    createdAt: prev.createdAt || Date.now(),
+  };
+  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
+  broadcast({ type: 'config-changed' });
+  json(res, { ok: true, space: cfg.Spaces[name] });
+}
+
+// Toggle whether a repo is a member of a space (single-space membership:
+// adding to one space removes it from any other).
+async function handleSpaceAttachRepo(req, res) {
+  const { space, repo, attach } = await readBody(req);
+  if (!space || !repo) return json(res, { error: 'space and repo are required' }, 400);
+  let cfg = {};
+  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
+  cfg.Spaces = cfg.Spaces || {};
+  if (!cfg.Spaces[space]) return json(res, { error: 'space not found' }, 404);
+  // Remove from every other space first (single-membership rule).
+  for (const [n, s] of Object.entries(cfg.Spaces)) {
+    if (!s || !Array.isArray(s.repos)) continue;
+    cfg.Spaces[n] = { ...s, repos: s.repos.filter(r => r !== repo) };
+  }
+  if (attach !== false) {
+    const s = cfg.Spaces[space];
+    const list = Array.isArray(s.repos) ? s.repos : [];
+    cfg.Spaces[space] = { ...s, repos: list.includes(repo) ? list : list.concat(repo) };
+  }
+  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
+  broadcast({ type: 'config-changed' });
+  json(res, { ok: true });
+}
+
+// Toggle plugin presence in a space's preset.
+async function handleSpaceTogglePlugin(req, res) {
+  const { space, plugin, enabled } = await readBody(req);
+  if (!space || !plugin) return json(res, { error: 'space and plugin are required' }, 400);
+  let cfg = {};
+  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
+  cfg.Spaces = cfg.Spaces || {};
+  if (!cfg.Spaces[space]) return json(res, { error: 'space not found' }, 404);
+  const s = cfg.Spaces[space];
+  const list = Array.isArray(s.plugins) ? s.plugins.slice() : [];
+  const idx = list.indexOf(plugin);
+  if (enabled === false || (enabled === undefined && idx >= 0)) {
+    if (idx >= 0) list.splice(idx, 1);
+  } else if (idx < 0) {
+    list.push(plugin);
+  }
+  cfg.Spaces[space] = { ...s, plugins: list };
+  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
+  broadcast({ type: 'config-changed' });
+  json(res, { ok: true, plugins: list });
+}
+const _skillsDir = path.join(__dirname, 'skills');
+function _parseSkillFrontmatter(content) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/m.exec(content);
+  if (!m) return { meta: {}, body: content };
+  const meta = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const mm = /^([a-zA-Z0-9_-]+)\s*:\s*(.*)$/.exec(line);
+    if (mm) meta[mm[1]] = mm[2].trim().replace(/^>-\s*/, '');
+  }
+  return { meta, body: m[2] };
+}
+function handleGetSkills(res) {
+  try {
+    if (!fs.existsSync(_skillsDir)) return json(res, []);
+    const files = fs.readdirSync(_skillsDir).filter(f => f.endsWith('.md'));
+    const skills = files.map(f => {
+      const slug = f.replace(/\.md$/, '');
+      try {
+        const { meta } = _parseSkillFrontmatter(fs.readFileSync(path.join(_skillsDir, f), 'utf8'));
+        return { slug, name: meta.name || slug, description: meta.description || '' };
+      } catch (_) {
+        return { slug, name: slug, description: '' };
+      }
+    });
+    json(res, skills);
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+function handleGetSkill(res, slug) {
+  if (!/^[a-z0-9_-]+$/i.test(slug)) return json(res, { error: 'invalid slug' }, 400);
+  const file = path.join(_skillsDir, slug + '.md');
+  if (!fs.existsSync(file)) return json(res, { error: 'not found' }, 404);
+  try {
+    const raw = fs.readFileSync(file, 'utf8');
+    const { meta, body } = _parseSkillFrontmatter(raw);
+    json(res, { slug, name: meta.name || slug, description: meta.description || '', body });
+  } catch (e) { json(res, { error: e.message }, 500); }
+}
+
+async function handleDeleteSpace(req, res) {
+  const { name } = await readBody(req);
+  if (!name) return json(res, { error: 'name is required' }, 400);
+  let cfg = {};
+  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
+  if (cfg.Spaces && cfg.Spaces[name]) delete cfg.Spaces[name];
   atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
   broadcast({ type: 'config-changed' });
   json(res, { ok: true });
@@ -2087,7 +2243,15 @@ function handleImageProxy(url, res) {
 }
 
 // ── UI Context (tracks what's selected in the dashboard) ────────────────────
-let _uiContext = { selectedIteration: null, selectedIterationName: 'All Iterations', activeRepo: null, activeRepoPath: null };
+// activeSpace is the organizational container (e.g. "Business"); activeRepo is
+// the specific working repo inside that space. They can be independent.
+let _uiContext = {
+  selectedIteration: null,
+  selectedIterationName: 'All Iterations',
+  activeSpace: null,
+  activeRepo: null,
+  activeRepoPath: null,
+};
 
 function getUiContextWithPath() {
   // Always resolve the repo path from config so it's up to date
@@ -2096,6 +2260,8 @@ function getUiContextWithPath() {
     const cfg = getConfig();
     ctx.activeRepoPath = (cfg.Repos || {})[ctx.activeRepo] || null;
   }
+  // Derive the notes namespace: active space name, or '_global' when none.
+  ctx.notesNamespace = ctx.activeSpace ? _namespaceFromName(ctx.activeSpace) : '_global';
   return ctx;
 }
 
@@ -2170,6 +2336,46 @@ async function handleFocusUpdate(req, res) {
   json(res, { ok: true });
 }
 
+// ── Application state key/value store (agent-native pattern) ───────────────
+// General-purpose shared state between UI and AI agents. The UI writes
+// navigation state (what the user is looking at); the AI writes a 'navigate'
+// command and the UI reads + deletes it. Persisted to disk so it survives
+// restarts (except ephemeral keys like 'navigate').
+const APP_STATE_MAX_KEYS = 128;
+const APP_STATE_EPHEMERAL = new Set(['navigate']);
+const _appStatePath = path.join(repoRoot, 'config', 'application-state.json');
+let _appStateStore = {};
+try {
+  if (fs.existsSync(_appStatePath)) {
+    _appStateStore = JSON.parse(fs.readFileSync(_appStatePath, 'utf8')) || {};
+  }
+} catch (_) { _appStateStore = {}; }
+let _appStateSaveTimer = null;
+function _saveAppState() {
+  clearTimeout(_appStateSaveTimer);
+  _appStateSaveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(path.dirname(_appStatePath), { recursive: true });
+      // Never persist ephemeral keys.
+      const serializable = {};
+      for (const [k, v] of Object.entries(_appStateStore)) {
+        if (!APP_STATE_EPHEMERAL.has(k)) serializable[k] = v;
+      }
+      fs.writeFileSync(_appStatePath, JSON.stringify(serializable, null, 2));
+    } catch (_) {}
+  }, 200);
+}
+async function handleAppStateWrite(req, res, key) {
+  const data = await readBody(req);
+  if (Object.keys(_appStateStore).length >= APP_STATE_MAX_KEYS && !(key in _appStateStore)) {
+    return json(res, { error: 'too many keys' }, 400);
+  }
+  _appStateStore[key] = data && Object.prototype.hasOwnProperty.call(data, 'value') ? data.value : data;
+  _saveAppState();
+  broadcast({ type: 'app-state-set', key, value: _appStateStore[key] });
+  json(res, { ok: true, key });
+}
+
 async function handleUiMutate(req, res) {
   const data = await readBody(req);
   const ops = Array.isArray(data.ops) ? data.ops : (data.op ? [data] : []);
@@ -2182,16 +2388,69 @@ async function handleUiMutate(req, res) {
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
-// ── Notes Management ────────────────────────────────────────────────────────
+// ── Notes Management (namespaced by space) ─────────────────────────────────
+// Notes are partitioned into subdirs under `notes/` so each space has its own
+// notebook. The special '_global' namespace holds notes taken when no space is
+// active. Legacy flat notes (notes/*.md from before this change) are migrated
+// into '_global' on boot.
 const notesDir = path.join(repoRoot, 'notes');
 
-function handleListNotes(res) {
+function _namespaceFromName(name) {
+  // Keep a reversible, filesystem-safe slug that avoids collisions with
+  // other subdirs.
+  return String(name || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || '_global';
+}
+function _resolveNotesNs(raw) {
+  const ns = _namespaceFromName(raw);
+  const dir = path.join(notesDir, ns);
+  fs.mkdirSync(dir, { recursive: true });
+  return { ns, dir };
+}
+function _pickNotesNsFromReq(source) {
+  // Preference order: explicit ns param -> active space -> '_global'
+  const explicit = source && (source.ns || source.namespace);
+  if (explicit) return _resolveNotesNs(explicit);
+  const ctx = getUiContextWithPath();
+  return _resolveNotesNs(ctx.notesNamespace || '_global');
+}
+
+// Migration: move flat notes/*.md into notes/_global/. Runs on boot AND before
+// every list/create/save so manually-dropped flat files (e.g. after a sync or
+// restore) get picked up without a restart. Idempotent: a second call is a
+// no-op when there are no flat .md files left.
+function _migrateLegacyNotes() {
   try {
-    fs.mkdirSync(notesDir, { recursive: true });
-    const files = fs.readdirSync(notesDir)
+    if (!fs.existsSync(notesDir)) return;
+    const flat = fs.readdirSync(notesDir).filter(f => f.endsWith('.md'));
+    if (!flat.length) return;
+    const { dir: globalDir } = _resolveNotesNs('_global');
+    let moved = false;
+    for (const f of flat) {
+      const src = path.join(notesDir, f);
+      const dst = path.join(globalDir, f);
+      try {
+        if (!fs.existsSync(dst)) { fs.renameSync(src, dst); moved = true; }
+        else fs.unlinkSync(src); // global already has a same-named note
+      } catch (_) {}
+    }
+    // Re-index after a silent migration so hybrid search sees the moved notes
+    // immediately (list endpoint paths don't reindex otherwise).
+    if (moved) {
+      try { hybridSearch.reindex().catch(() => {}); } catch (_) {}
+    }
+  } catch (_) {}
+}
+_migrateLegacyNotes();
+
+function handleListNotes(url, res) {
+  try {
+    // Catch any flat notes/*.md files that landed after boot (e.g. via sync).
+    _migrateLegacyNotes();
+    const { dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
+    const files = fs.readdirSync(dir)
       .filter(f => f.endsWith('.md'))
       .map(f => {
-        const st = fs.statSync(path.join(notesDir, f));
+        const st = fs.statSync(path.join(dir, f));
         return { name: f.replace('.md', ''), mtime: st.mtime };
       })
       .sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
@@ -2204,9 +2463,10 @@ function handleListNotes(res) {
 function handleReadNote(url, res) {
   const name = url.searchParams.get('name');
   if (!name) return json(res, { error: 'name required' }, 400);
-  const filePath = path.join(notesDir, name + '.md');
+  const { dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
+  const filePath = path.join(dir, name + '.md');
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
   try {
     const content = fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
     json(res, { name, content });
@@ -2216,12 +2476,13 @@ function handleReadNote(url, res) {
 }
 
 async function handleSaveNote(req, res) {
-  const { name, content } = await readBody(req);
+  const body = await readBody(req);
+  const { name, content } = body || {};
   if (!name) return json(res, { error: 'name required' }, 400);
-  const filePath = path.join(notesDir, name + '.md');
+  const { dir } = _pickNotesNsFromReq(body);
+  const filePath = path.join(dir, name + '.md');
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
-  fs.mkdirSync(notesDir, { recursive: true });
+  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
   atomicWriteSync(resolved, content || '');
   broadcast({ type: 'ui-action', action: 'refresh-notes' });
   hybridSearch.indexNote(resolved).catch(() => {});
@@ -2229,13 +2490,15 @@ async function handleSaveNote(req, res) {
 }
 
 async function handleCreateNote(req, res) {
-  const { name } = await readBody(req);
+  const body = await readBody(req);
+  const { name } = body || {};
   if (!name) return json(res, { error: 'name required' }, 400);
   const safeName = name.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
   if (!safeName) return json(res, { error: 'Invalid name' }, 400);
-  const filePath = path.join(notesDir, safeName + '.md');
+  _migrateLegacyNotes();
+  const { dir } = _pickNotesNsFromReq(body);
+  const filePath = path.join(dir, safeName + '.md');
   if (fs.existsSync(filePath)) return json(res, { error: 'Note already exists' }, 409);
-  fs.mkdirSync(notesDir, { recursive: true });
   atomicWriteSync(filePath, `# ${safeName}\n\n`);
   broadcast({ type: 'ui-action', action: 'refresh-notes' });
   json(res, { ok: true, name: safeName });
@@ -2244,26 +2507,39 @@ async function handleCreateNote(req, res) {
 function handleExportNote(url, res) {
   const name = url.searchParams.get('name');
   if (!name) return json(res, { error: 'name required' }, 400);
-  const filePath = path.join(notesDir, name + '.md');
+  const { ns, dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
+  const filePath = path.join(dir, name + '.md');
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
   if (!fs.existsSync(resolved)) return json(res, { error: 'Not found' }, 404);
-  const body = fs.readFileSync(resolved, 'utf8');
+  const bodyTxt = fs.readFileSync(resolved, 'utf8');
   const safeName = name.replace(/[\\/:*?"<>|]/g, '_');
+  // Prefix the filename with the namespace so same-named notes in different
+  // spaces don't collide when downloaded into one folder.
+  const safeNs = String(ns || '_global').replace(/[\\/:*?"<>|]/g, '_');
+  const downloadName = (safeNs === '_global' ? safeName : safeNs + '__' + safeName) + '.md';
   res.writeHead(200, {
     'Content-Type': 'text/markdown; charset=utf-8',
-    'Content-Disposition': 'attachment; filename="' + safeName + '.md"',
+    'Content-Disposition': 'attachment; filename="' + downloadName + '"',
   });
-  res.end(body);
+  res.end(bodyTxt);
 }
 
 function handleExportAllNotes(res) {
-  const payload = { _exportedAt: new Date().toISOString(), _exportedFrom: 'Symphonee', notes: {} };
+  // Export every namespace in a single payload so round-tripping via import
+  // preserves per-space organization.
+  const payload = { _exportedAt: new Date().toISOString(), _exportedFrom: 'Symphonee', namespaces: {} };
   try {
     if (fs.existsSync(notesDir)) {
-      for (const f of fs.readdirSync(notesDir)) {
-        if (!f.endsWith('.md')) continue;
-        try { payload.notes[f.replace(/\.md$/, '')] = fs.readFileSync(path.join(notesDir, f), 'utf8'); } catch (_) {}
+      for (const ns of fs.readdirSync(notesDir)) {
+        const nsDir = path.join(notesDir, ns);
+        if (!fs.statSync(nsDir).isDirectory()) continue;
+        const nsMap = {};
+        for (const f of fs.readdirSync(nsDir)) {
+          if (!f.endsWith('.md')) continue;
+          try { nsMap[f.replace(/\.md$/, '')] = fs.readFileSync(path.join(nsDir, f), 'utf8'); } catch (_) {}
+        }
+        if (Object.keys(nsMap).length) payload.namespaces[ns] = nsMap;
       }
     }
   } catch (_) {}
@@ -2276,31 +2552,49 @@ function handleExportAllNotes(res) {
 
 async function handleImportNotes(req, res) {
   const body = await readBody(req);
-  // Accept either { notes: {name: body} } (from export-all) or a flat map, or a single {name, content}.
-  let map = null;
-  if (body && body.notes && typeof body.notes === 'object') map = body.notes;
-  else if (body && body.name && typeof body.content === 'string') map = { [body.name]: body.content };
-  else if (body && typeof body === 'object' && !Array.isArray(body)) map = body;
-  if (!map) return json(res, { error: 'Invalid payload' }, 400);
+  // Accepted shapes:
+  //   { namespaces: { nsName: { noteName: content, ... }, ... } } (new export-all)
+  //   { notes: { noteName: content, ... } } (legacy export-all -> active ns)
+  //   { name, content, ns? }                 (single note)
+  //   { noteName: content, ... }             (flat map -> active ns)
+  let byNs = {};
+  if (body && body.namespaces && typeof body.namespaces === 'object') {
+    byNs = body.namespaces;
+  } else if (body && body.notes && typeof body.notes === 'object') {
+    const ns = _namespaceFromName(body.ns);
+    byNs[ns] = body.notes;
+  } else if (body && body.name && typeof body.content === 'string') {
+    const ns = _namespaceFromName(body.ns);
+    byNs[ns] = { [body.name]: body.content };
+  } else if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const ns = _namespaceFromName(body.ns);
+    const map = { ...body }; delete map.ns;
+    byNs[ns] = map;
+  }
+  if (!Object.keys(byNs).length) return json(res, { error: 'Invalid payload' }, 400);
   let written = 0, skipped = 0;
-  fs.mkdirSync(notesDir, { recursive: true });
-  for (const [name, content] of Object.entries(map)) {
-    if (typeof content !== 'string') { skipped++; continue; }
-    const safe = String(name).replace(/[\\/:*?"<>|]/g, '_');
-    const dest = path.join(notesDir, safe + '.md');
-    if (!path.resolve(dest).startsWith(path.resolve(notesDir))) { skipped++; continue; }
-    try { fs.writeFileSync(dest, content, 'utf8'); written++; } catch (_) { skipped++; }
+  for (const [nsRaw, map] of Object.entries(byNs)) {
+    const { dir } = _resolveNotesNs(nsRaw);
+    for (const [name, content] of Object.entries(map || {})) {
+      if (typeof content !== 'string') { skipped++; continue; }
+      const safe = String(name).replace(/[\\/:*?"<>|]/g, '_');
+      const dest = path.join(dir, safe + '.md');
+      if (!path.resolve(dest).startsWith(path.resolve(dir))) { skipped++; continue; }
+      try { fs.writeFileSync(dest, content, 'utf8'); written++; } catch (_) { skipped++; }
+    }
   }
   broadcast({ type: 'ui-action', action: 'refresh-notes' });
   json(res, { ok: true, written, skipped });
 }
 
 async function handleDeleteNote(req, res) {
-  const { name } = await readBody(req);
+  const body = await readBody(req);
+  const { name } = body || {};
   if (!name) return json(res, { error: 'name required' }, 400);
-  const filePath = path.join(notesDir, name + '.md');
+  const { dir } = _pickNotesNsFromReq(body);
+  const filePath = path.join(dir, name + '.md');
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
   if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
   broadcast({ type: 'ui-action', action: 'refresh-notes' });
   json(res, { ok: true });
@@ -2610,10 +2904,10 @@ hybridSearch.initialize({ notesDir, learnings: _learningsInstance })
 // ── Mount browser agent ──────────────────────────────────────────────────────
 try {
   const { mountBrowserRoutes } = require('./browser-agent');
-  mountBrowserRoutes(addRoute, json, { getConfig, repoRoot });
+  mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast });
   console.log('  Browser agent mounted (/api/browser/*)');
 } catch (e) {
-  console.log('  Browser agent skipped (playwright-core not installed)');
+  console.log('  Browser agent skipped:', e.message);
 }
 
 // ── Load plugins ─────────────────────────────────────────────────────────────
