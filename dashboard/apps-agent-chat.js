@@ -13,6 +13,7 @@
 const https = require('https');
 const memory = require('./apps-memory');
 const learning = require('./apps-learning-loop');
+const planner = require('./apps-goal-planner');
 
 const MAX_ITERATIONS = 40;
 const DEFAULT_MAX_TOKENS = 1024;
@@ -78,6 +79,21 @@ const DESKTOP_TOOLS = [
   { name: 'read_memory',
     description: 'Re-read the full memory file for the current app if the truncated system-prompt slice is not enough.',
     parameters: { type: 'object', properties: {} } },
+  { name: 'set_subgoal',
+    description: 'Add or update a subgoal on the plan. Use this to revise the plan when you discover the original decomposition was wrong. If you omit status, new subgoals start as pending. Only one subgoal can be active at a time.',
+    parameters: { type: 'object', properties: {
+      id: { type: 'string', description: 'Stable id to edit an existing subgoal. Omit to create a new one.' },
+      title: { type: 'string' },
+      completionCheck: { type: 'string', description: 'Describe what the screenshot should show when this subgoal is complete.' },
+      parentId: { type: 'string' },
+      status: { type: 'string', enum: ['pending', 'active', 'done', 'blocked', 'skipped'] }
+    }, required: ['title'] } },
+  { name: 'complete_subgoal',
+    description: 'Mark a subgoal done and promote the next pending subgoal to active. Call this only after the visual completionCheck is satisfied.',
+    parameters: { type: 'object', properties: {
+      id: { type: 'string', description: 'The subgoal id to mark done. If omitted, the currently active subgoal is used.' },
+      evidence: { type: 'string', description: 'One short sentence describing what you saw on screen that confirms completion.' }
+    } } },
   { name: 'finish',
     description: 'Stop the loop and return a final summary.',
     parameters: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
@@ -105,7 +121,7 @@ const BASE_SYSTEM_PROMPT = `You drive a Windows desktop application on the user'
 - If you cannot achieve the goal, call finish anyway and explain what blocked you.
 - Keep intermediate reasoning brief; every message you produce is shown to the user live.`;
 
-function buildSystemPrompt({ targetApp, targetTitle } = {}) {
+function buildSystemPrompt({ targetApp, targetTitle, plan } = {}) {
   let p = BASE_SYSTEM_PROMPT;
   if (targetApp || targetTitle) {
     p += `\n\n## Current target\n`;
@@ -113,6 +129,7 @@ function buildSystemPrompt({ targetApp, targetTitle } = {}) {
     if (targetTitle) p += `Window title: ${targetTitle}\n`;
   }
   if (targetApp) p += memory.buildSystemPromptAddition(targetApp);
+  if (plan) p += planner.summarizeForPrompt(plan);
   return p;
 }
 
@@ -221,7 +238,23 @@ async function httpJsonWithRetry(opts, maxRetries = 3) {
 
 function trimHistory(messages, seedCount) {
   if (messages.length <= seedCount + MAX_HISTORY_MESSAGES) return messages;
-  return [...messages.slice(0, seedCount), ...messages.slice(-MAX_HISTORY_MESSAGES)];
+  let start = messages.length - MAX_HISTORY_MESSAGES;
+  // Don't let the tail start with an orphan tool_result / tool turn whose
+  // paired tool_use got trimmed off the front. Anthropic, OpenAI, and
+  // Gemini all 400 on that. Shift the boundary forward until the first
+  // tail message is a plain user turn or a fresh assistant turn.
+  while (start < messages.length) {
+    const m = messages[start];
+    if (!m) break;
+    const isTailResult =
+      (m.role === 'tool') ||                                    // OpenAI
+      (m.role === 'user' && Array.isArray(m.content) && m.content.some(b => b && b.type === 'tool_result')) || // Anthropic
+      (m.role === 'user' && Array.isArray(m.parts) && m.parts.some(p => p && p.functionResponse));            // Gemini
+    if (!isTailResult) break;
+    start++;
+  }
+  if (start >= messages.length) return messages.slice(0, seedCount);
+  return [...messages.slice(0, seedCount), ...messages.slice(start)];
 }
 
 function shortenContent(text, n = 4000) {
@@ -581,6 +614,20 @@ async function executeTool(driver, session, name, args) {
       if (!app) throw new Error('no app identified for this session; readMemory needs an app');
       return { app: memory.normalizeApp(app), body: memory.loadMemory(app) };
     }
+    case 'set_subgoal': {
+      if (!session.plan) session.plan = planner.createEmptyPlan(session.goal);
+      const sg = planner.addSubgoal(session.plan, {
+        id: args.id, title: args.title, completionCheck: args.completionCheck,
+        parentId: args.parentId, status: args.status,
+      });
+      return { ok: true, subgoal: sg, activeId: session.plan.activeId };
+    }
+    case 'complete_subgoal': {
+      if (!session.plan) throw new Error('no plan on this session; call set_subgoal first');
+      const id = args.id || session.plan.activeId;
+      if (!id) throw new Error('no active subgoal to complete');
+      return planner.completeSubgoal(session.plan, id, args.evidence);
+    }
     case 'finish':
       return { ok: true, finished: true, summary: args.summary || '' };
     default:
@@ -605,6 +652,8 @@ function describeAction(name, args) {
     case 'declare_stuck': return `Declare stuck: ${args.reason || ''}`;
     case 'write_memory': return `Memory <- [${args.section || '?'}] ${String(args.note || '').slice(0, 60)}`;
     case 'read_memory': return 'Read memory';
+    case 'set_subgoal': return `Subgoal: ${String(args.title || '').slice(0, 60)}${args.status ? ' (' + args.status + ')' : ''}`;
+    case 'complete_subgoal': return `Complete subgoal${args.id ? ' ' + args.id : ''}${args.evidence ? ': ' + String(args.evidence).slice(0, 40) : ''}`;
     case 'finish': return `Finish: ${String(args.summary || '').slice(0, 80)}`;
     default: return name;
   }
@@ -653,7 +702,21 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
   if (session.app) {
     try { memory.bumpSession(session.app); } catch (_) {}
   }
-  const systemPrompt = buildSystemPrompt({ targetApp: session.app, targetTitle: session.title });
+
+  // Decompose the goal into subgoals. Best-effort; if decomposition fails
+  // we still run the session as a single flat goal.
+  if (!session.plan) session.plan = planner.createEmptyPlan(session.goal || task);
+  if (session.plan.subgoals.length === 0 && session.goal) {
+    try {
+      const subs = await planner.decompose({ goal: session.goal, app: session.app, providerEntry, model });
+      if (Array.isArray(subs) && subs.length) {
+        for (const s of subs) planner.addSubgoal(session.plan, { title: s.title, completionCheck: s.completionCheck });
+        emit({ kind: 'plan', subgoals: session.plan.subgoals.map(s => ({ id: s.id, title: s.title, completionCheck: s.completionCheck, status: s.status })), activeId: session.plan.activeId });
+      }
+    } catch (_) {}
+  }
+
+  const systemPrompt = buildSystemPrompt({ targetApp: session.app, targetTitle: session.title, plan: session.plan });
 
   // Reset thread state when provider changes.
   if (session.providerKind !== providerEntry.adapter.kind) {
@@ -734,6 +797,15 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
           learning.trackTry(session, tc.name, tc.args);
           const result = await executeTool(driver, session, tc.name, tc.args);
           learning.recordOutcome(session, tc.name, tc.args, true);
+          // Successful action: progress, not an attempt. Attempt counts
+          // only increment for failures (see catch branch below).
+          // Broadcast plan updates after set_subgoal / complete_subgoal.
+          if ((tc.name === 'set_subgoal' || tc.name === 'complete_subgoal') && session.plan) {
+            emit({ kind: 'plan', subgoals: session.plan.subgoals.map(s => ({ id: s.id, title: s.title, completionCheck: s.completionCheck, status: s.status, evidence: s.evidence, attempts: s.attempts })), activeId: session.plan.activeId });
+            // Reset the auto-stuck latch when a subgoal completes so the
+            // next subgoal gets its own budget.
+            if (tc.name === 'complete_subgoal') session._autoStuckFired = false;
+          }
           pairs.push({
             toolUseId: tc.id, name: tc.name,
             blocks: providerEntry.adapter.buildToolResultBlocks(tc.name, result),
@@ -762,6 +834,16 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
           pairs.push({ toolUseId: tc.id, name: tc.name, blocks: errBlock, isError: true });
           emit({ kind: 'observation', tool: tc.name, ok: false, error: e.message, code: e.code || null });
           lastActionsForObserver.push({ tool: tc.name, summary: describeAction(tc.name, tc.args), ok: false, error: e.message });
+          // Failed tool against the current subgoal counts toward its
+          // attempt budget; trip auto-stuck when exceeded.
+          if (session.plan) {
+            const bump = planner.bumpAttempt(session.plan, { failed: true });
+            if (bump.overBudget && !session._autoStuckFired) {
+              session._autoStuckFired = true;
+              stuckSignal = `${bump.attempts} failed attempts on "${bump.subgoal.title}"`;
+              emit({ kind: 'stuck', reason: stuckSignal });
+            }
+          }
         }
       }
       if (pairs.length) {
