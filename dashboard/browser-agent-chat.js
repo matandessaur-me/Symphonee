@@ -122,8 +122,17 @@ Changes made through these tools are live in the user's browser tab, exactly as 
 - When done, call finish with a short summary. If blocked (CAPTCHA, hard login wall), call finish and explain.
 - Keep reasoning brief — the user sees every tool call live.
 - Never submit payments, send messages, or create accounts without explicit user confirmation.
-- If you detect a CAPTCHA, call wait_for_user immediately.
-- Prefer DuckDuckGo (https://duckduckgo.com/?q=QUERY) over Google to avoid CAPTCHAs.`;
+
+## Recovering from tool failures (do this BEFORE wait_for_user)
+A failing tool is normal and almost never grounds for handing the task back. Work the recovery ladder before you escalate:
+1. If the error contains "No element for selector" or "No element matched" or "No element found": call wait_for(selector, timeout_ms=4000). If that succeeds, retry the original tool.
+2. If wait_for also fails, call inspect_dom or query_elements to discover what is actually on the page, then retry with the right selector / handle / fill_by_label.
+3. If the page may still be navigating, call wait_for on a known top-level element (body, main, #search, etc.) before doing anything else.
+4. Only call wait_for_user for things that genuinely need a human: CAPTCHA, MFA code, hard login wall, payment confirmation, or a permission prompt outside the page. NEVER call wait_for_user just because a selector missed once.
+5. If you've tried two recovery strategies on the same step and both failed, call finish with a short explanation — do NOT loop and do NOT punt to the user.
+
+## Search engines
+Prefer DuckDuckGo (https://duckduckgo.com/?q=QUERY) over Google to avoid CAPTCHAs. For Google Images specifically, navigate directly to https://www.google.com/search?tbm=isch&q=QUERY rather than typing into the homepage search bar — it skips the consent / cookie banner that often hides the search input.`;
 
 function buildSystemPrompt(learnings, savedAccounts) {
   let prompt = BASE_SYSTEM_PROMPT;

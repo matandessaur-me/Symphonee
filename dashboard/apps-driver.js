@@ -61,6 +61,20 @@ public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
 public static extern System.IntPtr GetForegroundWindow();
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr hInsertAfter, int x, int y, int cx, int cy, uint flags);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint lpdwProcessId);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern uint GetCurrentThreadId();
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool BringWindowToTop(System.IntPtr hWnd);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern System.IntPtr SetFocus(System.IntPtr hWnd);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern System.IntPtr GetFocus();
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
 [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
 public static extern int DwmGetWindowAttribute(System.IntPtr h, int attr, out int pvAttribute, int cb);
 [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -169,14 +183,22 @@ async function focusWindow(hwnd) {
   const w = await findWindow(hwnd);
   const script = `
 ${WIN32_TYPES}
-$h = [System.IntPtr]${w.hwnd}
-# 9 = SW_RESTORE
-[void][Sy.SyWin32]::ShowWindow($h, 9)
+Add-Type -Name SyWinZoomF -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool IsZoomed(System.IntPtr h);
+"@ -ErrorAction SilentlyContinue
+$h = [System.IntPtr]::new([int64]${w.hwnd})
+if ([Sy.SyWin32]::IsIconic($h)) { [void][Sy.SyWin32]::ShowWindow($h, 9) }
 [void][Sy.SyWin32]::SetForegroundWindow($h)
-# Pin as topmost so a stray click or an unrelated popup can't steal focus
-# and make the agent loop against a window it no longer controls.
-# HWND_TOPMOST = -1; flags: NOMOVE|NOSIZE|NOACTIVATE = 0x13
-[void][Sy.SyWin32]::SetWindowPos($h, [System.IntPtr]::new(-1), 0, 0, 0, 0, 0x13)
+# Skip the Z-order pin on maximized windows - SetWindowPos with HWND_TOPMOST
+# triggers DWM windowposchanging events that Electron (Figma, VS Code, etc.)
+# interprets as leaving maximize state, flipping fullscreen back to windowed
+# on every single action. On non-maximized windows we use HWND_TOP (0) to
+# bring-to-front without pinning always-on-top, which avoided the same side
+# effect but on a smaller set of apps.
+if (-not [Sy.SyWinZoomF]::IsZoomed($h)) {
+  [void][Sy.SyWin32]::SetWindowPos($h, [System.IntPtr]::Zero, 0, 0, 0, 0, 0x13)
+}
 `;
   await runPs(script);
   // Give Windows a beat to actually move focus.
@@ -185,27 +207,94 @@ $h = [System.IntPtr]${w.hwnd}
 }
 
 // Ensure a target window is still the foreground one. If it lost focus
-// (because a click landed outside, a notification stole it, etc.) the agent
+// (click landed outside, notification stole it, user alt-tabbed) the agent
 // would otherwise send keys and mouse events to whatever is on top --
-// which is how the stuck-loop behavior happens. Called before every action.
+// which is how Figma-style "nothing happens" loops occur.
+//
+// Windows actively blocks background processes from calling SetForegroundWindow
+// directly (the "focus stealing prevention" rule). The reliable workaround:
+// attach to the current foreground thread's input queue first, call
+// SetForegroundWindow / BringWindowToTop / SetFocus while attached, then
+// detach. We also simulate an ALT keystroke since that briefly lifts the
+// focus-lock on some Windows versions. After all that we VERIFY with
+// GetForegroundWindow and throw a typed error if the window still isn't in
+// front, so input tools abort instead of mis-routing clicks into another app.
 async function ensureForeground(hwnd) {
   const script = `
 ${WIN32_TYPES}
-$h = [System.IntPtr]${hwnd}
+Add-Type -Name SyWinZoomE -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool IsZoomed(System.IntPtr h);
+"@ -ErrorAction SilentlyContinue
+$target = [System.IntPtr]::new([int64]${hwnd})
 $fg = [Sy.SyWin32]::GetForegroundWindow()
-if ($fg -ne $h) {
-  [void][Sy.SyWin32]::ShowWindow($h, 9)
-  [void][Sy.SyWin32]::SetForegroundWindow($h)
-  [void][Sy.SyWin32]::SetWindowPos($h, [System.IntPtr]::new(-1), 0, 0, 0, 0, 0x13)
-  Write-Output 'refocused'
-} else {
-  Write-Output 'ok'
+if ($fg -eq $target) { Write-Output 'ok'; exit 0 }
+
+# Only restore when actually iconic. Calling SW_RESTORE on a maximized
+# window un-maximizes it, which every Record/Pick/Run call would trigger.
+if ([Sy.SyWin32]::IsIconic($target)) {
+  [void][Sy.SyWin32]::ShowWindow($target, 9)
 }
+
+$pid = 0
+$fgThread = [Sy.SyWin32]::GetWindowThreadProcessId($fg, [ref]$pid)
+$myThread = [Sy.SyWin32]::GetCurrentThreadId()
+$targetThread = [Sy.SyWin32]::GetWindowThreadProcessId($target, [ref]$pid)
+
+# Quick nudge: ALT keypress briefly relaxes focus-stealing prevention.
+[Sy.SyWin32]::keybd_event(0x12, 0, 0, [System.UIntPtr]::Zero)   # ALT down
+[Sy.SyWin32]::keybd_event(0x12, 0, 2, [System.UIntPtr]::Zero)   # ALT up
+
+# Attach our thread to both the foreground thread and the target thread so
+# SetForegroundWindow / BringWindowToTop / SetFocus are honored cross-process.
+$attachedFg = $false; $attachedTgt = $false
+if ($fgThread -ne 0 -and $fgThread -ne $myThread) {
+  $attachedFg = [Sy.SyWin32]::AttachThreadInput($myThread, $fgThread, $true)
+}
+if ($targetThread -ne 0 -and $targetThread -ne $myThread -and $targetThread -ne $fgThread) {
+  $attachedTgt = [Sy.SyWin32]::AttachThreadInput($myThread, $targetThread, $true)
+}
+try {
+  [void][Sy.SyWin32]::BringWindowToTop($target)
+  [void][Sy.SyWin32]::SetForegroundWindow($target)
+  [void][Sy.SyWin32]::SetFocus($target)
+  # Do NOT pin topmost on maximized windows - DWM sends a WM_WINDOWPOSCHANGING
+  # that Electron-based apps (Figma, VS Code) treat as leaving maximize state.
+  if (-not [Sy.SyWin32]::IsIconic($target)) {
+    $isMax = $false
+    try { $isMax = [Sy.SyWinZoomE]::IsZoomed($target) } catch {}
+    if (-not $isMax) {
+      [void][Sy.SyWin32]::SetWindowPos($target, [System.IntPtr]::Zero, 0, 0, 0, 0, 0x13)
+    }
+  }
+} finally {
+  if ($attachedFg)  { [void][Sy.SyWin32]::AttachThreadInput($myThread, $fgThread, $false) }
+  if ($attachedTgt) { [void][Sy.SyWin32]::AttachThreadInput($myThread, $targetThread, $false) }
+}
+
+# Verify. Give Windows a beat to finish the WM_ACTIVATE dance.
+Start-Sleep -Milliseconds 120
+$fg2 = [Sy.SyWin32]::GetForegroundWindow()
+if ($fg2 -eq $target) { Write-Output 'refocused' }
+else { Write-Output "failed:$([int64]$fg2)" }
 `;
+  let out;
   try {
-    const out = (await runPs(script, { timeoutMs: 4000 })).trim();
+    out = (await runPs(script, { timeoutMs: 6000 })).trim();
+  } catch (e) {
+    const err = new Error(`foreground enforcement failed: ${e.message}`);
+    err.code = 'focus_failed';
+    throw err;
+  }
+  if (out === 'ok' || out === 'refocused') {
     if (out === 'refocused') await new Promise(r => setTimeout(r, 80));
-  } catch (_) { /* best effort */ }
+    return;
+  }
+  if (out.startsWith('failed:')) {
+    const err = new Error(`target window is not in the foreground; another window (hwnd=${out.slice(7)}) refused to release focus. Click the target window once yourself, then retry the task.`);
+    err.code = 'focus_stolen';
+    throw err;
+  }
 }
 
 // Drop the topmost pin when a session ends so the window behaves normally
@@ -223,6 +312,119 @@ $h = [System.IntPtr]${hwnd}
 async function getWindowRect(hwnd) {
   const w = await findWindow(hwnd);
   return { ...w.rect, hwnd: w.hwnd, title: w.title, isMinimized: w.isMinimized };
+}
+
+// Resize (and optionally reposition) a top-level window. Used by the recipe
+// runner when a recipe declares a pinned window.{w,h} so scripted coordinates
+// always land on the same layout. Flags: 0x0010 SWP_NOACTIVATE | 0x0004
+// SWP_NOZORDER. If x/y omitted, keeps current origin via SWP_NOMOVE (0x0002).
+async function setWindowRect(hwnd, { x, y, w, h }) {
+  const width = Math.max(100, parseInt(w, 10) || 0);
+  const height = Math.max(100, parseInt(h, 10) || 0);
+  if (!width || !height) throw new Error('setWindowRect requires positive w,h');
+  const hasOrigin = typeof x === 'number' && typeof y === 'number';
+  const ox = hasOrigin ? parseInt(x, 10) : 0;
+  const oy = hasOrigin ? parseInt(y, 10) : 0;
+  // SWP_NOZORDER (0x0004) | SWP_NOACTIVATE (0x0010) + optionally SWP_NOMOVE (0x0002)
+  const flags = 0x0014 | (hasOrigin ? 0 : 0x0002);
+  const script = `
+${WIN32_TYPES}
+$h = [System.IntPtr]${hwnd}
+# SW_RESTORE in case the window is minimized/maximized before resizing.
+[void][Sy.SyWin32]::ShowWindow($h, 9)
+[void][Sy.SyWin32]::SetWindowPos($h, [System.IntPtr]::Zero, ${ox}, ${oy}, ${width}, ${height}, ${flags})
+`;
+  await runPs(script, { timeoutMs: 4000 });
+}
+
+// UIA element lookup. Spawns scripts/uia-find.ps1 with a JSON selector and
+// resolves to { x, y } (window-relative, pointing at the element's center)
+// or null when the selector doesn't match any visible element.
+async function findUIAElement(hwnd, selector) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-find.ps1');
+  const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
+  // Pass via -EncodedCommand-style inline base64 to dodge PS quoting hell
+  // when selectors contain quotes, slashes, or unicode.
+  const script = `
+$sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))
+& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -SelectorJson $sel
+`;
+  const raw = await runPs(script, { timeoutMs: 10000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { throw new Error('uia-find returned non-JSON: ' + line.slice(0, 200)); }
+  if (!parsed.hit) return null;
+  return { x: parsed.x, y: parsed.y, meta: { name: parsed.name, type: parsed.type, id: parsed.id, w: parsed.w, h: parsed.h, degraded: parsed.degraded || null } };
+}
+
+// Snapshot the target window's UIA tree. Returns { nodes, truncated } or
+// throws if UIA is unavailable. Nodes are flat, each carrying a depth for
+// indent rendering.
+async function uiaTree(hwnd, { maxNodes = 400 } = {}) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-tree.ps1');
+  const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -MaxNodes ${Number(maxNodes)}`;
+  const raw = await runPs(script, { timeoutMs: 20000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { throw new Error('uia-tree returned non-JSON: ' + line.slice(0, 200)); }
+  if (!parsed.ok) throw new Error(parsed.reason || 'uia-tree failed');
+  return { nodes: parsed.nodes || [], truncated: !!parsed.truncated };
+}
+
+// Invoke-pattern shortcut: run the element's default action directly via
+// UIA instead of simulating a click. Returns { ok, pattern } on success or
+// { ok: false } so the caller can fall back to findUIAElement + click.
+async function invokeUIAElement(hwnd, selector) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-invoke.ps1');
+  const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
+  const script = `
+$sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))
+& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -SelectorJson $sel
+`;
+  const raw = await runPs(script, { timeoutMs: 10000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { return { ok: false, reason: 'non-JSON' }; }
+  if (!parsed.hit) return { ok: false, reason: parsed.reason };
+  return { ok: true, pattern: parsed.pattern, name: parsed.name, type: parsed.type };
+}
+
+// Launches the interactive element picker in a child process. The caller
+// (apps-agent.js) streams the events so the UI can show hover feedback.
+function spawnUIAPicker(hwnd, { timeoutSeconds = 120 } = {}) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-pick.ps1');
+  return spawn('powershell.exe', [
+    '-ExecutionPolicy', 'Bypass',
+    '-NoProfile',
+    '-File', path,
+    '-Hwnd', String(hwnd),
+    '-TimeoutSeconds', String(timeoutSeconds),
+  ], { windowsHide: true });
+}
+
+// Maximize a top-level window. SW_MAXIMIZE = 3.
+async function maximizeWindow(hwnd) {
+  // IsZoomed returns true when the window is already maximized. Calling
+  // ShowWindow(SW_MAXIMIZE=3) again is a no-op at the Win32 API level, but
+  // some apps (Figma/Electron, a handful of Win32 titles) translate a
+  // second SC_MAXIMIZE into a TOGGLE and restore to windowed. Guarded so
+  // callers can safely invoke "ensure maximized" without flickering.
+  const script = `
+${WIN32_TYPES}
+Add-Type -Name SyWinZoom -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool IsZoomed(System.IntPtr h);
+"@ -ErrorAction SilentlyContinue
+$h = [System.IntPtr]::new([int64]${hwnd})
+if (-not [Sy.SyWinZoom]::IsZoomed($h)) {
+  [void][Sy.SyWin32]::ShowWindow($h, 3)
+  Write-Output 'maximized'
+} else {
+  Write-Output 'already-maximized'
+}
+`;
+  const out = await runPs(script, { timeoutMs: 4000 });
+  return { alreadyMaximized: String(out || '').trim() === 'already-maximized' };
 }
 
 function translate({ x, y, rect }) {
@@ -413,11 +615,35 @@ async function drag(fromX, fromY, toX, toY, { hwnd } = {}) {
     from = translate({ x: fromX, y: fromY, rect: w.rect });
     to = translate({ x: toX, y: toY, rect: w.rect });
   }
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // Canvas-heavy apps (Figma, Illustrator, game editors) need the cursor to
+  // physically move through intermediate positions while the button is held.
+  // A plain setPosition -> press -> jump -> release gets consumed as a
+  // single CLICK, which is how a drag-to-draw becomes "shape dumped at click
+  // point". Fix: drive the mouse through ~24 interpolated waypoints with
+  // settle pauses on both edges so the target app's drag handler ticks.
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  const steps = Math.max(10, Math.min(40, Math.round(distance / 20)));
+  const totalMs = Math.max(250, Math.min(900, Math.round(distance * 0.6)));
+  const stepDelay = Math.max(8, Math.round(totalMs / steps));
   await n.mouse.setPosition(new n.Point(from.x, from.y));
+  await sleep(80);
   await n.mouse.pressButton(n.Button.LEFT);
-  await n.mouse.move(n.straightTo(new n.Point(to.x, to.y)));
+  await sleep(70);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    // ease-out cubic so movement starts fast and decelerates into the end
+    // position - feels natural and gives the app more samples near the drop.
+    const e = 1 - Math.pow(1 - t, 3);
+    const x = Math.round(from.x + (to.x - from.x) * e);
+    const y = Math.round(from.y + (to.y - from.y) * e);
+    await n.mouse.setPosition(new n.Point(x, y));
+    await sleep(stepDelay);
+  }
+  await sleep(60);
   await n.mouse.releaseButton(n.Button.LEFT);
-  return { ok: true, from, to };
+  await sleep(40);
+  return { ok: true, from, to, steps };
 }
 
 async function scroll(dx, dy, { hwnd } = {}) {
@@ -752,6 +978,12 @@ module.exports = {
   ensureForeground,
   unpinTopmost,
   getWindowRect,
+  setWindowRect,
+  maximizeWindow,
+  findUIAElement,
+  invokeUIAElement,
+  uiaTree,
+  spawnUIAPicker,
   screenshotWindow,
   verifyStableRect,
   click,

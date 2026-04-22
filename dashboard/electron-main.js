@@ -71,8 +71,35 @@ function _waitForLoad(wc, timeoutMs = 30000) {
   });
 }
 
+// Wrap every script in try/catch so we get the REAL error string back, not
+// Electron's generic "Script failed to execute, this normally means an error
+// was thrown" rejection. The wrapper returns { __syOk:true, value } on success
+// and { __syOk:false, error, stack } on a thrown error; we unwrap on this side
+// and re-throw with the real message so the agent loop sees something useful.
+//
+// Every existing caller passes an EXPRESSION (an IIFE, `new Promise(...)`, or
+// a plain identifier), optionally with a trailing semicolon. We strip the
+// trailing semicolon and `await` the expression so sync values, thenables,
+// and async IIFEs all flow through the same path.
 async function _exec(wc, code) {
-  return wc.executeJavaScript(code, true);
+  const expr = String(code).trim().replace(/;+\s*$/, '');
+  const wrapped =
+    `(async function(){
+      try {
+        var __sy_v = await (${expr});
+        return { __syOk: true, value: __sy_v };
+      } catch (e) {
+        return { __syOk: false, error: (e && e.message) ? e.message : String(e), stack: e && e.stack ? String(e.stack) : null };
+      }
+    })()`;
+  const result = await wc.executeJavaScript(wrapped, true);
+  if (result && typeof result === 'object' && '__syOk' in result) {
+    if (result.__syOk) return result.value;
+    const err = new Error(result.error || 'script error');
+    if (result.stack) err.stack = result.stack;
+    throw err;
+  }
+  return result;
 }
 
 const _debugState = new WeakMap();
@@ -543,18 +570,32 @@ const internalWebviewDriver = {
 
   async fill(selector, value) {
     const wc = await _ensureBrowserTab();
-    const js = `(function(){
-      var el = document.querySelector(${JSON.stringify(selector)});
-      if (!el) throw new Error('No element for selector: ' + ${JSON.stringify(selector)});
-      el.focus();
+    // Poll for up to 2s so a still-rendering input (e.g. SPA / Google Images)
+    // doesn't fail the call outright. The agent already has wait_for, but
+    // 9 times out of 10 the field is one paint away and a tiny wait is enough.
+    const js = `(async function(){
+      var sel = ${JSON.stringify(selector)};
+      var el = null;
+      var deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        try { el = document.querySelector(sel); } catch (e) {
+          throw new Error('Invalid CSS selector: ' + sel);
+        }
+        if (el) break;
+        await new Promise(function(r){ setTimeout(r, 50); });
+      }
+      if (!el) throw new Error('No element for selector: ' + sel);
+      try { el.scrollIntoView({ block: 'center' }); } catch(_){}
+      try { el.focus(); } catch(_){}
       var v = ${JSON.stringify(String(value))};
       var proto = Object.getPrototypeOf(el);
-      var setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+      var desc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+      var setter = desc && desc.set;
       if (setter) setter.call(el, v); else el.value = v;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
       return true;
-    })();`;
+    })()`;
     await _exec(wc, js);
   },
 

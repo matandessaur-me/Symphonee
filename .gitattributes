@@ -1,0 +1,6 @@
+# Normalize line endings so Windows checkouts don't spam
+# "LF will be replaced by CRLF" warnings on every commit.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf

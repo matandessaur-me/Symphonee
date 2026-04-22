@@ -11,6 +11,12 @@ dashboard/plugins/*
 !dashboard/plugins/sdk/
 dashboard/app-memory/*
 !dashboard/app-memory/README.md
+dashboard/app-recipes/*
+!dashboard/app-recipes/README.md
+dashboard/app-recipe-history/*
+!dashboard/app-recipe-history/README.md
+dashboard/app-recipe-tests/*
+!dashboard/app-recipe-tests/README.md
 notes/
 .ai-workspace/
 .claude/
