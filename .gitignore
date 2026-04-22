@@ -8,6 +8,8 @@ config/plugin-configs-preserved/
 config/uninstalled-plugins.json
 dashboard/plugins/*
 !dashboard/plugins/sdk/
+dashboard/app-memory/*
+!dashboard/app-memory/README.md
 notes/
 .ai-workspace/
 .claude/

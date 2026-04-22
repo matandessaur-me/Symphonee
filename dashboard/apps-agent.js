@@ -11,6 +11,7 @@
 
 const driver = require('./apps-driver');
 const chat = require('./apps-agent-chat');
+const memory = require('./apps-memory');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -134,6 +135,31 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
       broadcast({ type: 'apps-agent-step', sessionId: '*', kind: 'panic', at: Date.now() });
     }
     json(res, { ok: true });
+  });
+
+  addRoute('GET', '/api/apps/memory', async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const app = url.searchParams.get('app');
+    if (!app) return json(res, { error: 'app query param required' }, 400);
+    json(res, { ok: true, app: memory.normalizeApp(app), body: memory.loadMemory(app) });
+  });
+
+  addRoute('POST', '/api/apps/memory', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const app = String(body.app || '').trim();
+    const section = String(body.section || '').trim();
+    const bodyText = String(body.body || '').trim();
+    const mode = body.mode === 'replace' ? 'replace' : 'append';
+    if (!app || !section || !bodyText) return json(res, { error: 'app, section, body required' }, 400);
+    try {
+      const r = mode === 'replace'
+        ? memory.replaceSection(app, section, bodyText)
+        : memory.appendSection(app, section, bodyText);
+      json(res, r);
+    } catch (e) {
+      json(res, { error: e.message, code: e.code || null }, 400);
+    }
   });
 
   addRoute('GET', '/api/apps/status', async (req, res) => {

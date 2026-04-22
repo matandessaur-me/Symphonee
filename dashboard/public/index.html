@@ -812,6 +812,13 @@
     .apps-log-entry.stuck { color: var(--yellow, #e5c07b); background: color-mix(in srgb, var(--yellow, #e5c07b) 10%, transparent); }
     .apps-log-entry.done { color: var(--green, #98c379); background: color-mix(in srgb, var(--green, #98c379) 10%, transparent); font-weight: 600; }
     .apps-log-entry.error { color: var(--red, #e06c75); background: color-mix(in srgb, var(--red, #e06c75) 10%, transparent); }
+    .apps-log-entry.memory {
+      color: var(--text);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border-left: 2px solid var(--accent);
+      padding-left: 10px;
+    }
+    .apps-log-entry.memory .apps-log-kind { color: var(--accent); }
     .apps-log-entry pre { white-space: pre-wrap; margin: 2px 0 0; font-size: 11px; color: var(--subtext0); }
 
     /* ── In-app browser tab ───────────────────────────────────────────── */
@@ -13523,7 +13530,9 @@ function handleAppsAgentStep(msg) {
   if (kind === 'action') {
     _appsState.rationaleEl = null;
     _appsState.lastRationale = null;
-    _appsAppendLog({ kind: 'action', text: msg.summary || msg.tool, klass: 'action' });
+    var klass = 'action';
+    if (msg.tool === 'write_memory') klass = 'memory';
+    _appsAppendLog({ kind: msg.tool === 'write_memory' ? 'memory' : 'action', text: msg.summary || msg.tool, klass: klass });
     return;
   }
   if (kind === 'screenshot') {

@@ -11,6 +11,7 @@
  */
 
 const https = require('https');
+const memory = require('./apps-memory');
 
 const MAX_ITERATIONS = 40;
 const DEFAULT_MAX_TOKENS = 1024;
@@ -67,6 +68,15 @@ const DESKTOP_TOOLS = [
   { name: 'declare_stuck',
     description: 'Call this if you have tried several approaches without progress and need to pause for research or user input. Include a short reason.',
     parameters: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] } },
+  { name: 'write_memory',
+    description: 'Append a short, durable note (<= 2000 bytes) about the current app under a named section (e.g. "UI map", "Keybindings that work", "Known failure modes", "Successful workflows", "Calibration"). Use this to persist anything future sessions on this app would benefit from knowing. Do not dump the screen here; write in terse, decision-useful bullets.',
+    parameters: { type: 'object', properties: {
+      section: { type: 'string' },
+      note: { type: 'string' }
+    }, required: ['section', 'note'] } },
+  { name: 'read_memory',
+    description: 'Re-read the full memory file for the current app if the truncated system-prompt slice is not enough.',
+    parameters: { type: 'object', properties: {} } },
   { name: 'finish',
     description: 'Stop the loop and return a final summary.',
     parameters: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
@@ -101,6 +111,7 @@ function buildSystemPrompt({ targetApp, targetTitle } = {}) {
     if (targetApp) p += `App: ${targetApp}\n`;
     if (targetTitle) p += `Window title: ${targetTitle}\n`;
   }
+  if (targetApp) p += memory.buildSystemPromptAddition(targetApp);
   return p;
 }
 
@@ -559,6 +570,16 @@ async function executeTool(driver, session, name, args) {
       return await driver.calibrateMouseLook({ hwnd, testDeltaPx: args.testDeltaPx });
     case 'declare_stuck':
       return { ok: true, stuck: true, reason: args.reason || '' };
+    case 'write_memory': {
+      const app = session.app;
+      if (!app) throw new Error('no app identified for this session; writeMemory needs an app');
+      return memory.appendSection(app, String(args.section || '').trim(), String(args.note || '').trim());
+    }
+    case 'read_memory': {
+      const app = session.app;
+      if (!app) throw new Error('no app identified for this session; readMemory needs an app');
+      return { app: memory.normalizeApp(app), body: memory.loadMemory(app) };
+    }
     case 'finish':
       return { ok: true, finished: true, summary: args.summary || '' };
     default:
@@ -581,6 +602,8 @@ function describeAction(name, args) {
     case 'wait_ms': return `Wait ${args.ms}ms`;
     case 'calibrate_mouse_look': return `Calibrate mouse look (${args.testDeltaPx || 200}px)`;
     case 'declare_stuck': return `Declare stuck: ${args.reason || ''}`;
+    case 'write_memory': return `Memory <- [${args.section || '?'}] ${String(args.note || '').slice(0, 60)}`;
+    case 'read_memory': return 'Read memory';
     case 'finish': return `Finish: ${String(args.summary || '').slice(0, 80)}`;
     default: return name;
   }
@@ -626,6 +649,9 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
   };
   emit({ kind: 'provider', provider: providerEntry.adapter.kind, label: providerEntry.adapter.label });
 
+  if (session.app) {
+    try { memory.bumpSession(session.app); } catch (_) {}
+  }
   const systemPrompt = buildSystemPrompt({ targetApp: session.app, targetTitle: session.title });
 
   // Reset thread state when provider changes.
