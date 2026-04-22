@@ -842,22 +842,36 @@
     }
     .apps-main .apps-viewport-wrap {
       background: var(--bg); display: flex; align-items: center; justify-content: center;
-      padding: 12px; min-height: 0; flex: 0 0 auto;
+      padding: 12px; min-height: 140px;
+      /* Take the remaining vertical space, shrinking first when the window
+         is short. This is what keeps the plan + chat below from being
+         pushed off-screen on laptop displays. */
+      flex: 1 1 0;
+      overflow: hidden;
     }
     .apps-main .apps-viewport {
-      width: 100%;
+      max-width: 100%; max-height: 100%;
       aspect-ratio: 16 / 9;
-      max-height: calc(100vh - 360px);
-      /* Keep 16:9 when height is the binding dimension. */
-      max-width: min(100%, calc((100vh - 360px) * (16 / 9)));
       border-radius: 6px; border: 1px solid var(--surface1);
     }
     .apps-bottom {
-      flex: 1; min-height: 220px; display: grid;
-      grid-template-columns: minmax(220px, 1fr) minmax(320px, 1.5fr);
+      /* Always-visible plan + chat. Fixed share of the pane height, with a
+         hard floor so the composer never gets squashed and a ceiling so it
+         doesn't dominate tall monitors. */
+      flex: 0 0 clamp(260px, 42%, 460px);
+      display: grid;
+      grid-template-columns: minmax(200px, 1fr) minmax(300px, 1.5fr);
       overflow: hidden;
       border-top: 1px solid var(--surface2);
       gap: 0;
+    }
+    @media (max-height: 720px) {
+      .apps-bottom { flex-basis: clamp(240px, 48%, 400px); }
+      .apps-main .apps-viewport-wrap { padding: 6px; min-height: 120px; }
+    }
+    @media (max-height: 560px) {
+      .apps-bottom { flex-basis: 240px; }
+      .apps-main .apps-viewport-wrap { min-height: 100px; }
     }
     .apps-bottom .apps-log {
       border-left: 2px solid var(--surface2);
