@@ -14,6 +14,15 @@ const https = require('https');
 const memory = require('./apps-memory');
 const learning = require('./apps-learning-loop');
 const planner = require('./apps-goal-planner');
+const { diffFrames } = require('./apps-frame-diff');
+
+// "Live view" capture: when the model calls screenshot after a pixel-level
+// input tool ran, poll until the frame actually differs from the one we last
+// showed, or until the wait budget is exhausted. Returning immediately on the
+// first delta makes the loop feel live without streaming video, and a
+// 'changed: false' readout tells the model its action was a no-op.
+const LIVE_POLL_INTERVAL_MS = 150;
+const LIVE_POLL_MAX_WAIT_MS = 1500;
 
 // Shared keep-alive agent. agent:false opens a fresh TCP+TLS handshake per
 // request, which on Windows occasionally surfaces a spurious
@@ -359,6 +368,15 @@ function shortenContent(text, n = 4000) {
   return s.length <= n ? s : s.slice(0, n) + `\n[truncated ${s.length - n} chars]`;
 }
 
+function formatChangeNote(shot) {
+  if (!shot || shot.changed === undefined) return '';
+  if (shot.changed === false) {
+    return ` No visible change since last screenshot (polled ${shot.waitedMs || 0}ms). Your last action may have had no effect.`;
+  }
+  if (shot.waitedMs) return ` Change detected after ${shot.waitedMs}ms.`;
+  return '';
+}
+
 // ---- Provider adapters ----
 
 function makeAnthropicAdapter() {
@@ -370,9 +388,10 @@ function makeAnthropicAdapter() {
     buildToolResultBlocks(name, result) {
       if (name === 'screenshot' && result && result.base64) {
         const rectNote = result.rect ? `Window rect: x=${result.rect.x} y=${result.rect.y} w=${result.rect.w} h=${result.rect.h}` : '';
+        const changeNote = formatChangeNote(result);
         return [
           { type: 'image', source: { type: 'base64', media_type: result.mimeType || 'image/jpeg', data: result.base64 } },
-          { type: 'text', text: `Screenshot ${result.width}x${result.height}. ${rectNote}` },
+          { type: 'text', text: `Screenshot ${result.width}x${result.height}. ${rectNote}${changeNote}` },
         ];
       }
       if (name === 'list_windows' && Array.isArray(result)) {
@@ -457,7 +476,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
       if (name === 'screenshot' && result && result.base64) {
         // String tool-result; actual image is attached as a separate user
         // message via appendVision below.
-        return `Screenshot ${result.width}x${result.height} captured. Rect x=${result.rect && result.rect.x} y=${result.rect && result.rect.y} w=${result.rect && result.rect.w} h=${result.rect && result.rect.h}.`;
+        return `Screenshot ${result.width}x${result.height} captured. Rect x=${result.rect && result.rect.x} y=${result.rect && result.rect.y} w=${result.rect && result.rect.w} h=${result.rect && result.rect.h}.${formatChangeNote(result)}`;
       }
       if (name === 'list_windows' && Array.isArray(result)) {
         return shortenContent(JSON.stringify(result, null, 2), 6000);
@@ -546,7 +565,14 @@ function makeGeminiAdapter() {
     initMessages(task) { return [{ role: 'user', parts: [{ text: task }] }]; },
     buildToolResultBlocks(name, result) {
       if (name === 'screenshot' && result && result.base64) {
-        return { ok: true, width: result.width, height: result.height, rect: result.rect };
+        return {
+          ok: true,
+          width: result.width,
+          height: result.height,
+          rect: result.rect,
+          changed: result.changed,
+          waitedMs: result.waitedMs,
+        };
       }
       if (name === 'list_windows' && Array.isArray(result)) return { windows: result };
       if (typeof result === 'string') return { text: result };
@@ -660,13 +686,32 @@ async function executeTool(driver, session, name, args) {
   const hwnd = session.hwnd;
   if (INPUT_TOOLS.has(name) && hwnd != null && typeof driver.ensureForeground === 'function') {
     await driver.ensureForeground(hwnd);
+    session._pendingChange = true;
   }
   switch (name) {
     case 'screenshot':
       if (hwnd == null) throw new Error('no target window focused');
       {
-        const shot = await driver.screenshotWindow(hwnd, { format: 'jpeg', quality: 60 });
+        const started = Date.now();
+        let shot = await driver.screenshotWindow(hwnd, { format: 'jpeg', quality: 60 });
+        // Only poll for a real delta when the model just issued an input tool.
+        // Back-to-back screenshots (no action between) return immediately.
+        if (session._pendingChange && session.lastShotBase64 && shot && shot.base64) {
+          let diff = await diffFrames(session.lastShotBase64, shot.base64);
+          while (!diff.changed && !session.stopped && (Date.now() - started) < LIVE_POLL_MAX_WAIT_MS) {
+            await new Promise(r => setTimeout(r, LIVE_POLL_INTERVAL_MS));
+            const next = await driver.screenshotWindow(hwnd, { format: 'jpeg', quality: 60 });
+            if (!next || !next.base64) break;
+            shot = next;
+            diff = await diffFrames(session.lastShotBase64, shot.base64);
+          }
+          shot.changed = diff.changed;
+          shot.diffScore = diff.score;
+          shot.waitedMs = Date.now() - started;
+        }
         if (shot && shot.rect) session.lastShotRect = shot.rect;
+        if (shot && shot.base64) session.lastShotBase64 = shot.base64;
+        session._pendingChange = false;
         return shot;
       }
     case 'list_windows':
@@ -994,7 +1039,17 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
           // Broadcast screenshots so the UI can show the live view even
           // when the tool result itself is consumed by the model.
           if (tc.name === 'screenshot' && result && result.base64) {
-            emit({ kind: 'screenshot', base64: result.base64, mimeType: result.mimeType || 'image/jpeg', width: result.width, height: result.height, rect: result.rect });
+            emit({
+              kind: 'screenshot',
+              base64: result.base64,
+              mimeType: result.mimeType || 'image/jpeg',
+              width: result.width,
+              height: result.height,
+              rect: result.rect,
+              changed: result.changed,
+              diffScore: result.diffScore,
+              waitedMs: result.waitedMs,
+            });
             learning.noteScreenshot(session, result);
           }
           learning.noteAction(session, tc.name);

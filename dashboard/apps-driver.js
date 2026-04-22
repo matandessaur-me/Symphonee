@@ -743,6 +743,44 @@ function stop() {
 function isStopped() { return _stopped; }
 function resetStopped() { _stopped = false; }
 
+// Continuous JPEG capture pump used by streaming providers (Gemini Live,
+// OpenAI Realtime). Fires onFrame(shot) where shot matches screenshotWindow's
+// return shape. Captures never overlap: we wait for the previous one to
+// settle before scheduling the next tick. Returns { stop } to tear down.
+function startCapturePump(hwnd, onFrame, opts = {}) {
+  const intervalMs = Math.max(100, opts.intervalMs | 0 || 500);
+  const quality = Math.max(1, Math.min(100, opts.quality | 0 || 45));
+  const format = opts.format === 'png' ? 'png' : 'jpeg';
+  let stopped = false;
+  let timer = null;
+  let inFlight = false;
+  async function tick() {
+    if (stopped) return;
+    if (inFlight) { timer = setTimeout(tick, intervalMs); return; }
+    inFlight = true;
+    try {
+      const shot = await screenshotWindow(hwnd, { format, quality });
+      if (!stopped && shot) {
+        try { onFrame(shot); } catch (_) {}
+      }
+    } catch (_) {
+      // Swallow per-frame errors; the pump keeps going. Upstream sees
+      // missing frames as gaps rather than a crashed session.
+    } finally {
+      inFlight = false;
+      if (!stopped) timer = setTimeout(tick, intervalMs);
+    }
+  }
+  tick();
+  return {
+    stop() {
+      stopped = true;
+      if (timer) { clearTimeout(timer); timer = null; }
+    },
+    get intervalMs() { return intervalMs; },
+  };
+}
+
 module.exports = {
   listWindows,
   listInstalledApps,
@@ -765,6 +803,7 @@ module.exports = {
   stop,
   isStopped,
   resetStopped,
+  startCapturePump,
   // Exposed for tests / advanced callers:
   _runPs: runPs,
   _parseKeyCombo: parseKeyCombo
