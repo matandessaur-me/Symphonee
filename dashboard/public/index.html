@@ -3314,6 +3314,24 @@
       padding: 4px; font: 12px var(--font-ui);
     }
     .mention-menu.open { display: block; animation: cmdPalettePop 0.14s ease-out; }
+    /* When anchored to the command palette, drop the floating-panel look
+       and let the menu read as a continuation of the palette frame. */
+    .mention-menu.in-palette {
+      min-width: 0; max-width: none;
+      background: var(--surface0);
+      border: 1px solid var(--surface2);
+      border-top: none;
+      border-radius: 0 0 var(--radius) var(--radius);
+      box-shadow: 0 14px 28px rgba(0,0,0,0.45);
+      padding: 6px;
+      animation: none;
+    }
+    .mention-menu.in-palette .mention-item { padding: 8px 12px; font-size: 12px; }
+    /* Hide the palette result list while the mention menu is acting as
+       the active suggestion surface, so users don't see the contradictory
+       "No matching commands" row below it. */
+    .cmd-palette.mention-open .cmd-palette-list,
+    .cmd-palette.mention-open #cmdPaletteCmdBadge { display: none !important; }
     .mention-item {
       display: flex; align-items: center; gap: 8px;
       padding: 6px 10px; border-radius: 5px; cursor: pointer;
@@ -12459,6 +12477,9 @@ function attachMentions(inputEl) {
 
   const close = () => {
     menu.classList.remove('open');
+    menu.classList.remove('in-palette');
+    const palette = inputEl.id === 'cmdPaletteInput' ? inputEl.closest('.cmd-palette') : null;
+    if (palette) palette.classList.remove('mention-open');
     anchorStart = -1;
     items = [];
   };
@@ -12471,10 +12492,28 @@ function attachMentions(inputEl) {
     return { start: caret - m[0].length, query: m[1] };
   };
   const positionMenu = () => {
+    // Special-case the command palette: anchor to the palette frame so the
+    // menu feels like a native part of the palette (same width, flush with
+    // the input) instead of a detached panel floating above it.
+    const palette = inputEl.id === 'cmdPaletteInput' ? inputEl.closest('.cmd-palette') : null;
+    if (palette) {
+      const pr = palette.getBoundingClientRect();
+      const ir = inputEl.getBoundingClientRect();
+      menu.style.left = pr.left + 'px';
+      menu.style.top = (ir.bottom) + 'px';
+      menu.style.width = pr.width + 'px';
+      menu.style.minWidth = '';
+      menu.style.maxWidth = '';
+      menu.style.transform = '';
+      menu.classList.add('in-palette');
+      return;
+    }
     const rect = inputEl.getBoundingClientRect();
     menu.style.left = rect.left + 'px';
     menu.style.top = (rect.top - 4) + 'px';
+    menu.style.width = '';
     menu.style.transform = 'translateY(-100%)';
+    menu.classList.remove('in-palette');
   };
   const render = () => {
     menu.innerHTML = items.map((it, i) =>
@@ -12521,6 +12560,8 @@ function attachMentions(inputEl) {
     activeIdx = 0;
     positionMenu();
     menu.classList.add('open');
+    const palette = inputEl.id === 'cmdPaletteInput' ? inputEl.closest('.cmd-palette') : null;
+    if (palette) palette.classList.add('mention-open');
     render();
   };
   inputEl.addEventListener('input', refresh);
