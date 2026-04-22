@@ -59,14 +59,27 @@ const ALLOWED_VERBS = new Set([
   'REPEAT', 'ENDREPEAT',
 ]);
 
+const SAFE_ID_RE = /^[a-zA-Z][\w-]{0,63}$/;
+const MAX_REPEAT = 1000;
+
 function _validateStep(raw) {
   if (!raw || typeof raw !== 'object') throw new Error('step must be an object');
   const verb = String(raw.verb || '').trim().toUpperCase();
   if (!ALLOWED_VERBS.has(verb)) throw new Error(`unknown verb "${raw.verb}". Allowed: ${[...ALLOWED_VERBS].join(', ')}.`);
-  const step = { id: String(raw.id || _stepId()), verb };
+  // Honour caller-supplied step ids only if they are safe for HTML attribute
+  // interpolation. Otherwise mint a fresh id. Prevents stored XSS through
+  // recipe imports.
+  const safeId = SAFE_ID_RE.test(String(raw.id || '')) ? String(raw.id) : _stepId();
+  const step = { id: safeId, verb };
   if (raw.target != null) step.target = String(raw.target).slice(0, 500);
   if (raw.text != null) step.text = String(raw.text).slice(0, 2000);
   if (raw.notes != null) step.notes = String(raw.notes).slice(0, 500);
+  // Cap REPEAT counts at validation time so a hostile or AI-generated recipe
+  // can't pin the runner with REPEAT 1000000000.
+  if (verb === 'REPEAT' && step.target) {
+    const n = parseInt(step.target, 10);
+    if (Number.isFinite(n) && n > MAX_REPEAT) step.target = String(MAX_REPEAT);
+  }
   return step;
 }
 
@@ -123,7 +136,9 @@ function saveRecipe(app, recipe) {
   const verify = _validateVerify(recipe.verify);
   const now = new Date().toISOString();
   const data = _load(app);
-  const id = recipe.id || _recipeId();
+  // Same id-safety rule as steps: only honour caller-supplied ids that are
+  // safe for attribute interpolation.
+  const id = SAFE_ID_RE.test(String(recipe.id || '')) ? String(recipe.id) : _recipeId();
   const existing = data.recipes.find(x => x.id === id);
   const record = {
     id,
@@ -286,7 +301,7 @@ function saveTest(app, raw) {
   const v = _validateTest(raw);
   const data = _loadTests(app);
   const now = new Date().toISOString();
-  const id = raw.id || ('t_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6));
+  const id = SAFE_ID_RE.test(String(raw.id || '')) ? String(raw.id) : ('t_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6));
   const existing = data.tests.find(t => t.id === id);
   const record = { id, ...v, createdAt: existing ? existing.createdAt : now, updatedAt: now };
   if (existing) {

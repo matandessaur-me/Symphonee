@@ -11407,7 +11407,13 @@ function switchTab(tab, preserveSearch) {
   } else {
     _hideAutomationSubBar();
   }
-  try { _pushFocus({ activeTab: tab }); } catch (_) {}
+  try {
+    // Record the underlying sub-tab too so consumers of activeTab can
+    // still distinguish Apps vs Browser.
+    const focus = { activeTab: tab };
+    if (tab === 'automation') focus.activeAutomationSubTab = panelTab;
+    _pushFocus(focus);
+  } catch (_) {}
   document.querySelectorAll('.tab-btn').forEach(el => {
     var isActive = el.dataset.tab === tab;
     el.classList.toggle('active', isActive);
@@ -14400,7 +14406,7 @@ function _appsRenderAutomationsList() {
     const active = _appsAutomations.current && _appsAutomations.current.id === r.id;
     const selected = _appsState.selectedRecipeId === r.id;
     const stepCount = (r.steps || []).length;
-    return `<div class="apps-automation-row" data-id="${r.id}" onclick="appsAutomationsSelect('${r.id}')" style="cursor:pointer;padding:7px 9px;border-radius:5px;border:1px solid ${active ? 'var(--accent)' : 'transparent'};background:${active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'};display:flex;flex-direction:column;gap:2px;">
+    return `<div class="apps-automation-row" data-id="${_appsEscape(r.id)}" onclick="appsAutomationsSelect('${_appsEscape(r.id)}')" style="cursor:pointer;padding:7px 9px;border-radius:5px;border:1px solid ${active ? 'var(--accent)' : 'transparent'};background:${active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'};display:flex;flex-direction:column;gap:2px;">
       <div style="display:flex;align-items:center;gap:6px;font:500 12px var(--font-ui);color:var(--text);">
         ${selected ? '<i data-lucide="check-circle-2" style="width:12px;height:12px;color:var(--accent);"></i>' : ''}
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_appsEscape(r.name)}</span>
@@ -14754,7 +14760,7 @@ function _appsRenderTestsList() {
   const rows = tests.map(t => {
     const rec = recipes.find(r => r.id === t.macro);
     const active = _appsAutomations.currentTest && _appsAutomations.currentTest.id === t.id;
-    return `<div onclick="appsTestSelect('${t.id}')" style="cursor:pointer;padding:7px 9px;border-radius:5px;border:1px solid ${active ? 'var(--accent)' : 'transparent'};background:${active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'};display:flex;flex-direction:column;gap:2px;">
+    return `<div onclick="appsTestSelect('${_appsEscape(t.id)}')" style="cursor:pointer;padding:7px 9px;border-radius:5px;border:1px solid ${active ? 'var(--accent)' : 'transparent'};background:${active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'};display:flex;flex-direction:column;gap:2px;">
       <div style="font:500 12px var(--font-ui);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_appsEscape(t.name)}</div>
       <div style="font:10px var(--font-ui);color:var(--subtext0);">macro: ${_appsEscape(rec ? rec.name : '(missing)')}</div>
     </div>`;

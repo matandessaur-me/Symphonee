@@ -176,7 +176,7 @@ Details in the API reference. Behavioral:
 
 ## Desktop App Automation (Apps tab)
 
-The Apps tab exposes a deterministic automation platform over REST so a terminal AI (Claude Code, Codex, Copilot, etc) can drive desktop applications the same way a human would through the UI. Every endpoint below is Windows-specific and gated by the permission mode.
+The Apps tab exposes a deterministic automation platform over REST so a terminal AI (Claude Code, Codex, Copilot, etc) can drive desktop applications the same way a human would through the UI. Every endpoint below is Windows-specific. Mutating endpoints go through permGate (ask in edit/review, auto-approve in trusted/bypass); `recipes/generate`, `tests/run`, `session/start`, and `session/inject` are blocked in Incognito. Read endpoints are ungated.
 
 ### Read-only discovery
 - `POST /api/apps/windows` -> { windows: [{hwnd, title, processName, rect, isMinimized}] } - visible top-level windows.
@@ -192,6 +192,7 @@ The Apps tab exposes a deterministic automation platform over REST so a terminal
 - `POST /api/apps/session/start` `{goal, hwnd, app, provider?, recipeId?, inputs?, stepThrough?}` - start an AI or recipe-driven session. `recipeId` branches to the deterministic runner; otherwise a natural-language `goal` drives the AI loop.
 - `POST /api/apps/session/stop` `{sessionId}` - halt a running session.
 - `POST /api/apps/session/answer` `{sessionId, answer}` - respond to an `ask_user` prompt.
+- `POST /api/apps/session/inject` `{sessionId, message}` - queue a mid-run user turn (NOT used to answer an ask_user; use /answer for that). Capped at 4000 chars and 50 injections per session.
 - `POST /api/apps/session/debug` `{sessionId, action: 'resume'|'disable-step-through'}` - control step-through pausing.
 - `POST /api/apps/panic` - stop everything, drop topmost pins.
 
@@ -203,6 +204,13 @@ A recipe is a structured DSL sequence with verbs `CLICK TYPE PRESS WAIT WAIT_UNT
 - `POST /api/apps/recipes/import` `{app, payload}` - import an export JSON blob.
 - `GET /api/apps/recipes/export?app=<name>&ids=<csv>?` - export selected or all recipes.
 - `POST /api/apps/recipes/from-session` `{sessionId, name, description?}` - convert the action log of a running session into a replayable recipe.
+
+### Tests (optional regression harness, no UI - REST only)
+A test references a recipe + inputs + post-run assertions (`outcome`, `elementsPresent[]`, `elementsAbsent[]`). Requires ANTHROPIC_API_KEY for the vision locator.
+- `GET /api/apps/tests?app=<name>` - list.
+- `POST /api/apps/tests` `{app, test: {name, macro (recipeId), inputs?, expected?}}` - save.
+- `DELETE /api/apps/tests?app=<name>&id=<id>` - remove.
+- `POST /api/apps/tests/run` `{app, testId, hwnd}` - run. Emits `test_pass` / `test_fail` on the WebSocket.
 
 ### Typical terminal-AI flow
 When the user says "run Figma and export a PNG":

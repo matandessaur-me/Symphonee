@@ -18,12 +18,18 @@ const recipeRunner = require('./apps-recipe-runner');
 async function runSessionForEntry({ entry, session, task, driver, model, broadcast, recipe, inputs, stepThrough }) {
   if (recipe) {
     // Deterministic path: execute recipe steps directly against the driver.
-    // When the runner stops (done / aborted / failed), hand off to the chat
-    // loop with a seeded history so the user can ask "why did you stop?"
-    // and keep working conversationally instead of being stranded.
     const res = await recipeRunner.runRecipe({ session, driver, recipe, broadcast, providerEntry: entry, model, inputs, stepThrough });
-    // Pick the Anthropic (or best) provider for the conversational follow-up;
-    // if the session's runner-provider was fine, reuse it.
+    // When the user explicitly stopped the run, we respect that and DON'T
+    // start a handoff chat - otherwise we'd burn tokens on a session the
+    // user deliberately ended. (Also: session.stopped is still true, so the
+    // chat loop would exit on iteration one anyway.)
+    if (res.aborted) return res;
+    // Hand off to the chat loop so the user can ask "why did you stop?" or
+    // "try a different way". Clear the stopped flag so the new chat loop
+    // doesn't inherit a terminal state from the runner.
+    session.stopped = false;
+    driver.resetStopped();
+    session._handoff = true;
     const chatEntry = (session._providerRegistry && session._providerRegistry.anthropic) || entry;
     const chatModel = chatEntry && chatEntry.adapter && chatEntry.adapter.defaultModel;
     const lines = (res.trail || []).map(t => {
@@ -32,8 +38,8 @@ async function runSessionForEntry({ entry, session, task, driver, model, broadca
       const textPart = t.text ? ' -> "' + t.text + '"' : '';
       return `${prefix} ${t.verb}${target}${textPart}${t.reason ? ' - ' + t.reason : ''}`;
     }).join('\n');
-    const outcome = res.ok ? `completed successfully in ${res.iterations} steps`
-      : res.aborted ? 'was stopped by the user'
+    const outcome = res.ok
+      ? `completed successfully in ${res.iterations} steps`
       : `FAILED at step ${(res.failedAt || 0) + 1}: ${res.error}`;
     const handoff = [
       `The automation "${recipe.name}" ${outcome}.`,
@@ -45,11 +51,6 @@ async function runSessionForEntry({ entry, session, task, driver, model, broadca
         ? 'The user can ask you follow-up questions about what you did. Reply from memory of the trail above; only call tools if they explicitly ask you to do something new.'
         : 'Explain in plain English why the run ended. The user may ask for a fix, a retry, or something different. Diagnose from the trail before acting. Take a fresh screenshot before any new tool call.',
     ].join('\n');
-    // Kick off the chat loop on the same session. It runs until the user
-    // stops it or the agent calls finish/declare_stuck. User messages
-    // arriving mid-run land via /api/apps/session/answer -> ask_user, or
-    // via session/continue which we keep live below.
-    session._handoff = true;
     return chat.runSession({ session, task: handoff, driver, providerEntry: chatEntry, model: chatModel, broadcast });
   }
   return chat.runSession({ session, task, driver, providerEntry: entry, model, broadcast });
@@ -245,26 +246,30 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     json(res, { ok: true });
   });
 
-  // Inject a mid-run user message. If the agent is paused on ask_user, it
-  // satisfies that. Otherwise it's appended to the message log so the next
-  // model turn sees it. Lets the user ask "why are you stuck?" or redirect
-  // the agent without interrupting.
+  // Queue a mid-run user message as a fresh user turn on the session, so
+  // the next model iteration sees it. Does NOT consume a pending ask_user;
+  // dedicated /api/apps/session/answer is the way to do that.
   addRoute('POST', '/api/apps/session/inject', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const sessionId = String(body.sessionId || '');
-    const message = String(body.message || '').trim();
+    let message = String(body.message || '').trim();
     if (!sessionId || !message) return json(res, { error: 'sessionId and message required' }, 400);
+    // Size cap: no one types 8k mid-run; anything bigger is almost certainly
+    // a script / paste that would blow the next model request.
+    if (message.length > 4000) message = message.slice(0, 4000) + '\n[truncated by /inject]';
     const session = chat.sessions.get(sessionId);
     if (!session) return json(res, { error: 'unknown session' }, 404);
-    if (session._pendingAsk && typeof session._pendingAsk.resolve === 'function') {
-      session._pendingAsk.resolve(message);
-      if (typeof broadcast === 'function') broadcast({ type: 'apps-agent-step', sessionId, kind: 'answer', answer: message, at: Date.now() });
-      return json(res, { ok: true, mode: 'answered' });
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/session/inject', 'Send note to running agent: ' + message.slice(0, 80))) return;
     }
     // Append as a user turn in whichever provider shape the session uses.
     const adapterKind = (session._providerEntry && session._providerEntry.adapter && session._providerEntry.adapter.kind) || null;
     if (!Array.isArray(session.messages)) session.messages = [];
+    // Cap total queued injections so a loop can't grow messages unbounded.
+    const injectedCount = (session._injectedCount = (session._injectedCount || 0) + 1);
+    if (injectedCount > 50) return json(res, { error: 'too many mid-run injections; stop the session and start a new one' }, 429);
     if (adapterKind === 'gemini') session.messages.push({ role: 'user', parts: [{ text: message }] });
     else session.messages.push({ role: 'user', content: message });
     if (typeof broadcast === 'function') broadcast({ type: 'apps-agent-step', sessionId, kind: 'user_injected', message, at: Date.now() });
@@ -404,8 +409,13 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const app = String(body.app || '').trim();
     if (!app) return json(res, { error: 'app required' }, 400);
+    const rec = body.recipe || body;
+    if (typeof permGate === 'function') {
+      const label = (rec && rec.id ? 'Update' : 'Save') + ' automation "' + (rec && rec.name || '?').toString().slice(0, 60) + '" for ' + app;
+      if (!await permGate(res, 'api', 'POST /api/apps/recipes', label)) return;
+    }
     try {
-      json(res, recipes.saveRecipe(app, body.recipe || body));
+      json(res, recipes.saveRecipe(app, rec));
     } catch (e) {
       json(res, { error: e.message }, 400);
     }
@@ -416,6 +426,9 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     const app = url.searchParams.get('app');
     const id = url.searchParams.get('id');
     if (!app || !id) return json(res, { error: 'app and id required' }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'DELETE /api/apps/recipes', 'Delete automation ' + id + ' for ' + app)) return;
+    }
     json(res, recipes.deleteRecipe(app, id));
   });
 
@@ -424,6 +437,10 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const app = String(body.app || '').trim();
     if (!app) return json(res, { error: 'app required' }, 400);
+    if (typeof permGate === 'function') {
+      const count = Array.isArray(body.payload) ? body.payload.length : Array.isArray(body.payload && body.payload.recipes) ? body.payload.recipes.length : 1;
+      if (!await permGate(res, 'api', 'POST /api/apps/recipes/import', 'Import ' + count + ' automation(s) into ' + app)) return;
+    }
     try { json(res, recipes.importRecipes(app, body.payload)); }
     catch (e) { json(res, { error: e.message }, 400); }
   });
@@ -459,6 +476,9 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const app = String(body.app || '').trim();
     if (!app) return json(res, { error: 'app required' }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/tests', 'Save test for ' + app)) return;
+    }
     try { json(res, recipes.saveTest(app, body.test || body)); }
     catch (e) { json(res, { error: e.message }, 400); }
   });
@@ -468,6 +488,9 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     const app = url.searchParams.get('app');
     const id = url.searchParams.get('id');
     if (!app || !id) return json(res, { error: 'app and id required' }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'DELETE /api/apps/tests', 'Delete test ' + id + ' for ' + app)) return;
+    }
     json(res, recipes.deleteTest(app, id));
   });
 
@@ -487,6 +510,9 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     if (!test) return json(res, { error: 'test not found' }, 404);
     const recipe = recipes.getRecipe(app, test.macro);
     if (!recipe) return json(res, { error: 'test references missing recipe ' + test.macro }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/tests/run', 'Run test "' + test.name + '" on ' + app)) return;
+    }
 
     const sessionId = body.sessionId || ('test-' + Date.now().toString(36));
     const session = chat.getSession(sessionId);
@@ -497,9 +523,12 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     session.hwnd = hwnd; session.app = app; session.goal = 'test:' + test.name;
     session.stopped = false; driver.resetStopped();
 
+    // Tests rely on the Anthropic vision locator for VERIFY assertions; fail
+    // fast with a clear error here rather than let runRecipe/locateTarget
+    // discover the missing key mid-run and emit a confusing step failure.
     const registry = buildRegistry();
-    const entry = chat.pickProvider(registry, 'anthropic') || chat.pickProvider(registry);
-    if (!entry) return json(res, { error: 'No AI provider configured (tests need Anthropic for the vision locator).' }, 400);
+    const entry = registry && registry.anthropic;
+    if (!entry) return json(res, { error: 'Tests require ANTHROPIC_API_KEY for the vision locator. Set it in Settings -> AI Keys, or remove the test.' }, 400);
     session._providerRegistry = registry;
     session._providerEntry = entry;
     session._model = entry.adapter.defaultModel;
@@ -540,7 +569,8 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     try { recipes.recordRun(app, { recipeId: recipe.id, recipeName: `[test] ${test.name}`, outcome: passed ? 'ok' : 'failed', iterations: runRes.iterations || 0, durationMs, error: passed ? null : failures.join('; ') }); } catch (_) {}
   });
 
-  // Pause / resume control for step-through debugging.
+  // Pause / resume control for step-through debugging. Gated to keep it
+  // aligned with the other session-mutating endpoints.
   addRoute('POST', '/api/apps/session/debug', async (req, res) => {
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
@@ -549,6 +579,9 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     if (!sessionId || !action) return json(res, { error: 'sessionId and action required' }, 400);
     const session = chat.sessions.get(sessionId);
     if (!session) return json(res, { error: 'unknown session' }, 404);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/session/debug', 'Control step-through: ' + action)) return;
+    }
     if (action === 'resume') {
       if (typeof session._debugResolver === 'function') { session._debugResolver(); session._debugResolver = null; }
       return json(res, { ok: true });
@@ -564,10 +597,10 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
   // Natural-language recipe generator. Sends a description (plus any
   // per-app instructions the user has written, plus an optional current
   // screenshot of the target window) to Anthropic and parses the returned
-  // JSON into DSL steps. Falls back to Anthropic's web_search tool so the
-  // model can look up app-specific menus / shortcuts when its own knowledge
-  // is thin.
+  // JSON into DSL steps. Blocked in Incognito because it can exfiltrate
+  // window screenshots and per-app notes to Anthropic.
   addRoute('POST', '/api/apps/recipes/generate', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const description = String(body.description || '').trim();
@@ -672,6 +705,9 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     if (!app) return json(res, { error: 'session has no app key; cannot file the recipe' }, 400);
     const steps = recipes.actionsToSteps(session._recordedActions || []);
     if (!steps.length) return json(res, { error: 'no recorded actions yet - start a session, let the agent do work, then save.' }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/recipes/from-session', 'Save session as automation "' + name + '" for ' + app)) return;
+    }
     try {
       const r = recipes.saveRecipe(app, {
         name,

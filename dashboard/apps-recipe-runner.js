@@ -226,16 +226,27 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
 function treeify(steps) {
   const root = { kind: 'root', children: [] };
   const stack = [root];
+  // Return the array the parent's currently-open body points at, so nested
+  // blocks append into that body rather than a non-existent `children`.
+  const activeBody = (node) => {
+    if (node.kind === 'root') return node.children;
+    if (node.kind === 'if') return node.branch === 'else' ? node.elseBody : node.thenBody;
+    if (node.kind === 'repeat') return node.body;
+    return node.children || [];
+  };
+  const MAX_REPEAT = 1000;
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
     const top = stack[stack.length - 1];
+    const body = activeBody(top);
     switch (s.verb) {
-      case 'IF':
+      case 'IF': {
         if (!s.target) throw new Error('IF requires a condition target');
         const ifNode = { kind: 'if', cond: s, thenBody: [], elseBody: [], branch: 'then', raw: s };
-        top.children.push(ifNode);
+        body.push(ifNode);
         stack.push(ifNode);
         break;
+      }
       case 'ELSE':
         if (top.kind !== 'if') throw new Error('ELSE without matching IF');
         top.branch = 'else';
@@ -244,20 +255,21 @@ function treeify(steps) {
         if (top.kind !== 'if') throw new Error('ENDIF without matching IF');
         stack.pop();
         break;
-      case 'REPEAT':
-        const times = Math.max(1, parseInt(s.target || s.text || '1', 10) || 1);
+      case 'REPEAT': {
+        let times = parseInt(s.target || s.text || '1', 10);
+        if (!Number.isFinite(times) || times < 1) times = 1;
+        if (times > MAX_REPEAT) times = MAX_REPEAT;
         const rptNode = { kind: 'repeat', times, body: [], raw: s };
-        top.children.push(rptNode);
+        body.push(rptNode);
         stack.push(rptNode);
         break;
+      }
       case 'ENDREPEAT':
         if (top.kind !== 'repeat') throw new Error('ENDREPEAT without matching REPEAT');
         stack.pop();
         break;
       default:
-        if (top.kind === 'if') (top.branch === 'else' ? top.elseBody : top.thenBody).push({ kind: 'leaf', step: s });
-        else if (top.kind === 'repeat') top.body.push({ kind: 'leaf', step: s });
-        else top.children.push({ kind: 'leaf', step: s });
+        body.push({ kind: 'leaf', step: s });
     }
   }
   if (stack.length !== 1) {
