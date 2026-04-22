@@ -2923,6 +2923,15 @@ try {
   console.log('  Browser agent skipped:', e.message);
 }
 
+// ── Mount apps agent (desktop control) ──────────────────────────────────────
+try {
+  const { mountAppsRoutes } = require('./apps-agent');
+  mountAppsRoutes(addRoute, json, { getConfig, broadcast });
+  console.log('  Apps agent mounted (/api/apps/*)');
+} catch (e) {
+  console.log('  Apps agent skipped:', e.message);
+}
+
 // ── Load plugins ─────────────────────────────────────────────────────────────
 loadedPlugins = loadPlugins(pluginsDir, {
   addRoute, getConfig, broadcast, json, writePluginHints,
