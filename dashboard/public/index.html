@@ -4974,7 +4974,14 @@
     <div class="modal-title" style="display:flex; align-items:center; gap:10px;">
       <i data-lucide="book-open" style="width:16px;height:16px;"></i>
       <span>Instructions for <span id="appsInstructionsAppName" style="color:var(--accent);">-</span></span>
-      <span id="appsInstructionsMeta" style="margin-left:auto; font:500 10px var(--font-mono); color:var(--subtext0);"></span>
+      <span id="appsInstructionsMeta" style="margin-left:8px; font:500 10px var(--font-mono); color:var(--subtext0);"></span>
+      <span style="flex:1;"></span>
+      <button class="sy-btn sy-btn-ghost" type="button" onclick="appsImportInstructionsTrigger()" title="Import .md / .txt" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
+        <i data-lucide="upload" style="width:14px;height:14px;"></i>
+      </button>
+      <button class="sy-btn sy-btn-ghost" type="button" onclick="appsExportInstructions()" title="Export .md" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
+        <i data-lucide="download" style="width:14px;height:14px;"></i>
+      </button>
     </div>
     <div class="modal-body" style="flex:1; display:flex; flex-direction:column; gap:10px; min-height:0; overflow:hidden;">
       <div style="font:11px var(--font-ui); color:var(--subtext0);">
@@ -4986,8 +4993,6 @@
     <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:wrap; margin-top:14px; padding-top:12px; border-top:1px solid var(--surface1);">
       <span id="appsInstructionsStatus" style="margin-right:auto; font:11px var(--font-ui); color:var(--subtext0);"></span>
       <button class="modal-btn" onclick="appsClearInstructions()" style="color:var(--red);border-color:var(--red);">Clear all</button>
-      <button class="modal-btn" onclick="appsExportInstructions()">Export .md</button>
-      <button class="modal-btn" onclick="document.getElementById('appsInstructionsFile').click()">Import .md / .txt</button>
       <button class="modal-btn" onclick="appsCloseInstructions()">Close</button>
       <button class="modal-btn modal-btn-primary" onclick="appsSaveInstructions()">Save</button>
     </div>
@@ -13905,6 +13910,11 @@ function appsExportInstructions() {
   if (statusEl) statusEl.textContent = 'Exported ' + a.download;
 }
 
+function appsImportInstructionsTrigger() {
+  const f = document.getElementById('appsInstructionsFile');
+  if (f) f.click();
+}
+
 async function appsClearInstructions() {
   const app = _appsInstructionsKey();
   if (!app) return;
@@ -13916,17 +13926,22 @@ async function appsClearInstructions() {
   );
   if (!ok) return;
   const statusEl = document.getElementById('appsInstructionsStatus');
+  const textEl = document.getElementById('appsInstructionsText');
   if (statusEl) statusEl.textContent = 'Clearing...';
   try {
     const r = await fetch('/api/apps/memory', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ app, mode: 'clear' }),
     });
-    const data = await r.json();
-    if (!r.ok || data.error) throw new Error(data.error || 'clear failed');
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.error) throw new Error(data.error || ('clear failed (' + r.status + ')'));
+    // Re-fetch the freshly-cleared file so the textarea reflects reality
+    // instead of whatever the user had open before the wipe.
+    const r2 = await fetch('/api/apps/memory?app=' + encodeURIComponent(app));
+    const d2 = await r2.json().catch(() => ({}));
+    if (textEl) textEl.value = d2.body || '';
     if (statusEl) statusEl.textContent = 'Cleared.';
     if (typeof toast === 'function') toast('Instructions cleared for ' + app, 'success', { duration: 2000 });
-    setTimeout(() => appsOpenInstructions(), 150);
   } catch (e) {
     if (statusEl) statusEl.textContent = 'Clear failed: ' + e.message;
     if (typeof toast === 'function') toast('Clear failed: ' + e.message, 'error');
