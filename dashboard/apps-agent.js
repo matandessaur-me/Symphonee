@@ -503,17 +503,26 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     return json(res, { error: 'unknown action' }, 400);
   });
 
-  // Natural-language recipe generator. Sends a description (and an optional
-  // current screenshot of the target window) to Anthropic and parses the
-  // returned JSON into DSL steps the user can edit in the builder.
+  // Natural-language recipe generator. Sends a description (plus any
+  // per-app instructions the user has written, plus an optional current
+  // screenshot of the target window) to Anthropic and parses the returned
+  // JSON into DSL steps. Falls back to Anthropic's web_search tool so the
+  // model can look up app-specific menus / shortcuts when its own knowledge
+  // is thin.
   addRoute('POST', '/api/apps/recipes/generate', async (req, res) => {
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const description = String(body.description || '').trim();
     if (!description) return json(res, { error: 'description required' }, 400);
+    const app = String(body.app || '').trim();
     const registry = buildRegistry();
     const entry = chat.pickProvider(registry, 'anthropic');
     if (!entry) return json(res, { error: 'ANTHROPIC_API_KEY required to generate recipes. Set it in Settings -> AI Keys.' }, 400);
+
+    // Pull the app's instructions memory so the generator grounds in the
+    // user's own notes about this app (UI map, DOs, DONTs, keybindings).
+    let appNotes = '';
+    if (app) { try { appNotes = memory.loadMemory(app) || ''; } catch (_) {} }
 
     const system = [
       'You convert a plain-English description of a Windows desktop task into a JSON recipe that Symphonee can replay.',
@@ -536,7 +545,10 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
       'In JSON, step rows look like {"verb":"CLICK","target":"File menu"}. For TYPE use {"verb":"TYPE","target":"Filename input","text":"hello"}.',
       'Prefer keyboard shortcuts (PRESS) over menu traversal when both are possible.',
       'Do not output explanation. Do not wrap the JSON in markdown.',
-    ].join('\n');
+      app ? `\nTarget app: ${app}. If the user\'s instructions below have specific notes, prefer those over anything else.` : '',
+      appNotes ? `\n--- User-written instructions for ${app} ---\n${appNotes.slice(0, 8000)}\n--- end instructions ---` : '',
+      '\nIf you are unsure of exact menu labels, keyboard shortcuts, or UI element names for this app, use the web_search tool to look them up before emitting steps. Do NOT invent menu paths.',
+    ].filter(Boolean).join('\n');
 
     const userContent = [{ type: 'text', text: description }];
     if (body.screenshotBase64) {
@@ -547,6 +559,7 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
       model: entry.adapter.defaultModel,
       max_tokens: 2048,
       system,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
       messages: [{ role: 'user', content: userContent }],
     });
     const https = require('https');
@@ -558,6 +571,7 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
           'content-length': Buffer.byteLength(payload),
           'x-api-key': entry.apiKey,
           'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'web-search-2025-03-05',
         },
         timeout: 60000,
       }, (response) => {

@@ -150,8 +150,7 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
   switch (verb) {
     case 'WAIT': {
       const ms = Math.min(60000, Math.max(0, parseInt(target || '0', 10) || 0));
-      if (typeof driver.waitMs === 'function') await driver.waitMs(ms);
-      else await new Promise(r => setTimeout(r, ms));
+      await new Promise(r => setTimeout(r, ms));
       return;
     }
     case 'WAIT_UNTIL': {
@@ -172,25 +171,22 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
       throw err;
     }
     case 'SCROLL': {
-      // target is "dx,dy" (e.g. "0,5" for 5 ticks down). Either component
-      // may be 0. Bare "5" is treated as positive dy.
       const parts = String(target || '0,0').split(',').map(s => parseInt(s.trim(), 10) || 0);
       const dx = parts.length >= 2 ? parts[0] : 0;
       const dy = parts.length >= 2 ? parts[1] : parts[0];
-      await driver.scroll({ dx, dy });
+      await driver.scroll(dx, dy);
       return;
     }
     case 'DRAG': {
-      // target is "fromX,fromY" and text is "toX,toY".
       const from = parseCoord(target);
       const to = parseCoord(text);
       if (!from || !to) throw new Error('DRAG requires coordinates: target "fromX,fromY" and text "toX,toY" (e.g. DRAG 100,200 -> 400,500)');
-      await driver.drag({ fromX: from.x, fromY: from.y, toX: to.x, toY: to.y });
+      await driver.drag(from.x, from.y, to.x, to.y);
       return;
     }
     case 'PRESS': {
       if (!target) throw new Error('PRESS requires a key or combo (e.g. "Ctrl+S", "Enter").');
-      await driver.key({ combo: target });
+      await driver.key(target);
       return;
     }
     case 'TYPE': {
@@ -199,7 +195,7 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
         await driver.click({ x: coord.x, y: coord.y });
         await new Promise(r => setTimeout(r, 120));
       }
-      await driver.type({ text: text || target });
+      await driver.type(text || target || '');
       return;
     }
     case 'CLICK': {

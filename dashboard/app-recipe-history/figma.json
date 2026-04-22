@@ -1,0 +1,25 @@
+{
+  "app": "figma",
+  "runs": [
+    {
+      "id": "h_moa9z3g9_5bw7",
+      "at": "2026-04-22T16:36:41.913Z",
+      "recipeId": "r_moa9mk14_spzm",
+      "recipeName": "Create Figma desktop frame with header",
+      "outcome": "failed",
+      "iterations": 5,
+      "durationMs": 9869,
+      "error": "Recipe step 5 (PRESS Enter) failed: unknown key: [object Object]"
+    },
+    {
+      "id": "h_moa9xuyn_w6oh",
+      "at": "2026-04-22T16:35:44.255Z",
+      "recipeId": "r_moa9mk14_spzm",
+      "recipeName": "Create Figma desktop frame with header",
+      "outcome": "aborted",
+      "iterations": 4,
+      "durationMs": 129201,
+      "error": null
+    }
+  ]
+}

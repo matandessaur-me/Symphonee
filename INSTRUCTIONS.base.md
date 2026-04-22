@@ -174,5 +174,43 @@ Details in the API reference. Behavioral:
 - POST endpoints blocked in Incognito.
 - Saved accounts: `curl -s http://127.0.0.1:3800/api/browser/accounts`.
 
+## Desktop App Automation (Apps tab)
+
+The Apps tab exposes a deterministic automation platform over REST so a terminal AI (Claude Code, Codex, Copilot, etc) can drive desktop applications the same way a human would through the UI. Every endpoint below is Windows-specific and gated by the permission mode.
+
+### Read-only discovery
+- `POST /api/apps/windows` -> { windows: [{hwnd, title, processName, rect, isMinimized}] } - visible top-level windows.
+- `POST /api/apps/installed` -> { apps: [{id, name, path}] } - launchable apps found on disk.
+- `GET /api/apps/screenshot?hwnd=<n>` -> { base64, mimeType, width, height } - one-off window capture.
+- `GET /api/apps/memory?app=<name>` - saved per-app instructions (user's notes / DOs / DONTs).
+- `GET /api/apps/recipes?app=<name>` - saved automations for that app.
+- `GET /api/apps/recipes/history?app=<name>` - recent run outcomes.
+- `GET /api/apps/status` - provider list (Anthropic / OpenAI / Gemini) + current session.
+
+### Launch + control
+- `POST /api/apps/launch` `{id?, path?, name?}` - start an app.
+- `POST /api/apps/session/start` `{goal, hwnd, app, provider?, recipeId?, inputs?, stepThrough?}` - start an AI or recipe-driven session. `recipeId` branches to the deterministic runner; otherwise a natural-language `goal` drives the AI loop.
+- `POST /api/apps/session/stop` `{sessionId}` - halt a running session.
+- `POST /api/apps/session/answer` `{sessionId, answer}` - respond to an `ask_user` prompt.
+- `POST /api/apps/session/debug` `{sessionId, action: 'resume'|'disable-step-through'}` - control step-through pausing.
+- `POST /api/apps/panic` - stop everything, drop topmost pins.
+
+### Recipes (saved automations)
+A recipe is a structured DSL sequence with verbs `CLICK TYPE PRESS WAIT WAIT_UNTIL FIND VERIFY SCROLL DRAG IF ELSE ENDIF REPEAT ENDREPEAT`. Stored per-app as JSON under `dashboard/app-recipes/<app>.json`.
+- `POST /api/apps/recipes` `{app, recipe: {name, description?, variables?, inputs?, verify?, steps[]}}` - create or update. Steps each: `{verb, target?, text?, notes?}`.
+- `DELETE /api/apps/recipes?app=<name>&id=<id>` - remove.
+- `POST /api/apps/recipes/generate` `{description, app?, screenshotBase64?, mimeType?}` - natural-language to DSL via Anthropic (+ web_search). Returns `{draft: {name, description, steps[]}}`. Pass `app` so the generator grounds in that app's stored instructions.
+- `POST /api/apps/recipes/import` `{app, payload}` - import an export JSON blob.
+- `GET /api/apps/recipes/export?app=<name>&ids=<csv>?` - export selected or all recipes.
+- `POST /api/apps/recipes/from-session` `{sessionId, name, description?}` - convert the action log of a running session into a replayable recipe.
+
+### Typical terminal-AI flow
+When the user says "run Figma and export a PNG":
+1. `POST /api/apps/installed`, match "figma", take the id.
+2. `POST /api/apps/launch` with that id (ask first in edit/review mode).
+3. `POST /api/apps/windows` to confirm the hwnd.
+4. Either: (a) `POST /api/apps/session/start` with a free-form goal to let the AI click through, or (b) generate a recipe via `POST /api/apps/recipes/generate` (with `app:'figma'` so it reads the user's notes) then `POST /api/apps/session/start` with `recipeId`.
+5. Listen to the `apps-agent-step` WebSocket channel for live progress.
+
 <!-- PLUGIN_INSTRUCTIONS_START -->
 <!-- PLUGIN_INSTRUCTIONS_END -->

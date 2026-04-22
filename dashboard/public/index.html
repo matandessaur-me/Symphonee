@@ -944,8 +944,8 @@
       font-size: 9px; color: var(--overlay1); margin-top: 2px;
     }
     .apps-viewport {
-      background: #0a0a0a; display: flex; align-items: center; justify-content: center;
-      position: relative; overflow: hidden;
+      background: var(--mantle); display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden; border-radius: 6px;
     }
     .apps-viewport img {
       max-width: 100%; max-height: 100%;
@@ -953,7 +953,15 @@
       image-rendering: -webkit-optimize-contrast;
     }
     .apps-viewport .apps-viewport-empty {
-      color: var(--subtext0); font: 12px var(--font-ui); text-align: center; padding: 20px;
+      color: var(--subtext0); font: 12px/1.7 var(--font-ui); text-align: center;
+      padding: 24px 32px; max-width: 480px;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+    }
+    .apps-viewport .apps-viewport-empty::before {
+      content: ''; width: 40px; height: 40px; border-radius: 10px;
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      display: block;
     }
     .apps-viewport .apps-click-dot {
       position: absolute; width: 18px; height: 18px; border-radius: 50%;
@@ -5017,10 +5025,10 @@
       <span id="appsInstructionsMeta" style="margin-left:8px; font:500 10px var(--font-mono); color:var(--subtext0);"></span>
       <span style="flex:1;"></span>
       <button class="sy-btn sy-btn-ghost" type="button" onclick="appsImportInstructionsTrigger()" title="Import .md / .txt" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
-        <i data-lucide="upload" style="width:14px;height:14px;"></i>
+        <i data-lucide="download" style="width:14px;height:14px;"></i>
       </button>
       <button class="sy-btn sy-btn-ghost" type="button" onclick="appsExportInstructions()" title="Export .md" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
-        <i data-lucide="download" style="width:14px;height:14px;"></i>
+        <i data-lucide="upload" style="width:14px;height:14px;"></i>
       </button>
     </div>
     <div class="modal-body" style="flex:1; display:flex; flex-direction:column; gap:10px; min-height:0; overflow:hidden;">
@@ -5047,10 +5055,10 @@
       <span>Automations for <span id="appsAutomationsAppName" style="color:var(--accent);">-</span></span>
       <span style="flex:1;"></span>
       <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsTriggerImport()" title="Import recipes (.json)" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
-        <i data-lucide="upload" style="width:14px;height:14px;"></i>
+        <i data-lucide="download" style="width:14px;height:14px;"></i>
       </button>
       <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsExportAll()" title="Export all recipes (.json)" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
-        <i data-lucide="download" style="width:14px;height:14px;"></i>
+        <i data-lucide="upload" style="width:14px;height:14px;"></i>
       </button>
       <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsToggleHistory()" title="Recent runs" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
         <i data-lucide="history" style="width:14px;height:14px;"></i>
@@ -5078,6 +5086,8 @@
           <div style="border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); background:color-mix(in srgb, var(--accent) 8%, transparent); border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:6px;">
             <div style="display:flex; align-items:center; gap:6px; font:600 10px var(--font-ui); color:var(--accent); text-transform:uppercase; letter-spacing:0.6px;">
               <i data-lucide="sparkles" style="width:12px;height:12px;"></i> Describe it, AI writes the steps
+              <span style="flex:1;"></span>
+              <span id="appsAutomationsGenProvider" style="font:500 10px var(--font-mono); color:var(--subtext0); text-transform:none; letter-spacing:0;"></span>
             </div>
             <textarea id="appsAutomationsGenInput" rows="2" placeholder="e.g. Open the File menu, click Export, type my-design, hit Enter" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:5px;padding:7px 10px;font:12px var(--font-ui);outline:none;resize:vertical;min-height:48px;"></textarea>
             <div style="display:flex;gap:6px;align-items:center;">
@@ -14065,7 +14075,11 @@ async function appsOpenInstructions() {
   const btn = document.getElementById('appsInstructionsTabBtn');
   const lbl = document.getElementById('appsInstructionsTabLabel');
   if (lbl) lbl.textContent = 'Instructions - ' + app;
-  if (btn) btn.style.display = '';
+  if (btn) {
+    const scroll = document.getElementById('tabBarScroll');
+    if (scroll && btn.parentNode === scroll) scroll.appendChild(btn);
+    btn.style.display = '';
+  }
   switchTab('apps-instructions');
   const nameEl = document.getElementById('appsInstructionsAppName');
   const textEl = document.getElementById('appsInstructionsText');
@@ -14216,7 +14230,7 @@ async function appsAutomationsGenerate() {
   if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
   if (statusEl) statusEl.textContent = 'Asking AI...';
   try {
-    const payload = { description: desc };
+    const payload = { description: desc, app: _appsAutomationsApp() };
     if (document.getElementById('appsAutomationsGenUseShot').checked && _appsState.hwnd) {
       // Grab a fresh screenshot so AI can ground step descriptions in the
       // actual UI. Uses the apps screenshot route.
@@ -14337,7 +14351,13 @@ async function appsOpenAutomations() {
   const btn = document.getElementById('appsAutomationsTabBtn');
   const lbl = document.getElementById('appsAutomationsTabLabel');
   if (lbl) lbl.textContent = 'Automations - ' + app;
-  if (btn) btn.style.display = '';
+  if (btn) {
+    // New tabs open at the far right of the bar, like the other closable
+    // tabs (Work Item, Activity Timeline).
+    const scroll = document.getElementById('tabBarScroll');
+    if (scroll && btn.parentNode === scroll) scroll.appendChild(btn);
+    btn.style.display = '';
+  }
   const nameEl = document.getElementById('appsAutomationsAppName');
   if (nameEl) nameEl.textContent = app;
   switchTab('automations-editor');
@@ -14345,6 +14365,15 @@ async function appsOpenAutomations() {
   const panel = document.getElementById('panel-automations-editor');
   if (panel && typeof lucide !== 'undefined') lucide.createIcons({ el: panel });
   await _appsAutomationsReload();
+  // Populate the "which AI" label in the generate block.
+  const providerLbl = document.getElementById('appsAutomationsGenProvider');
+  if (providerLbl) {
+    const anth = (_appsState.providers || []).find(p => p.key === 'anthropic');
+    providerLbl.textContent = anth
+      ? 'using ' + anth.label + ' - ' + anth.defaultModel
+      : 'no Anthropic key - generate will fail';
+    providerLbl.style.color = anth ? 'var(--subtext0)' : 'var(--red, #e06c75)';
+  }
 }
 
 function appsCloseAutomations() {
@@ -15148,6 +15177,12 @@ function appsSetLauncherSection(sec) {
   appsRenderLauncher();
 }
 
+function _appsNameFromPath(p) {
+  if (!p) return 'App';
+  const base = String(p).split(/[\\/]/).pop() || '';
+  return base.replace(/\.exe$/i, '') || 'App';
+}
+
 function _appsInitial(name) {
   const s = String(name || '').trim();
   if (!s) return '?';
@@ -15227,16 +15262,14 @@ function appsRenderLauncher() {
   } else if (sec === 'installed') {
     items = (_appsLauncher.installed || []).map(a => ({
       key: 'ins:' + (a.id || a.path),
-      name: a.name,
-      sub: a.kind,
+      name: a.name || _appsNameFromPath(a.path),
       iconKey: a.path || a.id,
       onClick: () => appsLaunchAndSelect(a),
     }));
   } else if (sec === 'manual') {
     items = _appsLoadManual().map(a => ({
       key: 'man:' + a.path,
-      name: a.name || a.path.split(/[\\/]/).pop(),
-      sub: a.path,
+      name: a.name || _appsNameFromPath(a.path),
       iconKey: a.path,
       canDelete: true,
       onClick: () => appsLaunchAndSelect({ name: a.name, path: a.path }),
@@ -15439,9 +15472,9 @@ function _appsRenderRecipeChip() {
   chip.innerHTML =
     '<i data-lucide="zap" style="width:11px;height:11px;color:var(--accent);"></i>' +
     '<span>Will run automation: <strong>' + _appsEscape(_appsState.selectedRecipeName || '') + '</strong></span>' +
-    '<label class="sy-switch-row" style="margin-left:10px;color:var(--subtext1);">' +
+    '<label class="sy-switch-row" style="margin-left:10px;color:var(--subtext1);" title="When on, the run pauses after every step and waits for you to hit Resume - useful for debugging. Off by default.">' +
       '<span class="sy-switch"><input type="checkbox" ' + stepThroughChecked + ' onchange="_appsToggleStepThrough(this.checked)"><span></span></span>' +
-      'Step through' +
+      'Pause after each step' +
     '</label>' +
     '<button type="button" onclick="appsClearSelectedRecipe()" title="Clear selection" style="margin-left:auto;background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;font:11px var(--font-ui);">clear</button>';
   if (typeof lucide !== 'undefined') lucide.createIcons({ el: chip });
@@ -15460,6 +15493,22 @@ async function appsResumeStep() {
     });
   } catch (e) {
     if (typeof toast === 'function') toast('Resume failed: ' + e.message, 'error');
+  }
+}
+
+async function appsRunToEnd() {
+  if (!_appsState.sessionId) return;
+  // Turn off step-through for the rest of this run, then release the gate.
+  try {
+    await fetch('/api/apps/session/debug', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: _appsState.sessionId, action: 'disable-step-through' }),
+    });
+    _appsState.stepThrough = false;
+    _appsSyncComposerMode();
+    if (typeof toast === 'function') toast('Pause-after-each-step disabled. Running to end.', 'info', { duration: 2000 });
+  } catch (e) {
+    if (typeof toast === 'function') toast('Run-to-end failed: ' + e.message, 'error');
   }
 }
 
@@ -15926,14 +15975,20 @@ function handleAppsAgentStep(msg) {
     return;
   }
   if (kind === 'step_paused') {
-    const entry = _appsAppendLog({ kind: 'paused', text: 'Paused at step ' + ((msg.index || 0) + 1) + '. Click Resume to continue.', klass: 'memory' });
+    const entry = _appsAppendLog({ kind: 'paused', text: 'Paused at step ' + ((msg.index || 0) + 1) + '. Pause-after-each-step is ON.', klass: 'memory' });
     if (entry) {
-      const btn = document.createElement('button');
-      btn.className = 'sy-btn sy-btn-outline';
-      btn.style.cssText = 'margin-left:8px;height:22px;padding:0 10px;font-size:11px;';
-      btn.textContent = 'Resume';
-      btn.onclick = () => { appsResumeStep(); btn.disabled = true; btn.textContent = 'Resuming...'; };
-      entry.appendChild(btn);
+      const resume = document.createElement('button');
+      resume.className = 'sy-btn sy-btn-outline';
+      resume.style.cssText = 'margin-left:8px;height:22px;padding:0 10px;font-size:11px;';
+      resume.textContent = 'Resume';
+      resume.onclick = () => { appsResumeStep(); resume.disabled = true; resume.textContent = 'Resuming...'; };
+      entry.appendChild(resume);
+      const runAll = document.createElement('button');
+      runAll.className = 'sy-btn sy-btn-primary';
+      runAll.style.cssText = 'margin-left:6px;height:22px;padding:0 10px;font-size:11px;';
+      runAll.textContent = 'Run to end';
+      runAll.onclick = () => { appsRunToEnd(); runAll.disabled = true; resume.disabled = true; runAll.textContent = 'Running...'; };
+      entry.appendChild(runAll);
     }
     return;
   }
