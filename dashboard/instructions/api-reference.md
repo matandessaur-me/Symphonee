@@ -197,6 +197,21 @@ Launch browser with a session name, navigate to the target page, use `query-all`
 | GET | `/api/themes` | Read custom themes |
 | POST | `/api/themes` | Save custom themes |
 
+### Apps Agent (desktop control)
+The Apps tab drives ANY running Windows application via pixel + keyboard, using nut.js for input and PowerShell for window enumeration. Sessions are pixel-level: the AI screenshots, clicks, types, and keys against the target window in window-relative coordinates. Starting a session is gated by permissions (asks in `edit`, allowed silently in `bypass`). The agent is provider-agnostic (Anthropic / OpenAI-compat / Gemini) and runs inside the same Node server, not through any CLI.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/apps/windows` | List visible top-level windows: `{ hwnd, pid, processName, title, rect, isMinimized }` |
+| POST | `/api/apps/session/start` | Start a session. Body: `{ goal, hwnd, app?, provider?, model?, sessionId? }`. Gated: prompts the user with the goal in `edit`/`trusted`. Deny-listed titles (password, banking) return 403. |
+| POST | `/api/apps/session/stop` | Stop a running session. Body: `{ sessionId }` |
+| POST | `/api/apps/panic` | Kill every live Apps session and abort in-flight input. Bound to global hotkey `Ctrl+Alt+Shift+X`. |
+| GET | `/api/apps/status?sessionId=` | Inspect sessions. Without `sessionId`, lists providers + all known sessions. |
+| GET | `/api/apps/memory?app=<exe>` | Read the per-app markdown memory file (e.g. `app=notepad`). |
+| POST | `/api/apps/memory` | Append or replace a section. Body: `{ app, section, body, mode?: 'append'\|'replace' }` |
+
+Session progress streams over the existing WebSocket as `apps-agent-step` frames. Kinds: `provider`, `thinking`, `token`, `message`, `action`, `observation`, `screenshot`, `plan`, `memory`, `research`, `stuck`, `done`, `stopped`, `panic`, `error`. Screenshots arrive as `{ kind: 'screenshot', base64, mimeType, width, height, rect }`.
+
 ### Plugin Management
 | Method | Endpoint | Description |
 |--------|----------|-------------|
