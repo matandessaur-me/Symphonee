@@ -114,6 +114,25 @@
     }
     .sy-btn-ghost:hover { background: var(--surface1); color: var(--text); }
 
+    /* Pill-style toggle replacing the native checkbox look. Usage:
+       <label class="sy-switch"><input type="checkbox"><span></span></label> */
+    .sy-switch { position: relative; display: inline-block; width: 32px; height: 18px; flex-shrink: 0; }
+    .sy-switch input { opacity: 0; width: 0; height: 0; }
+    .sy-switch span {
+      position: absolute; inset: 0; cursor: pointer;
+      background: var(--surface2); border-radius: 999px;
+      transition: background 120ms ease;
+    }
+    .sy-switch span::before {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--text);
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .sy-switch input:checked + span { background: color-mix(in srgb, var(--accent) 70%, transparent); }
+    .sy-switch input:checked + span::before { transform: translateX(14px); background: var(--crust); }
+    .sy-switch-row { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
     .sy-btn-secondary {
       background: var(--surface1); color: var(--text);
       border-color: var(--surface2);
@@ -4113,6 +4132,8 @@
           <button class="tab-btn" data-tab="backlog" data-plugin-id="azure-devops" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
           <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
           <button class="tab-btn closable" data-tab="recipe-editor" id="recipeEditorTabBtn" onclick="switchTab('recipe-editor')" style="display:none;"><span>Recipe Editor</span><span class="tab-close" onclick="event.stopPropagation();closeRecipeEditor();" title="Close">&times;</span></button>
+          <button class="tab-btn closable" data-tab="automations-editor" id="appsAutomationsTabBtn" onclick="switchTab('automations-editor')" style="display:none;"><span id="appsAutomationsTabLabel">Automations</span><span class="tab-close" onclick="event.stopPropagation();appsCloseAutomations();" title="Close">&times;</span></button>
+          <button class="tab-btn closable" data-tab="apps-instructions" id="appsInstructionsTabBtn" onclick="switchTab('apps-instructions')" style="display:none;"><span id="appsInstructionsTabLabel">Instructions</span><span class="tab-close" onclick="event.stopPropagation();appsCloseInstructions();" title="Close">&times;</span></button>
           <button class="tab-btn" data-tab="activity" data-plugin-id="azure-devops" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
           <button class="tab-btn" data-tab="prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
           <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
@@ -5044,8 +5065,10 @@
         <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px; padding:2px 4px;">Your automations</div>
         <div id="appsAutomationsList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; min-height:0;"></div>
         <div id="appsAutomationsTestsList" style="display:none;"></div>
-        <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px; padding:6px 4px 2px; border-top:1px solid var(--surface1);">Drag to insert</div>
-        <div id="appsStepPalette" style="display:flex;flex-direction:column;gap:2px;"></div>
+        <div id="appsStepPaletteWrap" style="display:none;">
+          <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px; padding:6px 4px 2px; border-top:1px solid var(--surface1);">Drag to insert</div>
+          <div id="appsStepPalette" style="display:flex;flex-direction:column;gap:2px;"></div>
+        </div>
       </div>
       <div id="appsAutomationsEditor" style="flex:1; display:flex; flex-direction:column; gap:10px; min-width:0;">
         <div id="appsAutomationsEmpty" style="color:var(--subtext0); font:12px var(--font-ui); padding:24px 12px; text-align:center;">
@@ -5058,8 +5081,9 @@
             </div>
             <textarea id="appsAutomationsGenInput" rows="2" placeholder="e.g. Open the File menu, click Export, type my-design, hit Enter" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:5px;padding:7px 10px;font:12px var(--font-ui);outline:none;resize:vertical;min-height:48px;"></textarea>
             <div style="display:flex;gap:6px;align-items:center;">
-              <label style="display:inline-flex;align-items:center;gap:4px;font:11px var(--font-ui);color:var(--subtext1);cursor:pointer;">
-                <input type="checkbox" id="appsAutomationsGenUseShot" style="accent-color:var(--accent);"> use current window screenshot
+              <label class="sy-switch-row" style="font:11px var(--font-ui);color:var(--subtext1);">
+                <span class="sy-switch"><input type="checkbox" id="appsAutomationsGenUseShot"><span></span></span>
+                use current window screenshot
               </label>
               <span style="flex:1;"></span>
               <button type="button" class="sy-btn sy-btn-primary" onclick="appsAutomationsGenerate()" id="appsAutomationsGenBtn" style="height:26px;padding:0 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">
@@ -14037,7 +14061,12 @@ async function appsOpenInstructions() {
     if (typeof toast === 'function') toast('Pick an app first.', 'warning');
     return;
   }
-  const overlay = document.getElementById('appsInstructionsModal');
+  _appsPromoteModalToTab('appsInstructionsModal', 'panel-apps-instructions');
+  const btn = document.getElementById('appsInstructionsTabBtn');
+  const lbl = document.getElementById('appsInstructionsTabLabel');
+  if (lbl) lbl.textContent = 'Instructions - ' + app;
+  if (btn) btn.style.display = '';
+  switchTab('apps-instructions');
   const nameEl = document.getElementById('appsInstructionsAppName');
   const textEl = document.getElementById('appsInstructionsText');
   const metaEl = document.getElementById('appsInstructionsMeta');
@@ -14045,7 +14074,8 @@ async function appsOpenInstructions() {
   if (nameEl) nameEl.textContent = app;
   if (textEl) { textEl.value = 'Loading...'; textEl.disabled = true; }
   if (statusEl) statusEl.textContent = '';
-  if (overlay) overlay.classList.add('open');
+  const panel = document.getElementById('panel-apps-instructions');
+  if (panel && typeof lucide !== 'undefined') lucide.createIcons({ el: panel });
   try {
     const r = await fetch('/api/apps/memory?app=' + encodeURIComponent(app));
     const data = await r.json();
@@ -14059,8 +14089,9 @@ async function appsOpenInstructions() {
 }
 
 function appsCloseInstructions() {
-  const overlay = document.getElementById('appsInstructionsModal');
-  if (overlay) overlay.classList.remove('open');
+  const btn = document.getElementById('appsInstructionsTabBtn');
+  if (btn) btn.style.display = 'none';
+  switchTab('apps');
 }
 
 async function appsSaveInstructions() {
@@ -14264,21 +14295,63 @@ function _appsAutomationsApp() {
   return _appsInstructionsKey();
 }
 
+// Convert the Instructions + Automations modals into first-class closable
+// tab panels so users can keep them open, switch to other tabs, and come
+// back. Runs once on first open; the inner .modal content is relocated
+// into a new .tab-panel under .center.
+function _appsPromoteModalToTab(modalId, panelId) {
+  const existing = document.getElementById(panelId);
+  if (existing) return existing;
+  const overlay = document.getElementById(modalId);
+  if (!overlay) return null;
+  const inner = overlay.querySelector('.modal');
+  if (!inner) return null;
+  const center = document.querySelector('.center');
+  if (!center) return null;
+  const panel = document.createElement('div');
+  panel.className = 'tab-panel';
+  panel.id = panelId;
+  panel.style.cssText = 'flex-direction:column; padding:14px 18px 18px; overflow:hidden; min-height:0;';
+  // Flatten the modal inner to fill the tab panel.
+  inner.style.maxWidth = 'none';
+  inner.style.width = '100%';
+  inner.style.maxHeight = 'none';
+  inner.style.height = '100%';
+  inner.style.boxShadow = 'none';
+  inner.style.border = 'none';
+  inner.style.background = 'transparent';
+  inner.style.padding = '0';
+  inner.style.display = 'flex';
+  inner.style.flexDirection = 'column';
+  inner.style.minHeight = '0';
+  panel.appendChild(inner);
+  overlay.remove();
+  center.appendChild(panel);
+  return panel;
+}
+
 async function appsOpenAutomations() {
   const app = _appsAutomationsApp();
   if (!app) { if (typeof toast === 'function') toast('Pick an app first.', 'warning'); return; }
-  const overlay = document.getElementById('appsAutomationsModal');
+  _appsPromoteModalToTab('appsAutomationsModal', 'panel-automations-editor');
+  const btn = document.getElementById('appsAutomationsTabBtn');
+  const lbl = document.getElementById('appsAutomationsTabLabel');
+  if (lbl) lbl.textContent = 'Automations - ' + app;
+  if (btn) btn.style.display = '';
   const nameEl = document.getElementById('appsAutomationsAppName');
   if (nameEl) nameEl.textContent = app;
-  if (overlay) overlay.classList.add('open');
+  switchTab('automations-editor');
   _appsRenderStepPalette();
-  if (typeof lucide !== 'undefined') lucide.createIcons({ el: overlay });
+  const panel = document.getElementById('panel-automations-editor');
+  if (panel && typeof lucide !== 'undefined') lucide.createIcons({ el: panel });
   await _appsAutomationsReload();
 }
 
 function appsCloseAutomations() {
-  const overlay = document.getElementById('appsAutomationsModal');
-  if (overlay) overlay.classList.remove('open');
+  const btn = document.getElementById('appsAutomationsTabBtn');
+  if (btn) btn.style.display = 'none';
+  // Return to the Automation -> Apps tab the editor came from.
+  switchTab('apps');
 }
 
 async function _appsAutomationsReload() {
@@ -14361,6 +14434,8 @@ function _appsAutomationsShowForm(show) {
   document.getElementById('appsAutomationsEmpty').style.display = show ? 'none' : '';
   document.getElementById('appsAutomationsForm').style.display = show ? 'flex' : 'none';
   document.getElementById('appsAutomationsHistory').style.display = 'none';
+  const palette = document.getElementById('appsStepPaletteWrap');
+  if (palette) palette.style.display = show ? '' : 'none';
 }
 
 function appsAutomationsToggleHistory() {
@@ -15364,9 +15439,9 @@ function _appsRenderRecipeChip() {
   chip.innerHTML =
     '<i data-lucide="zap" style="width:11px;height:11px;color:var(--accent);"></i>' +
     '<span>Will run automation: <strong>' + _appsEscape(_appsState.selectedRecipeName || '') + '</strong></span>' +
-    '<label style="display:inline-flex;align-items:center;gap:4px;margin-left:10px;color:var(--subtext1);cursor:pointer;">' +
-      '<input type="checkbox" ' + stepThroughChecked + ' onchange="_appsToggleStepThrough(this.checked)" style="accent-color:var(--accent);">' +
-      '<span>Step through</span>' +
+    '<label class="sy-switch-row" style="margin-left:10px;color:var(--subtext1);">' +
+      '<span class="sy-switch"><input type="checkbox" ' + stepThroughChecked + ' onchange="_appsToggleStepThrough(this.checked)"><span></span></span>' +
+      'Step through' +
     '</label>' +
     '<button type="button" onclick="appsClearSelectedRecipe()" title="Clear selection" style="margin-left:auto;background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;font:11px var(--font-ui);">clear</button>';
   if (typeof lucide !== 'undefined') lucide.createIcons({ el: chip });
@@ -15438,8 +15513,9 @@ async function appsChatSend() {
     input.value = ''; _appsAutoresizeChatInput();
     return;
   }
-  // mode === 'start' or 'continue'
-  if (!_appsState.hwnd) { if (typeof toast === 'function') toast('Pick an app first.', 'warning'); return; }
+  // mode === 'start' or 'continue'. A pending launch spec counts as
+  // "app selected" - _appsStartWithGoal will open it before session/start.
+  if (!_appsState.hwnd && !_appsState.pendingLaunchSpec) { if (typeof toast === 'function') toast('Pick an app first.', 'warning'); return; }
   input.value = ''; _appsAutoresizeChatInput();
   _appsAppendLog({ kind: 'user', text: 'You: ' + text, klass: 'rationale' });
   if (mode === 'continue') {

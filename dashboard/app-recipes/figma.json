@@ -1,0 +1,118 @@
+{
+  "app": "figma",
+  "recipes": [
+    {
+      "id": "r_moa9mk14_spzm",
+      "name": "Create Figma desktop frame with header",
+      "description": "Open Figma, add a desktop frame, and add a full-width header component",
+      "steps": [
+        {
+          "id": "s_izshwhob",
+          "verb": "CLICK",
+          "target": "x,y"
+        },
+        {
+          "id": "s_vu5ese5u",
+          "verb": "WAIT",
+          "target": "1000"
+        },
+        {
+          "id": "s_1md5ln04",
+          "verb": "TYPE",
+          "text": "figma"
+        },
+        {
+          "id": "s_kgnnab1d",
+          "verb": "WAIT",
+          "target": "500"
+        },
+        {
+          "id": "s_tzei203d",
+          "verb": "PRESS",
+          "target": "Enter"
+        },
+        {
+          "id": "s_tkkr1f8u",
+          "verb": "WAIT",
+          "target": "3000"
+        },
+        {
+          "id": "s_2cleo87g",
+          "verb": "WAIT_UNTIL",
+          "target": "Create new file button"
+        },
+        {
+          "id": "s_0u3ocu7s",
+          "verb": "CLICK",
+          "target": "Create new file button"
+        },
+        {
+          "id": "s_8p62ss53",
+          "verb": "WAIT",
+          "target": "2000"
+        },
+        {
+          "id": "s_r721pk5h",
+          "verb": "CLICK",
+          "target": "Assets panel"
+        },
+        {
+          "id": "s_rumytw1l",
+          "verb": "WAIT",
+          "target": "500"
+        },
+        {
+          "id": "s_b9s1en2t",
+          "verb": "CLICK",
+          "target": "Frame tool"
+        },
+        {
+          "id": "s_ihelnpzn",
+          "verb": "WAIT",
+          "target": "500"
+        },
+        {
+          "id": "s_pfj7jiwi",
+          "verb": "CLICK",
+          "target": "Desktop preset"
+        },
+        {
+          "id": "s_ycx6sowi",
+          "verb": "WAIT",
+          "target": "500"
+        },
+        {
+          "id": "s_oyybtbct",
+          "verb": "CLICK",
+          "target": "x,y"
+        },
+        {
+          "id": "s_gnnlrvan",
+          "verb": "WAIT",
+          "target": "1000"
+        },
+        {
+          "id": "s_p427l0uv",
+          "verb": "CLICK",
+          "target": "Rectangle tool"
+        },
+        {
+          "id": "s_2wwjpcho",
+          "verb": "WAIT",
+          "target": "300"
+        },
+        {
+          "id": "s_5rw7zxfe",
+          "verb": "DRAG"
+        },
+        {
+          "id": "s_34qz1jvl",
+          "verb": "WAIT",
+          "target": "500"
+        }
+      ],
+      "createdAt": "2026-04-22T16:26:56.872Z",
+      "updatedAt": "2026-04-22T16:26:56.872Z"
+    }
+  ]
+}
