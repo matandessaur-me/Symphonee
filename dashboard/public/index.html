@@ -14392,7 +14392,11 @@ async function _appsStartWithGoal(goal) {
       body: JSON.stringify({
         goal,
         hwnd: _appsState.hwnd,
-        app: _appsState.app,
+        // Use the same key the instructions modal uses so the memory the
+        // user wrote is actually loaded. Raw _appsState.app can be null when
+        // the window classifier didn't tag an app name, even though the
+        // title clearly identifies the app.
+        app: _appsInstructionsKey() || _appsState.app,
         provider: _appsState.providerKey || undefined,
       }),
     });
@@ -14646,6 +14650,14 @@ function handleAppsAgentStep(msg) {
   }
   if (kind === 'research') {
     _appsAppendLog({ kind: 'research', text: 'Research notes arrived', klass: 'memory', pre: msg.summary || '' });
+    return;
+  }
+  if (kind === 'memory_loaded') {
+    const appLabel = msg.app || '(no app key)';
+    const text = msg.bytes
+      ? ('Instructions loaded for ' + appLabel + ' (' + msg.bytes + ' bytes' + (msg.hasInstructions ? ', custom Instructions present' : '') + ')')
+      : ('No instructions file for ' + appLabel + '. Nothing was injected into the system prompt.');
+    _appsAppendLog({ kind: 'memory', text, klass: 'memory' });
     return;
   }
   if (kind === 'memory') {

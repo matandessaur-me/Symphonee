@@ -929,6 +929,13 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
 
   if (session.app) {
     try { memory.bumpSession(session.app); } catch (_) {}
+    try {
+      const body = memory.loadMemory(session.app) || '';
+      const bytes = Buffer.byteLength(body, 'utf8');
+      emit({ kind: 'memory_loaded', app: memory.normalizeApp(session.app), bytes, hasInstructions: /##\s*Instructions[\s\S]*?\S/i.test(body) });
+    } catch (_) {}
+  } else {
+    emit({ kind: 'memory_loaded', app: null, bytes: 0, hasInstructions: false, reason: 'no app key on session' });
   }
 
   // Decompose the goal into subgoals. Best-effort; if decomposition fails

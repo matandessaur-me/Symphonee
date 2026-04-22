@@ -119,29 +119,26 @@ function noteAction(session, tool) {
 }
 
 function isStuck(session) {
-  // Heuristic 1: three consecutive screenshots with >= threshold similarity
-  // AND a non-wait action was issued between them.
+  // Strict definition: the AGENT IS ACTING but the SCREEN is not changing.
+  // Requires FOUR consecutive near-identical frames so a subtle UI change
+  // (dropdown opening, toast, sidebar field update, spinner) does not flip
+  // us into stuck. The previous 3-frame threshold + action-count + same-tool
+  // heuristics were yanking the model out of workflows that were actually
+  // progressing, which then made it loop on "try something different" prompts
+  // and produce the "stuck at step 9 even though things were happening"
+  // behaviour.
   const sigs = session._shotSigs || [];
-  if (sigs.length >= 3) {
-    const a = sigs[sigs.length - 3];
+  if (sigs.length >= 4) {
+    const d = sigs[sigs.length - 4];
+    const c = sigs[sigs.length - 3];
     const b = sigs[sigs.length - 2];
-    const c = sigs[sigs.length - 1];
-    const s1 = _pixelSimilarity(a, b);
-    const s2 = _pixelSimilarity(b, c);
-    if (s1 >= STUCK_PIXEL_THRESHOLD && s2 >= STUCK_PIXEL_THRESHOLD) {
-      return { stuck: true, reason: 'screen unchanged across last 3 screenshots despite actions' };
+    const a = sigs[sigs.length - 1];
+    const s1 = _pixelSimilarity(d, c);
+    const s2 = _pixelSimilarity(c, b);
+    const s3 = _pixelSimilarity(b, a);
+    if (s1 >= STUCK_PIXEL_THRESHOLD && s2 >= STUCK_PIXEL_THRESHOLD && s3 >= STUCK_PIXEL_THRESHOLD) {
+      return { stuck: true, reason: 'screen unchanged across last 4 screenshots despite actions' };
     }
-  }
-  // Heuristic 2: too many actions since last screenshot change or finish.
-  if ((session._actionStreak || 0) >= STUCK_ACTION_STREAK + 5) {
-    return { stuck: true, reason: `${session._actionStreak} actions without meaningful progress` };
-  }
-  // Heuristic 3: same tool N times in a row (click, click, click...) — this
-  // is the classic loop pattern we want to break before the agent burns more
-  // tokens on a dead end.
-  const st = session._sameToolStreak;
-  if (st && st.tool && st.n >= LOOP_SAME_TOOL_THRESHOLD && st.tool !== 'screenshot' && st.tool !== 'wait_ms') {
-    return { stuck: true, reason: `looping on "${st.tool}" (${st.n} times in a row) — try a different tool or keyboard shortcut` };
   }
   return { stuck: false };
 }
