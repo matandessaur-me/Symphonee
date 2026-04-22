@@ -14,8 +14,11 @@ const chat = require('./apps-agent-chat');
 const memory = require('./apps-memory');
 const recipes = require('./apps-recipes');
 const recipeRunner = require('./apps-recipe-runner');
+const recorder = require('./apps-recorder');
 
 async function runSessionForEntry({ entry, session, task, driver, model, broadcast, recipe, inputs, stepThrough }) {
+  session._providerEntry = entry;
+  session._model = model || (entry && entry.adapter && entry.adapter.defaultModel);
   if (recipe) {
     // Deterministic path: execute recipe steps directly against the driver.
     const res = await recipeRunner.runRecipe({ session, driver, recipe, broadcast, providerEntry: entry, model, inputs, stepThrough });
@@ -30,8 +33,8 @@ async function runSessionForEntry({ entry, session, task, driver, model, broadca
     session.stopped = false;
     driver.resetStopped();
     session._handoff = true;
-    const chatEntry = (session._providerRegistry && session._providerRegistry.anthropic) || entry;
-    const chatModel = chatEntry && chatEntry.adapter && chatEntry.adapter.defaultModel;
+    const chatEntry = entry;
+    const chatModel = model || (chatEntry && chatEntry.adapter && chatEntry.adapter.defaultModel);
     const lines = (res.trail || []).map(t => {
       const prefix = t.ok ? '[ok]' : '[FAIL]';
       const target = t.target ? ' ' + t.target : '';
@@ -454,11 +457,246 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     json(res, recipes.exportRecipes(app, ids));
   });
 
+  // Run a single step against a target window. Used by the editor's
+  // "Test step" button so the user can iterate on one UIA selector or
+  // coordinate without replaying the whole recipe.
+  addRoute('POST', '/api/apps/recipes/run-step', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = body && body.hwnd;
+    if (hwnd == null) return json(res, { error: 'hwnd required' }, 400);
+    if (!body.step || typeof body.step !== 'object') return json(res, { error: 'step required' }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/recipes/run-step', 'Test step: ' + (body.step.verb || '?') + ' ' + String(body.step.target || '').slice(0, 60))) return;
+    }
+    // Build a minimal throw-away "session" shape that the recipe runner's
+    // step executor understands. Reuses everything: provider registry for
+    // vision fallback, cached window rect for coord scaling, driver for UIA.
+    const registry = buildRegistry();
+    const entry = chat.pickProvider(registry, body.provider);
+    const session = {
+      id: 'teststep_' + Date.now(),
+      hwnd,
+      app: body.app || null,
+      _providerRegistry: registry,
+      _providerEntry: entry || null,
+      _recipeCaptureRect: (body.captureRect && body.captureRect.w && body.captureRect.h) ? body.captureRect : null,
+      _emit: () => {},
+    };
+    try {
+      try { session._currentRect = await driver.getWindowRect(hwnd); } catch (_) {}
+      try { if (typeof driver.ensureForeground === 'function') await driver.ensureForeground(hwnd); } catch (_) {}
+      const { runSingleStep } = require('./apps-recipe-runner');
+      await runSingleStep({ session, driver, step: body.step, variables: body.inputs || {} });
+      json(res, { ok: true });
+    } catch (e) {
+      json(res, { error: e.message, code: e.code || null }, 400);
+    }
+  });
+
   addRoute('GET', '/api/apps/recipes/history', async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const app = url.searchParams.get('app');
     if (!app) return json(res, { error: 'app required' }, 400);
     json(res, recipes.listHistory(app));
+  });
+
+  // --- Recorder: capture raw mouse/keyboard input against a specific window
+  // and translate the captured stream into a recipe DSL draft. The draft is
+  // returned by /stop so the UI can show it in the editor before the user
+  // decides to save.
+  addRoute('POST', '/api/apps/recording/start', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = body && body.hwnd;
+    if (hwnd == null) return json(res, { error: 'hwnd required' }, 400);
+    // Resolve the hwnd against the live window list so the permission prompt
+    // names a real target (title + process) and the recorder can't be pointed
+    // at a non-visible handle by a malicious caller.
+    let targetInfo = null;
+    try {
+      const wins = await driver.listWindows({ force: true });
+      targetInfo = (wins || []).find(w => String(w.hwnd) === String(hwnd));
+    } catch (_) {}
+    if (!targetInfo) return json(res, { error: 'hwnd not found in the visible window list' }, 400);
+    if (typeof permGate === 'function') {
+      const label = 'Record input on "' + String(targetInfo.title || '').slice(0, 80) + '" (' + (targetInfo.processName || 'unknown') + ') - stop with Ctrl+Shift+Q';
+      if (!await permGate(res, 'api', 'POST /api/apps/recording/start', label)) return;
+    }
+    try {
+      try { if (typeof driver.ensureForeground === 'function') await driver.ensureForeground(hwnd); } catch (_) {}
+      // When the PS recorder closes on its own (Ctrl+Shift+Q hotkey, window
+      // closed) the client can't see the end - broadcast a WS event so the
+      // UI auto-stops instead of leaving a stale "Stop recording" button.
+      const onAutoStop = (info) => {
+        if (typeof broadcast !== 'function') return;
+        broadcast({ type: 'apps-recording-ended', recordingId: info.recordingId, reason: info.reason, at: Date.now() });
+      };
+      const result = await recorder.startRecording({ hwnd, onAutoStop });
+      json(res, { ok: true, ...result, target: { title: targetInfo.title, processName: targetInfo.processName } });
+    } catch (e) {
+      json(res, { error: e.message }, 400);
+    }
+  });
+
+  addRoute('POST', '/api/apps/recording/stop', async (req, res) => {
+    let body = {};
+    try { body = await readBody(req); } catch (_) {}
+    try {
+      const result = await recorder.stopRecording({ recordingId: body.recordingId });
+      const app = body.app ? String(body.app).trim() : null;
+      const draft = recorder.eventsToRecipe({
+        events: result.events,
+        captureRect: result.captureRect,
+        name: body.name || null,
+        description: body.description || null,
+      });
+      // Auto-save if the caller passed an app + save=true, so the recorded
+      // recipe lands in the app's library without a second round trip.
+      let saved = null;
+      if (app && body.save) {
+        if (typeof permGate === 'function') {
+          if (!await permGate(res, 'api', 'POST /api/apps/recording/stop', 'Save recorded automation "' + draft.name + '" for ' + app)) return;
+        }
+        try { saved = recipes.saveRecipe(app, draft); } catch (e) { saved = { error: e.message }; }
+      }
+      json(res, { ok: true, draft, saved, meta: { durationMs: result.durationMs, reason: result.reason, eventCount: result.events.length, captureRect: result.captureRect, errors: result.errors || [] } });
+    } catch (e) {
+      json(res, { error: e.message }, 400);
+    }
+  });
+
+  // --- UI Automation (UIA) element picker + finder. Gives recipes PAD-style
+  // selectors ("the Save button in the Toolbar") that survive resizes and
+  // layout changes without eating vision-model tokens.
+  // Maximize a target window. Used by the editor to put the target app
+  // full-screen before Record / Pick / Run so coordinate-based steps replay
+  // against the same layout they were captured against.
+  addRoute('POST', '/api/apps/window/maximize', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = body && body.hwnd;
+    if (hwnd == null) return json(res, { error: 'hwnd required' }, 400);
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'POST /api/apps/window/maximize', 'Maximize target window ' + hwnd)) return;
+    }
+    try {
+      if (typeof driver.ensureForeground === 'function') await driver.ensureForeground(Number(hwnd));
+      const info = await driver.maximizeWindow(Number(hwnd));
+      json(res, { ok: true, alreadyMaximized: !!(info && info.alreadyMaximized) });
+    } catch (e) {
+      json(res, { error: e.message }, 400);
+    }
+  });
+
+  addRoute('POST', '/api/apps/uia/tree', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = body && body.hwnd;
+    if (hwnd == null) return json(res, { error: 'hwnd required' }, 400);
+    try {
+      const out = await driver.uiaTree(Number(hwnd), { maxNodes: Math.min(2000, Math.max(50, parseInt(body.maxNodes, 10) || 400)) });
+      json(res, { ok: true, ...out });
+    } catch (e) {
+      json(res, { error: e.message }, 400);
+    }
+  });
+
+  addRoute('POST', '/api/apps/uia/find', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = body && body.hwnd;
+    if (hwnd == null) return json(res, { error: 'hwnd required' }, 400);
+    if (!body.selector || typeof body.selector !== 'object') return json(res, { error: 'selector required' }, 400);
+    try {
+      const hit = await driver.findUIAElement(hwnd, body.selector);
+      json(res, { ok: true, hit: !!hit, element: hit });
+    } catch (e) {
+      json(res, { error: e.message }, 400);
+    }
+  });
+
+  // Streaming picker: spawns uia-pick.ps1 and pipes its JSON-lines back as a
+  // simple Server-Sent Events stream. Closes automatically on picked/cancelled.
+  addRoute('GET', '/api/apps/uia/pick', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const hwnd = url.searchParams.get('hwnd');
+    if (!hwnd) return json(res, { error: 'hwnd required' }, 400);
+    // Consent prompt - picker watches global mouse + keyboard state until
+    // the user clicks or aborts, so the user should know the expectation.
+    if (typeof permGate === 'function') {
+      if (!await permGate(res, 'api', 'GET /api/apps/uia/pick', 'Pick a UI element on window ' + hwnd + ' (Ctrl+Click to capture, Esc to cancel)')) return;
+    }
+    // Bring the target forward so the user can Ctrl+Click it immediately.
+    try { if (typeof driver.ensureForeground === 'function') await driver.ensureForeground(Number(hwnd)); } catch (_) {}
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    // Heartbeat every 15s so the browser doesn't close the EventSource on its
+    // own idle timeout; without this, a picker left open for a minute drops.
+    const heartbeat = setInterval(() => { try { res.write(': keepalive\n\n'); } catch (_) {} }, 15000);
+    const proc = driver.spawnUIAPicker(Number(hwnd));
+    let buf = '';
+    let stderrBuf = '';
+    let done = false;
+    const send = (obj) => { try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch (_) {} };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearInterval(heartbeat);
+      try { res.end(); } catch (_) {}
+      try { proc.kill(); } catch (_) {}
+    };
+    proc.stdout.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        res.write('data: ' + line + '\n\n');
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === 'picked' || ev.type === 'cancelled' || ev.type === 'error') {
+            finish();
+            return;
+          }
+        } catch (_) {}
+      }
+    });
+    proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString('utf8'); });
+    proc.on('error', (e) => { send({ type: 'error', message: 'spawn failed: ' + (e && e.message || e) }); finish(); });
+    proc.on('close', (code) => {
+      // If the script exited without emitting a terminal event, surface the
+      // stderr / exit code to the UI instead of letting the browser interpret
+      // the silent close as a dropped connection.
+      if (!done) {
+        const tail = stderrBuf.trim().split(/\r?\n/).slice(-3).join(' | ').slice(0, 500);
+        send({ type: 'error', message: 'picker exited (' + code + ')' + (tail ? ' - ' + tail : '') });
+      }
+      finish();
+    });
+    req.on('close', finish);
+  });
+
+  addRoute('GET', '/api/apps/recording/status', async (req, res) => {
+    const active = recorder.getActive();
+    if (!active) return json(res, { ok: true, active: false });
+    json(res, {
+      ok: true,
+      active: true,
+      recordingId: active.id,
+      hwnd: active.hwnd,
+      eventCount: active.events.length,
+      captureRect: active.captureRect,
+      startedAt: active.startedAt,
+    });
   });
 
   // "Save current session as a recipe". Takes the actions the chat loop
@@ -607,8 +845,12 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     if (!description) return json(res, { error: 'description required' }, 400);
     const app = String(body.app || '').trim();
     const registry = buildRegistry();
-    const entry = chat.pickProvider(registry, 'anthropic');
-    if (!entry) return json(res, { error: 'ANTHROPIC_API_KEY required to generate recipes. Set it in Settings -> AI Keys.' }, 400);
+    // The user can pick any provider they have a key for. Anthropic remains
+    // the default since it's the only one that can use the server-side
+    // web_search tool for grounding; other providers run ungrounded.
+    const preferred = typeof body.provider === 'string' ? body.provider : 'anthropic';
+    const entry = chat.pickProvider(registry, preferred);
+    if (!entry) return json(res, { error: 'Requested provider "' + preferred + '" is not configured. Add an API key in Settings -> AI Keys.' }, 400);
 
     // Pull the app's instructions memory so the generator grounds in the
     // user's own notes about this app (UI map, DOs, DONTs, keybindings).
@@ -641,45 +883,75 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
       '\nIf you are unsure of exact menu labels, keyboard shortcuts, or UI element names for this app, use the web_search tool to look them up before emitting steps. Do NOT invent menu paths.',
     ].filter(Boolean).join('\n');
 
-    const userContent = [{ type: 'text', text: description }];
-    if (body.screenshotBase64) {
-      userContent.unshift({ type: 'image', source: { type: 'base64', media_type: body.mimeType || 'image/jpeg', data: body.screenshotBase64 } });
+    const chosenModel = (body && typeof body.model === 'string' && /^[\w.\-:]+$/.test(body.model.trim()))
+      ? body.model.trim()
+      : entry.adapter.defaultModel;
+
+    const kind = entry.adapter.kind;
+    const { httpJson } = chat;
+
+    // Dispatch per-adapter. Anthropic gets the native messages API + web_search
+    // for grounding; OpenAI-compat (OpenAI / Grok / Qwen) go through Chat
+    // Completions with an image_url payload; Gemini uses generateContent. All
+    // three return a single text block we parse for the JSON recipe.
+    let text = '';
+    try {
+      if (kind === 'anthropic') {
+        const userContent = [{ type: 'text', text: description }];
+        if (body.screenshotBase64) {
+          userContent.unshift({ type: 'image', source: { type: 'base64', media_type: body.mimeType || 'image/jpeg', data: body.screenshotBase64 } });
+        }
+        const parsed = await httpJson({
+          hostname: 'api.anthropic.com', path: '/v1/messages',
+          headers: { 'x-api-key': entry.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'web-search-2025-03-05' },
+          body: {
+            model: chosenModel, max_tokens: 2048, system,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+            messages: [{ role: 'user', content: userContent }],
+          },
+          timeoutMs: 60000,
+        });
+        text = (parsed.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+      } else if (kind === 'openai-compat') {
+        const content = [{ type: 'text', text: description }];
+        if (body.screenshotBase64) {
+          content.unshift({ type: 'image_url', image_url: { url: 'data:' + (body.mimeType || 'image/jpeg') + ';base64,' + body.screenshotBase64 } });
+        }
+        const parsed = await httpJson({
+          hostname: entry.adapter.baseHost, path: entry.adapter.basePath,
+          headers: { [entry.adapter.authHeader]: entry.adapter.authPrefix + entry.apiKey },
+          body: {
+            model: chosenModel, max_tokens: 2048,
+            messages: [{ role: 'system', content: system }, { role: 'user', content }],
+          },
+          timeoutMs: 60000,
+        });
+        text = ((parsed.choices && parsed.choices[0] && parsed.choices[0].message && parsed.choices[0].message.content) || '').trim();
+      } else if (kind === 'gemini') {
+        const parts = [{ text: description }];
+        if (body.screenshotBase64) {
+          parts.unshift({ inlineData: { mimeType: body.mimeType || 'image/jpeg', data: body.screenshotBase64 } });
+        }
+        const parsed = await httpJson({
+          hostname: 'generativelanguage.googleapis.com',
+          path: '/v1beta/models/' + encodeURIComponent(chosenModel) + ':generateContent?key=' + encodeURIComponent(entry.apiKey),
+          headers: {},
+          body: {
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: 'user', parts }],
+            generationConfig: { maxOutputTokens: 2048 },
+          },
+          timeoutMs: 60000,
+        });
+        const gp = (parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts) || [];
+        text = gp.map(p => p.text || '').join('').trim();
+      } else {
+        return json(res, { error: 'provider "' + kind + '" not supported by generate yet' }, 400);
+      }
+    } catch (e) {
+      return json(res, { error: e.message }, 500);
     }
 
-    const payload = JSON.stringify({
-      model: entry.adapter.defaultModel,
-      max_tokens: 2048,
-      system,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
-      messages: [{ role: 'user', content: userContent }],
-    });
-    const https = require('https');
-    const result = await new Promise((resolve, reject) => {
-      const r = https.request({
-        method: 'POST', hostname: 'api.anthropic.com', path: '/v1/messages',
-        headers: {
-          'content-type': 'application/json',
-          'content-length': Buffer.byteLength(payload),
-          'x-api-key': entry.apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'web-search-2025-03-05',
-        },
-        timeout: 60000,
-      }, (response) => {
-        let d = '';
-        response.on('data', c => d += c);
-        response.on('end', () => {
-          if (response.statusCode < 200 || response.statusCode >= 300) return reject(new Error('anthropic ' + response.statusCode + ': ' + d.slice(0, 300)));
-          try { resolve(JSON.parse(d)); } catch (e) { reject(e); }
-        });
-      });
-      r.on('error', reject);
-      r.on('timeout', () => r.destroy(new Error('generate timed out')));
-      r.write(payload); r.end();
-    }).catch(e => ({ _err: e }));
-    if (result._err) return json(res, { error: result._err.message }, 500);
-
-    const text = (result.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return json(res, { error: 'AI returned non-JSON output', raw: text.slice(0, 400) }, 500);
     try {

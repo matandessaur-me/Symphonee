@@ -52,7 +52,7 @@ function _write(app, data) {
 }
 
 const ALLOWED_VERBS = new Set([
-  'CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
+  'CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
   'SCROLL', 'DRAG',
   // Control flow (Phase E):
   'IF', 'ELSE', 'ENDIF',
@@ -140,6 +140,22 @@ function saveRecipe(app, recipe) {
   // safe for attribute interpolation.
   const id = SAFE_ID_RE.test(String(recipe.id || '')) ? String(recipe.id) : _recipeId();
   const existing = data.recipes.find(x => x.id === id);
+  let captureRect;
+  if (recipe.captureRect && typeof recipe.captureRect === 'object') {
+    const w = parseInt(recipe.captureRect.w, 10);
+    const h = parseInt(recipe.captureRect.h, 10);
+    if (w > 0 && h > 0) captureRect = { w, h };
+  }
+  let windowPin;
+  if (recipe.window && typeof recipe.window === 'object') {
+    const w = parseInt(recipe.window.w, 10);
+    const h = parseInt(recipe.window.h, 10);
+    const x = recipe.window.x != null ? parseInt(recipe.window.x, 10) : undefined;
+    const y = recipe.window.y != null ? parseInt(recipe.window.y, 10) : undefined;
+    const maximized = !!recipe.window.maximized;
+    if (maximized) windowPin = { maximized: true };
+    else if (w > 0 && h > 0) windowPin = { w, h, x: Number.isFinite(x) ? x : undefined, y: Number.isFinite(y) ? y : undefined };
+  }
   const record = {
     id,
     name: String(recipe.name).trim().slice(0, 120),
@@ -147,6 +163,8 @@ function saveRecipe(app, recipe) {
     variables: (recipe.variables && typeof recipe.variables === 'object') ? recipe.variables : undefined,
     inputs,
     verify,
+    captureRect,
+    window: windowPin,
     steps,
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now,
@@ -184,6 +202,10 @@ function importRecipes(app, payload) {
       name: raw.name,
       description: raw.description,
       variables: raw.variables,
+      inputs: raw.inputs,
+      verify: raw.verify,
+      captureRect: raw.captureRect,
+      window: raw.window,
       steps: raw.steps,
     });
     imported++;

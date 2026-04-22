@@ -467,6 +467,10 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
     kind: 'openai-compat',
     label: label || 'OpenAI',
     defaultModel,
+    baseHost,
+    basePath,
+    authHeader,
+    authPrefix,
     initMessages(task) {
       return [
         { role: 'system', content: BASE_SYSTEM_PROMPT },
@@ -1220,4 +1224,6 @@ module.exports = {
   sessions,
   describeAction,
   executeTool,
+  httpJson,
+  httpJsonWithRetry,
 };

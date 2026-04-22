@@ -5068,6 +5068,12 @@
           <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px; padding:6px 4px 2px; border-top:1px solid var(--surface1);">Drag to insert</div>
           <div id="appsStepPalette" style="display:flex;flex-direction:column;gap:2px;"></div>
         </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 4px 2px;border-top:1px solid var(--surface1);">
+          <span style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px;">UI elements</span>
+          <span style="flex:1;"></span>
+          <button type="button" class="sy-btn sy-btn-ghost" onclick="appsAutomationsRefreshTree()" title="Snapshot the target window's UI Automation tree" style="height:22px;padding:0 6px;font-size:10px;">Refresh</button>
+        </div>
+        <div id="appsAutomationsTree" style="flex:1; min-height:120px; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; gap:4px; color:#e0e0e0; padding:2px 0;"></div>
       </div>
       <div id="appsAutomationsEditor" style="flex:1; display:flex; flex-direction:column; gap:10px; min-width:0;">
         <div id="appsAutomationsEmpty" style="color:var(--subtext0); font:12px var(--font-ui); padding:24px 12px; text-align:center;">
@@ -5079,6 +5085,7 @@
               <i data-lucide="sparkles" style="width:12px;height:12px;"></i> Describe it, AI writes the steps
               <span style="flex:1;"></span>
               <span id="appsAutomationsGenProvider" style="font:500 10px var(--font-mono); color:var(--subtext0); text-transform:none; letter-spacing:0;"></span>
+              <select id="appsAutomationsGenModel" title="Claude model. Haiku is fastest; Opus is most capable. Requires ANTHROPIC_API_KEY." style="background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:2px 6px;font:11px var(--font-mono);text-transform:none;letter-spacing:0;outline:none;"></select>
             </div>
             <textarea id="appsAutomationsGenInput" rows="2" placeholder="e.g. Open the File menu, click Export, type my-design, hit Enter" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:5px;padding:7px 10px;font:12px var(--font-ui);outline:none;resize:vertical;min-height:48px;"></textarea>
             <div style="display:flex;gap:6px;align-items:center;">
@@ -5087,6 +5094,12 @@
                 use current window screenshot
               </label>
               <span style="flex:1;"></span>
+              <button type="button" class="sy-btn sy-btn-outline" id="appsAutomationsPickBtn" onclick="appsAutomationsPickElement()" title="Pick a UI element from the target window using accessibility tree (UIA). Ctrl+Click the element; Esc cancels." style="height:26px;padding:0 10px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">
+                <i data-lucide="crosshair" style="width:11px;height:11px;"></i> Pick UI element
+              </button>
+              <button type="button" class="sy-btn sy-btn-outline" id="appsAutomationsRecordBtn" onclick="appsAutomationsToggleRecord()" title="Record your clicks and keystrokes against the target window. Stop with Ctrl+Shift+Q." style="height:26px;padding:0 10px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">
+                <i data-lucide="circle" style="width:11px;height:11px;color:var(--red, #e06c75);"></i> <span id="appsAutomationsRecordLabel">Record actions</span>
+              </button>
               <button type="button" class="sy-btn sy-btn-primary" onclick="appsAutomationsGenerate()" id="appsAutomationsGenBtn" style="height:26px;padding:0 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">
                 <i data-lucide="wand-2" style="width:11px;height:11px;"></i> Generate steps
               </button>
@@ -5104,6 +5117,21 @@
             <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--overlay1);">- prompted per run, one per line: <code>name | label | placeholder</code> (last two optional). Referenced as <code>{{name}}</code> in steps.</span>
           </div>
           <textarea id="appsAutomationsInputs" spellcheck="false" placeholder="filename | File name | e.g. my-design&#10;count | How many times" rows="2" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:6px;padding:7px 10px;font:12px/1.4 var(--font-mono);outline:none;resize:vertical;"></textarea>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:6px 8px;background:color-mix(in srgb, var(--accent) 6%, transparent);border:1px solid color-mix(in srgb, var(--accent) 22%, transparent);border-radius:5px;">
+            <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px;">Window setup</div>
+            <label class="sy-switch-row" style="font:11px var(--font-ui);color:var(--subtext1);gap:6px;" title="Maximize the target window before step 1 runs. Best for recipes with pixel coordinates that were captured on a full-screen window.">
+              <span class="sy-switch"><input type="checkbox" id="appsAutomationsWinMax"><span></span></span>
+              Maximize on run
+            </label>
+            <label style="font:11px var(--font-ui);color:var(--subtext1);display:inline-flex;align-items:center;gap:4px;" title="Resize target window to these exact dimensions before step 1. Leave blank for no resize.">
+              Size
+              <input type="number" id="appsAutomationsWinW" placeholder="width" min="200" max="8192" style="width:70px;background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-mono);outline:none;">
+              x
+              <input type="number" id="appsAutomationsWinH" placeholder="height" min="200" max="8192" style="width:70px;background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-mono);outline:none;">
+            </label>
+            <span style="flex:1;"></span>
+            <span id="appsAutomationsCaptureRectHint" style="font:10px var(--font-mono);color:var(--subtext0);"></span>
+          </div>
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px;">Steps</div>
             <span style="flex:1;"></span>
@@ -5141,12 +5169,13 @@
         </div>
       </div>
     </div>
-    <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid var(--surface1);">
-      <span id="appsAutomationsStatus" style="margin-right:auto; font:11px var(--font-ui); color:var(--subtext0);"></span>
-      <button class="modal-btn" id="appsAutomationsDeleteBtn" onclick="appsAutomationsDelete()" style="display:none;color:var(--red);border-color:var(--red);">Delete</button>
-      <button class="modal-btn" onclick="appsAutomationsRunSelected()">Use in next run</button>
-      <button class="modal-btn" onclick="appsCloseAutomations()">Close</button>
-      <button class="modal-btn modal-btn-primary" id="appsAutomationsSaveBtn" onclick="appsAutomationsSave()">Save</button>
+    <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid var(--surface1); flex-wrap:nowrap;">
+      <span id="appsAutomationsStatus" style="margin-right:auto; font:11px/1.35 var(--font-ui); color:var(--subtext0); flex:1 1 240px; min-width:240px; white-space:normal; overflow:visible;"></span>
+      <button class="modal-btn" id="appsAutomationsDeleteBtn" onclick="appsAutomationsDelete()" style="display:none;color:var(--red);border-color:var(--red);white-space:nowrap;">Delete</button>
+      <button class="modal-btn" onclick="appsAutomationsRunSelected()" style="white-space:nowrap;">Use in next run</button>
+      <button class="modal-btn" onclick="appsAutomationsRunNow()" title="Save and run this recipe now against the target app" style="white-space:nowrap;">Run now</button>
+      <button class="modal-btn" onclick="appsCloseAutomations()" style="white-space:nowrap;">Close</button>
+      <button class="modal-btn modal-btn-primary" id="appsAutomationsSaveBtn" onclick="appsAutomationsSave()" style="white-space:nowrap;">Save</button>
     </div>
   </div>
 </div>
@@ -6317,6 +6346,14 @@ requestAnimationFrame(fitTerminalNow);
           break;
         case 'apps-agent-step':
           if (typeof handleAppsAgentStep === 'function') handleAppsAgentStep(msg);
+          break;
+        case 'apps-recording-ended':
+          // PS recorder closed on its own (Ctrl+Shift+Q hotkey or target window
+          // closed). Auto-finalize so the UI doesn't sit on a stale "Stop
+          // recording" state.
+          if (typeof appsAutomationsStopRecording === 'function' && _appsRecording) {
+            appsAutomationsStopRecording();
+          }
           break;
       }
     };
@@ -13372,6 +13409,24 @@ function _restoreTabOrder() {
     }
   });
 }
+// Place a newly-revealed closable tab at the far right of the bar. Tabs are
+// ordered by CSS `order` (see _saveTabOrder/_restoreTabOrder), so appendChild
+// alone is not enough - a tab with no inline `order` falls back to 0 and jumps
+// LEFT of every saved tab (which live at 10000+). Assign max+1 and persist.
+function _placeTabAtEnd(btn) {
+  const scroll = document.getElementById('tabBarScroll');
+  if (!scroll || !btn) return;
+  if (btn.parentNode !== scroll) scroll.appendChild(btn);
+  let maxOrder = 9999;
+  scroll.querySelectorAll('.tab-btn').forEach(el => {
+    if (el === btn) return;
+    const o = parseFloat(el.style.order);
+    if (!isNaN(o) && o > maxOrder) maxOrder = o;
+  });
+  btn.style.order = String(maxOrder + 1);
+  try { _saveTabOrder(); } catch (_) {}
+}
+
 function _saveTabOrder() {
   const scroll = document.getElementById('tabBarScroll');
   if (!scroll) return;
@@ -14115,8 +14170,7 @@ async function appsOpenInstructions() {
   const lbl = document.getElementById('appsInstructionsTabLabel');
   if (lbl) lbl.textContent = 'Instructions - ' + app;
   if (btn) {
-    const scroll = document.getElementById('tabBarScroll');
-    if (scroll && btn.parentNode === scroll) scroll.appendChild(btn);
+    _placeTabAtEnd(btn);
     btn.style.display = '';
   }
   switchTab('apps-instructions');
@@ -14265,6 +14319,12 @@ async function appsAutomationsGenerate() {
   if (statusEl) statusEl.textContent = 'Asking AI...';
   try {
     const payload = { description: desc, app: _appsAutomationsApp() };
+    const modelSel = document.getElementById('appsAutomationsGenModel');
+    if (modelSel && modelSel.value) {
+      payload.model = modelSel.value;
+      const opt = modelSel.selectedOptions && modelSel.selectedOptions[0];
+      if (opt && opt.dataset.provider) payload.provider = opt.dataset.provider;
+    }
     if (document.getElementById('appsAutomationsGenUseShot').checked && _appsState.hwnd) {
       // Grab a fresh screenshot so AI can ground step descriptions in the
       // actual UI. Uses the apps screenshot route.
@@ -14297,8 +14357,415 @@ async function appsAutomationsGenerate() {
   }
 }
 
+// Recorder UI state. _appsRecording holds { recordingId, captureRect, hwnd }
+// while a capture is live; null otherwise. Starting a recording requires a
+// picked window (hwnd) so the recorder can filter input to that window only.
+let _appsRecording = null;
+
+function _appsRecordSetButton(running) {
+  const btn = document.getElementById('appsAutomationsRecordBtn');
+  const lbl = document.getElementById('appsAutomationsRecordLabel');
+  if (!btn || !lbl) return;
+  if (running) {
+    btn.classList.add('sy-btn-danger');
+    btn.classList.remove('sy-btn-outline');
+    btn.style.background = 'color-mix(in srgb, var(--red, #e06c75) 18%, transparent)';
+    btn.style.borderColor = 'var(--red, #e06c75)';
+    lbl.textContent = 'Stop recording';
+  } else {
+    btn.classList.remove('sy-btn-danger');
+    btn.classList.add('sy-btn-outline');
+    btn.style.background = '';
+    btn.style.borderColor = '';
+    lbl.textContent = 'Record actions';
+  }
+}
+
+async function appsAutomationsToggleRecord() {
+  if (_appsRecording) return appsAutomationsStopRecording();
+  return appsAutomationsStartRecording();
+}
+
+// Resolve a usable hwnd without forcing the user back to the Automation tab.
+// Preference order:
+//   1. The hwnd already bound to the session (they DID pick one).
+//   2. A running window whose process/title matches the editor's app name.
+//   3. Null - surfaced to the caller so they can launch or pick.
+// Best-effort maximize of the resolved hwnd. Automation runs reliably when
+// the target app is full-screen; we do this before Record / Pick / Run now
+// so recorded coords and replay coords match, and UIA elements aren't cut
+// off by the window border.
+async function _appsMaximizeHwnd(hwnd) {
+  if (!hwnd) return;
+  try {
+    const r = await fetch('/api/apps/window/maximize', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hwnd }),
+    }).catch(() => null);
+    const data = r ? await r.json().catch(() => null) : null;
+    // Skip the settle pause when the window was already maximized - saves
+    // 180ms on every Record / Pick / Run click in the common case.
+    if (!(data && data.alreadyMaximized)) {
+      await new Promise(r2 => setTimeout(r2, 180));
+    }
+  } catch (_) {}
+}
+
+async function _appsResolveHwndForRecording() {
+  if (_appsState.hwnd) return { hwnd: _appsState.hwnd, source: 'session' };
+  const app = (_appsAutomationsApp() || '').toString().trim().toLowerCase();
+  if (!app) return { hwnd: null, reason: 'no app selected' };
+  const findMatch = (wins) => {
+    const byProc = wins.find(w => (w.processName || '').toLowerCase().startsWith(app));
+    const byTitle = wins.find(w => (w.title || '').toLowerCase().includes(app));
+    return byProc || byTitle || null;
+  };
+  try {
+    const r = await fetch('/api/apps/windows', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const data = await r.json();
+    const win = findMatch((data && data.windows) || []);
+    if (win) return { hwnd: win.hwnd, source: 'lookup', title: win.title };
+  } catch (e) {
+    return { hwnd: null, reason: e.message };
+  }
+  // Not running - find the installed entry and auto-launch. Better UX than
+  // asking the user to tab away and start the app manually every time.
+  let launchSpec = null;
+  try {
+    const r = await fetch('/api/apps/installed', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const data = await r.json();
+    const installed = (data && data.apps) || [];
+    launchSpec = installed.find(a => (a.name || '').toLowerCase() === app)
+      || installed.find(a => (a.name || '').toLowerCase().startsWith(app))
+      || installed.find(a => (a.name || '').toLowerCase().includes(app));
+  } catch (_) {}
+  if (!launchSpec) {
+    return { hwnd: null, reason: 'no installed app matches "' + app + '" - install it, or pick a window on the Automation tab' };
+  }
+  const statusEl = document.getElementById('appsAutomationsStatus');
+  if (statusEl) statusEl.textContent = 'Launching "' + (launchSpec.name || app) + '"...';
+  if (typeof toast === 'function') toast('Launching ' + (launchSpec.name || app) + '...', 'info', { duration: 2500 });
+  try {
+    await fetch('/api/apps/launch', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: launchSpec.id, path: launchSpec.path, name: launchSpec.name }),
+    });
+  } catch (e) {
+    return { hwnd: null, reason: 'launch failed: ' + e.message };
+  }
+  // Poll for the window to appear. Cold-start is 1-3s for native apps, but
+  // Electron/heavy suites can take 10+. Cap at 15s before giving up.
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 600));
+    try {
+      const r2 = await fetch('/api/apps/windows', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const data2 = await r2.json();
+      const win2 = findMatch((data2 && data2.windows) || []);
+      if (win2) {
+        if (statusEl) statusEl.textContent = 'Launched "' + (launchSpec.name || app) + '".';
+        return { hwnd: win2.hwnd, source: 'launched', title: win2.title };
+      }
+    } catch (_) {}
+  }
+  return { hwnd: null, reason: 'launched but window did not appear within 15s - try again once it\'s visible' };
+}
+
+async function appsAutomationsStartRecording() {
+  const statusEl = document.getElementById('appsAutomationsStatus');
+  if (statusEl) statusEl.textContent = 'Starting recorder...';
+  const resolved = await _appsResolveHwndForRecording();
+  if (!resolved.hwnd) {
+    const msg = 'Record needs a running window for "' + (_appsAutomationsApp() || 'this app') + '". ' +
+      (resolved.reason === 'window not found (launch the app first)'
+        ? 'Launch the app from the Automation tab, then try again.'
+        : (resolved.reason || 'Pick a window on the Automation tab first.'));
+    if (statusEl) statusEl.textContent = msg;
+    if (typeof toast === 'function') toast(msg, 'warning');
+    return;
+  }
+  // Stick the resolved hwnd on the global session state so the rest of the
+  // editor (Run, Stop, chat continuity) sees it too.
+  _appsState.hwnd = resolved.hwnd;
+  await _appsMaximizeHwnd(resolved.hwnd);
+  try {
+    const r = await fetch('/api/apps/recording/start', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hwnd: resolved.hwnd }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'start failed');
+    _appsRecording = { recordingId: data.recordingId, captureRect: data.captureRect, hwnd: _appsState.hwnd };
+    _appsRecordSetButton(true);
+    if (statusEl) statusEl.textContent = 'Recording. Stop with Ctrl+Shift+Q, or click Stop. Input to other windows is ignored.';
+    if (typeof toast === 'function') toast('Recording started. Ctrl+Shift+Q to stop.', 'info', { duration: 3500 });
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Record failed: ' + e.message;
+    if (typeof toast === 'function') toast('Record failed: ' + e.message, 'error');
+  }
+}
+
+async function appsAutomationsStopRecording() {
+  if (!_appsRecording) return;
+  const rec = _appsRecording;
+  _appsRecording = null;
+  _appsRecordSetButton(false);
+  const statusEl = document.getElementById('appsAutomationsStatus');
+  if (statusEl) statusEl.textContent = 'Stopping recorder...';
+  try {
+    const r = await fetch('/api/apps/recording/stop', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ recordingId: rec.recordingId }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'stop failed');
+    const draft = data.draft || {};
+    const steps = Array.isArray(draft.steps) ? draft.steps : [];
+    const nameEl = document.getElementById('appsAutomationsName');
+    const descEl = document.getElementById('appsAutomationsDesc');
+    if (nameEl && !nameEl.value && draft.name) nameEl.value = draft.name;
+    if (descEl && !descEl.value && draft.description) descEl.value = draft.description;
+    if (draft.captureRect) {
+      if (!_appsAutomations.current) _appsAutomations.current = { id: null, steps: [] };
+      _appsAutomations.current.captureRect = draft.captureRect;
+    }
+    if (typeof _appsUpdateCaptureRectHint === 'function') _appsUpdateCaptureRectHint();
+    _appsBuilderSteps = steps;
+    const stepsEl = document.getElementById('appsAutomationsSteps');
+    if (stepsEl) stepsEl.value = _appsStepsToText(steps);
+    if (typeof _appsRenderBuilderRows === 'function') _appsRenderBuilderRows();
+    const cr = draft.captureRect;
+    const rectNote = cr ? ' Capture rect ' + cr.w + 'x' + cr.h + ' - coords will scale at run time.' : '';
+    const warnings = (data.meta && Array.isArray(data.meta.errors || []) && data.meta.errors) ? data.meta.errors : [];
+    if (statusEl) statusEl.textContent = 'Captured ' + steps.length + ' step' + (steps.length === 1 ? '' : 's') + '.' + rectNote + ' Review and Save.';
+    if (warnings.length && typeof toast === 'function') {
+      toast('Recorder warnings: ' + warnings.join(' | '), 'warning', { duration: 6000 });
+    } else if (typeof toast === 'function') {
+      toast('Recording captured (' + steps.length + ' steps).', 'success');
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Stop failed: ' + e.message;
+    if (typeof toast === 'function') toast('Stop failed: ' + e.message, 'error');
+  }
+}
+
+// Live picker session. The SSE stream from /api/apps/uia/pick pushes hover
+// updates + the final "picked" event; Esc in the target window cancels.
+let _appsUiaPicker = null;
+
+async function appsAutomationsPickElement() {
+  if (_appsUiaPicker) { _appsUiaPicker.close(); _appsUiaPicker = null; }
+  const statusEl = document.getElementById('appsAutomationsStatus');
+  const resolved = await _appsResolveHwndForRecording();
+  if (!resolved.hwnd) {
+    const msg = 'Pick needs a running window for "' + (_appsAutomationsApp() || 'this app') + '". Launch the app from the Automation tab, then try again.';
+    if (statusEl) statusEl.textContent = msg;
+    if (typeof toast === 'function') toast(msg, 'warning');
+    return;
+  }
+  _appsState.hwnd = resolved.hwnd;
+  await _appsMaximizeHwnd(resolved.hwnd);
+  const pickBtn = document.getElementById('appsAutomationsPickBtn');
+  if (pickBtn) { pickBtn.disabled = true; pickBtn.style.opacity = '0.6'; }
+  if (statusEl) statusEl.textContent = 'Picker active. Hover the element and Ctrl+Click it in "' + (_appsAutomationsApp() || 'the app') + '". Esc cancels.';
+  const url = '/api/apps/uia/pick?hwnd=' + encodeURIComponent(resolved.hwnd);
+  const es = new EventSource(url);
+  _appsUiaPicker = es;
+  const finish = (reset) => {
+    if (pickBtn) { pickBtn.disabled = false; pickBtn.style.opacity = ''; }
+    try { es.close(); } catch (_) {}
+    if (_appsUiaPicker === es) _appsUiaPicker = null;
+    if (reset && statusEl) statusEl.textContent = reset;
+  };
+  es.onmessage = (msg) => {
+    let ev;
+    try { ev = JSON.parse(msg.data); } catch (_) { return; }
+    if (ev.type === 'ready') return;
+    if (ev.type === 'hover') {
+      if (statusEl) {
+        const label = ev.name || ev.id || '(no name)';
+        statusEl.textContent = 'Over: ' + label + ' [' + (ev.controlType || '?') + ']. Ctrl+Click to pick.';
+      }
+      return;
+    }
+    if (ev.type === 'picked') {
+      _appsInsertUiaStep(ev.selector, ev.name, ev.controlType);
+      finish('Picked "' + (ev.name || ev.selector.id || ev.selector.class || '?') + '" [' + (ev.controlType || '?') + ']. Step added.');
+      if (typeof toast === 'function') toast('UI element captured', 'success', { duration: 2000 });
+      // Refresh the tree so other picks surface newly-visible elements
+      // (menus that opened, dialogs that appeared during the pick).
+      try { appsAutomationsRefreshTree(); } catch (_) {}
+      return;
+    }
+    if (ev.type === 'cancelled') {
+      finish('Picker cancelled (' + (ev.reason || '') + ').');
+      return;
+    }
+    if (ev.type === 'error') {
+      finish('Picker failed: ' + (ev.message || 'unknown'));
+      if (typeof toast === 'function') toast('Picker failed: ' + (ev.message || ''), 'error');
+      return;
+    }
+  };
+  es.onerror = () => {
+    // EventSource fires onerror on normal close too (when we `res.end()` after
+    // picked/cancelled). Only treat it as an actual drop if we haven't
+    // already transitioned out of the active state via a terminal event.
+    if (_appsUiaPicker !== es) return;
+    finish('Picker connection lost - common cause: the target window is not automatable (try a different app, or check that UIA permissions are not blocking PowerShell).');
+  };
+}
+
+async function appsAutomationsRunNow() {
+  const saved = await appsAutomationsSave();
+  if (!saved) return; // Save already toasted the reason.
+  const cur = _appsAutomations.current;
+  if (!cur || !cur.id) {
+    if (typeof toast === 'function') toast('Run now: saved recipe has no id (unexpected). Try saving again.', 'error');
+    return;
+  }
+  const resolved = await _appsResolveHwndForRecording();
+  if (!resolved.hwnd) { if (typeof toast === 'function') toast('Launch the app first, then Run now.', 'warning'); return; }
+  _appsState.hwnd = resolved.hwnd;
+  await _appsMaximizeHwnd(resolved.hwnd);
+  const app = _appsAutomationsApp();
+  try {
+    const r = await fetch('/api/apps/session/start', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ recipeId: cur.id, hwnd: resolved.hwnd, app, provider: _appsState.providerKey || undefined }),
+    });
+    let data = null;
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+    _appsState.sessionId = data.sessionId || null;
+    _appsState.running = true;
+    _appsState.provider = data.label || data.provider || null;
+    _appsState.model = data.model || null;
+    if (typeof _appsUpdateRunningChrome === 'function') _appsUpdateRunningChrome(true);
+    if (typeof toast === 'function') toast('Running "' + cur.name + '" against ' + app + '...', 'info', { duration: 2500 });
+    switchTab('apps');
+  } catch (e) {
+    if (typeof toast === 'function') toast('Run failed: ' + e.message, 'error');
+  }
+}
+
+// Runs one step against the target window without saving. Used by the
+// "Test step" button on each visual row so the user can iterate on a single
+// step (e.g. tweaking a UIA selector) without replaying the whole recipe.
+async function appsAutomationsTestStep(index) {
+  const step = _appsBuilderSteps && _appsBuilderSteps[index];
+  if (!step) return;
+  const resolved = await _appsResolveHwndForRecording();
+  if (!resolved.hwnd) { if (typeof toast === 'function') toast('Launch the app first.', 'warning'); return; }
+  _appsState.hwnd = resolved.hwnd;
+  try {
+    const r = await fetch('/api/apps/recipes/run-step', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hwnd: resolved.hwnd, step, provider: _appsState.providerKey || undefined, captureRect: (_appsAutomations.current && _appsAutomations.current.captureRect) || null }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'step failed');
+    if (typeof toast === 'function') toast('Step ran OK' + (data.info ? ' - ' + data.info : ''), 'success', { duration: 2500 });
+  } catch (e) {
+    if (typeof toast === 'function') toast('Step failed: ' + e.message, 'error');
+  }
+}
+
+async function appsAutomationsRefreshTree() {
+  const treeEl = document.getElementById('appsAutomationsTree');
+  if (!treeEl) return;
+  const resolved = await _appsResolveHwndForRecording();
+  if (!resolved.hwnd) { treeEl.innerHTML = '<div style="padding:8px;color:var(--subtext0);">Launch the app first.</div>'; return; }
+  _appsState.hwnd = resolved.hwnd;
+  treeEl.innerHTML = '<div style="padding:8px;color:var(--subtext0);">Loading UIA tree...</div>';
+  try {
+    const r = await fetch('/api/apps/uia/tree', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hwnd: resolved.hwnd }) });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'tree failed');
+    const nodes = data.nodes || [];
+    if (!nodes.length) { treeEl.innerHTML = '<div style="padding:8px;color:var(--subtext0);">No UIA-visible elements.</div>'; return; }
+    const esc = s => _appsEscape(String(s == null ? '' : s));
+    const toStr = v => String(v == null ? '' : v);
+    const rowStyle = 'color:#e0e0e0;background:#1e1e22;border:1px solid #2a2a30;border-radius:4px;padding:10px 12px;cursor:pointer;';
+    const rowStyleAlt = 'color:#e0e0e0;background:#232328;border:1px solid #2a2a30;border-radius:4px;padding:10px 12px;cursor:pointer;';
+    const rows = nodes.map((n, i) => {
+      const name = toStr(n.name).trim();
+      const aid = toStr(n.automationId).trim();
+      const cls = toStr(n.class).trim();
+      const tpe = toStr(n.type).trim();
+      const primary = name || aid || cls || tpe || ('node ' + i);
+      const rect = n.rect || {};
+      const details = [];
+      if (aid)              details.push('<div style="margin-top:2px;"><span style="color:#8a8a95;">AutomationId:</span> <span style="color:#e0e0e0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + esc(aid) + '</span></div>');
+      if (cls)              details.push('<div style="margin-top:2px;"><span style="color:#8a8a95;">Class:</span> <span style="color:#e0e0e0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + esc(cls) + '</span></div>');
+      if (tpe)              details.push('<div style="margin-top:2px;"><span style="color:#8a8a95;">Control:</span> <span style="color:#e0e0e0;">' + esc(tpe) + '</span></div>');
+      if (rect.w && rect.h) details.push('<div style="margin-top:2px;"><span style="color:#8a8a95;">Rect:</span> <span style="color:#e0e0e0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + rect.x + ',' + rect.y + ' ' + rect.w + 'x' + rect.h + '</span></div>');
+      const detailsHtml =
+        '<div class="apps-uia-details" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #2a2a30;font-size:11px;color:#c8c8d0;">' +
+          details.join('') +
+          '<button type="button" onclick="event.stopPropagation();_appsUiaInsertRow(' + i + ')" style="margin-top:8px;background:#7c7cff;color:#000;border:none;border-radius:4px;padding:6px 12px;font-weight:600;font-size:11px;cursor:pointer;">Insert as step</button>' +
+        '</div>';
+      return (
+        '<div class="apps-uia-row" data-i="' + i + '" onclick="_appsUiaToggleRow(this)" title="Click to expand; use Insert as step to add" style="' + (i % 2 === 0 ? rowStyle : rowStyleAlt) + '">' +
+          '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">' +
+            '<div style="flex:1;min-width:0;color:#ffffff;font-weight:500;font-size:13px;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;">' + esc(primary) + '</div>' +
+            '<div style="flex-shrink:0;color:#8a8a95;font-weight:400;font-size:11px;padding-top:2px;white-space:nowrap;">' + esc(tpe || 'element') + '</div>' +
+          '</div>' +
+          detailsHtml +
+        '</div>'
+      );
+    }).join('');
+    treeEl.innerHTML = (data.truncated ? '<div style="padding:4px 6px;color:var(--overlay1);font:10px var(--font-mono);">truncated at ' + nodes.length + ' nodes</div>' : '') + rows;
+    // Cache the raw nodes on the container so the row-level handlers can
+    // pull selector data without re-rendering everything.
+    treeEl._uiaNodes = nodes;
+  } catch (e) {
+    treeEl.innerHTML = '<div style="padding:8px;color:var(--red,#e06c75);">Tree failed: ' + _appsEscape(e.message) + '</div>';
+  }
+}
+
+function _appsUiaToggleRow(rowEl) {
+  if (!rowEl) return;
+  const details = rowEl.querySelector('.apps-uia-details');
+  if (!details) return;
+  const open = details.style.display !== 'none' && details.style.display !== '';
+  details.style.display = open ? 'none' : 'block';
+}
+
+function _appsUiaInsertRow(i) {
+  const treeEl = document.getElementById('appsAutomationsTree');
+  const nodes = treeEl && treeEl._uiaNodes;
+  const n = nodes && nodes[i];
+  if (!n) return;
+  const selector = {};
+  if (n.automationId) { selector.id = n.automationId; if (n.type) selector.type = n.type; }
+  else {
+    if (n.name) selector.name = n.name;
+    if (n.type) selector.type = n.type;
+    if (n.class && !n.name) selector.class = n.class;
+  }
+  _appsInsertUiaStep(selector, n.name, n.type);
+  if (typeof toast === 'function') toast('Step inserted from tree.', 'success', { duration: 1600 });
+}
+
+function _appsInsertUiaStep(selector, name, controlType) {
+  if (!selector) return;
+  const pretty = JSON.stringify({ uia: selector });
+  const labelBits = [];
+  if (name) labelBits.push(name);
+  if (controlType) labelBits.push('(' + controlType + ')');
+  const notes = labelBits.length ? labelBits.join(' ') : undefined;
+  const step = { verb: 'CLICK', target: pretty, text: '', notes };
+  if (!Array.isArray(_appsBuilderSteps)) _appsBuilderSteps = [];
+  _appsBuilderSteps.push(step);
+  const stepsEl = document.getElementById('appsAutomationsSteps');
+  if (stepsEl) stepsEl.value = _appsStepsToText(_appsBuilderSteps);
+  if (typeof _appsRenderBuilderRows === 'function') _appsRenderBuilderRows();
+}
+
 const _APPS_PALETTE = [
   { label: 'Click element', step: { verb: 'CLICK', target: '' } },
+  { label: 'Right-click element', step: { verb: 'RIGHT_CLICK', target: '' } },
   { label: 'Type text', step: { verb: 'TYPE', target: '', text: '' } },
   { label: 'Press key', step: { verb: 'PRESS', target: 'Enter' } },
   { label: 'Wait 500ms', step: { verb: 'WAIT', target: '500' } },
@@ -14383,9 +14850,9 @@ async function appsOpenAutomations() {
   if (lbl) lbl.textContent = 'Automations - ' + app;
   if (btn) {
     // New tabs open at the far right of the bar, like the other closable
-    // tabs (Work Item, Activity Timeline).
-    const scroll = document.getElementById('tabBarScroll');
-    if (scroll && btn.parentNode === scroll) scroll.appendChild(btn);
+    // tabs (Work Item, Activity Timeline). Uses CSS `order` max+1 because
+    // tabs are flex-ordered, not DOM-ordered.
+    _placeTabAtEnd(btn);
     btn.style.display = '';
   }
   const nameEl = document.getElementById('appsAutomationsAppName');
@@ -14394,15 +14861,96 @@ async function appsOpenAutomations() {
   _appsRenderStepPalette();
   const panel = document.getElementById('panel-automations-editor');
   if (panel && typeof lucide !== 'undefined') lucide.createIcons({ el: panel });
+  // Editor-scoped Ctrl+Z for the step list. Skips when a text input is
+  // focused so native undo still works inside textareas.
+  if (panel && !panel._undoWired) {
+    panel._undoWired = true;
+    panel.addEventListener('keydown', (ev) => {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.key !== 'z') return;
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')) return;
+      ev.preventDefault();
+      appsAutomationsUndo();
+    });
+  }
   await _appsAutomationsReload();
-  // Populate the "which AI" label in the generate block.
+  // Auto-populate the UI elements tree so the user sees real options the
+  // moment the editor opens, instead of a blank panel. Runs async (fire and
+  // forget) so the rest of the editor stays responsive while the PS dump
+  // resolves. Silent if the target app isn't picked yet.
+  if (_appsState.hwnd || _appsAutomationsApp()) {
+    try { appsAutomationsRefreshTree(); } catch (_) {}
+  }
+  // Populate the "which AI" label + model picker in the generate block.
   const providerLbl = document.getElementById('appsAutomationsGenProvider');
+  const modelSel = document.getElementById('appsAutomationsGenModel');
+  const anth = (_appsState.providers || []).find(p => p.key === 'anthropic');
   if (providerLbl) {
-    const anth = (_appsState.providers || []).find(p => p.key === 'anthropic');
-    providerLbl.textContent = anth
-      ? 'using ' + anth.label + ' - ' + anth.defaultModel
-      : 'no Anthropic key - generate will fail';
+    providerLbl.textContent = anth ? 'using Anthropic' : 'no Anthropic key - generate will fail';
     providerLbl.style.color = anth ? 'var(--subtext0)' : 'var(--red, #e06c75)';
+  }
+  if (modelSel) {
+    // Generate now supports any provider the user has a key for. Each provider
+    // group offers a small curated model list covering fast/balanced/strong.
+    // Anthropic additionally benefits from the web_search tool server-side; the
+    // other providers run without grounding.
+    const available = (_appsState.providers || []).map(p => p.key);
+    const groups = [
+      { key: 'anthropic', label: 'Anthropic', models: [
+        { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
+        { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
+        { id: 'claude-opus-4-7', label: 'Opus 4.7 (strongest)' },
+      ]},
+      { key: 'openai', label: 'OpenAI', models: [
+        { id: 'gpt-4o-mini', label: 'GPT-4o mini (fast)' },
+        { id: 'gpt-4o', label: 'GPT-4o (balanced)' },
+        { id: 'gpt-4.1', label: 'GPT-4.1 (strongest)' },
+      ]},
+      { key: 'gemini', label: 'Gemini', models: [
+        { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (fast)' },
+        { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (balanced)' },
+        { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (strongest)' },
+      ]},
+      { key: 'grok', label: 'Grok', models: [
+        { id: 'grok-2-latest', label: 'Grok 2' },
+      ]},
+      { key: 'qwen', label: 'Qwen', models: [
+        { id: 'qwen-plus', label: 'Qwen Plus' },
+        { id: 'qwen-max', label: 'Qwen Max' },
+      ]},
+    ].filter(g => available.includes(g.key));
+    const saved = (function () { try { return localStorage.getItem('sy.apps.genModel'); } catch (_) { return null; } })();
+    const savedProv = (function () { try { return localStorage.getItem('sy.apps.genProvider'); } catch (_) { return null; } })();
+    if (groups.length === 0) {
+      modelSel.innerHTML = '<option value="">(no API keys)</option>';
+      modelSel.disabled = true;
+    } else {
+      modelSel.innerHTML = groups.map(g =>
+        '<optgroup label="' + g.label + '">' +
+        g.models.map(m => '<option value="' + m.id + '" data-provider="' + g.key + '">' + m.label + '</option>').join('') +
+        '</optgroup>'
+      ).join('');
+      // Pre-select by (savedProvider, savedModel) - falls back to the first
+      // available group's first model, which is usually Haiku / GPT-4o mini.
+      let chosen = null;
+      if (saved) {
+        for (const g of groups) for (const m of g.models) if (m.id === saved) chosen = m.id;
+      }
+      if (chosen) modelSel.value = chosen;
+      modelSel.disabled = false;
+    }
+    modelSel.onchange = () => {
+      try {
+        localStorage.setItem('sy.apps.genModel', modelSel.value);
+        const opt = modelSel.selectedOptions && modelSel.selectedOptions[0];
+        if (opt && opt.dataset.provider) localStorage.setItem('sy.apps.genProvider', opt.dataset.provider);
+      } catch (_) {}
+    };
+    if (providerLbl) {
+      if (groups.length === 0) providerLbl.textContent = 'no API keys - add one in Settings';
+      else if (groups.length === 1) providerLbl.textContent = 'using ' + groups[0].label;
+      else providerLbl.textContent = '';
+    }
   }
 }
 
@@ -14466,8 +15014,27 @@ function appsAutomationsSelect(id) {
   if (va) va.value = ((recipe.verify && recipe.verify.elementsAbsent) || []).join('\n');
   document.getElementById('appsAutomationsDeleteBtn').style.display = '';
   _appsBuilderSteps = JSON.parse(JSON.stringify(recipe.steps || []));
+  const winMaxEl = document.getElementById('appsAutomationsWinMax');
+  const winWEl = document.getElementById('appsAutomationsWinW');
+  const winHEl = document.getElementById('appsAutomationsWinH');
+  const win = recipe.window || {};
+  if (winMaxEl) winMaxEl.checked = !!win.maximized;
+  if (winWEl) winWEl.value = win.w && !win.maximized ? String(win.w) : '';
+  if (winHEl) winHEl.value = win.h && !win.maximized ? String(win.h) : '';
+  _appsUpdateCaptureRectHint();
   appsAutomationsSetView('visual');
   _appsRenderAutomationsList();
+}
+
+function _appsUpdateCaptureRectHint() {
+  const hint = document.getElementById('appsAutomationsCaptureRectHint');
+  if (!hint) return;
+  const cr = _appsAutomations.current && _appsAutomations.current.captureRect;
+  if (cr && cr.w && cr.h) {
+    hint.textContent = 'captured at ' + cr.w + 'x' + cr.h + ' - coords auto-scale';
+  } else {
+    hint.textContent = 'no capture rect - coords run as-is';
+  }
 }
 
 function appsAutomationsNew() {
@@ -14484,6 +15051,10 @@ function appsAutomationsNew() {
   const genI = document.getElementById('appsAutomationsGenInput'); if (genI) genI.value = '';
   document.getElementById('appsAutomationsDeleteBtn').style.display = 'none';
   _appsBuilderSteps = [];
+  const winMaxN = document.getElementById('appsAutomationsWinMax'); if (winMaxN) winMaxN.checked = false;
+  const winWN = document.getElementById('appsAutomationsWinW'); if (winWN) winWN.value = '';
+  const winHN = document.getElementById('appsAutomationsWinH'); if (winHN) winHN.value = '';
+  _appsUpdateCaptureRectHint();
   appsAutomationsSetView('visual');
   document.getElementById('appsAutomationsName').focus();
   _appsRenderAutomationsList();
@@ -14634,13 +15205,34 @@ function appsAutomationsSetView(view) {
   _appsBuilderView = view;
 }
 
+// Undo stack of the last N step-list snapshots. Each mutation pushes a
+// JSON-cloned snapshot before mutating so Ctrl+Z can walk backward. Capped
+// so an edit marathon doesn't eat memory.
+const _APPS_UNDO_MAX = 40;
+let _appsBuilderUndoStack = [];
+function _appsBuilderSnapshot() {
+  try {
+    _appsBuilderUndoStack.push(JSON.parse(JSON.stringify(_appsBuilderSteps || [])));
+    if (_appsBuilderUndoStack.length > _APPS_UNDO_MAX) _appsBuilderUndoStack.shift();
+  } catch (_) {}
+}
+function appsAutomationsUndo() {
+  if (!_appsBuilderUndoStack.length) { if (typeof toast === 'function') toast('Nothing to undo.', 'info', { duration: 1200 }); return; }
+  _appsBuilderSteps = _appsBuilderUndoStack.pop();
+  _appsRenderBuilderRows();
+  _appsSyncBuilderToText();
+  if (typeof toast === 'function') toast('Undo.', 'info', { duration: 900 });
+}
+
 function appsAutomationsAddRow() {
+  _appsBuilderSnapshot();
   _appsBuilderSteps.push({ verb: 'CLICK', target: '' });
   _appsRenderBuilderRows();
   _appsSyncBuilderToText();
 }
 
 function _appsBuilderRemove(i) {
+  _appsBuilderSnapshot();
   _appsBuilderSteps.splice(i, 1);
   _appsRenderBuilderRows();
   _appsSyncBuilderToText();
@@ -14648,6 +15240,7 @@ function _appsBuilderRemove(i) {
 
 function _appsBuilderUpdate(i, field, value) {
   if (!_appsBuilderSteps[i]) return;
+  _appsBuilderSnapshot();
   if (value === '' || value == null) delete _appsBuilderSteps[i][field];
   else _appsBuilderSteps[i][field] = value;
   _appsSyncBuilderToText();
@@ -14656,8 +15249,8 @@ function _appsBuilderUpdate(i, field, value) {
 function _appsBuilderVerbChanged(i, newVerb) {
   const step = _appsBuilderSteps[i];
   if (!step) return;
+  _appsBuilderSnapshot();
   step.verb = newVerb;
-  // Clear text when switching off TYPE; clear target when switching to bare.
   if (!_APPS_VERBS_WITH_TEXT.has(newVerb)) delete step.text;
   if (_APPS_VERBS_BARE.has(newVerb)) delete step.target;
   _appsRenderBuilderRows();
@@ -14686,12 +15279,82 @@ function _appsRenderBuilderRows() {
       <span style="cursor:grab;color:var(--overlay1);padding:0 3px;" title="Drag to reorder">::</span>
       <span style="color:var(--overlay1);font:10px var(--font-mono);min-width:22px;text-align:right;">${i + 1}</span>
       <select onchange="_appsBuilderVerbChanged(${i}, this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-ui);min-width:96px;">${options}</select>
-      ${showTarget ? `<input type="text" placeholder="${_appsTargetPlaceholder(verb)}" value="${_appsEscape(s.target || '')}" oninput="_appsBuilderUpdate(${i},'target',this.value)" style="flex:1;min-width:120px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">` : '<span style="flex:1;color:var(--overlay1);font:11px var(--font-ui);font-style:italic;">(block marker)</span>'}
+      ${showTarget ? _appsBuilderTargetControl(i, s, verb) : '<span style="flex:1;color:var(--overlay1);font:11px var(--font-ui);font-style:italic;">(block marker)</span>'}
       ${showText ? `<span style="color:var(--overlay1);">→</span><input type="text" placeholder="text to type" value="${_appsEscape(s.text || '')}" oninput="_appsBuilderUpdate(${i},'text',this.value)" style="flex:1;min-width:100px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">` : ''}
+      <button type="button" onclick="appsAutomationsTestStep(${i})" title="Test just this step against the target window" style="background:transparent;border:1px solid var(--surface2);color:var(--subtext1);cursor:pointer;padding:2px 7px;font:10px var(--font-ui);border-radius:3px;">Test</button>
       <button type="button" onclick="_appsBuilderRemove(${i})" title="Delete step" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;font-size:14px;line-height:1;">×</button>
     </div>`;
   }).join('');
   container.innerHTML = rows;
+}
+
+// Render the right control for a step's target. UIA-shaped targets get a
+// chip with a re-pick button so the user doesn't have to read raw JSON.
+function _appsBuilderTargetControl(i, step, verb) {
+  const placeholder = _appsTargetPlaceholder(verb);
+  const target = step.target || '';
+  let parsed = null;
+  if (target && target.trim().startsWith('{')) {
+    try { parsed = JSON.parse(target); } catch (_) {}
+  }
+  if (parsed && parsed.uia) {
+    const sel = parsed.uia;
+    const label = (step.notes || '').replace(/^UIA:\s*/, '').split('@')[0].trim() || sel.id || sel.name || sel.class || '(ui element)';
+    const sub = sel.id ? ('#' + sel.id) : (sel.type ? ('[' + sel.type + ']') : '');
+    return (
+      '<div style="flex:1;min-width:120px;display:flex;align-items:center;gap:6px;background:color-mix(in srgb, var(--accent) 10%, transparent);border:1px solid color-mix(in srgb, var(--accent) 35%, transparent);border-radius:4px;padding:3px 8px;min-height:24px;">' +
+        '<i data-lucide="crosshair" style="width:11px;height:11px;color:var(--accent);"></i>' +
+        '<span style="font:12px var(--font-ui);color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _appsEscape(label) + ' <span style="color:var(--overlay1);">' + _appsEscape(sub) + '</span></span>' +
+        '<button type="button" onclick="appsAutomationsRepickStep(' + i + ')" title="Re-pick this element" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;font:10px var(--font-ui);">re-pick</button>' +
+        '<button type="button" onclick="_appsBuilderClearUia(' + i + ')" title="Convert to plain coords / description" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;font:10px var(--font-ui);">edit as text</button>' +
+      '</div>'
+    );
+  }
+  return `<input type="text" placeholder="${placeholder}" value="${_appsEscape(target)}" oninput="_appsBuilderUpdate(${i},'target',this.value)" style="flex:1;min-width:120px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">`;
+}
+
+function _appsBuilderClearUia(i) {
+  const step = _appsBuilderSteps[i];
+  if (!step) return;
+  _appsBuilderSnapshot();
+  // Drop the JSON and expose the stashed fallback coords (or empty) for edit.
+  try {
+    const parsed = JSON.parse(step.target);
+    step.target = (parsed && parsed.xy) ? parsed.xy : '';
+  } catch (_) { step.target = ''; }
+  _appsRenderBuilderRows();
+  _appsSyncBuilderToText();
+}
+
+// Re-pick a UIA element for an existing step: kick the picker, replace the
+// target on success, keep the other fields intact.
+async function appsAutomationsRepickStep(i) {
+  const step = _appsBuilderSteps[i];
+  if (!step) return;
+  const resolved = await _appsResolveHwndForRecording();
+  if (!resolved.hwnd) { if (typeof toast === 'function') toast('Launch the app first.', 'warning'); return; }
+  _appsState.hwnd = resolved.hwnd;
+  await _appsMaximizeHwnd(resolved.hwnd);
+  const url = '/api/apps/uia/pick?hwnd=' + encodeURIComponent(resolved.hwnd);
+  const es = new EventSource(url);
+  const statusEl = document.getElementById('appsAutomationsStatus');
+  if (statusEl) statusEl.textContent = 'Re-pick step ' + (i + 1) + ': Ctrl+Click the new element, Esc cancels.';
+  es.onmessage = (msg) => {
+    let ev; try { ev = JSON.parse(msg.data); } catch (_) { return; }
+    if (ev.type === 'picked' && ev.selector) {
+      _appsBuilderSnapshot();
+      step.target = JSON.stringify({ uia: ev.selector });
+      step.notes = 'UIA: ' + (ev.name || ev.selector.id || '?') + (ev.controlType ? ' (' + ev.controlType + ')' : '');
+      _appsRenderBuilderRows();
+      _appsSyncBuilderToText();
+      if (statusEl) statusEl.textContent = 'Step ' + (i + 1) + ' re-picked.';
+      try { es.close(); } catch (_) {}
+    } else if (ev.type === 'cancelled' || ev.type === 'error') {
+      try { es.close(); } catch (_) {}
+      if (statusEl) statusEl.textContent = 'Re-pick ' + ev.type + (ev.message ? ': ' + ev.message : '');
+    }
+  };
+  es.onerror = () => { try { es.close(); } catch (_) {} };
 }
 
 function _appsTargetPlaceholder(verb) {
@@ -14888,7 +15551,7 @@ function _appsTextToVars(text) {
 
 function _appsTextToSteps(text) {
   const out = [];
-  const verbs = new Set(['CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY', 'SCROLL', 'DRAG', 'IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT']);
+  const verbs = new Set(['CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY', 'SCROLL', 'DRAG', 'IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT']);
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
@@ -14918,7 +15581,10 @@ function _appsTextToSteps(text) {
 
 async function appsAutomationsSave() {
   const app = _appsAutomationsApp();
-  if (!app) return;
+  if (!app) {
+    if (typeof toast === 'function') toast('No app selected for this automation.', 'warning');
+    return false;
+  }
   const nameEl = document.getElementById('appsAutomationsName');
   const descEl = document.getElementById('appsAutomationsDesc');
   const stepsEl = document.getElementById('appsAutomationsSteps');
@@ -14926,29 +15592,63 @@ async function appsAutomationsSave() {
   const varsEl = document.getElementById('appsAutomationsVars');
   const inputsEl = document.getElementById('appsAutomationsInputs');
   const name = (nameEl.value || '').trim();
-  if (!name) { if (statusEl) statusEl.textContent = 'Name is required.'; return; }
+  if (!name) {
+    if (statusEl) statusEl.textContent = 'Name is required.';
+    if (typeof toast === 'function') toast('Name is required before saving.', 'warning');
+    try { nameEl.focus(); } catch (_) {}
+    return false;
+  }
   let variables;
   try { variables = _appsTextToVars(varsEl.value); } catch (e) {
-    if (statusEl) statusEl.textContent = 'Variable error: ' + e.message; return;
+    if (statusEl) statusEl.textContent = 'Variable error: ' + e.message;
+    if (typeof toast === 'function') toast('Variable error: ' + e.message, 'error');
+    return false;
   }
   let inputs;
   try { inputs = _appsTextToInputs(inputsEl.value); } catch (e) {
-    if (statusEl) statusEl.textContent = 'Input error: ' + e.message; return;
+    if (statusEl) statusEl.textContent = 'Input error: ' + e.message;
+    if (typeof toast === 'function') toast('Input error: ' + e.message, 'error');
+    return false;
   }
+  // Source of truth for steps depends on which view is active. The visual
+  // builder mutates _appsBuilderSteps directly (drag, delete, edit) and only
+  // syncs to the textarea on view-switch - so when the user is in visual mode
+  // we must read from _appsBuilderSteps or recorded/edited steps get dropped.
   let steps;
-  try { steps = _appsTextToSteps(stepsEl.value); } catch (e) {
-    if (statusEl) statusEl.textContent = 'Step error: ' + e.message; return;
+  if (_appsBuilderView === 'visual' && Array.isArray(_appsBuilderSteps) && _appsBuilderSteps.length) {
+    steps = _appsBuilderSteps;
+  } else {
+    try { steps = _appsTextToSteps(stepsEl.value); } catch (e) {
+      if (statusEl) statusEl.textContent = 'Step error: ' + e.message;
+      if (typeof toast === 'function') toast('Step error: ' + e.message, 'error');
+      return false;
+    }
   }
-  if (!steps.length) { if (statusEl) statusEl.textContent = 'Add at least one step.'; return; }
-  const vPresent = _appsLinesToArray((document.getElementById('appsAutomationsVerifyPresent') || {}).value || '');
-  const vAbsent = _appsLinesToArray((document.getElementById('appsAutomationsVerifyAbsent') || {}).value || '');
+  if (!steps.length) {
+    if (statusEl) statusEl.textContent = 'Add at least one step.';
+    if (typeof toast === 'function') toast('Add at least one step before saving.', 'warning');
+    return false;
+  }
+  const linesToArr = v => String(v || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const vPresent = linesToArr((document.getElementById('appsAutomationsVerifyPresent') || {}).value);
+  const vAbsent = linesToArr((document.getElementById('appsAutomationsVerifyAbsent') || {}).value);
   const verify = (vPresent.length || vAbsent.length) ? { elementsPresent: vPresent, elementsAbsent: vAbsent } : undefined;
+  const captureRect = (_appsAutomations.current && _appsAutomations.current.captureRect) || null;
+  // Window-setup controls (optional: recipes without either are unchanged).
+  const winMax = !!(document.getElementById('appsAutomationsWinMax') || {}).checked;
+  const winW = parseInt((document.getElementById('appsAutomationsWinW') || {}).value || '', 10);
+  const winH = parseInt((document.getElementById('appsAutomationsWinH') || {}).value || '', 10);
+  let windowPin;
+  if (winMax) windowPin = { maximized: true };
+  else if (Number.isFinite(winW) && winW > 0 && Number.isFinite(winH) && winH > 0) windowPin = { w: winW, h: winH };
   const recipe = {
     id: _appsAutomations.current && _appsAutomations.current.id || undefined,
     name, description: (descEl.value || '').trim(),
     variables: Object.keys(variables).length ? variables : undefined,
     inputs: inputs.length ? inputs : undefined,
     verify,
+    captureRect: captureRect || undefined,
+    window: windowPin,
     steps,
   };
   if (statusEl) statusEl.textContent = 'Saving...';
@@ -14957,15 +15657,28 @@ async function appsAutomationsSave() {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ app, recipe }),
     });
-    const data = await r.json();
-    if (!data.ok) throw new Error(data.error || 'save failed');
+    // A non-2xx from permGate denial or validation returns {error:"..."} with
+    // no `ok` flag - treat that as failure with a visible message, not a
+    // silent "still saving..." hang.
+    let data = null;
+    try { data = await r.json(); } catch (_) {}
+    if (!r.ok || !data || !data.ok) {
+      const msg = (data && data.error) || ('HTTP ' + r.status);
+      if (statusEl) statusEl.textContent = 'Save failed: ' + msg;
+      if (typeof toast === 'function') toast('Save failed: ' + msg, 'error');
+      return false;
+    }
     if (statusEl) statusEl.textContent = 'Saved.';
+    if (typeof toast === 'function') toast('Saved "' + recipe.name + '"', 'success', { duration: 1800 });
     _appsAutomations.current = data.recipe;
     await _appsAutomationsReload();
     _appsAutomationsShowForm(true);
     document.getElementById('appsAutomationsDeleteBtn').style.display = '';
+    return true;
   } catch (e) {
     if (statusEl) statusEl.textContent = 'Save failed: ' + e.message;
+    if (typeof toast === 'function') toast('Save failed: ' + e.message, 'error');
+    return false;
   }
 }
 
@@ -14995,7 +15708,6 @@ async function appsAutomationsRunSelected() {
   if (!cur || !cur.id) { if (typeof toast === 'function') toast('Save the automation first, then select it.', 'warning'); return; }
   _appsState.selectedRecipeId = cur.id;
   _appsState.selectedRecipeName = cur.name;
-  _appsState.selectedRecipeInputs = null; // cleared; collected on Start below
   _appsState.selectedRecipeInputDefs = Array.isArray(cur.inputs) ? cur.inputs : [];
   _appsSyncComposerMode();
   _appsRenderAutomationsList();
@@ -21896,11 +22608,14 @@ async function askAIFromPalette(query, opts) {
   }
 }
 
-function closeCmdPalette() {
+function closeCmdPalette(preserveReplyContext) {
   document.getElementById('cmdPalette').classList.remove('open');
   if (typeof _cmdPaletteExitMode === 'function') _cmdPaletteExitMode();
-  // Closing without sending cancels any pending reply context.
-  if (_pendingFollowupParentId) {
+  // Closing without sending cancels any pending reply context. Callers that
+  // are about to run an action which needs the reply context (executeCmdPalette
+  // submits via askAIFromPalette which reads _pendingFollowupParentId) pass
+  // preserveReplyContext=true so the id isn't nulled before the submit runs.
+  if (!preserveReplyContext && _pendingFollowupParentId) {
     _pendingFollowupParentId = null;
     _pendingFollowupPriorPrompt = '';
     try { renderReplyChip(); } catch (_) {}
@@ -22463,7 +23178,10 @@ function executeCmdPalette(idx) {
       localStorage.setItem(key, JSON.stringify(next));
     }
   } catch (_) {}
-  closeCmdPalette();
+  // Keep any pending reply context alive so cmd.action() (e.g. askAIFromPalette
+  // for the "Ask AI" entry) can route to /followup instead of spawning a new
+  // agent. The action captures + clears it once consumed.
+  closeCmdPalette(true);
   cmd.action();
 }
 
@@ -24755,7 +25473,11 @@ let recipeBodyEditor = null;
 async function openRecipeEditor(idEnc, mode) {
   _recipeEditMode = mode || 'create';
   _recipeEditOriginalId = null;
-  document.getElementById('recipeEditorTabBtn').style.display = '';
+  const recipeBtn = document.getElementById('recipeEditorTabBtn');
+  if (recipeBtn) {
+    _placeTabAtEnd(recipeBtn);
+    recipeBtn.style.display = '';
+  }
   switchTab('recipe-editor');
   resetRecipeEditor();
   renderIconPicker();

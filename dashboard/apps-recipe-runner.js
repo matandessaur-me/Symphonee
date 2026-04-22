@@ -22,8 +22,8 @@
  * the top bar" once and reference {{regression}} across every step.
  */
 
-const https = require('https');
 const recipesStore = require('./apps-recipes');
+const { httpJson } = require('./apps-agent-chat');
 
 function emitter(broadcast, sessionId) {
   return (step) => {
@@ -47,83 +47,270 @@ function parseCoord(s) {
   return { x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
 }
 
-// Call Anthropic vision with a compact prompt that asks the model to return
-// JSON coordinates for a target description inside a screenshot. Keeps the
-// locator out of the main agent loop so it's fast and bounded.
-async function locateViaAnthropic({ apiKey, model, imageBase64, mimeType, description, rect }) {
-  const prompt =
-    `You are given a screenshot of a Windows application window (${rect.w}x${rect.h}). ` +
-    `The user wants to interact with: "${description}". ` +
-    `Return ONLY a compact JSON object with window-relative pixel coordinates of the CENTER of that element, like {"x":123,"y":456}. ` +
-    `If you cannot identify the element, return {"x":null,"y":null,"reason":"short reason"}.`;
-  const body = {
-    model,
-    max_tokens: 256,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mimeType || 'image/jpeg', data: imageBase64 } },
-        { type: 'text', text: prompt },
-      ],
-    }],
+// Scale a raw (x, y) from its recording-time window rect to the window's
+// current rect. Reads session._currentRect (populated once at runRecipe start
+// and refreshed after a window-pin resize) so we don't spawn a PowerShell
+// subprocess on every coord-based step.
+//
+// Known limitations: scales against the OUTER window rect (GetWindowRect),
+// not the client area. Non-client furniture (title bar, borders) stays a
+// roughly fixed pixel height while content scales, so very large resizes
+// drift a few pixels in y. Cross-DPI monitor moves can also skew, since
+// coords are recorded in physical pixels. For typical in-monitor resizes
+// on a single-DPI setup this is well within locator-target tolerance.
+function scaleCoord(session, coord) {
+  const capture = session && session._recipeCaptureRect;
+  const current = session && session._currentRect;
+  if (!coord || !capture || !capture.w || !capture.h) return coord;
+  if (!current || !current.w || !current.h) return coord;
+  if (current.w === capture.w && current.h === capture.h) return coord;
+  return {
+    x: Math.round(coord.x * (current.w / capture.w)),
+    y: Math.round(coord.y * (current.h / capture.h)),
   };
-  const payload = JSON.stringify(body);
-  return await new Promise((resolve, reject) => {
-    const req = https.request({
-      method: 'POST', hostname: 'api.anthropic.com', path: '/v1/messages',
-      headers: {
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(payload),
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      timeout: 30000,
-    }, (r) => {
-      let d = '';
-      r.on('data', c => d += c);
-      r.on('end', () => {
-        if (r.statusCode < 200 || r.statusCode >= 300) {
-          return reject(new Error(`locator ${r.statusCode}: ${d.slice(0, 300)}`));
-        }
-        try {
-          const parsed = JSON.parse(d);
-          const text = (parsed.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
-          const m = text.match(/\{[\s\S]*\}/);
-          if (!m) return reject(new Error('locator returned non-JSON: ' + text.slice(0, 160)));
-          resolve(JSON.parse(m[0]));
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('locator timed out')));
-    req.write(payload); req.end();
-  });
 }
 
-function pickLocatorProvider(registry, fallbackEntry) {
-  // Anthropic vision is the cheapest + most reliable pixel locator today.
-  // Fall back to whatever the session was started with if no Anthropic key.
-  if (registry && registry.anthropic) return { kind: 'anthropic', entry: registry.anthropic };
-  if (fallbackEntry && fallbackEntry.adapter && fallbackEntry.adapter.kind === 'anthropic') {
-    return { kind: 'anthropic', entry: fallbackEntry };
+async function refreshRunRect(session, driver) {
+  try { session._currentRect = await driver.getWindowRect(session.hwnd); }
+  catch (_) { session._currentRect = null; }
+}
+
+// JSON-shaped target. Supports:
+//   { "uia": {...} }                         - UIA selector only
+//   { "uia": {...}, "xy": "500,400" }        - recorder variant with fallback coords
+// Returns null when the target is a plain string (x,y or description).
+function parseJsonTarget(s) {
+  if (!s || typeof s !== 'string') return null;
+  const trimmed = s.trim();
+  if (trimmed[0] !== '{') return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (obj && typeof obj === 'object') {
+      const out = {};
+      if (obj.uia && typeof obj.uia === 'object') out.uia = obj.uia;
+      if (typeof obj.xy === 'string') out.xy = obj.xy;
+      if (Object.keys(out).length) return out;
+    }
+  } catch (_) {}
+  return null;
+}
+
+// Threshold: when a UIA match covers more than this fraction of the target
+// window it is almost certainly a container (viewport wrapper, scroll pane,
+// root pane), not the element the user clicked. Clicking its center sends
+// the cursor to dead space. Callers that have a stashed xy use it instead.
+const UIA_GENERIC_CONTAINER_RATIO = 0.4;
+
+function isHitTooGeneric(hit, session) {
+  const rect = session && session._currentRect;
+  if (!hit || !hit.meta || !rect || !rect.w || !rect.h) return false;
+  const area = (hit.meta.w || 0) * (hit.meta.h || 0);
+  const windowArea = rect.w * rect.h;
+  if (!area || !windowArea) return false;
+  return (area / windowArea) > UIA_GENERIC_CONTAINER_RATIO;
+}
+
+async function resolveUia(session, driver, selector, invoke = false) {
+  if (typeof driver.findUIAElement !== 'function') {
+    const e = new Error('UIA not available'); e.code = 'uia_unavailable'; throw e;
   }
+  // Prefer the pattern-invoke shortcut for CLICK steps - faster and doesn't
+  // steal focus. Returns { invoked: true } so the caller skips driver.click.
+  if (invoke && typeof driver.invokeUIAElement === 'function') {
+    try {
+      const r = await driver.invokeUIAElement(session.hwnd, selector);
+      if (r && r.ok) {
+        if (typeof session._emit === 'function') {
+          session._emit({ kind: 'step_info', message: 'UIA ' + r.pattern + ' on "' + (r.name || '?') + '"' });
+        }
+        return { invoked: true, pattern: r.pattern };
+      }
+    } catch (_) {}
+  }
+  const hit = await driver.findUIAElement(session.hwnd, selector);
+  if (!hit) { const e = new Error('UIA selector did not match any visible element'); e.code = 'locator_miss'; throw e; }
+  if (hit.meta && hit.meta.degraded && typeof session._emit === 'function') {
+    session._emit({ kind: 'step_info', message: 'UIA selector matched after dropping "' + hit.meta.degraded + '"; consider re-picking' });
+  }
+  return { x: hit.x, y: hit.y, meta: hit.meta };
+}
+
+// Resolve a step target to {x, y} or {invoked: true}. Fallback order:
+//   1. UIA selector (with InvokePattern shortcut when invoke=true)
+//   2. Stashed raw xy from the recorder (scaled via the cached window rect)
+//   3. Plain "x,y" parse (also scaled)
+//   4. Vision locator on the descriptive text
+// Misses cascade down so a broken UIA selector still plays back if the
+// recorder captured coords alongside it.
+//
+// `preferXy` flips the order so raw xy wins over UIA. Use it for DRAG
+// endpoints: dragging is inherently a coordinate action, and UIA selectors
+// on canvas positions almost always capture an enclosing container, which
+// collapses both endpoints to the same center and turns the drag into a
+// zero-distance click.
+async function resolveCoord(session, driver, descOrXY, { invoke = false, preferXy = false } = {}) {
+  const json = parseJsonTarget(descOrXY);
+  if (preferXy && json && json.xy) {
+    const raw = parseCoord(json.xy);
+    if (raw) return scaleCoord(session, raw);
+  }
+  if (json && json.uia) {
+    try {
+      const hit = await resolveUia(session, driver, json.uia, invoke);
+      if (hit && hit.invoked) return hit;
+      // Guardrail: if UIA matched a container that covers most of the window
+      // (viewport wrapper, scroll pane, root), clicking its center lands in
+      // dead space. Prefer the recorded xy in that case.
+      if (json.xy && isHitTooGeneric(hit, session)) {
+        const raw = parseCoord(json.xy);
+        if (raw) {
+          if (typeof session._emit === 'function') session._emit({ kind: 'step_info', message: 'UIA match too generic (' + (hit.meta && hit.meta.w) + 'x' + (hit.meta && hit.meta.h) + '), using recorded coords ' + json.xy });
+          return scaleCoord(session, raw);
+        }
+      }
+      return hit;
+    }
+    catch (e) {
+      if (e.code !== 'locator_miss' && e.code !== 'uia_unavailable') throw e;
+      if (json.xy) {
+        if (typeof session._emit === 'function') session._emit({ kind: 'step_info', message: 'UIA miss, falling back to recorded coords ' + json.xy });
+        const raw = parseCoord(json.xy);
+        if (raw) return scaleCoord(session, raw);
+      }
+      throw e;
+    }
+  }
+  if (json && json.xy) {
+    const raw = parseCoord(json.xy);
+    if (raw) return scaleCoord(session, raw);
+  }
+  const raw = parseCoord(descOrXY);
+  if (raw) return scaleCoord(session, raw);
+  return locateTarget({ session, driver, description: descOrXY });
+}
+
+const LOCATOR_PROMPT = (description, rect) =>
+  `You are given a screenshot of a Windows application window (${rect.w}x${rect.h}). ` +
+  `The user wants to interact with: "${description}". ` +
+  `Return ONLY a compact JSON object with window-relative pixel coordinates of the CENTER of that element, like {"x":123,"y":456}. ` +
+  `If you cannot identify the element, return {"x":null,"y":null,"reason":"short reason"}.`;
+
+function extractJsonObject(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('locator returned non-JSON: ' + String(text || '').slice(0, 160));
+  return JSON.parse(m[0]);
+}
+
+async function locateViaAnthropic({ apiKey, model, imageBase64, mimeType, description, rect }) {
+  const parsed = await httpJson({
+    hostname: 'api.anthropic.com', path: '/v1/messages', timeoutMs: 30000,
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: {
+      model,
+      max_tokens: 256,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType || 'image/jpeg', data: imageBase64 } },
+          { type: 'text', text: LOCATOR_PROMPT(description, rect) },
+        ],
+      }],
+    },
+  });
+  const text = (parsed.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+  return extractJsonObject(text);
+}
+
+async function locateViaOpenAICompat({ apiKey, model, hostname, path, authHeader, authPrefix, imageBase64, mimeType, description, rect }) {
+  const parsed = await httpJson({
+    hostname, path, timeoutMs: 30000,
+    headers: { [authHeader || 'Authorization']: (authPrefix || 'Bearer ') + apiKey },
+    body: {
+      model,
+      max_tokens: 256,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}` } },
+          { type: 'text', text: LOCATOR_PROMPT(description, rect) },
+        ],
+      }],
+    },
+  });
+  const text = ((parsed.choices && parsed.choices[0] && parsed.choices[0].message && parsed.choices[0].message.content) || '').trim();
+  return extractJsonObject(text);
+}
+
+async function locateViaGemini({ apiKey, model, imageBase64, mimeType, description, rect }) {
+  const parsed = await httpJson({
+    hostname: 'generativelanguage.googleapis.com',
+    path: `/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    timeoutMs: 30000,
+    headers: {},
+    body: {
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
+          { text: LOCATOR_PROMPT(description, rect) },
+        ],
+      }],
+      generationConfig: { maxOutputTokens: 256 },
+    },
+  });
+  const parts = (parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts) || [];
+  const text = parts.map(p => p.text || '').join('').trim();
+  return extractJsonObject(text);
+}
+
+// Fallback chain: Anthropic first (cheapest + most reliable today), then any
+// other vision-capable provider the user has configured.
+function pickLocatorProvider(registry, fallbackEntry) {
+  const kindOf = (e) => e && e.adapter && e.adapter.kind;
+  const sel = fallbackEntry;
+  const selKind = kindOf(sel);
+  if (sel && (selKind === 'anthropic' || selKind === 'openai-compat' || selKind === 'gemini')) {
+    return { kind: selKind, entry: sel };
+  }
+  if (registry && registry.anthropic) return { kind: 'anthropic', entry: registry.anthropic };
+  if (registry && registry.openai) return { kind: 'openai-compat', entry: registry.openai };
+  if (registry && registry.gemini) return { kind: 'gemini', entry: registry.gemini };
   return null;
 }
 
 async function locateTarget({ session, driver, description }) {
+  // UIA selectors short-circuit the vision path. Makes FIND/VERIFY/
+  // WAIT_UNTIL with a JSON target use the UI tree directly. Invoke is NOT
+  // used here - these verbs want a bounding rect, not a side-effect.
+  const json = parseJsonTarget(description);
+  if (json && json.uia) return resolveUia(session, driver, json.uia, false);
   const registry = session && session._providerRegistry;
   const locator = pickLocatorProvider(registry, session._providerEntry);
-  if (!locator) throw new Error('no Anthropic key configured for visual locator (needed by CLICK/TYPE with a target, FIND, VERIFY). Set ANTHROPIC_API_KEY in Settings -> AI Keys, or rewrite the step to use explicit "x,y" coordinates.');
+  if (!locator) throw new Error('no vision-capable provider configured for visual locator (needed by CLICK/TYPE with a target, FIND, VERIFY). Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in Settings -> AI Keys, or rewrite the step to use explicit "x,y" coordinates.');
   const shot = await driver.screenshotWindow(session.hwnd, { format: 'jpeg', quality: 55 });
   if (!shot || !shot.base64) throw new Error('screenshot failed');
-  const res = await locateViaAnthropic({
-    apiKey: locator.entry.apiKey,
-    model: locator.entry.adapter.defaultModel,
-    imageBase64: shot.base64,
-    mimeType: shot.mimeType || 'image/jpeg',
-    description,
-    rect: shot.rect || { w: shot.width, h: shot.height },
-  });
+  const rect = shot.rect || { w: shot.width, h: shot.height };
+  const entry = locator.entry;
+  const model = (session._model && locator.entry === session._providerEntry)
+    ? session._model
+    : entry.adapter.defaultModel;
+  const common = { imageBase64: shot.base64, mimeType: shot.mimeType || 'image/jpeg', description, rect, apiKey: entry.apiKey, model };
+  let res;
+  if (locator.kind === 'anthropic') {
+    res = await locateViaAnthropic(common);
+  } else if (locator.kind === 'gemini') {
+    res = await locateViaGemini(common);
+  } else {
+    // openai-compat covers OpenAI, Grok (x.ai), Qwen (dashscope).
+    const a = entry.adapter;
+    res = await locateViaOpenAICompat({
+      ...common,
+      hostname: a.baseHost || 'api.openai.com',
+      path: a.basePath || '/v1/chat/completions',
+      authHeader: a.authHeader || 'Authorization',
+      authPrefix: a.authPrefix || 'Bearer ',
+    });
+  }
   if (res.x == null || res.y == null) {
     const e = new Error('locator: ' + (res.reason || 'element not found'));
     e.code = 'locator_miss';
@@ -179,9 +366,12 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
     }
     case 'DRAG': {
       if (!target || !text) throw new Error('DRAG needs a source and destination (target and text). Accepts "x,y" coordinates or element descriptions.');
-      const from = parseCoord(target) || await locateTarget({ session, driver, description: target });
-      const to   = parseCoord(text)   || await locateTarget({ session, driver, description: text });
-      await driver.drag(from.x, from.y, to.x, to.y);
+      // preferXy: drag endpoints are coordinate actions, not logical clicks.
+      // UIA selectors on canvas drags almost always capture the whole viewport
+      // wrapper and would collapse both endpoints to one point.
+      const from = await resolveCoord(session, driver, target, { preferXy: true });
+      const to   = await resolveCoord(session, driver, text,   { preferXy: true });
+      await driver.drag(from.x, from.y, to.x, to.y, { hwnd: session.hwnd });
       return;
     }
     case 'PRESS': {
@@ -191,8 +381,8 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
     }
     case 'TYPE': {
       if (target) {
-        const coord = parseCoord(target) || await locateTarget({ session, driver, description: target });
-        await driver.click({ x: coord.x, y: coord.y });
+        const coord = await resolveCoord(session, driver, target);
+        await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd });
         await new Promise(r => setTimeout(r, 120));
       }
       await driver.type(text || target || '');
@@ -200,8 +390,15 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
     }
     case 'CLICK': {
       if (!target) throw new Error('CLICK requires a target (a description or "x,y" coordinates).');
-      const coord = parseCoord(target) || await locateTarget({ session, driver, description: target });
-      await driver.click({ x: coord.x, y: coord.y });
+      const coord = await resolveCoord(session, driver, target, { invoke: true });
+      if (coord && coord.invoked) return;
+      await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd });
+      return;
+    }
+    case 'RIGHT_CLICK': {
+      if (!target) throw new Error('RIGHT_CLICK requires a target (a description or "x,y" coordinates).');
+      const coord = await resolveCoord(session, driver, target);
+      await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd, button: 'right' });
       return;
     }
     case 'FIND': {
@@ -366,6 +563,24 @@ function countLeaves(node) {
   return 0;
 }
 
+async function applyWindowPin(session, driver, pin) {
+  if (!pin || session.hwnd == null) return;
+  if (pin.maximized && typeof driver.maximizeWindow === 'function') {
+    await driver.maximizeWindow(session.hwnd);
+  } else if (pin.w && pin.h && typeof driver.setWindowRect === 'function') {
+    await driver.setWindowRect(session.hwnd, {
+      x: typeof pin.x === 'number' ? pin.x : undefined,
+      y: typeof pin.y === 'number' ? pin.y : undefined,
+      w: pin.w,
+      h: pin.h,
+    });
+  } else {
+    return;
+  }
+  // Settle - window move dispatches async WM_SIZE; 180ms is enough on Win10/11.
+  await new Promise(r => setTimeout(r, 180));
+}
+
 async function runRecipe({ session, driver, recipe, broadcast, providerEntry, model, inputs, stepThrough }) {
   const emit = emitter(broadcast, session.id);
   session.running = true;
@@ -377,6 +592,13 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
   const variables = Object.assign({}, (recipe && recipe.variables) || {}, inputs || {});
   const steps = (recipe && recipe.steps) || [];
   const startedAt = Date.now();
+
+  session._recipeCaptureRect = (recipe && recipe.captureRect && recipe.captureRect.w && recipe.captureRect.h)
+    ? { w: recipe.captureRect.w, h: recipe.captureRect.h }
+    : null;
+  try { await applyWindowPin(session, driver, recipe && recipe.window); }
+  catch (e) { emit({ kind: 'step_info', message: 'Window pin skipped: ' + e.message }); }
+  await refreshRunRect(session, driver);
 
   emit({ kind: 'provider', provider: 'recipe-runner', label: 'Recipe Runner', streaming: false, recipe: { id: recipe.id, name: recipe.name } });
   emit({ kind: 'recipe_started', recipeId: recipe.id, name: recipe.name, stepCount: steps.length });
@@ -453,4 +675,12 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
   }
 }
 
-module.exports = { runRecipe, locateTarget };
+// Test-step runner: execute one leaf step against a target without the full
+// tree-walk machinery. Used by /api/apps/recipes/run-step for the editor's
+// "Test step" button.
+async function runSingleStep({ session, driver, step, variables }) {
+  const emit = () => {};
+  return runStep({ session, driver, step, variables: variables || {}, emit });
+}
+
+module.exports = { runRecipe, locateTarget, runSingleStep };
