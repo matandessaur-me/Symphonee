@@ -15,10 +15,42 @@ const memory = require('./apps-memory');
 const recipes = require('./apps-recipes');
 const recipeRunner = require('./apps-recipe-runner');
 
-function runSessionForEntry({ entry, session, task, driver, model, broadcast, recipe, inputs, stepThrough }) {
+async function runSessionForEntry({ entry, session, task, driver, model, broadcast, recipe, inputs, stepThrough }) {
   if (recipe) {
     // Deterministic path: execute recipe steps directly against the driver.
-    return recipeRunner.runRecipe({ session, driver, recipe, broadcast, providerEntry: entry, model, inputs, stepThrough });
+    // When the runner stops (done / aborted / failed), hand off to the chat
+    // loop with a seeded history so the user can ask "why did you stop?"
+    // and keep working conversationally instead of being stranded.
+    const res = await recipeRunner.runRecipe({ session, driver, recipe, broadcast, providerEntry: entry, model, inputs, stepThrough });
+    // Pick the Anthropic (or best) provider for the conversational follow-up;
+    // if the session's runner-provider was fine, reuse it.
+    const chatEntry = (session._providerRegistry && session._providerRegistry.anthropic) || entry;
+    const chatModel = chatEntry && chatEntry.adapter && chatEntry.adapter.defaultModel;
+    const lines = (res.trail || []).map(t => {
+      const prefix = t.ok ? '[ok]' : '[FAIL]';
+      const target = t.target ? ' ' + t.target : '';
+      const textPart = t.text ? ' -> "' + t.text + '"' : '';
+      return `${prefix} ${t.verb}${target}${textPart}${t.reason ? ' - ' + t.reason : ''}`;
+    }).join('\n');
+    const outcome = res.ok ? `completed successfully in ${res.iterations} steps`
+      : res.aborted ? 'was stopped by the user'
+      : `FAILED at step ${(res.failedAt || 0) + 1}: ${res.error}`;
+    const handoff = [
+      `The automation "${recipe.name}" ${outcome}.`,
+      '',
+      'Step trail:',
+      lines || '(no steps recorded)',
+      '',
+      res.ok
+        ? 'The user can ask you follow-up questions about what you did. Reply from memory of the trail above; only call tools if they explicitly ask you to do something new.'
+        : 'Explain in plain English why the run ended. The user may ask for a fix, a retry, or something different. Diagnose from the trail before acting. Take a fresh screenshot before any new tool call.',
+    ].join('\n');
+    // Kick off the chat loop on the same session. It runs until the user
+    // stops it or the agent calls finish/declare_stuck. User messages
+    // arriving mid-run land via /api/apps/session/answer -> ask_user, or
+    // via session/continue which we keep live below.
+    session._handoff = true;
+    return chat.runSession({ session, task: handoff, driver, providerEntry: chatEntry, model: chatModel, broadcast });
   }
   return chat.runSession({ session, task, driver, providerEntry: entry, model, broadcast });
 }
@@ -211,6 +243,32 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
       broadcast({ type: 'apps-agent-step', sessionId, kind: 'stopped', at: Date.now() });
     }
     json(res, { ok: true });
+  });
+
+  // Inject a mid-run user message. If the agent is paused on ask_user, it
+  // satisfies that. Otherwise it's appended to the message log so the next
+  // model turn sees it. Lets the user ask "why are you stuck?" or redirect
+  // the agent without interrupting.
+  addRoute('POST', '/api/apps/session/inject', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const sessionId = String(body.sessionId || '');
+    const message = String(body.message || '').trim();
+    if (!sessionId || !message) return json(res, { error: 'sessionId and message required' }, 400);
+    const session = chat.sessions.get(sessionId);
+    if (!session) return json(res, { error: 'unknown session' }, 404);
+    if (session._pendingAsk && typeof session._pendingAsk.resolve === 'function') {
+      session._pendingAsk.resolve(message);
+      if (typeof broadcast === 'function') broadcast({ type: 'apps-agent-step', sessionId, kind: 'answer', answer: message, at: Date.now() });
+      return json(res, { ok: true, mode: 'answered' });
+    }
+    // Append as a user turn in whichever provider shape the session uses.
+    const adapterKind = (session._providerEntry && session._providerEntry.adapter && session._providerEntry.adapter.kind) || null;
+    if (!Array.isArray(session.messages)) session.messages = [];
+    if (adapterKind === 'gemini') session.messages.push({ role: 'user', parts: [{ text: message }] });
+    else session.messages.push({ role: 'user', content: message });
+    if (typeof broadcast === 'function') broadcast({ type: 'apps-agent-step', sessionId, kind: 'user_injected', message, at: Date.now() });
+    json(res, { ok: true, mode: 'queued' });
   });
 
   // Resume a paused ask_user tool-call with the user's answer.

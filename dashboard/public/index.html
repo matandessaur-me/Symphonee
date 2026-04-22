@@ -15545,13 +15545,19 @@ async function appsChatSend() {
     return;
   }
   if (mode === 'running') {
-    // Queue a user-note. Sent via the answer endpoint by falling back to a
-    // synthetic "user wants to add context" — simplest path is to inject it
-    // as a mid-run message via the same answer channel; if no ask is
-    // pending, we just append to the UI as a hint (the agent will pick it
-    // up the next time it checks for ask_user, or the user can interrupt).
+    // Mid-run user message. The backend routes it to the active session's
+    // ask_user queue (if the agent is paused waiting for input) or injects
+    // it as a new user turn the agent will pick up on its next iteration.
     _appsAppendLog({ kind: 'user', text: 'You: ' + text, klass: 'rationale' });
     input.value = ''; _appsAutoresizeChatInput();
+    try {
+      await fetch('/api/apps/session/inject', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: _appsState.sessionId, message: text }),
+      });
+    } catch (e) {
+      if (typeof toast === 'function') toast('Send failed: ' + e.message, 'error');
+    }
     return;
   }
   // mode === 'start' or 'continue'. A pending launch spec counts as

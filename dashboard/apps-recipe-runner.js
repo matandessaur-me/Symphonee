@@ -178,9 +178,9 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
       return;
     }
     case 'DRAG': {
-      const from = parseCoord(target);
-      const to = parseCoord(text);
-      if (!from || !to) throw new Error('DRAG requires coordinates: target "fromX,fromY" and text "toX,toY" (e.g. DRAG 100,200 -> 400,500)');
+      if (!target || !text) throw new Error('DRAG needs a source and destination (target and text). Accepts "x,y" coordinates or element descriptions.');
+      const from = parseCoord(target) || await locateTarget({ session, driver, description: target });
+      const to   = parseCoord(text)   || await locateTarget({ session, driver, description: text });
       await driver.drag(from.x, from.y, to.x, to.y);
       return;
     }
@@ -322,11 +322,13 @@ async function runNode({ session, driver, node, variables, emit, ctx }) {
     }
   }
   if (lastErr) {
+    ctx.trail.push({ index: ctx.index, verb: step.verb, target: step.target, text: step.text, ok: false, reason: lastErr.message });
     emit({ kind: 'step_failed', index: ctx.index, verb: step.verb, target: step.target, reason: lastErr.message, code: lastErr.code });
     const err = new Error(`Recipe step ${ctx.index + 1} (${step.verb}${step.target ? ' ' + step.target : ''}) failed: ${lastErr.message}`);
     err.code = lastErr.code || 'step_failed';
     throw err;
   }
+  ctx.trail.push({ index: ctx.index, verb: step.verb, target: step.target, text: step.text, ok: true });
   emit({ kind: 'step_done', index: ctx.index });
   try {
     const shot = await driver.screenshotWindow(session.hwnd, { format: 'jpeg', quality: 55 });
@@ -400,7 +402,7 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
     return { ok: false, error: e.message };
   }
 
-  const ctx = { index: -1, total: countLeaves(tree) };
+  const ctx = { index: -1, total: countLeaves(tree), trail: [] };
 
   try {
     await runNode({ session, driver, node: tree, variables, emit, ctx });
@@ -423,16 +425,16 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
     }
     emit({ kind: 'done', summary: `Recipe "${recipe.name}" completed (${ctx.index + 1} actions).` });
     finalize('ok', { iterations: ctx.index + 1 });
-    return { ok: true, iterations: ctx.index + 1 };
+    return { ok: true, iterations: ctx.index + 1, trail: ctx.trail, recipe, variables };
   } catch (e) {
     if (e.code === 'stopped') {
       emit({ kind: 'stopped' });
       finalize('aborted', { iterations: ctx.index + 1 });
-      return { ok: false, aborted: true };
+      return { ok: false, aborted: true, trail: ctx.trail, recipe, variables };
     }
     emit({ kind: 'stuck', reason: e.message });
     finalize('failed', { iterations: ctx.index + 1, error: e.message });
-    return { ok: false, error: e.message };
+    return { ok: false, error: e.message, trail: ctx.trail, recipe, variables, failedAt: ctx.index };
   } finally {
     session.running = false;
     session._liveStop = null;
