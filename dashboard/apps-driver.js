@@ -139,9 +139,14 @@ function translate({ x, y, rect }) {
 }
 
 async function screenshotWindow(hwnd, { format = 'jpeg', quality = 60 } = {}) {
-  const w = await findWindow(hwnd);
+  let w = await findWindow(hwnd);
   if (w.isMinimized) {
-    return { error: 'window_minimized', hwnd: w.hwnd };
+    // Auto-restore the window so the agent can keep working instead of
+    // bailing. Users are told up-front that the Apps tab drives the real
+    // desktop, so un-minimizing an already-chosen target is expected.
+    try { await focusWindow(hwnd); } catch (_) {}
+    w = await findWindow(hwnd);
+    if (w.isMinimized) return { error: 'window_minimized', hwnd: w.hwnd };
   }
   if (w.rect.w <= 0 || w.rect.h <= 0) {
     return { error: 'window_degenerate_rect', hwnd: w.hwnd, rect: w.rect };

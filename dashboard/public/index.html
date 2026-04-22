@@ -13623,7 +13623,14 @@ function handleAppsAgentStep(msg) {
     if (entry && img && img.src) {
       const thumb = document.createElement('img');
       thumb.src = img.src;
-      thumb.title = (msg.width || '?') + 'x' + (msg.height || '?');
+      thumb.title = 'Click to show in the main viewport';
+      thumb.style.cursor = 'pointer';
+      thumb.addEventListener('click', () => {
+        const big = document.getElementById('appsViewportImg');
+        if (big) { big.src = thumb.src; big.style.display = ''; }
+        const e = document.getElementById('appsViewportEmpty');
+        if (e) e.style.display = 'none';
+      });
       entry.appendChild(thumb);
       const caption = document.createElement('span');
       caption.style.color = 'var(--subtext0)';
@@ -13635,14 +13642,18 @@ function handleAppsAgentStep(msg) {
   }
   if (kind === 'observation') {
     if (msg.ok === false) {
-      _appsAppendLog({ kind: 'err', text: (msg.tool || '?') + ': ' + (msg.error || 'failed') + (msg.code ? ' (' + msg.code + ')' : ''), klass: 'observation err' });
+      var codeHint = '';
+      switch (msg.code) {
+        case 'window_gone':   codeHint = ' (the target window has closed; list windows and pick a new one)'; break;
+        case 'window_moved':  codeHint = ' (the window moved since the last screenshot; take a fresh screenshot before clicking)'; break;
+        case 'deny_listed':   codeHint = ' (window is on the safety deny list and cannot be driven)'; break;
+        case 'already_tried': codeHint = ' (exact same call was already rejected; try a different approach)'; break;
+        case 'note_too_large':codeHint = ' (memory note was too long; shorten to under 2KB)'; break;
+        case 'window_minimized': codeHint = ' (window was minimized; it should be restored automatically on the next tool call)'; break;
+      }
+      _appsAppendLog({ kind: 'err', text: (msg.tool || '?') + ': ' + (msg.error || 'failed') + (msg.code ? ' (' + msg.code + ')' : '') + codeHint, klass: 'observation err' });
     } else if (msg.preview) {
       _appsAppendLog({ kind: 'result', text: msg.preview, klass: 'observation' });
-    }
-    // Draw the click dot overlay right on the live screenshot.
-    if (msg.ok !== false && (msg.tool === 'click' || msg.tool === 'mouse_move')) {
-      // We don't have coordinates on the observation; nothing to draw here.
-      // The dot is drawn from the action event instead (see below).
     }
     return;
   }
