@@ -344,6 +344,59 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     json(res, recipes.deleteRecipe(app, id));
   });
 
+  addRoute('POST', '/api/apps/recipes/import', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const app = String(body.app || '').trim();
+    if (!app) return json(res, { error: 'app required' }, 400);
+    try { json(res, recipes.importRecipes(app, body.payload)); }
+    catch (e) { json(res, { error: e.message }, 400); }
+  });
+
+  addRoute('GET', '/api/apps/recipes/export', async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const app = url.searchParams.get('app');
+    if (!app) return json(res, { error: 'app required' }, 400);
+    const idsParam = url.searchParams.get('ids');
+    const ids = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+    json(res, recipes.exportRecipes(app, ids));
+  });
+
+  addRoute('GET', '/api/apps/recipes/history', async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const app = url.searchParams.get('app');
+    if (!app) return json(res, { error: 'app required' }, 400);
+    json(res, recipes.listHistory(app));
+  });
+
+  // "Save current session as a recipe". Takes the actions the chat loop
+  // recorded on the session and turns them into a DSL step list the user
+  // can rerun deterministically.
+  addRoute('POST', '/api/apps/recipes/from-session', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const sessionId = String(body.sessionId || '');
+    const name = String(body.name || '').trim();
+    if (!sessionId) return json(res, { error: 'sessionId required' }, 400);
+    if (!name) return json(res, { error: 'name required' }, 400);
+    const session = chat.sessions.get(sessionId);
+    if (!session) return json(res, { error: 'unknown session' }, 404);
+    const app = session.app;
+    if (!app) return json(res, { error: 'session has no app key; cannot file the recipe' }, 400);
+    const steps = recipes.actionsToSteps(session._recordedActions || []);
+    if (!steps.length) return json(res, { error: 'no recorded actions yet - start a session, let the agent do work, then save.' }, 400);
+    try {
+      const r = recipes.saveRecipe(app, {
+        name,
+        description: String(body.description || '').trim() || `Captured from session ${sessionId}`,
+        steps,
+      });
+      json(res, { ...r, captured: steps.length });
+    } catch (e) {
+      json(res, { error: e.message }, 400);
+    }
+  });
+
   addRoute('GET', '/api/apps/status', async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get('sessionId');

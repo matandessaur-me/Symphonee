@@ -122,6 +122,106 @@ function deleteRecipe(app, id) {
   return { ok: true };
 }
 
+// Bring a recipe in from an external JSON blob. Accepts either a single
+// recipe object or an array of recipes; assigns fresh IDs to avoid clashes
+// with anything already on disk. Returns { ok, imported: n }.
+function importRecipes(app, payload) {
+  if (!payload) throw new Error('no payload');
+  const list = Array.isArray(payload) ? payload : (Array.isArray(payload.recipes) ? payload.recipes : [payload]);
+  let imported = 0;
+  for (const raw of list) {
+    if (!raw || !raw.name) continue;
+    saveRecipe(app, {
+      id: undefined, // always assign a new id so imports don't overwrite
+      name: raw.name,
+      description: raw.description,
+      variables: raw.variables,
+      steps: raw.steps,
+    });
+    imported++;
+  }
+  return { ok: true, imported };
+}
+
+function exportRecipes(app, ids) {
+  const data = _load(app);
+  const filter = Array.isArray(ids) && ids.length ? new Set(ids) : null;
+  const recipes = filter ? data.recipes.filter(r => filter.has(r.id)) : data.recipes;
+  return { ok: true, app: data.app, exportedAt: new Date().toISOString(), recipes };
+}
+
+// Per-app run history. Small JSON file capped at 50 entries. Each entry is
+// the outcome summary the runner emits on completion.
+const HIST_DIR = path.join(__dirname, 'app-recipe-history');
+const HIST_CAP = 50;
+
+function _histPath(app) {
+  return path.join(HIST_DIR, normalizeApp(app) + '.json');
+}
+
+function _loadHist(app) {
+  try { fs.mkdirSync(HIST_DIR, { recursive: true }); } catch (_) {}
+  const p = _histPath(app);
+  if (!fs.existsSync(p)) return { app: normalizeApp(app), runs: [] };
+  try {
+    const data = JSON.parse(fs.readFileSync(p, 'utf8') || '{}');
+    if (!Array.isArray(data.runs)) data.runs = [];
+    return { app: normalizeApp(app), runs: data.runs };
+  } catch (_) {
+    return { app: normalizeApp(app), runs: [] };
+  }
+}
+
+function recordRun(app, entry) {
+  const data = _loadHist(app);
+  const rec = {
+    id: 'h_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+    at: entry.at || new Date().toISOString(),
+    recipeId: entry.recipeId || null,
+    recipeName: entry.recipeName || null,
+    outcome: entry.outcome || 'unknown',   // 'ok' | 'failed' | 'aborted'
+    iterations: entry.iterations || 0,
+    durationMs: entry.durationMs || 0,
+    error: entry.error || null,
+  };
+  data.runs.unshift(rec);
+  if (data.runs.length > HIST_CAP) data.runs.length = HIST_CAP;
+  try { fs.writeFileSync(_histPath(app), JSON.stringify(data, null, 2), 'utf8'); } catch (_) {}
+  return rec;
+}
+
+function listHistory(app) {
+  return _loadHist(app);
+}
+
+// Convert the action log a chat session collected during a run into a
+// concrete recipe. Clicks with hand-tuned coordinates stay as explicit
+// "x,y" targets so playback is deterministic and doesn't need the vision
+// locator; type/key/scroll/wait map 1:1 to DSL verbs.
+function actionsToSteps(actions) {
+  const out = [];
+  for (const a of actions || []) {
+    const name = a.name;
+    const args = a.args || {};
+    if (name === 'click' && Number.isFinite(args.x) && Number.isFinite(args.y)) {
+      out.push({ verb: 'CLICK', target: `${args.x},${args.y}` });
+    } else if (name === 'type_text' && typeof args.text === 'string') {
+      out.push({ verb: 'TYPE', text: args.text });
+    } else if (name === 'key' && typeof args.combo === 'string') {
+      out.push({ verb: 'PRESS', target: args.combo });
+    } else if (name === 'wait_ms' && Number.isFinite(args.ms)) {
+      out.push({ verb: 'WAIT', target: String(Math.max(0, Math.min(60000, args.ms | 0))) });
+    } else if (name === 'scroll') {
+      const dy = Number.isFinite(args.dy) ? args.dy : 0;
+      const dx = Number.isFinite(args.dx) ? args.dx : 0;
+      out.push({ verb: 'WAIT', target: '100', notes: `scroll dx=${dx} dy=${dy} (rewrite manually)` });
+    } else if (name === 'drag') {
+      out.push({ verb: 'CLICK', target: `${args.fromX},${args.fromY}`, notes: `drag from (${args.fromX},${args.fromY}) to (${args.toX},${args.toY}) - replay manually` });
+    }
+  }
+  return out;
+}
+
 // Render a recipe into a plain-English goal string the agent can consume.
 // Phase A implementation: the recipe becomes a hard subgoal plan injected
 // as the user's initial goal, with an explicit "follow these steps in order,
@@ -152,4 +252,9 @@ module.exports = {
   saveRecipe,
   deleteRecipe,
   renderRecipeAsGoal,
+  importRecipes,
+  exportRecipes,
+  recordRun,
+  listHistory,
+  actionsToSteps,
 };

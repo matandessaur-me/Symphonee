@@ -4597,6 +4597,9 @@
                   <button class="sy-btn sy-btn-ghost apps-log-head-btn" type="button" id="appsInstructionsBtn" onclick="appsOpenInstructions()" title="View or edit what the AI has learned about this app" style="display:none;">
                     <i data-lucide="book-open" style="width:12px;height:12px;"></i> Instructions
                   </button>
+                  <button class="sy-btn sy-btn-ghost apps-log-head-btn" type="button" id="appsSaveAsAutomationBtn" onclick="appsSaveCurrentAsAutomation()" title="Capture this session as a reusable automation" style="display:none;">
+                    <i data-lucide="save" style="width:12px;height:12px;"></i> Save as Automation
+                  </button>
                   <button class="sy-btn sy-btn-outline apps-log-head-btn" type="button" id="appsInterruptBtn" onclick="appsInterrupt()" title="Stop the agent's current run" style="display:none;">
                     <i data-lucide="square" style="width:12px;height:12px;"></i> Interrupt
                   </button>
@@ -5009,6 +5012,16 @@
       <i data-lucide="zap" style="width:16px;height:16px;"></i>
       <span>Automations for <span id="appsAutomationsAppName" style="color:var(--accent);">-</span></span>
       <span style="flex:1;"></span>
+      <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsTriggerImport()" title="Import recipes (.json)" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
+        <i data-lucide="upload" style="width:14px;height:14px;"></i>
+      </button>
+      <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsExportAll()" title="Export all recipes (.json)" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
+        <i data-lucide="download" style="width:14px;height:14px;"></i>
+      </button>
+      <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsToggleHistory()" title="Recent runs" style="height:26px;width:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;">
+        <i data-lucide="history" style="width:14px;height:14px;"></i>
+      </button>
+      <input type="file" id="appsAutomationsImportFile" accept=".json,application/json" style="display:none;" onchange="appsAutomationsImportFile(event)">
       <button class="sy-btn sy-btn-outline" type="button" onclick="appsAutomationsNew()" style="height:26px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;">
         <i data-lucide="plus" style="width:13px;height:13px;"></i> New
       </button>
@@ -5027,14 +5040,29 @@
             <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--overlay1);">- one per line: <code>name = description</code>. Use <code>{{name}}</code> in steps.</span>
           </div>
           <textarea id="appsAutomationsVars" spellcheck="false" placeholder="regression = the Regression tab in the top bar&#10;save_btn = the Save button in the footer" rows="3" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface2);border-radius:6px;padding:7px 10px;font:12px/1.4 var(--font-mono);outline:none;resize:vertical;"></textarea>
-          <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px;">
-            Steps
-            <span style="font-weight:400; text-transform:none; letter-spacing:0; color:var(--overlay1);">- one per line: <code>VERB target</code> or <code>VERB target -> text</code></span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px;">Steps</div>
+            <span style="flex:1;"></span>
+            <div style="display:inline-flex;background:var(--surface0);border:1px solid var(--surface2);border-radius:5px;overflow:hidden;">
+              <button type="button" id="appsAutomationsViewVisual" onclick="appsAutomationsSetView('visual')" style="background:var(--surface1);color:var(--text);border:none;padding:3px 10px;font:11px var(--font-ui);cursor:pointer;">Visual</button>
+              <button type="button" id="appsAutomationsViewText" onclick="appsAutomationsSetView('text')" style="background:transparent;color:var(--subtext1);border:none;padding:3px 10px;font:11px var(--font-ui);cursor:pointer;">Text</button>
+            </div>
+            <button type="button" onclick="appsAutomationsAddRow()" id="appsAutomationsAddRowBtn" class="sy-btn sy-btn-ghost" style="height:22px;padding:0 8px;font-size:11px;">
+              <i data-lucide="plus" style="width:11px;height:11px;"></i> Add step
+            </button>
           </div>
-          <textarea id="appsAutomationsSteps" spellcheck="false" placeholder="CLICK {{regression}}&#10;CLICK File menu&#10;TYPE filename -> my-design&#10;PRESS Enter" style="flex:1;min-height:160px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:6px;padding:10px 12px;font:12px/1.5 var(--font-mono);resize:vertical;outline:none;"></textarea>
+          <div id="appsAutomationsVisual" style="flex:1; min-height:160px; max-height:360px; overflow-y:auto; border:1px solid var(--surface2); border-radius:6px; padding:6px; background:var(--bg); display:flex; flex-direction:column; gap:4px;"></div>
+          <textarea id="appsAutomationsSteps" spellcheck="false" placeholder="CLICK {{regression}}&#10;CLICK File menu&#10;TYPE filename -> my-design&#10;PRESS Enter" style="display:none;flex:1;min-height:160px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:6px;padding:10px 12px;font:12px/1.5 var(--font-mono);resize:vertical;outline:none;"></textarea>
           <div style="font:11px var(--font-ui); color:var(--subtext0);">
-            Verbs: CLICK, TYPE, PRESS, WAIT, FIND, VERIFY. Arrow <code>-&gt;</code> separates a target from typed text (e.g. <code>TYPE input -&gt; hello</code>). Coordinates <code>x,y</code> skip the vision locator.
+            Verbs: CLICK, TYPE, PRESS, WAIT, FIND, VERIFY, IF/ELSE/ENDIF, REPEAT/ENDREPEAT. Arrow <code>-&gt;</code> separates a target from typed text (e.g. <code>TYPE input -&gt; hello</code>). Coordinates <code>x,y</code> skip the vision locator.
           </div>
+        </div>
+        <div id="appsAutomationsHistory" style="display:none; flex:1; flex-direction:column; gap:6px; min-height:0; overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <strong style="font:600 11px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px;">Recent runs</strong>
+            <button class="sy-btn sy-btn-ghost" type="button" onclick="appsAutomationsToggleHistory()" style="height:22px;padding:0 8px;font-size:11px;margin-left:auto;">Close history</button>
+          </div>
+          <div id="appsAutomationsHistoryList" style="flex:1; overflow-y:auto; border:1px solid var(--surface1); border-radius:6px; padding:6px 8px; font:12px var(--font-mono); color:var(--subtext1); background:var(--surface0);"></div>
         </div>
       </div>
     </div>
@@ -14092,6 +14120,8 @@ function appsAutomationsSelect(id) {
   document.getElementById('appsAutomationsVars').value = _appsVarsToText(recipe.variables || {});
   document.getElementById('appsAutomationsSteps').value = _appsStepsToText(recipe.steps || []);
   document.getElementById('appsAutomationsDeleteBtn').style.display = '';
+  _appsBuilderSteps = JSON.parse(JSON.stringify(recipe.steps || []));
+  appsAutomationsSetView('visual');
   _appsRenderAutomationsList();
 }
 
@@ -14104,6 +14134,8 @@ function appsAutomationsNew() {
   document.getElementById('appsAutomationsVars').value = '';
   document.getElementById('appsAutomationsSteps').value = '';
   document.getElementById('appsAutomationsDeleteBtn').style.display = 'none';
+  _appsBuilderSteps = [];
+  appsAutomationsSetView('visual');
   document.getElementById('appsAutomationsName').focus();
   _appsRenderAutomationsList();
 }
@@ -14111,6 +14143,262 @@ function appsAutomationsNew() {
 function _appsAutomationsShowForm(show) {
   document.getElementById('appsAutomationsEmpty').style.display = show ? 'none' : '';
   document.getElementById('appsAutomationsForm').style.display = show ? 'flex' : 'none';
+  document.getElementById('appsAutomationsHistory').style.display = 'none';
+}
+
+function appsAutomationsToggleHistory() {
+  const hist = document.getElementById('appsAutomationsHistory');
+  const form = document.getElementById('appsAutomationsForm');
+  const empty = document.getElementById('appsAutomationsEmpty');
+  const showing = hist.style.display !== 'none';
+  if (showing) {
+    hist.style.display = 'none';
+    if (_appsAutomations.current) form.style.display = 'flex';
+    else empty.style.display = '';
+    return;
+  }
+  form.style.display = 'none';
+  empty.style.display = 'none';
+  hist.style.display = 'flex';
+  _appsAutomationsLoadHistory();
+}
+
+async function _appsAutomationsLoadHistory() {
+  const app = _appsAutomationsApp();
+  const listEl = document.getElementById('appsAutomationsHistoryList');
+  if (!listEl || !app) return;
+  listEl.textContent = 'Loading...';
+  try {
+    const r = await fetch('/api/apps/recipes/history?app=' + encodeURIComponent(app));
+    const data = await r.json();
+    const runs = (data && data.runs) || [];
+    if (!runs.length) { listEl.textContent = 'No runs yet.'; return; }
+    listEl.innerHTML = runs.map(run => {
+      const when = new Date(run.at).toLocaleString();
+      const icon = run.outcome === 'ok' ? 'check-circle-2' : run.outcome === 'aborted' ? 'circle-slash' : 'alert-circle';
+      const color = run.outcome === 'ok' ? 'var(--green, #98c379)' : run.outcome === 'aborted' ? 'var(--subtext0)' : 'var(--red, #e06c75)';
+      const dur = run.durationMs ? (run.durationMs < 1000 ? run.durationMs + 'ms' : (run.durationMs / 1000).toFixed(1) + 's') : '-';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--surface1);">
+        <i data-lucide="${icon}" style="width:13px;height:13px;color:${color};"></i>
+        <div style="flex:1;min-width:0;">
+          <div style="color:var(--text);font:500 12px var(--font-ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_appsEscape(run.recipeName || '(unnamed)')}</div>
+          <div style="color:var(--overlay1);font:10px var(--font-mono);">${when} - ${run.iterations || 0} steps - ${dur}${run.error ? ' - ' + _appsEscape(String(run.error).slice(0, 80)) : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    if (typeof lucide !== 'undefined') lucide.createIcons({ el: listEl });
+  } catch (e) {
+    listEl.textContent = 'Load failed: ' + e.message;
+  }
+}
+
+function appsAutomationsTriggerImport() {
+  const f = document.getElementById('appsAutomationsImportFile');
+  if (f) f.click();
+}
+
+async function appsAutomationsImportFile(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const app = _appsAutomationsApp();
+  if (!app) return;
+  const statusEl = document.getElementById('appsAutomationsStatus');
+  try {
+    const text = await file.text();
+    let payload; try { payload = JSON.parse(text); } catch (e) { throw new Error('File is not valid JSON'); }
+    const r = await fetch('/api/apps/recipes/import', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ app, payload }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'import failed');
+    if (statusEl) statusEl.textContent = 'Imported ' + data.imported + ' recipe' + (data.imported === 1 ? '' : 's') + '.';
+    await _appsAutomationsReload();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Import failed: ' + e.message;
+    if (typeof toast === 'function') toast('Import failed: ' + e.message, 'error');
+  }
+}
+
+async function appsAutomationsExportAll() {
+  const app = _appsAutomationsApp();
+  if (!app) return;
+  try {
+    const r = await fetch('/api/apps/recipes/export?app=' + encodeURIComponent(app));
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'export failed');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (app || 'app').replace(/[^a-z0-9_-]+/gi, '-') + '-automations.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 200);
+  } catch (e) {
+    if (typeof toast === 'function') toast('Export failed: ' + e.message, 'error');
+  }
+}
+
+// ───── Visual step builder ──────────────────────────────────────────────
+const _APPS_VERBS = ['CLICK', 'TYPE', 'PRESS', 'WAIT', 'FIND', 'VERIFY', 'IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT'];
+const _APPS_VERBS_WITH_TEXT = new Set(['TYPE']);
+const _APPS_VERBS_BARE = new Set(['ELSE', 'ENDIF', 'ENDREPEAT']);
+let _appsBuilderView = 'visual';
+let _appsBuilderSteps = [];
+let _appsBuilderDragIdx = null;
+
+function appsAutomationsSetView(view) {
+  // Switching views keeps the data in sync: visual -> text serializes steps,
+  // text -> visual parses the textarea. Hold users' hands on syntax errors
+  // so they don't lose work on a typo.
+  const stepsEl = document.getElementById('appsAutomationsSteps');
+  const visEl = document.getElementById('appsAutomationsVisual');
+  const addBtn = document.getElementById('appsAutomationsAddRowBtn');
+  const visBtn = document.getElementById('appsAutomationsViewVisual');
+  const txtBtn = document.getElementById('appsAutomationsViewText');
+  if (!stepsEl || !visEl) return;
+  if (view === 'text') {
+    stepsEl.value = _appsStepsToText(_appsBuilderSteps);
+    stepsEl.style.display = '';
+    visEl.style.display = 'none';
+    if (addBtn) addBtn.style.display = 'none';
+    if (visBtn) { visBtn.style.background = 'transparent'; visBtn.style.color = 'var(--subtext1)'; }
+    if (txtBtn) { txtBtn.style.background = 'var(--surface1)'; txtBtn.style.color = 'var(--text)'; }
+  } else {
+    try { _appsBuilderSteps = _appsTextToSteps(stepsEl.value || ''); }
+    catch (e) {
+      const statusEl = document.getElementById('appsAutomationsStatus');
+      if (statusEl) statusEl.textContent = 'Cannot switch to Visual - fix: ' + e.message;
+      return;
+    }
+    stepsEl.style.display = 'none';
+    visEl.style.display = 'flex';
+    if (addBtn) addBtn.style.display = '';
+    if (visBtn) { visBtn.style.background = 'var(--surface1)'; visBtn.style.color = 'var(--text)'; }
+    if (txtBtn) { txtBtn.style.background = 'transparent'; txtBtn.style.color = 'var(--subtext1)'; }
+    _appsRenderBuilderRows();
+  }
+  _appsBuilderView = view;
+}
+
+function appsAutomationsAddRow() {
+  _appsBuilderSteps.push({ verb: 'CLICK', target: '' });
+  _appsRenderBuilderRows();
+  _appsSyncBuilderToText();
+}
+
+function _appsBuilderRemove(i) {
+  _appsBuilderSteps.splice(i, 1);
+  _appsRenderBuilderRows();
+  _appsSyncBuilderToText();
+}
+
+function _appsBuilderUpdate(i, field, value) {
+  if (!_appsBuilderSteps[i]) return;
+  if (value === '' || value == null) delete _appsBuilderSteps[i][field];
+  else _appsBuilderSteps[i][field] = value;
+  _appsSyncBuilderToText();
+}
+
+function _appsBuilderVerbChanged(i, newVerb) {
+  const step = _appsBuilderSteps[i];
+  if (!step) return;
+  step.verb = newVerb;
+  // Clear text when switching off TYPE; clear target when switching to bare.
+  if (!_APPS_VERBS_WITH_TEXT.has(newVerb)) delete step.text;
+  if (_APPS_VERBS_BARE.has(newVerb)) delete step.target;
+  _appsRenderBuilderRows();
+  _appsSyncBuilderToText();
+}
+
+function _appsSyncBuilderToText() {
+  const stepsEl = document.getElementById('appsAutomationsSteps');
+  if (stepsEl) stepsEl.value = _appsStepsToText(_appsBuilderSteps);
+}
+
+function _appsRenderBuilderRows() {
+  const container = document.getElementById('appsAutomationsVisual');
+  if (!container) return;
+  if (!_appsBuilderSteps.length) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--overlay1);font:12px var(--font-ui);">No steps yet. Click <strong>Add step</strong> to start.</div>';
+    return;
+  }
+  const rows = _appsBuilderSteps.map((s, i) => {
+    const verb = s.verb || 'CLICK';
+    const showTarget = !_APPS_VERBS_BARE.has(verb);
+    const showText = _APPS_VERBS_WITH_TEXT.has(verb);
+    const indent = (verb === 'ELSE' || verb === 'ENDIF' || verb === 'ENDREPEAT') ? '' : '';
+    const options = _APPS_VERBS.map(v => `<option value="${v}"${v === verb ? ' selected' : ''}>${v}</option>`).join('');
+    return `<div class="apps-builder-row" draggable="true" data-idx="${i}" ondragstart="_appsBuilderDragStart(event,${i})" ondragover="_appsBuilderDragOver(event,${i})" ondragleave="_appsBuilderDragLeave(event)" ondrop="_appsBuilderDrop(event,${i})" ondragend="_appsBuilderDragEnd(event)" style="display:flex;align-items:center;gap:6px;padding:5px 6px;background:var(--surface0);border:1px solid var(--surface1);border-radius:5px;">
+      <span style="cursor:grab;color:var(--overlay1);padding:0 3px;" title="Drag to reorder">::</span>
+      <span style="color:var(--overlay1);font:10px var(--font-mono);min-width:22px;text-align:right;">${i + 1}</span>
+      <select onchange="_appsBuilderVerbChanged(${i}, this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-ui);min-width:96px;">${options}</select>
+      ${showTarget ? `<input type="text" placeholder="${_appsTargetPlaceholder(verb)}" value="${_appsEscape(s.target || '')}" oninput="_appsBuilderUpdate(${i},'target',this.value)" style="flex:1;min-width:120px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">` : '<span style="flex:1;color:var(--overlay1);font:11px var(--font-ui);font-style:italic;">(block marker)</span>'}
+      ${showText ? `<span style="color:var(--overlay1);">→</span><input type="text" placeholder="text to type" value="${_appsEscape(s.text || '')}" oninput="_appsBuilderUpdate(${i},'text',this.value)" style="flex:1;min-width:100px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">` : ''}
+      <button type="button" onclick="_appsBuilderRemove(${i})" title="Delete step" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px 6px;font-size:14px;line-height:1;">×</button>
+    </div>`;
+  }).join('');
+  container.innerHTML = rows;
+}
+
+function _appsTargetPlaceholder(verb) {
+  switch (verb) {
+    case 'CLICK': return 'element description or x,y';
+    case 'TYPE':  return 'optional: element to focus first';
+    case 'PRESS': return 'key combo (Enter, Ctrl+S, ...)';
+    case 'WAIT':  return 'milliseconds (e.g. 500)';
+    case 'FIND':
+    case 'VERIFY': return 'element description';
+    case 'IF':    return 'condition: element exists?';
+    case 'REPEAT': return 'number of times (e.g. 5)';
+    default:      return '';
+  }
+}
+
+function _appsBuilderDragStart(ev, i) {
+  _appsBuilderDragIdx = i;
+  try { ev.dataTransfer.setData('text/plain', String(i)); ev.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+  ev.currentTarget.style.opacity = '0.5';
+}
+function _appsBuilderDragOver(ev) {
+  ev.preventDefault();
+  ev.currentTarget.style.outline = '2px solid var(--accent)';
+}
+function _appsBuilderDragLeave(ev) {
+  ev.currentTarget.style.outline = '';
+}
+function _appsBuilderDrop(ev, i) {
+  ev.preventDefault();
+  ev.currentTarget.style.outline = '';
+  const from = _appsBuilderDragIdx;
+  if (from == null || from === i) return;
+  const [moved] = _appsBuilderSteps.splice(from, 1);
+  _appsBuilderSteps.splice(i, 0, moved);
+  _appsRenderBuilderRows();
+  _appsSyncBuilderToText();
+}
+function _appsBuilderDragEnd() {
+  _appsBuilderDragIdx = null;
+  document.querySelectorAll('.apps-builder-row').forEach(el => { el.style.opacity = ''; el.style.outline = ''; });
+}
+
+async function appsSaveCurrentAsAutomation() {
+  if (!_appsState.sessionId) { if (typeof toast === 'function') toast('No active session.', 'warning'); return; }
+  const name = prompt('Name this automation:');
+  if (!name || !name.trim()) return;
+  try {
+    const r = await fetch('/api/apps/recipes/from-session', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: _appsState.sessionId, name: name.trim() }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'save failed');
+    if (typeof toast === 'function') toast('Saved "' + name.trim() + '" (' + data.captured + ' steps).', 'success', { duration: 2500 });
+  } catch (e) {
+    if (typeof toast === 'function') toast('Save failed: ' + e.message, 'error');
+  }
 }
 
 function _appsStepsToText(steps) {
@@ -14829,6 +15117,10 @@ function _appsUpdateRunningChrome(running) {
   if (head) head.classList.toggle('running', !!running);
   const title = document.getElementById('appsLogTitle');
   if (title) title.textContent = running ? 'Chat (live)' : 'Chat';
+  const saveBtn = document.getElementById('appsSaveAsAutomationBtn');
+  // Only show "Save as Automation" during free-form sessions (no recipe
+  // armed) since replaying a recipe back to itself is noise.
+  if (saveBtn) saveBtn.style.display = (running && !_appsState.selectedRecipeId) ? '' : 'none';
   if (typeof _appsSyncComposerMode === 'function') _appsSyncComposerMode();
   const modelBadge = document.getElementById('appsLogModel');
   if (modelBadge) {

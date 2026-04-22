@@ -1074,6 +1074,12 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
             learning.noteScreenshot(session, result);
           }
           learning.noteAction(session, tc.name);
+          // Record successful input-level actions so the user can later
+          // export the session as a reusable recipe.
+          if (['click', 'type_text', 'key', 'scroll', 'drag', 'wait_ms'].includes(tc.name)) {
+            if (!Array.isArray(session._recordedActions)) session._recordedActions = [];
+            session._recordedActions.push({ name: tc.name, args: tc.args || {}, at: Date.now() });
+          }
           lastActionsForObserver.push({ tool: tc.name, summary: describeAction(tc.name, tc.args), ok: true });
           emit({ kind: 'observation', tool: tc.name, ok: true, preview: summarizeResultForUi(tc.name, result) });
           if (tc.name === 'finish') { finished = true; finalSummary = (tc.args && tc.args.summary) || 'Done.'; break; }

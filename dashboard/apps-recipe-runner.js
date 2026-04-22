@@ -23,6 +23,7 @@
  */
 
 const https = require('https');
+const recipesStore = require('./apps-recipes');
 
 function emitter(broadcast, sessionId) {
   return (step) => {
@@ -318,11 +319,29 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
   session.running = true;
   const variables = (recipe && recipe.variables) || {};
   const steps = (recipe && recipe.steps) || [];
+  const startedAt = Date.now();
 
   emit({ kind: 'provider', provider: 'recipe-runner', label: 'Recipe Runner', streaming: false, recipe: { id: recipe.id, name: recipe.name } });
   emit({ kind: 'recipe_started', recipeId: recipe.id, name: recipe.name, stepCount: steps.length });
 
   session._liveStop = () => { session._runnerAborted = true; };
+
+  const finalize = (outcome, extra) => {
+    const durationMs = Date.now() - startedAt;
+    try {
+      if (session.app) {
+        recipesStore.recordRun(session.app, {
+          recipeId: recipe.id,
+          recipeName: recipe.name,
+          outcome,
+          iterations: (extra && extra.iterations) || 0,
+          error: (extra && extra.error) || null,
+          durationMs,
+        });
+      }
+    } catch (_) {}
+    emit({ kind: 'run_recorded', outcome, durationMs, iterations: (extra && extra.iterations) || 0 });
+  };
 
   let tree;
   try { tree = treeify(steps); }
@@ -330,6 +349,7 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
     emit({ kind: 'error', message: 'Recipe parse error: ' + e.message });
     session.running = false;
     session._liveStop = null;
+    finalize('failed', { error: e.message });
     return { ok: false, error: e.message };
   }
 
@@ -338,13 +358,16 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
   try {
     await runNode({ session, driver, node: tree, variables, emit, ctx });
     emit({ kind: 'done', summary: `Recipe "${recipe.name}" completed (${ctx.index + 1} actions).` });
+    finalize('ok', { iterations: ctx.index + 1 });
     return { ok: true, iterations: ctx.index + 1 };
   } catch (e) {
     if (e.code === 'stopped') {
       emit({ kind: 'stopped' });
+      finalize('aborted', { iterations: ctx.index + 1 });
       return { ok: false, aborted: true };
     }
     emit({ kind: 'stuck', reason: e.message });
+    finalize('failed', { iterations: ctx.index + 1, error: e.message });
     return { ok: false, error: e.message };
   } finally {
     session.running = false;
