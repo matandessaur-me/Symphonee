@@ -23,6 +23,73 @@ const TASK_TIMEOUT_MS = 0;  // 0 = no timeout (unlimited)
 const MAX_HEADLESS_OUTPUT = 512 * 1024;  // 512 KB stdout cap
 const RESULT_POLL_MS = 500;
 
+// ── Folder trust pre-seeding ────────────────────────────────────────────────
+// Each CLI tracks which folders the user has already approved for agentic
+// work. When we dispatch a one-shot task, the CLI refuses to run (or prompts
+// and aborts) if the working directory isn't in that list. We pre-seed the
+// entry so the user never sees "this folder isn't trusted" from a dispatched
+// agent. This is NOT the same as YOLO / auto-approve — it only tells the CLI
+// "this folder is OK to work in", not "run every command without asking".
+function _pretrustCodex(cwd) {
+  try {
+    const cfgDir = path.join(require('os').homedir(), '.codex');
+    const cfgPath = path.join(cfgDir, 'config.toml');
+    if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
+    let toml = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : '';
+    // Codex uses [projects.'<path>'] sections. Keys are quoted paths that
+    // include backslashes on Windows. Check for an existing trusted entry
+    // for this cwd (either raw or with the \\?\ long-path prefix).
+    const q = (s) => s.replace(/\\/g, '\\\\');
+    const variants = [cwd, `\\\\?\\${cwd}`];
+    const hasTrust = variants.some((v) => {
+      const re = new RegExp(`\\[projects\\.'${q(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\][^\\[]*trust_level\\s*=\\s*"trusted"`, 'i');
+      return re.test(toml);
+    });
+    if (hasTrust) return;
+    if (toml && !toml.endsWith('\n')) toml += '\n';
+    toml += `\n[projects.'${cwd}']\ntrust_level = "trusted"\n`;
+    fs.writeFileSync(cfgPath, toml, 'utf8');
+  } catch (_) { /* non-fatal */ }
+}
+function _pretrustGemini(cwd) {
+  try {
+    const cfgDir = path.join(require('os').homedir(), '.gemini');
+    const cfgPath = path.join(cfgDir, 'trustedFolders.json');
+    if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
+    let obj = {};
+    if (fs.existsSync(cfgPath)) {
+      try { obj = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) || {}; } catch (_) { obj = {}; }
+    }
+    if (obj[cwd] === 'TRUST_FOLDER' || obj[cwd] === 'TRUST_PARENT') return;
+    obj[cwd] = 'TRUST_FOLDER';
+    fs.writeFileSync(cfgPath, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (_) { /* non-fatal */ }
+}
+// Qwen Code is a Gemini CLI fork and honors the same trustedFolders.json.
+function _pretrustQwen(cwd) {
+  try {
+    const qwenDir = path.join(require('os').homedir(), '.qwen');
+    const qwenPath = path.join(qwenDir, 'trustedFolders.json');
+    if (!fs.existsSync(qwenDir)) fs.mkdirSync(qwenDir, { recursive: true });
+    let obj = {};
+    if (fs.existsSync(qwenPath)) {
+      try { obj = JSON.parse(fs.readFileSync(qwenPath, 'utf8')) || {}; } catch (_) { obj = {}; }
+    }
+    if (obj[cwd] === 'TRUST_FOLDER' || obj[cwd] === 'TRUST_PARENT') return;
+    obj[cwd] = 'TRUST_FOLDER';
+    fs.writeFileSync(qwenPath, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (_) { /* non-fatal */ }
+}
+function pretrustFolderForCli(cli, cwd) {
+  if (!cwd) return;
+  if (cli === 'codex')  return _pretrustCodex(cwd);
+  if (cli === 'gemini') return _pretrustGemini(cwd);
+  if (cli === 'qwen')   return _pretrustQwen(cwd);
+  // claude / copilot / grok: non-interactive modes don't gate on a folder
+  // trust list (or they read project-local settings we don't control). The
+  // interactive watcher still auto-answers "yes" if a prompt does appear.
+}
+
 // Headless CLI flags per provider
 // Each entry defines how to run the CLI non-interactively:
 //   args:        base flags for headless/non-interactive mode
@@ -537,6 +604,9 @@ class Orchestrator extends EventEmitter {
       // Auto-permit resolves from two sources, in order:
       //   1. explicit autoPermit param on the spawn call
       //   2. the active permission mode (bypass always; trusted only in a worktree)
+      // Folder-trust is handled separately by pretrustFolderForCli() below so
+      // we don't have to enable full-yolo just to dodge the first-run trust
+      // prompt.
       let modeYolo = false;
       try {
         const perms = require('./permissions');
@@ -588,6 +658,10 @@ class Orchestrator extends EventEmitter {
     for (const envKey of (CLI_ENV_KEYS[cli] || [])) {
       if (aiKeys[envKey]) spawnEnv[envKey] = aiKeys[envKey];
     }
+
+    // Pre-trust the working folder so first-time dispatches don't abort with
+    // "this folder isn't trusted". This is independent of YOLO/full-auto.
+    try { pretrustFolderForCli(cli, cwd || process.cwd()); } catch (_) {}
 
     const proc = spawn(cfg.cmd, finalArgs, {
       cwd: cwd || process.cwd(),
@@ -834,9 +908,14 @@ class Orchestrator extends EventEmitter {
       { match: /would you like to (update|upgrade|install)/i,respond: 'y\n',  desc: 'update prompt' },
       { match: /continue\? \(Y\/n\)/i,                       respond: 'Y\n',  desc: 'continue prompt' },
       { match: /Are you sure/i,                              respond: 'y\n',  desc: 'confirmation' },
-      // Trust/permission dialogs
+      // Trust/permission dialogs -- always yes so the agent doesn't bail on
+      // first launch because Symphonee's CWD isn't yet on the CLI's trusted list.
       { match: /trust.*\(yes\/no\)/i,                        respond: 'yes\n',desc: 'trust prompt' },
       { match: /Do you trust/i,                              respond: 'yes\n',desc: 'trust prompt' },
+      { match: /trust.*this (folder|workspace|directory|project)/i, respond: 'yes\n', desc: 'folder trust prompt' },
+      { match: /working directory.*not.*trusted/i,           respond: 'yes\n', desc: 'untrusted cwd' },
+      // Numbered trust menu (Codex): "1) Yes, trust this folder"
+      { match: /1\)\s*Yes[^\n]*trust/i,                      respond: '1\r',  desc: 'trust this folder (option 1)' },
       // Accept/agree
       { match: /\(accept\)/i,                                respond: 'accept\n', desc: 'accept' },
       { match: /agree.*terms/i,                              respond: 'y\n',  desc: 'agree terms' },
@@ -2378,4 +2457,4 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   return orch;
 }
 
-module.exports = { Orchestrator, mountOrchestrator };
+module.exports = { Orchestrator, mountOrchestrator, pretrustFolderForCli };

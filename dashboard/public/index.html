@@ -11281,6 +11281,15 @@ function launchAiWith(cli) {
     if (shouldYolo && YOLO_FLAGS[cli]) {
       cmd += ' ' + YOLO_FLAGS[cli];
     }
+    // Pre-trust the working folder so the CLI's first-run "do you trust this
+    // folder?" prompt doesn't block the launch. Non-fatal if it fails.
+    try {
+      fetch('/api/cli/pretrust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cli, cwd: termCwd || '' }),
+      }).catch(() => {});
+    } catch (_) {}
     // Clear the screen before the CLI takes over so there is no residue.
     sendCommand('cls; ' + cmd, termId);
     const st = getTermAi(termId);
@@ -13942,8 +13951,8 @@ function _ensureInappBrowser(initialUrl) {
       if (_browserInspectState.enabled) _applyInappInspectMode(view);
       _applyInappBrowserZoom(view);
     });
-    view.addEventListener('did-navigate', (e) => { _syncInappUrl(e.url); _clearBrowserSelection(); _resetOverlayStateForNewPage(); });
-    view.addEventListener('did-navigate-in-page', (e) => { _syncInappUrl(e.url); _clearBrowserSelection(); _resetOverlayStateForNewPage(); });
+    view.addEventListener('did-navigate', (e) => { _syncInappUrl(e.url); _clearBrowserSelection(); _resetOverlayStateForNewPage(); try { _pageMapCache.url = ''; _pageMapCache.map = null; } catch (_) {} });
+    view.addEventListener('did-navigate-in-page', (e) => { _syncInappUrl(e.url); _clearBrowserSelection(); _resetOverlayStateForNewPage(); try { _pageMapCache.url = ''; _pageMapCache.map = null; } catch (_) {} });
     view.addEventListener('page-title-updated', () => {/* could update tab title */});
     view.addEventListener('console-message', (e) => _handleInappBrowserConsoleMessage(e && e.message));
   } else {
@@ -16946,12 +16955,259 @@ function _composeBrowserAgentTask(task) {
   ].join('\n');
 }
 
+// ── Pre-flight page map (analyze before acting) ──────────────────────────
+// Cache keyed by URL so we don't re-scan on every message. Invalidated by
+// navigation events elsewhere in the agent code.
+const _pageMapCache = { url: '', map: null, ts: 0 };
+const PAGE_MAP_SCRIPT = `(function(){
+  function parseColor(str){
+    if (!str) return null;
+    var m = String(str).match(/rgba?\\((-?[0-9.]+)[,\\s]+(-?[0-9.]+)[,\\s]+(-?[0-9.]+)(?:[,/\\s]+([0-9.]+%?))?\\)/);
+    if (!m) return null;
+    var a = m[4] == null ? 1 : (String(m[4]).slice(-1) === '%' ? parseFloat(m[4])/100 : parseFloat(m[4]));
+    if (a <= 0.02) return null;
+    var r = Math.round(parseFloat(m[1])), g = Math.round(parseFloat(m[2])), b = Math.round(parseFloat(m[3]));
+    function h(v){ var x = v.toString(16); return x.length<2 ? '0'+x : x; }
+    return '#' + h(r) + h(g) + h(b);
+  }
+  function selectorOf(el){
+    if (!el || el === document.body || el === document.documentElement) return el && el.tagName ? el.tagName.toLowerCase() : null;
+    if (el.id) return '#' + el.id;
+    var tag = el.tagName.toLowerCase();
+    var cls = (el.className && typeof el.className === 'string') ? el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+    return cls ? tag + '.' + cls : tag;
+  }
+  function trimText(s, n){ s = (s || '').replace(/\\s+/g,' ').trim(); return s.length > n ? s.slice(0, n) + '...' : s; }
+
+  var url = location.href;
+  var host = location.hostname;
+  var title = document.title;
+  var lang = document.documentElement.getAttribute('lang') || null;
+  var viewport = { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1 };
+
+  // Framework fingerprint (cheap heuristics).
+  var fw = [];
+  try {
+    if (window.React || document.querySelector('[data-reactroot], #__next, [data-reactid]')) fw.push('React');
+    if (document.querySelector('#__next, script[src*="_next/"]')) fw.push('Next.js');
+    if (window.Vue || document.querySelector('[data-v-app], #__nuxt')) fw.push('Vue');
+    if (document.querySelector('#__nuxt, script[src*="_nuxt/"]')) fw.push('Nuxt');
+    if (document.querySelector('astro-island, [astro-island]')) fw.push('Astro');
+    if (document.body && /wp-/.test(document.body.className || '') || document.querySelector('meta[name="generator"][content*="WordPress" i]')) fw.push('WordPress');
+    if (document.querySelector('[class*="tw-"], script[src*="tailwind"]') || /tailwind/i.test(document.documentElement.className || '')) fw.push('Tailwind');
+    if (document.querySelector('[class*="MuiBox"], [class*="MuiButton"]')) fw.push('MUI');
+    if (document.querySelector('[class^="sc-"], [class*=" sc-"]')) fw.push('styled-components');
+    if (document.querySelector('script[src*="bootstrap"], [class*="container-fluid"]')) fw.push('Bootstrap');
+    if (document.querySelector('script[src*="shopify"], meta[name="shopify-digital-wallet"]')) fw.push('Shopify');
+  } catch (_) {}
+
+  // Which element paints the page background? Walk html / body / first-child
+  // until we find a non-transparent bg. This is the "real target" for
+  // "change the background color" requests.
+  function firstPainted(root){
+    var el = root, seen = 0;
+    while (el && seen < 6) {
+      try {
+        var bg = parseColor(getComputedStyle(el).backgroundColor);
+        if (bg) return { selector: selectorOf(el), hex: bg };
+      } catch (_) {}
+      el = el.children && el.children[0];
+      seen++;
+    }
+    return null;
+  }
+  var htmlBg = null, bodyBg = null, firstBg = null;
+  try { htmlBg = parseColor(getComputedStyle(document.documentElement).backgroundColor); } catch(_){}
+  try { bodyBg = parseColor(getComputedStyle(document.body).backgroundColor); } catch(_){}
+  try { firstBg = firstPainted(document.body); } catch(_){}
+  var backgroundTarget = (bodyBg ? { selector: 'body', hex: bodyBg } : null) || firstBg || (htmlBg ? { selector: 'html', hex: htmlBg } : null);
+
+  // Palette (body bg/text + headings + links + first buttons + theme meta)
+  var byHex = {};
+  function addColor(hex, role){
+    if (!hex) return;
+    hex = hex.toLowerCase();
+    if (!byHex[hex]) byHex[hex] = { hex: hex, roles: [] };
+    if (byHex[hex].roles.indexOf(role) < 0) byHex[hex].roles.push(role);
+  }
+  try {
+    if (bodyBg) addColor(bodyBg, 'background');
+    addColor(parseColor(getComputedStyle(document.body).color), 'text');
+    Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 4).forEach(function(h){ addColor(parseColor(getComputedStyle(h).color), 'heading'); });
+    Array.from(document.querySelectorAll('a')).slice(0, 4).forEach(function(a){ addColor(parseColor(getComputedStyle(a).color), 'link'); });
+    Array.from(document.querySelectorAll('button, [role="button"], [class*="btn"]')).slice(0, 6).forEach(function(b){
+      addColor(parseColor(getComputedStyle(b).backgroundColor), 'button-bg');
+      addColor(parseColor(getComputedStyle(b).color), 'button-text');
+    });
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc && tc.content) addColor(tc.content.toLowerCase(), 'theme');
+  } catch (_) {}
+  var palette = Object.values(byHex);
+
+  // CSS custom properties on :root that look like colors.
+  var cssVars = [];
+  try {
+    var cs = getComputedStyle(document.documentElement);
+    for (var i = 0; i < Math.min(cs.length, 400); i++) {
+      var n = cs[i];
+      if (n && n.indexOf('--') === 0) {
+        var v = (cs.getPropertyValue(n) || '').trim();
+        if (/^(#[0-9a-f]{3,8}|rgba?\\(|hsla?\\()/i.test(v)) {
+          if (cssVars.length < 20) cssVars.push({ name: n, value: v });
+        }
+      }
+    }
+  } catch (_) {}
+
+  // Typography
+  var typography = {};
+  try {
+    var b = getComputedStyle(document.body);
+    typography.body = { family: b.fontFamily, size: b.fontSize, lineHeight: b.lineHeight };
+    var h1 = document.querySelector('h1'); if (h1) { var c = getComputedStyle(h1); typography.h1 = { family: c.fontFamily, size: c.fontSize, weight: c.fontWeight }; }
+  } catch (_) {}
+
+  // Major regions: semantic landmarks + first-level children of body.
+  var regions = [];
+  try {
+    var seen = new Set();
+    function push(el, label){
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      var cs = getComputedStyle(el);
+      regions.push({
+        label: label,
+        selector: selectorOf(el),
+        tag: el.tagName.toLowerCase(),
+        bg: parseColor(cs.backgroundColor),
+        color: parseColor(cs.color),
+        text: trimText(el.innerText || '', 80),
+        children: el.children ? el.children.length : 0,
+      });
+    }
+    ['header','nav','main','[role="main"]','section.hero,.hero','footer','aside'].forEach(function(sel){
+      var el = document.querySelector(sel); if (el) push(el, sel);
+    });
+    if (regions.length < 6 && document.body) {
+      Array.from(document.body.children).slice(0, 8).forEach(function(c, idx){ push(c, 'body >#'+(idx+1)); });
+    }
+  } catch (_) {}
+
+  // Interactive surface
+  var surface = {};
+  try {
+    surface.buttons = document.querySelectorAll('button, [role="button"]').length;
+    surface.links = document.querySelectorAll('a[href]').length;
+    surface.inputs = document.querySelectorAll('input, textarea, select').length;
+    surface.forms = document.querySelectorAll('form').length;
+    surface.images = document.querySelectorAll('img').length;
+    var h1 = document.querySelector('h1');
+    surface.firstHeading = h1 ? trimText(h1.innerText, 80) : null;
+    var ctaLabels = Array.from(document.querySelectorAll('button, a.btn, a[class*="cta"]')).slice(0, 5).map(function(el){ return trimText(el.innerText || el.getAttribute('aria-label') || '', 40); }).filter(Boolean);
+    surface.ctaLabels = ctaLabels;
+  } catch (_) {}
+
+  return {
+    url: url, host: host, title: title, lang: lang, viewport: viewport,
+    frameworks: fw, backgroundTarget: backgroundTarget,
+    palette: palette.slice(0, 12),
+    cssVars: cssVars,
+    typography: typography,
+    regions: regions.slice(0, 10),
+    surface: surface,
+  };
+})();`;
+
+async function _runPageMap() {
+  const view = (typeof _ensureInappBrowser === 'function') ? _ensureInappBrowser() : null;
+  if (!view || view.tagName.toLowerCase() !== 'webview') return null;
+  let url = '';
+  try { url = view.getURL ? view.getURL() : (view.src || ''); } catch (_) {}
+  if (url && _pageMapCache.url === url && _pageMapCache.map && (Date.now() - _pageMapCache.ts) < 5 * 60 * 1000) {
+    return _pageMapCache.map;
+  }
+  try {
+    const map = await view.executeJavaScript(PAGE_MAP_SCRIPT, true);
+    if (map) { _pageMapCache.url = url; _pageMapCache.map = map; _pageMapCache.ts = Date.now(); }
+    return map;
+  } catch (_) { return null; }
+}
+
+function _summarizePageMapForPrompt(map) {
+  if (!map) return '';
+  const lines = [];
+  lines.push('Pre-flight page map (refresh by calling inspect_dom / get_page_source for specifics):');
+  lines.push('- URL: ' + (map.url || '?'));
+  lines.push('- Title: ' + (map.title || '?'));
+  if (map.frameworks && map.frameworks.length) lines.push('- Frameworks: ' + map.frameworks.join(', '));
+  if (map.backgroundTarget) lines.push('- Background paint target: `' + map.backgroundTarget.selector + '` (computed ' + map.backgroundTarget.hex + '). Use this for "change the background" requests.');
+  if (map.palette && map.palette.length) {
+    lines.push('- Palette (hex -> roles):');
+    map.palette.forEach(p => lines.push('  - ' + p.hex + ' -> ' + (p.roles || []).join(', ')));
+  }
+  if (map.cssVars && map.cssVars.length) {
+    lines.push('- Color CSS variables on :root:');
+    map.cssVars.forEach(v => lines.push('  - ' + v.name + ': ' + v.value));
+  }
+  if (map.typography) {
+    if (map.typography.body) lines.push('- Body type: ' + map.typography.body.family + ' @ ' + map.typography.body.size + ' / line-height ' + map.typography.body.lineHeight);
+    if (map.typography.h1) lines.push('- H1: ' + map.typography.h1.family + ' @ ' + map.typography.h1.size + ' weight ' + map.typography.h1.weight);
+  }
+  if (map.regions && map.regions.length) {
+    lines.push('- Major regions:');
+    map.regions.forEach(r => {
+      const bits = [r.label, '`' + r.selector + '`'];
+      if (r.bg) bits.push('bg ' + r.bg);
+      if (r.color) bits.push('fg ' + r.color);
+      if (r.text) bits.push('"' + r.text + '"');
+      lines.push('  - ' + bits.join(' | '));
+    });
+  }
+  if (map.surface) {
+    const s = map.surface;
+    lines.push('- Surface: ' + (s.buttons || 0) + ' buttons, ' + (s.links || 0) + ' links, ' + (s.forms || 0) + ' forms, ' + (s.inputs || 0) + ' inputs, ' + (s.images || 0) + ' images.');
+    if (s.firstHeading) lines.push('- First H1: "' + s.firstHeading + '"');
+    if (s.ctaLabels && s.ctaLabels.length) lines.push('- Visible CTAs: ' + s.ctaLabels.map(x => '"' + x + '"').join(', '));
+  }
+  lines.push('');
+  lines.push('Use this map to avoid guessing selectors. If it looks stale, call get_page_source or inspect_dom to refresh.');
+  return lines.join('\n');
+}
+
 async function _sendBrowserAgentTask(task, displayText, options) {
   if (!task) return;
   if (_browserAgentState.running) return;
-  const composedTask = _composeBrowserAgentTask(task, options || {});
   _appendAgentLog('user', displayText || task);
   _setBrowserAgentRunning(true);
+  // Pre-flight: analyze the page before sending to the agent. Shows a live
+  // "Analyzing..." row; replaced with a "Page map ready" summary once done.
+  // On cache hit we skip the row entirely.
+  let pageMap = null;
+  let analyzeRow = null;
+  try {
+    const view = _ensureInappBrowser && _ensureInappBrowser();
+    let curUrl = '';
+    try { curUrl = view && view.getURL ? view.getURL() : (view ? (view.src || '') : ''); } catch (_) {}
+    const cached = curUrl && _pageMapCache.url === curUrl && _pageMapCache.map && (Date.now() - _pageMapCache.ts) < 5 * 60 * 1000;
+    if (!cached) analyzeRow = _appendAgentLog('action', 'Analyzing page...');
+    pageMap = await _runPageMap();
+    if (analyzeRow) {
+      // _appendAgentLog('action', ...) renders as [glyph][#text]. Replace the
+      // trailing text node with the finished summary without touching glyph.
+      const newLabel = pageMap ? 'Page map ready (' + (pageMap.regions ? pageMap.regions.length : 0) + ' regions, ' + ((pageMap.palette || []).length) + ' colors)' : 'Page analysis skipped';
+      let replaced = false;
+      for (let i = analyzeRow.childNodes.length - 1; i >= 0; i--) {
+        const n = analyzeRow.childNodes[i];
+        if (n && n.nodeType === 3) { n.nodeValue = newLabel; replaced = true; break; }
+      }
+      if (!replaced) analyzeRow.appendChild(document.createTextNode(newLabel));
+    }
+  } catch (_) { pageMap = null; }
+  let composedTask = _composeBrowserAgentTask(task, options || {});
+  if (pageMap) {
+    const summary = _summarizePageMapForPrompt(pageMap);
+    if (summary) composedTask = summary + '\n\n---\n\n' + composedTask;
+  }
   try {
     const res = await fetch('/api/browser/agent/chat', {
       method: 'POST',

@@ -92,7 +92,7 @@ const pluginsDir = path.join(__dirname, 'plugins');
 let loadedPlugins = [];
 
 // ── Orchestrator (cross-AI communication bus) ────────────────────────────────
-const { mountOrchestrator } = require('./orchestrator');
+const { mountOrchestrator, pretrustFolderForCli } = require('./orchestrator');
 const permissions = require('./permissions');
 const { MCPClientManager } = require('./mcp-client');
 const mcpClient = new MCPClientManager({ configPath });
@@ -2888,6 +2888,20 @@ function writePluginHints() {
     } catch (err) { console.error(`  [writePluginHints] failed to generate ${filename}:`, err.message); }
   }
 }
+
+// ── Pre-trust folder for a CLI (called from the frontend before launching) ─
+addRoute('POST', '/api/cli/pretrust', async (req, res) => {
+  try {
+    const body = await readBody(req);
+    const cli = String(body.cli || '').trim();
+    const cwd = String(body.cwd || '').trim();
+    if (!cli || !cwd) return json(res, { ok: false, error: 'cli and cwd are required' }, 400);
+    try { pretrustFolderForCli(cli, cwd); } catch (_) {}
+    return json(res, { ok: true });
+  } catch (e) {
+    return json(res, { ok: false, error: e && e.message ? e.message : String(e) }, 500);
+  }
+});
 
 // ── Mount orchestrator ───────────────────────────────────────────────────────
 const orchestrator = mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, createTerminal, getConfig, getLearnings: () => _learningsInstance });

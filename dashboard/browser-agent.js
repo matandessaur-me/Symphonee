@@ -646,14 +646,33 @@ function makePlaywrightDriver() {
       return await page.evaluate(({ sel, styleMap, applyAll }) => {
         const nodes = applyAll ? Array.from(document.querySelectorAll(sel)) : [document.querySelector(sel)].filter(Boolean);
         if (!nodes.length) throw new Error('No element matched ' + sel);
-        const toCamel = (k) => k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        const toKebab = (k) => String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+        const appliedKeys = [];
         Object.keys(styleMap || {}).forEach((key) => {
-          const val = styleMap[key];
+          const prop = toKebab(key);
+          const raw = styleMap[key];
+          const val = raw == null ? '' : String(raw);
+          // Strip a user-supplied trailing !important; we always set with
+          // priority=important so the inline style beats the site's CSS
+          // cascade. Empty string clears, mirroring removeProperty.
+          const cleaned = val.replace(/\s*!important\s*$/i, '');
           nodes.forEach((n) => {
-            try { n.style[toCamel(key)] = val == null ? '' : String(val); } catch (_) {}
+            try {
+              if (cleaned === '') n.style.removeProperty(prop);
+              else n.style.setProperty(prop, cleaned, 'important');
+            } catch (_) {}
           });
+          appliedKeys.push(prop);
         });
-        return { applied: Object.keys(styleMap || {}).length, matched: nodes.length };
+        // Verify: read back computed styles for each applied prop on the
+        // first matched node so the agent can detect when the page fought
+        // our change (shadow DOM, iframe, higher-specificity inline rules).
+        const verify = {};
+        try {
+          const cs = getComputedStyle(nodes[0]);
+          appliedKeys.forEach((p) => { verify[p] = cs.getPropertyValue(p).trim(); });
+        } catch (_) {}
+        return { applied: appliedKeys.length, matched: nodes.length, computed: verify };
       }, { sel: selector, styleMap: styles || {}, applyAll: all });
     },
     async setAttribute(selector, name, value) {
