@@ -392,14 +392,16 @@ const server = http.createServer(async (req, res) => {
       }
       if (!fs.existsSync(target)) return json(res, { error: 'Path does not exist: ' + target }, 404);
       try {
+        const isDir = fs.statSync(target).isDirectory();
         if (process.platform === 'win32') {
-          // /select, highlights the target in an Explorer window.
-          spawnSync('explorer.exe', ['/select,', target], { detached: true, stdio: 'ignore' });
+          if (isDir) spawnSync('explorer.exe', [target], { detached: true, stdio: 'ignore' });
+          else spawnSync('explorer.exe', ['/select,', target], { detached: true, stdio: 'ignore' });
         } else if (process.platform === 'darwin') {
-          spawnSync('open', ['-R', target], { detached: true, stdio: 'ignore' });
+          if (isDir) spawnSync('open', [target], { detached: true, stdio: 'ignore' });
+          else spawnSync('open', ['-R', target], { detached: true, stdio: 'ignore' });
         } else {
-          const parent = fs.statSync(target).isDirectory() ? target : path.dirname(target);
-          spawnSync('xdg-open', [parent], { detached: true, stdio: 'ignore' });
+          const folder = isDir ? target : path.dirname(target);
+          spawnSync('xdg-open', [folder], { detached: true, stdio: 'ignore' });
         }
         return json(res, { ok: true, path: target });
       } catch (e) { return json(res, { error: e.message }, 500); }

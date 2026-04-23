@@ -373,11 +373,57 @@
       grid-template-columns: var(--sidebar-w) 1fr var(--intel-w);
       overflow: hidden;
     }
+    /* Collapsible side columns. Toggled via body classes set by
+       toggleLeftSidebar() / toggleRightSidebar(). Persisted in localStorage.
+       Panels stay in the grid (never display:none) so the middle column
+       keeps its track; a 0-width track + overflow:hidden on the aside
+       hides them cleanly. */
+    body.left-collapsed .main  { grid-template-columns: 0 1fr var(--intel-w); }
+    body.right-collapsed .main { grid-template-columns: var(--sidebar-w) 1fr 0; }
+    body.left-collapsed.right-collapsed .main { grid-template-columns: 0 1fr 0; }
+    body.left-collapsed  .main aside.sidebar { border-right: 0; min-width: 0; }
+    body.right-collapsed .main aside.intel   { border-left: 0;  min-width: 0; }
+
+    /* Full-height edge rails with chevron toggles (VS Code / Cursor style).
+       Absolutely positioned inside .main so they straddle the column border
+       when expanded and sit flush to the viewport edge when collapsed. */
+    .main { position: relative; }
+    .side-rail {
+      position: absolute; top: 0; bottom: 0; width: 18px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--mantle);
+      border-top: none; border-bottom: none;
+      border-left: 1px solid var(--surface0);
+      border-right: 1px solid var(--surface0);
+      padding: 0; margin: 0;
+      cursor: pointer; z-index: 40;
+      color: var(--subtext0);
+      transition: background 0.15s, color 0.15s, left 0.15s, right 0.15s;
+    }
+    .side-rail:hover { background: var(--surface1); color: var(--accent); }
+    .side-rail i, .side-rail svg {
+      width: 16px !important; height: 16px !important;
+      opacity: 0.9; transition: transform 0.15s, opacity 0.15s; stroke-width: 2.5;
+    }
+    .side-rail:hover i, .side-rail:hover svg { opacity: 1; }
+    .side-rail-left  { left: var(--sidebar-w); transform: translateX(-50%); }
+    .side-rail-right { right: var(--intel-w); transform: translateX(50%); }
+    body.left-collapsed  .side-rail-left  { left: 0; transform: none; }
+    body.right-collapsed .side-rail-right { right: 0; transform: none; }
+    /* Expanded: chevron points toward its own edge (◀ on left, ▶ on right).
+       Collapsed: chevron flips to point into the viewport, inviting expand.
+       Target both <i> (pre-Lucide) and <svg> (post-Lucide). */
+    body.left-collapsed  .side-rail-left  i,
+    body.left-collapsed  .side-rail-left  svg  { transform: rotate(180deg); }
+    body.right-collapsed .side-rail-right i,
+    body.right-collapsed .side-rail-right svg { transform: rotate(180deg); }
 
     /* ── Sidebar ──────────────────────────────────────────────────────────── */
     .sidebar {
       background: var(--sidebar-bg); border-right: 1px solid var(--surface0);
       display: flex; flex-direction: column; overflow: hidden;
+      /* Breathing room so sidebar content doesn't hug the left rail. */
+      padding-right: 10px;
     }
     .sidebar-fixed { flex-shrink: 0; padding: 10px 10px 6px; border-bottom: 1px solid var(--surface0); }
     .sidebar-scrollable { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 10px 10px; }
@@ -445,6 +491,11 @@
       overflow: hidden;
       min-width: 0;
       position: relative;
+      /* Breathing room so middle content doesn't hug the edge rails.
+         Background matches the rail color so the padding area blends
+         seamlessly with the rail (no dark gap). */
+      padding: 0 12px;
+      background: var(--mantle);
     }
     .center > .tab-bar { grid-row: 1; }
     .center > .automation-subtabs { grid-row: 2; }
@@ -2997,6 +3048,8 @@
     .intel {
       background: var(--mantle); border-left: 1px solid var(--surface0);
       display: flex; flex-direction: column; overflow: hidden;
+      /* Breathing room so intel content doesn't hug the right rail. */
+      padding-left: 10px;
     }
     .intel-tabs {
       display: flex; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
@@ -3295,6 +3348,15 @@
     .ctx-pick-item .cpi-name { font: 600 13px var(--font-ui); color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ctx-pick-item .cpi-sub { font: 11px var(--font-ui); color: var(--subtext0); flex-shrink: 0; }
     .ctx-pick-item.active .cpi-name { color: var(--accent); }
+    .ctx-pick-item .cpi-action {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 15px; height: 15px; flex-shrink: 0;
+      padding: 0; margin: 0;
+      background: transparent; border: 1px solid transparent; border-radius: 3px;
+      color: var(--subtext0); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .ctx-pick-item .cpi-action:hover { background: var(--surface2); color: var(--text); border-color: var(--overlay0); }
+    .ctx-pick-item .cpi-action i, .ctx-pick-item .cpi-action svg { width: 11px !important; height: 11px !important; color: inherit; }
     .ctx-pick-footer {
       border-top: 1px solid var(--surface1); padding: 10px 14px;
       display: flex; gap: 8px; background: var(--crust); border-radius: 0 0 var(--radius-lg) var(--radius-lg);
@@ -3963,6 +4025,13 @@
   </style>
 </head>
 <body>
+<script>
+  // Restore collapsed side-panel state before first paint to avoid flash.
+  try {
+    if (localStorage.getItem('sy-left-collapsed') === '1')  document.body.classList.add('left-collapsed');
+    if (localStorage.getItem('sy-right-collapsed') === '1') document.body.classList.add('right-collapsed');
+  } catch (_) {}
+</script>
 
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-overlay-label" id="loadingLabel">Loading</div>
@@ -4035,6 +4104,10 @@
 
 <!-- ═══ Main ═════════════════════════════════════════════════════════════ -->
 <div class="main">
+
+  <!-- ─── Edge rails (collapse toggles) ──────────────────────────────── -->
+  <button class="side-rail side-rail-left" id="leftSidebarRail" onclick="toggleLeftSidebar()" title="Toggle left sidebar" aria-label="Toggle left sidebar"><i data-lucide="chevron-left"></i></button>
+  <button class="side-rail side-rail-right" id="rightSidebarRail" onclick="toggleRightSidebar()" title="Toggle right panel" aria-label="Toggle right panel"><i data-lucide="chevron-right"></i></button>
 
   <!-- ─── Sidebar ──────────────────────────────────────────────────────── -->
   <aside class="sidebar">
@@ -8293,25 +8366,40 @@ async function openSpaceModal() {
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let html = '';
   const allActive = !activeSpace ? ' active' : '';
-  html += `<button class="ctx-pick-item${allActive}" data-pick-space="__all__">
+  html += `<div class="ctx-pick-item${allActive}" role="button" tabindex="0" data-pick-space="__all__">
     <i data-lucide="layers" style="width:15px;height:15px;"></i>
     <span class="cpi-name">All spaces</span>
-  </button>`;
+  </div>`;
   for (const [name, sv] of Object.entries(spaces)) {
     const icon = (sv && sv.icon) || 'layers';
     const count = (sv && Array.isArray(sv.repos)) ? sv.repos.filter(r => repos[r]).length : 0;
     const active = (name === activeSpace) ? ' active' : '';
-    html += `<button class="ctx-pick-item${active}" data-pick-space="${escAttr(name)}">
+    html += `<div class="ctx-pick-item${active}" role="button" tabindex="0" data-pick-space="${escAttr(name)}">
       <i data-lucide="${esc(icon)}" style="width:15px;height:15px;"></i>
       <span class="cpi-name">${esc(name)}</span>
       ${count ? `<span class="cpi-sub">${count} repo${count !== 1 ? 's' : ''}</span>` : ''}
-    </button>`;
+      <button type="button" class="cpi-action" data-pick-action="edit-space" data-space-name="${escAttr(name)}" title="Edit space settings" aria-label="Edit space settings">
+        <i data-lucide="settings"></i>
+      </button>
+    </div>`;
   }
   if (!Object.keys(spaces).length) {
     html += '<div style="padding:12px 14px;font-size:11px;color:var(--subtext0);">No spaces yet. Create one below.</div>';
   }
   list.innerHTML = html;
   list.onclick = function(ev) {
+    const action = ev.target && ev.target.closest && ev.target.closest('[data-pick-action]');
+    if (action) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const kind = action.getAttribute('data-pick-action');
+      if (kind === 'edit-space') {
+        const n = action.getAttribute('data-space-name') || '';
+        closeModal('spaceModal');
+        try { openEditSpaceDialog(n); } catch (e) { console.error('openEditSpaceDialog failed', e); }
+      }
+      return;
+    }
     const btn = ev.target && ev.target.closest && ev.target.closest('[data-pick-space]');
     if (!btn) return;
     ev.preventDefault();
@@ -8352,6 +8440,24 @@ async function openRepoModal() {
   _repoPickNames = repoNames;
   renderRepoPicker('');
   list.onclick = function(ev) {
+    const action = ev.target && ev.target.closest && ev.target.closest('[data-pick-action]');
+    if (action) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const kind = action.getAttribute('data-pick-action');
+      if (kind === 'reveal-repo') {
+        const n = action.getAttribute('data-repo-name') || '';
+        if (!n) return;
+        fetch('/api/ui/reveal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'file', repo: n, path: '' }),
+        }).then(r => r.json().catch(() => ({}))).then(d => {
+          if (d && d.error) toast(d.error, 'error');
+        }).catch(() => toast('Could not open folder', 'error'));
+      }
+      return;
+    }
     const btn = ev.target && ev.target.closest && ev.target.closest('[data-pick-repo]');
     if (!btn) return;
     ev.preventDefault();
@@ -8376,17 +8482,20 @@ function renderRepoPicker(filter) {
   let html = '';
   if (noRepoMatches) {
     const active = !activeRepo ? ' active' : '';
-    html += `<button class="ctx-pick-item${active}" data-pick-repo="">
+    html += `<div class="ctx-pick-item${active}" role="button" tabindex="0" data-pick-repo="">
       <i data-lucide="folder-x" style="width:15px;height:15px;"></i>
       <span class="cpi-name" style="color:var(--subtext0);font-style:italic;">No repo</span>
-    </button>`;
+    </div>`;
   }
   for (const name of filtered) {
     const active = (name === activeRepo) ? ' active' : '';
-    html += `<button class="ctx-pick-item${active}" data-pick-repo="${escAttr(name)}">
+    html += `<div class="ctx-pick-item${active}" role="button" tabindex="0" data-pick-repo="${escAttr(name)}">
       <i data-lucide="folder-git-2" style="width:15px;height:15px;"></i>
       <span class="cpi-name">${esc(name)}</span>
-    </button>`;
+      <button type="button" class="cpi-action" data-pick-action="reveal-repo" data-repo-name="${escAttr(name)}" title="Open folder in Explorer" aria-label="Open folder in Explorer">
+        <i data-lucide="folder-open"></i>
+      </button>
+    </div>`;
   }
   if (!filtered.length && !noRepoMatches) {
     html = `<div style="padding:12px 14px;font-size:11px;color:var(--subtext0);">No repos match "${esc(filter)}".</div>`;
@@ -11408,6 +11517,18 @@ async function applyUpdate() {
 
 // Check for updates on startup (delayed so it doesn't slow down load)
 setTimeout(checkForUpdates, 5000);
+
+// ── Collapsible side panels ───────────────────────────────────────────────
+function toggleLeftSidebar() {
+  const collapsed = document.body.classList.toggle('left-collapsed');
+  try { localStorage.setItem('sy-left-collapsed', collapsed ? '1' : '0'); } catch (_) {}
+  try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+}
+function toggleRightSidebar() {
+  const collapsed = document.body.classList.toggle('right-collapsed');
+  try { localStorage.setItem('sy-right-collapsed', collapsed ? '1' : '0'); } catch (_) {}
+  try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+}
 
 function restartShell() {
   const termId = activeTermId;
