@@ -5852,30 +5852,6 @@
   </div>
 </div>
 
-<!-- ═══ Space Editor Dialog ═══════════════════════════════════════════════ -->
-<div class="modal-overlay" id="spaceEditorModal">
-  <div class="modal" style="width:440px;">
-    <div class="modal-title" id="spaceEditorTitle">New Space</div>
-    <div class="modal-field">
-      <label>Name</label>
-      <input id="spaceEditorName" type="text" placeholder="e.g. Personal, Business, Freelance">
-    </div>
-    <div class="modal-field">
-      <label>Description (optional)</label>
-      <input id="spaceEditorDesc" type="text" placeholder="Short description">
-    </div>
-    <div class="modal-field">
-      <label>Icon</label>
-      <input id="spaceEditorIcon" type="text" placeholder="layers" value="layers">
-      <div style="font-size:10px;color:var(--subtext0);margin-top:4px;">Lucide icon name (e.g. user, briefcase, coins, layers, folder, rocket).</div>
-    </div>
-    <div class="modal-actions">
-      <button class="modal-btn" onclick="closeSpaceEditor(false)">Cancel</button>
-      <button class="modal-btn modal-btn-primary" onclick="closeSpaceEditor(true)">Save</button>
-    </div>
-  </div>
-</div>
-
 <!-- ═══ Voice Recording Indicator ════════════════════════════════════════ -->
 <div class="voice-indicator" id="voiceIndicator">
   <div class="voice-dot"></div>
@@ -18915,56 +18891,37 @@ async function _saveAuditToNote() {
 })();
 
 // ── Spaces (non-git workspaces) ─────────────────────────────────────────
-// Modal-based editor. window.prompt/confirm are blocked in Electron, so we
-// use a dedicated modal (spaceEditorModal) with a promise resolver.
-let _spaceEditorResolve = null;
-let _spaceEditorOriginalName = null;
-function openSpaceEditor({ name = '', description = '', icon = 'layers', edit = false } = {}) {
-  return new Promise((resolve) => {
-    _spaceEditorResolve = resolve;
-    _spaceEditorOriginalName = edit ? name : null;
-    document.getElementById('spaceEditorTitle').textContent = edit ? ('Edit Space: ' + name) : 'New Space';
-    document.getElementById('spaceEditorName').value = name;
-    document.getElementById('spaceEditorDesc').value = description;
-    document.getElementById('spaceEditorIcon').value = icon || 'layers';
-    document.getElementById('spaceEditorModal').classList.add('open');
-    setTimeout(() => {
-      const input = document.getElementById('spaceEditorName');
-      if (input) { input.focus(); input.select(); }
-    }, 50);
-  });
-}
-function closeSpaceEditor(ok) {
-  const modal = document.getElementById('spaceEditorModal');
-  if (ok) {
-    const name = (document.getElementById('spaceEditorName').value || '').trim();
-    if (!name) { toast('Space name is required', 'error'); return; }
-    const description = (document.getElementById('spaceEditorDesc').value || '').trim();
-    const icon = (document.getElementById('spaceEditorIcon').value || '').trim() || 'layers';
-    modal.classList.remove('open');
-    if (_spaceEditorResolve) {
-      _spaceEditorResolve({ name, description, icon, originalName: _spaceEditorOriginalName });
-      _spaceEditorResolve = null;
-    }
-  } else {
-    modal.classList.remove('open');
-    if (_spaceEditorResolve) { _spaceEditorResolve(null); _spaceEditorResolve = null; }
-  }
-  _spaceEditorOriginalName = null;
-}
-async function openAddSpaceDialog() {
+// Single wizard handles both create and edit. In edit mode it pre-populates
+// identity, repos, and plugins from the existing space so the user can adjust
+// any of them in one place (matches the create flow 1:1).
+async function openAddSpaceDialog(opts = {}) {
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const isEdit = !!opts.edit;
+  const originalName = isEdit ? (opts.name || '') : null;
   let step = 1;
-  const state = { name: '', description: '', icon: 'layers', repos: [], plugins: [] };
+  const state = {
+    name: opts.name || '',
+    description: opts.description || '',
+    icon: opts.icon || 'layers',
+    repos: Array.isArray(opts.repos) ? opts.repos.slice() : [],
+    plugins: Array.isArray(opts.plugins) ? opts.plugins.slice() : [],
+  };
 
   const [allRepos, allSpaces, allPlugins] = await Promise.all([
     fetch('/api/repos').then(r => r.json()).catch(() => ({})),
     fetch('/api/spaces').then(r => r.json()).catch(() => ({})),
     fetch('/api/plugins').then(r => r.json()).catch(() => []),
   ]);
-  const takenRepos = new Set(Object.values(allSpaces).flatMap(s => s.repos || []));
+  // In edit mode, repos already in THIS space should still be selectable
+  // (they're "taken" by this space, but the user is editing this space).
+  const takenRepos = new Set(
+    Object.entries(allSpaces)
+      .filter(([n]) => !isEdit || n !== originalName)
+      .flatMap(([, s]) => s.repos || [])
+  );
   const freeRepos = Object.keys(allRepos).filter(r => !takenRepos.has(r));
   const pluginList = Array.isArray(allPlugins) ? allPlugins : [];
+  const originalRepos = isEdit ? (Array.isArray(opts.repos) ? opts.repos.slice() : []) : [];
 
   let overlay = document.getElementById('_asoOverlay');
   if (overlay) overlay.remove();
@@ -19067,14 +19024,15 @@ async function openAddSpaceDialog() {
           <i data-lucide="arrow-left" style="width:12px;height:12px;"></i> Back
         </button>` : '';
     const isLast = step === 3;
-    const nextLabel = isLast ? 'Create Space' : 'Next';
+    const nextLabel = isLast ? (isEdit ? 'Save' : 'Create Space') : 'Next';
     const nextArrow = isLast ? '' : ' <i data-lucide="arrow-right" style="width:12px;height:12px;"></i>';
+    const headerTitle = isEdit ? ('Edit Space' + (originalName ? ': ' + esc(originalName) : '')) : 'New Space';
 
     overlay.innerHTML = `
       <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius-lg);padding:24px;width:390px;max-width:calc(100vw - 40px);box-shadow:0 16px 48px rgba(0,0,0,0.5);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;">
           <i data-lucide="layers" style="width:16px;height:16px;color:var(--accent);"></i>
-          <strong style="font-size:14px;color:var(--text);font-family:var(--font-ui);">New Space</strong>
+          <strong style="font-size:14px;color:var(--text);font-family:var(--font-ui);">${headerTitle}</strong>
           <div style="flex:1;"></div>
           <button onclick="window._asoDismiss()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:2px;display:flex;align-items:center;">
             <i data-lucide="x" style="width:14px;height:14px;"></i>
@@ -19111,7 +19069,7 @@ async function openAddSpaceDialog() {
       step = 3; renderStep();
     } else if (step === 3) {
       state.plugins = [...overlay.querySelectorAll('[data-asp]:checked')].map(el => el.dataset.asp);
-      _asoCreate();
+      _asoSubmit();
     }
   };
   window._asoBack = function() {
@@ -19123,13 +19081,60 @@ async function openAddSpaceDialog() {
     overlay.remove();
     ['_asoNext','_asoBack','_asoDismiss'].forEach(k => delete window[k]);
   };
-  async function _asoCreate() {
-    const res = await fetch('/api/spaces', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: state.name, description: state.description, icon: state.icon, repos: state.repos, plugins: state.plugins }),
-    });
-    if (!res.ok) { toast('Failed to create space', 'error'); return; }
-    toast('Space "' + state.name + '" created', 'success');
+  async function _asoSubmit() {
+    if (isEdit) {
+      // Rename: delete old, create new carrying the chosen repos/plugins.
+      // No rename: POST with all fields to upsert identity + plugins. Repos
+      // go through /attach-repo so single-membership invariants are preserved.
+      try {
+        if (state.name !== originalName) {
+          await fetch('/api/spaces', {
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: originalName }),
+          });
+          await fetch('/api/spaces', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: state.name, description: state.description, icon: state.icon, repos: state.repos, plugins: state.plugins }),
+          });
+          if (activeSpace === originalName) {
+            activeSpace = state.name;
+            try { localStorage.setItem('symphonee-space', activeSpace); } catch (_) {}
+          }
+        } else {
+          await fetch('/api/spaces', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: state.name, description: state.description, icon: state.icon, plugins: state.plugins }),
+          });
+          const before = new Set(originalRepos);
+          const after  = new Set(state.repos);
+          const added   = [...after].filter(r => !before.has(r));
+          const removed = [...before].filter(r => !after.has(r));
+          for (const repo of added) {
+            await fetch('/api/spaces/attach-repo', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ space: state.name, repo, attach: true }),
+            });
+          }
+          for (const repo of removed) {
+            await fetch('/api/spaces/attach-repo', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ space: state.name, repo, attach: false }),
+            });
+          }
+        }
+        toast('Space updated', 'success');
+      } catch (e) {
+        toast('Failed to update space: ' + (e.message || String(e)), 'error');
+        return;
+      }
+    } else {
+      const res = await fetch('/api/spaces', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: state.name, description: state.description, icon: state.icon, repos: state.repos, plugins: state.plugins }),
+      });
+      if (!res.ok) { toast('Failed to create space', 'error'); return; }
+      toast('Space "' + state.name + '" created', 'success');
+    }
     overlay.remove();
     ['_asoNext','_asoBack','_asoDismiss'].forEach(k => delete window[k]);
     try { loadRepoList(); } catch (_) {}
@@ -19142,38 +19147,14 @@ async function openAddSpaceDialog() {
 async function openEditSpaceDialog(name) {
   const spaces = await fetch('/api/spaces').then(r => r.json()).catch(() => ({}));
   const existing = spaces[name] || {};
-  const result = await openSpaceEditor({
+  await openAddSpaceDialog({
+    edit: true,
     name,
     description: existing.description || '',
     icon: existing.icon || 'layers',
-    edit: true,
+    repos: Array.isArray(existing.repos) ? existing.repos : [],
+    plugins: Array.isArray(existing.plugins) ? existing.plugins : [],
   });
-  if (!result) return;
-  // Name changes mean delete old + create new with carried-over repos/plugins.
-  if (result.originalName && result.name !== result.originalName) {
-    const carry = { repos: existing.repos || [], plugins: existing.plugins || [] };
-    await fetch('/api/spaces', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: result.originalName }),
-    });
-    await fetch('/api/spaces', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: result.name, description: result.description, icon: result.icon, repos: carry.repos, plugins: carry.plugins }),
-    });
-    if (activeSpace === result.originalName) {
-      activeSpace = result.name;
-      try { localStorage.setItem('symphonee-space', activeSpace); } catch (_) {}
-    }
-  } else {
-    await fetch('/api/spaces', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: result.name, description: result.description, icon: result.icon }),
-    });
-  }
-  toast('Space updated', 'success');
-  try { loadRepoList(); } catch (_) {}
-  try { _refreshSpaceSwitcher(); } catch (_) {}
-  try { renderSettingsSpaces(); } catch (_) {}
 }
 async function deleteSpace(name) {
   if (!name) return;
