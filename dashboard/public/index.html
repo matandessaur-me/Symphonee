@@ -19286,15 +19286,24 @@ function _renderSpaceSwitcherMenu(spaces, repos) {
     '<i class="sm-icon" data-lucide="layers" style="width:13px;height:13px;"></i>' +
     '<div class="sm-label">All spaces</div></div>';
 
+  const noRepoItem = '<div class="space-menu-item' + (!activeRepo ? ' active' : '') + '" data-select-repo="" data-repo-name="">' +
+    '<i class="sm-icon" data-lucide="folder-x" style="width:13px;height:13px;"></i>' +
+    '<div class="sm-label">No repo</div>' +
+    '<span style="font-size:9px;font-weight:600;color:var(--overlay1);letter-spacing:0.4px;flex-shrink:0;margin-left:6px;">REPO</span>' +
+  '</div>';
+
   const spacesBlockHtml = spaceNames.length
     ? '<div class="space-menu-section">Spaces</div>' + spaceNames.map(spaceBlock).join('')
     : '';
 
   // When no space is active, show ALL repos (including those in spaces).
-  // When inside a space, hide the repos section to reduce noise (they're shown nested).
-  const allReposHtml = !activeSpace && repoNames.length
-    ? '<div class="space-menu-section">Repos</div>' + repoNames.map(r => repoRow(r, false)).join('')
-    : (unassigned.length && !activeSpace ? '<div class="space-menu-section">Repos</div>' + unassigned.map(r => repoRow(r, false)).join('') : '');
+  // When inside a space, repos are shown nested under the space block, so the
+  // flat list stays empty. "No repo" always renders as the first item so the
+  // user can clear the repo selection for work that isn't tied to a repository.
+  let repoListHtml = '';
+  if (!activeSpace && repoNames.length) repoListHtml = repoNames.map(r => repoRow(r, false)).join('');
+  else if (!activeSpace && unassigned.length) repoListHtml = unassigned.map(r => repoRow(r, false)).join('');
+  const allReposHtml = '<div class="space-menu-section">Repos</div>' + noRepoItem + repoListHtml;
 
   const body = '<div class="space-menu-body">' + noneItem + spacesBlockHtml + allReposHtml +
     (!spaceNames.length && !repoNames.length
