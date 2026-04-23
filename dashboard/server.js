@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
-const { exec, execSync, spawnSync } = require('child_process');
+const { exec, execSync, spawnSync, spawn } = require('child_process');
 
 // ── New utility modules ────────────────────────────────────────────────────
 const { gitAsync, gitSync } = require('./utils/git-async');
@@ -2709,6 +2709,89 @@ function killTerminal(termId) {
     terminals.delete(termId);
   }
 }
+
+// ── AI CLI detection (process tree) ─────────────────────────────────────────
+// Given a parent PID, find whether any known AI CLI is running as a
+// descendant. Lets the frontend reliably decide whether to show "Launch AI"
+// or "Restart Shell" even after a page refresh.
+const AI_CLI_PROCESS_NAMES = {
+  claude:  ['claude.exe', 'claude'],
+  codex:   ['codex.exe',  'codex'],
+  gemini:  ['gemini.exe', 'gemini'],
+  copilot: ['copilot.exe','copilot'],
+  grok:    ['grok.exe',   'grok'],
+  qwen:    ['qwen.exe',   'qwen'],
+};
+let _aiDetectCache = { ts: 0, tree: null };
+async function _readProcessTree() {
+  // Cache for ~1s to avoid hammering wmic when multiple terminals query back-to-back.
+  if (Date.now() - _aiDetectCache.ts < 1000 && _aiDetectCache.tree) return _aiDetectCache.tree;
+  return await new Promise((resolve) => {
+    try {
+      const ps = spawn('wmic', ['process', 'get', 'ProcessId,ParentProcessId,Name', '/format:csv'], { windowsHide: true });
+      let out = '';
+      ps.stdout.on('data', (b) => { out += b.toString('utf8'); });
+      ps.on('error', () => resolve(null));
+      ps.on('close', () => {
+        const lines = out.split(/\r?\n/).filter(Boolean);
+        const byParent = new Map();
+        for (const line of lines) {
+          const parts = line.split(',');
+          if (parts.length < 4) continue;
+          const name = String(parts[1] || '').trim().toLowerCase();
+          const ppid = parseInt(parts[2], 10);
+          const pid  = parseInt(parts[3], 10);
+          if (!pid || !ppid || !name || name === 'name') continue;
+          if (!byParent.has(ppid)) byParent.set(ppid, []);
+          byParent.get(ppid).push({ pid, name });
+        }
+        _aiDetectCache = { ts: Date.now(), tree: byParent };
+        resolve(byParent);
+      });
+    } catch (_) { resolve(null); }
+  });
+}
+function _detectAiUnder(tree, rootPid) {
+  if (!tree || !rootPid) return null;
+  const visited = new Set();
+  const stack = [rootPid];
+  while (stack.length) {
+    const pid = stack.pop();
+    if (visited.has(pid)) continue;
+    visited.add(pid);
+    const kids = tree.get(pid) || [];
+    for (const k of kids) {
+      for (const cli of Object.keys(AI_CLI_PROCESS_NAMES)) {
+        if (AI_CLI_PROCESS_NAMES[cli].includes(k.name)) return cli;
+      }
+      stack.push(k.pid);
+    }
+  }
+  return null;
+}
+addRoute('POST', '/api/term/detect-ai', async (req, res) => {
+  try {
+    const body = await readBody(req);
+    const termIds = Array.isArray(body.termIds) && body.termIds.length
+      ? body.termIds
+      : Array.from(terminals.keys());
+    if (process.platform !== 'win32') {
+      // Non-Windows: skip for now (wmic is Windows). Return empty so the
+      // frontend just keeps whatever state it already has.
+      return json(res, { ok: true, byTerm: {}, platform: process.platform });
+    }
+    const tree = await _readProcessTree();
+    const byTerm = {};
+    for (const id of termIds) {
+      const t = terminals.get(id);
+      if (!t || !t.pty || !t.pty.pid) continue;
+      byTerm[id] = _detectAiUnder(tree, t.pty.pid) || null;
+    }
+    return json(res, { ok: true, byTerm });
+  } catch (e) {
+    return json(res, { ok: false, error: e && e.message ? e.message : String(e) }, 500);
+  }
+});
 
 // Backward compat: currentPty getter for start-working feature
 Object.defineProperty(global, 'currentPty', {

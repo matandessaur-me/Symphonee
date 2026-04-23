@@ -581,9 +581,23 @@
       width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-right: 6px;
     }
     .tab-open-wrap {
-      position: relative; flex-shrink: 0; display: flex; align-items: center;
-      margin: 0 12px; border-left: 1px solid var(--surface0); padding-left: 12px;
+      position: relative; flex-shrink: 0; display: flex; align-items: stretch;
+      margin: 0; border-left: 1px solid var(--surface0); padding-left: 0;
+      height: 100%;
     }
+    /* Top tab-bar's Plugins button: match the tab buttons (full height,
+       no rounding, no outer border), not the toolbar-style pill.
+       min-width matches the Launch AI / Restart Shell combined button so
+       the two bars align visually. */
+    #tabOpenWrap > .tab-bar-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      height: 100%; padding: 0 16px; min-width: 120px;
+      background: transparent; border: none; border-radius: 0;
+      color: var(--subtext0); font: 12px var(--font-ui);
+      cursor: pointer; transition: color 0.12s, background 0.12s;
+      white-space: nowrap;
+    }
+    #tabOpenWrap > .tab-bar-btn:hover { color: var(--text); background: var(--surface0); }
     .tab-open-btn {
       padding: 4px 10px; background: transparent; border: 1px solid var(--surface1);
       border-radius: var(--radius); color: var(--subtext1); font: 11px var(--font-ui);
@@ -621,7 +635,10 @@
       font: 9px var(--font-mono); background: var(--mantle); border: 1px solid var(--surface1);
       border-radius: 3px; padding: 1px 5px; color: var(--subtext0);
     }
-    .tab-bar-status { font-size: 11px; color: var(--subtext0); margin-right: 8px; }
+    .tab-bar-status {
+      display: inline-flex; align-items: center; height: 100%;
+      font-size: 11px; color: var(--subtext0); margin: 0; padding: 0 10px;
+    }
 
     /* ── Background Refresh Flash (board/backlog) ──────────────────────── */
     @keyframes refreshFlash {
@@ -742,10 +759,30 @@
 
     /* ── Terminal sub-tabs ────────────────────────────────────────────────── */
     .term-tabs {
-      display: flex; align-items: center; gap: 0; height: 34px; flex-shrink: 0;
-      background: var(--mantle); border-bottom: 1px solid var(--surface0); padding: 0 6px;
+      display: flex; align-items: stretch; gap: 0; height: 34px; flex-shrink: 0;
+      background: var(--mantle); border-bottom: 1px solid var(--surface0); padding: 0;
       position: relative; z-index: 5;
     }
+    /* Launch AI / Restart Shell in the term-tabs bar: match the tab look -
+       full height, no rounding, no outer border, matching typography.
+       min-width matches the top Plugins button so the two bars align. */
+    .term-tabs .tab-bar-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      height: 100%; padding: 0 14px; margin: 0; min-width: 120px;
+      background: transparent; border: none; border-radius: 0;
+      color: var(--subtext0); font: 12px var(--font-ui);
+      cursor: pointer; transition: color 0.12s, background 0.12s;
+      white-space: nowrap;
+    }
+    .term-tabs .tab-bar-btn:hover { color: var(--text); background: var(--surface0); }
+    .term-tabs .ai-picker-wrap {
+      height: 100%; display: inline-flex; align-items: stretch;
+      /* Matches the #tabOpenWrap divider in the top tab-bar so the
+         Launch AI / Restart Shell button reads as the same kind of
+         right-side anchor as Plugins. */
+      border-left: 1px solid var(--surface0);
+    }
+    .term-tabs .ai-picker-wrap > .tab-bar-btn { width: 100%; }
     .term-tab {
       display: flex; align-items: center; gap: 4px;
       padding: 0 14px; height: 100%; background: transparent; border: none;
@@ -774,7 +811,7 @@
     }
     .term-tab-add:hover { color: var(--accent); }
     /* ── Per-shell AI picker ─────────────────────────────────────────────── */
-    .ai-picker-wrap { position: relative; display: inline-flex; margin-right: 4px; }
+    .ai-picker-wrap { position: relative; display: inline-flex; margin-right: 0; }
     .ai-picker-menu {
       display: none; position: absolute; top: calc(100% + 6px); right: 0;
       min-width: 170px; background: var(--mantle);
@@ -4280,7 +4317,6 @@
             <button class="ai-picker-item" onclick="launchAiWith('qwen')"><span class="cli-dot" style="background:#615ced"></span> Qwen Code</button>
           </div>
         </div>
-        <button class="tab-bar-btn" onclick="restartShell()">Restart Shell</button>
       </div>
       <div class="term-containers" id="termContainers">
         <div class="term-instance active" id="term-main"></div>
@@ -11191,14 +11227,54 @@ function restartAllTerminalsForTheme() {
   } catch (_) {}
 }
 
-// Update the shared AI button/status for the current active shell
+// ── Running-AI detection ─────────────────────────────────────────────────
+// The frontend maintains a termAiState Map that gets blown away on reload,
+// so after a refresh the button would show "Launch AI" even while the CLI
+// is actually running in the PTY. Server inspects the PTY process tree and
+// returns the CLI name (claude / codex / ...) or null per terminal.
+async function _pollRunningAis() {
+  try {
+    const ids = Array.from(termInstances.keys());
+    if (!ids.length) return;
+    const res = await fetch('/api/term/detect-ai', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ termIds: ids }),
+    });
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    const byTerm = (data && data.byTerm) || {};
+    let changed = false;
+    for (const tid of ids) {
+      const detected = byTerm[tid] || null;
+      const st = getTermAi(tid);
+      if (detected && (!st.launched || st.cli !== detected)) {
+        st.launched = true;
+        st.cli = detected;
+        changed = true;
+      } else if (!detected && st.launched) {
+        st.launched = false;
+        st.cli = null;
+        changed = true;
+      }
+    }
+    if (changed) { try { syncAiControls(); } catch (_) {} }
+  } catch (_) {}
+}
+// First sweep shortly after load, then every 3s while the app is in use.
+setTimeout(_pollRunningAis, 1500);
+setInterval(_pollRunningAis, 3000);
+
+// Update the shared AI button/status for the current active shell.
+// When an AI is running, the button flips to "Restart Shell" (which fully
+// tears down the PTY and relaunches) - a harder reset than "Stop AI", which
+// was unreliable in practice.
 function syncAiControls() {
   const st = getTermAi(activeTermId);
   const btn = document.getElementById('aiBtn');
   const status = document.getElementById('termStatus');
   if (st.launched) {
     const cfg = CLI_CONFIG[st.cli];
-    btn.textContent = 'Stop AI';
+    btn.textContent = 'Restart Shell';
     status.textContent = `${cfg.label} running`;
   } else {
     btn.textContent = 'Launch AI';
@@ -11215,7 +11291,8 @@ function switchCli(cli) {
 function toggleAi() {
   const st = getTermAi(activeTermId);
   if (st.launched) {
-    stopAi();
+    // "Restart Shell" path: full PTY reset, which also drops the AI process.
+    try { restartShell(); } catch (_) {}
   } else {
     // Show picker so user can choose which AI, filtered to installed CLIs only.
     const menu = document.getElementById('aiPickerMenu');
