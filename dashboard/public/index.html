@@ -5791,7 +5791,9 @@
 </div>
 
 <!-- ═══ Confirm Dialog ══════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="confirmDialog">
+<!-- z-index stays above ad-hoc overlays like Repo Map (3000) so these
+     always sit on top of whatever triggered them. -->
+<div class="modal-overlay" id="confirmDialog" style="z-index:5000;">
   <div class="modal" style="width:380px;">
     <div class="modal-title" id="confirmTitle">Confirm</div>
     <div id="confirmMessage" style="font-size:13px;color:var(--subtext1);margin-bottom:20px;"></div>
@@ -5803,7 +5805,7 @@
 </div>
 
 <!-- ═══ Prompt Dialog ═══════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="promptDialog">
+<div class="modal-overlay" id="promptDialog" style="z-index:5000;">
   <div class="modal" style="width:380px;">
     <div class="modal-title" id="promptTitle">Input</div>
     <div class="modal-field">
@@ -6253,7 +6255,6 @@ requestAnimationFrame(fitTerminalNow);
           document.getElementById('statusDot').className = 'status-dot connected';
           document.getElementById('connectionStatus').textContent = 'Connected';
           syncAiControls();
-          if (msg.isNew && msg.termId === 'main') writeSymphoneeBanner(msg.termId);
           if (_shellReadyResolve) {
             const cb = _shellReadyResolve;
             _shellReadyResolve = null;
@@ -11256,7 +11257,7 @@ function launchAiWith(cli) {
     if (shouldYolo && YOLO_FLAGS[cli]) {
       cmd += ' ' + YOLO_FLAGS[cli];
     }
-    // Wipe the Symphonee banner before the CLI takes over the screen.
+    // Clear the screen before the CLI takes over so there is no residue.
     sendCommand('cls; ' + cmd, termId);
     const st = getTermAi(termId);
     st.cli = cli;
@@ -11353,42 +11354,6 @@ function resumeAiSession() {
 function sendCommand(cmd, termId) {
   const tid = termId || 'main';
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId: tid, data: cmd + '\r' }));
-}
-
-// Symphonee ASCII banner. Painted in the active theme's accent color via a
-// PowerShell-driven cls + Console.Write so PSReadLine's prompt-row cache
-// stays in sync (rendering banner straight to xterm desyncs it and typed
-// input ends up redrawn behind the banner).
-const SYMPHONEE_BANNER_LINES = [
-  '  \u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557  \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557',
-  ' \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d\u255a\u2588\u2588\u2557 \u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2557  \u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d',
-  ' \u255a\u2588\u2588\u2588\u2588\u2588\u2557  \u255a\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2557  ',
-  '  \u255a\u2550\u2550\u2550\u2588\u2588\u2557  \u255a\u2588\u2588\u2554\u255d  \u2588\u2588\u2557\u255a\u2588\u2588\u2554\u255d\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2557\u255a\u2588\u2588\u2557\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u255d  \u2588\u2588\u2554\u2550\u2550\u255d  ',
-  ' \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d   \u2588\u2588\u2557   \u2588\u2588\u2557 \u255a\u2550\u255d \u2588\u2588\u2557\u2588\u2588\u2557     \u2588\u2588\u2557  \u2588\u2588\u2557\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2557 \u255a\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557',
-  ' \u255a\u2550\u2550\u2550\u2550\u2550\u255d    \u255a\u2550\u255d   \u255a\u2550\u255d     \u255a\u2550\u255d\u255a\u2550\u255d     \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d',
-];
-
-function getAccentRgb() {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
-  // Accept rgb(r,g,b), rgba(r,g,b,a), #rrggbb, #rgb. Fall back to a neutral cyan.
-  let m = raw.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-  if (m) return [+m[1], +m[2], +m[3]];
-  m = raw.match(/^#([0-9a-f]{6})$/i);
-  if (m) return [parseInt(m[1].slice(0,2),16), parseInt(m[1].slice(2,4),16), parseInt(m[1].slice(4,6),16)];
-  m = raw.match(/^#([0-9a-f]{3})$/i);
-  if (m) return [parseInt(m[1][0]+m[1][0],16), parseInt(m[1][1]+m[1][1],16), parseInt(m[1][2]+m[1][2],16)];
-  return [102, 217, 239];
-}
-
-function writeSymphoneeBanner(termId) {
-  const [r, g, b] = getAccentRgb();
-  const colored = SYMPHONEE_BANNER_LINES
-    .map(l => `\x1b[1;38;2;${r};${g};${b}m${l}\x1b[0m`)
-    .join('\r\n');
-  const payload = '\r\n' + colored + '\r\n\r\n';
-  const b64 = btoa(unescape(encodeURIComponent(payload)));
-  const psCmd = `cls; [Console]::Write([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}')))`;
-  setTimeout(() => sendCommand(psCmd, termId), 600);
 }
 
 async function restartApp() {
@@ -19248,8 +19213,10 @@ async function _refreshSpaceSwitcher() {
     iconEl.setAttribute('data-lucide', iconName);
     try { lucide.createIcons({ nodes: [spaceChip] }); } catch (_) {}
   }
-  // Repo row: show when a space is selected (to allow repo picking) or when a repo is active
-  const showRepo = !!(activeSpace || activeRepo);
+  // Repo row: show when a space is selected (to allow repo picking), when
+  // a repo is active, or whenever any repos exist so the user can pick one
+  // from "All spaces" without having to create a space first.
+  const showRepo = !!(activeSpace || activeRepo || Object.keys(repos).length);
   if (repoChip) repoChip.style.display = showRepo ? '' : 'none';
   if (repoLabel) repoLabel.textContent = activeRepo || 'Select repo';
   const menu = document.getElementById('spaceSwitcherMenu');
@@ -21069,9 +21036,8 @@ function importThemes() {
 function restoreCustomTheme() {
   const stored = localStorage.getItem(ACTIVE_THEME_KEY);
   // The startup path must NOT restart terminals -- the main shell has
-  // already spawned (or is about to) and the Symphonee banner is queued
-  // to print on term-started. A restart here would race with the banner
-  // write and leave the main shell blank until the user switches tabs.
+  // already spawned (or is about to); a restart here would leave the main
+  // shell blank until the user switches tabs.
   const startupOpts = { skipRestart: true };
   if (!stored) { applyBuiltinTheme('industrial-blue', startupOpts); return; }
   if (stored.startsWith('__builtin_')) {
