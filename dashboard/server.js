@@ -2724,29 +2724,33 @@ const AI_CLI_PROCESS_NAMES = {
 };
 let _aiDetectCache = { ts: 0, tree: null };
 async function _readProcessTree() {
-  // Cache for ~1s to avoid hammering wmic when multiple terminals query back-to-back.
+  // Cache for ~1s so multiple terminals polling back-to-back share one snapshot.
   if (Date.now() - _aiDetectCache.ts < 1000 && _aiDetectCache.tree) return _aiDetectCache.tree;
+  // wmic was removed in Windows 11 24H2, so we use Get-CimInstance via PowerShell
+  // which is present on every supported Windows SKU.
   return await new Promise((resolve) => {
     try {
-      const ps = spawn('wmic', ['process', 'get', 'ProcessId,ParentProcessId,Name', '/format:csv'], { windowsHide: true });
+      const psCmd = '@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name) | ConvertTo-Json -Compress';
+      const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd], { windowsHide: true });
       let out = '';
       ps.stdout.on('data', (b) => { out += b.toString('utf8'); });
       ps.on('error', () => resolve(null));
       ps.on('close', () => {
-        const lines = out.split(/\r?\n/).filter(Boolean);
-        const byParent = new Map();
-        for (const line of lines) {
-          const parts = line.split(',');
-          if (parts.length < 4) continue;
-          const name = String(parts[1] || '').trim().toLowerCase();
-          const ppid = parseInt(parts[2], 10);
-          const pid  = parseInt(parts[3], 10);
-          if (!pid || !ppid || !name || name === 'name') continue;
-          if (!byParent.has(ppid)) byParent.set(ppid, []);
-          byParent.get(ppid).push({ pid, name });
-        }
-        _aiDetectCache = { ts: Date.now(), tree: byParent };
-        resolve(byParent);
+        try {
+          const arr = JSON.parse(out || '[]');
+          const list = Array.isArray(arr) ? arr : [arr];
+          const byParent = new Map();
+          for (const p of list) {
+            const pid = Number(p && p.ProcessId);
+            const ppid = Number(p && p.ParentProcessId);
+            const name = String((p && p.Name) || '').trim().toLowerCase();
+            if (!pid || !name) continue;
+            if (!byParent.has(ppid)) byParent.set(ppid, []);
+            byParent.get(ppid).push({ pid, name });
+          }
+          _aiDetectCache = { ts: Date.now(), tree: byParent };
+          resolve(byParent);
+        } catch (_) { resolve(null); }
       });
     } catch (_) { resolve(null); }
   });
