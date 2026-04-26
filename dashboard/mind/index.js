@@ -122,7 +122,7 @@ function mountMind(addRoute, json, ctx) {
   addRoute('POST', '/api/mind/build', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
     const space = getSpace();
-    const sources = body.sources || ['notes', 'learnings', 'cli-memory', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history'];
+    const sources = body.sources || ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history'];
     const jobId = makeJobId();
     const job = { id: jobId, kind: 'build', space, sources, status: 'running', startedAt: Date.now(), progress: [] };
     jobs.set(jobId, job);
@@ -152,7 +152,7 @@ function mountMind(addRoute, json, ctx) {
     // Incremental: same engine, but engine consults manifest to skip unchanged
     const body = await readBody(req).catch(() => ({}));
     const space = getSpace();
-    const sources = body.sources || ['notes', 'learnings', 'cli-memory', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history'];
+    const sources = body.sources || ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history'];
     const jobId = makeJobId();
     const job = { id: jobId, kind: 'update', space, sources, status: 'running', startedAt: Date.now(), progress: [] };
     jobs.set(jobId, job);
@@ -233,6 +233,8 @@ function mountMind(addRoute, json, ctx) {
 
   // ── Watch mode ───────────────────────────────────────────────────────────
   let watcher = null;
+  // Watch always re-ingests every Symphonee-managed repo on each tick. Mind
+  // is meant to span all connected projects.
   const triggerIncrementalUpdate = async (changedFiles) => {
     const space = getSpace();
     const jobId = makeJobId();
@@ -241,7 +243,7 @@ function mountMind(addRoute, json, ctx) {
     try {
       const result = await engine.runBuild({
         repoRoot, space,
-        sources: ['notes', 'learnings', 'cli-memory', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history'],
+        sources: ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history'],
         incremental: true, ctx,
         onProgress: (msg) => job.progress.push({ ts: Date.now(), msg }),
       });

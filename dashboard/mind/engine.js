@@ -19,6 +19,7 @@ const { analyze } = require('./analyze');
 const { extractNotes } = require('./extractors/notes');
 const { extractLearnings } = require('./extractors/learnings');
 const { extractCliMemory } = require('./extractors/cli-memory');
+const { extractCliSkills } = require('./extractors/cli-skills');
 const { extractRecipes } = require('./extractors/recipes');
 const { extractPlugins } = require('./extractors/plugins');
 const { extractInstructions } = require('./extractors/instructions');
@@ -54,6 +55,12 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
     fragments.push(f); summary.cliMemory = { scanned: f.scanned, nodes: f.nodes.length, edges: f.edges.length };
   }
 
+  if (sources.includes('cli-skills')) {
+    onProgress('Extracting CLI skills/agents/plugins (claude / codex / qwen)...');
+    const f = extractCliSkills();
+    fragments.push(f); summary.cliSkills = { scanned: f.scanned, perSource: f.perSource, nodes: f.nodes.length, edges: f.edges.length };
+  }
+
   if (sources.includes('recipes')) {
     onProgress('Extracting recipes...');
     const f = extractRecipes({ repoRoot });
@@ -73,9 +80,33 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
   }
 
   if (sources.includes('repo-code')) {
-    onProgress(`Extracting repo code from ${activeRepoPath || '(no active repo path)'}...`);
-    const f = extractRepoCode({ activeRepoPath, manifest });
-    fragments.push(f); summary.repoCode = { scanned: f.scanned, skippedCache: f.skippedCache, nodes: f.nodes.length, edges: f.edges.length };
+    // Always ingest every repo Symphonee knows about. The brain is meant to
+    // span all connected projects so cross-project knowledge accumulates -
+    // a single-active-repo build was the wrong default. Each node gets
+    // tagged cwd:<repoName> via an in_repo edge. If getAllRepos isn't wired
+    // (older callers), fall back to the active repo only.
+    const repoMap = typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {};
+    const entries = Object.entries(repoMap).filter(([, p]) => typeof p === 'string' && p.length);
+    if (!entries.length && activeRepoPath) entries.push(['__active__', activeRepoPath]);
+    const totals = { scanned: 0, skippedCache: 0, nodes: 0, edges: 0, perRepo: {} };
+    for (const [repoName, repoPath] of entries) {
+      if (!repoPath) continue;
+      onProgress(`Extracting repo code from ${repoName} (${repoPath})...`);
+      const f = extractRepoCode({ activeRepoPath: repoPath, manifest });
+      const tagId = `cwd_${String(repoName).replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase()}`;
+      f.nodes.push({ id: tagId, label: '@' + repoName, kind: 'tag' });
+      const newEdges = f.nodes
+        .filter(n => n.id !== tagId)
+        .map(n => ({ src: n.id, dst: tagId, kind: 'in_repo', confidence: 'EXTRACTED' }));
+      f.edges.push(...newEdges);
+      fragments.push(f);
+      totals.scanned += f.scanned;
+      totals.skippedCache += f.skippedCache || 0;
+      totals.nodes += f.nodes.length;
+      totals.edges += f.edges.length;
+      totals.perRepo[repoName] = { scanned: f.scanned, skippedCache: f.skippedCache, nodes: f.nodes.length, edges: f.edges.length };
+    }
+    summary.repoCode = totals;
   }
 
   if (sources.includes('cli-history')) {

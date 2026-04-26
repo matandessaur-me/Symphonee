@@ -27,6 +27,9 @@
     visNodes: null,        // vis.DataSet for nodes
     visEdges: null,        // vis.DataSet for edges
     ws: null,
+    search: '',            // current search term (lowercased, trimmed)
+    matches: [],           // ids of nodes matching state.search, ordered
+    matchIndex: 0,         // current cursor for Enter-cycling
   };
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -34,6 +37,150 @@
     refreshStatus();
     loadGraph().then(render);
     if (!state.ws) connectWS();
+    bindSearchInput();
+  }
+
+  // ── Search: one input, every view honours state.search ─────────────────────
+  // The toolbar input is persistent (lives in the Mind tab, not in any view's
+  // body), so we bind once and keep `state.search` as the source of truth.
+  // Each renderer reads it; for graph/map we also paint matches on the
+  // existing vis-network instance instead of rebuilding.
+  let searchBound = false;
+  function bindSearchInput() {
+    if (searchBound) return;
+    const input = $('mindSearchInput');
+    if (!input) return;
+    searchBound = true;
+    let debounceTimer = null;
+    input.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => applySearch(input.value), 120);
+    });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        cycleMatch(ev.shiftKey ? -1 : 1);
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        clearSearch();
+      }
+    });
+  }
+
+  function clearSearch() {
+    const input = $('mindSearchInput');
+    if (input) input.value = '';
+    applySearch('');
+  }
+
+  function nodeMatchesSearch(n, q) {
+    if (!q) return false;
+    if (typeof n.label === 'string' && n.label.toLowerCase().includes(q)) return true;
+    if (typeof n.id === 'string' && n.id.toLowerCase().includes(q)) return true;
+    if (Array.isArray(n.tags)) {
+      for (const t of n.tags) {
+        if (typeof t === 'string' && t.toLowerCase().includes(q)) return true;
+      }
+    }
+    return false;
+  }
+
+  function recomputeMatches() {
+    const q = state.search;
+    if (!q || !state.graph) { state.matches = []; state.matchIndex = 0; return; }
+    // Rank: label-prefix > label-substring > id/tags. Then by degree desc so
+    // important nodes surface first - the user almost always means those.
+    const degree = new Map();
+    for (const e of state.graph.edges) {
+      degree.set(e.source, (degree.get(e.source) || 0) + 1);
+      degree.set(e.target, (degree.get(e.target) || 0) + 1);
+    }
+    const scored = [];
+    for (const n of state.graph.nodes) {
+      if (!nodeMatchesSearch(n, q)) continue;
+      const lbl = (n.label || '').toLowerCase();
+      let rank = 3;
+      if (lbl.startsWith(q)) rank = 0;
+      else if (lbl.includes(q)) rank = 1;
+      else if ((n.id || '').toLowerCase().includes(q)) rank = 2;
+      scored.push({ id: n.id, rank, deg: degree.get(n.id) || 0 });
+    }
+    scored.sort((a, b) => a.rank - b.rank || b.deg - a.deg);
+    state.matches = scored.map(x => x.id);
+    state.matchIndex = 0;
+  }
+
+  function applySearch(rawQuery) {
+    state.search = (rawQuery || '').trim().toLowerCase();
+    recomputeMatches();
+    updateSearchUi();
+    // Re-render the active view. Graph/map prefer in-place re-paint so we
+    // don't blow away the network state, but rebuilding is acceptable here -
+    // small graphs only - and keeps the code path single.
+    if (state.view === 'graph') paintGraphSearch();
+    else if (state.view === 'map') paintMapSearch();
+    else render();
+    // If we have a match, surface it in the detail panel automatically.
+    if (state.matches.length) showNodeDetail(state.matches[0]);
+  }
+
+  function cycleMatch(step) {
+    if (!state.matches.length) return;
+    state.matchIndex = (state.matchIndex + step + state.matches.length) % state.matches.length;
+    const id = state.matches[state.matchIndex];
+    updateSearchUi();
+    if (state.view === 'graph') paintGraphSearch(id);
+    else if (state.view === 'map') paintMapSearch(id);
+    showNodeDetail(id);
+  }
+
+  function updateSearchUi() {
+    const count = $('mindSearchCount');
+    const clear = $('mindSearchClear');
+    if (clear) clear.style.display = state.search ? '' : 'none';
+    if (!count) return;
+    if (!state.search) { count.textContent = ''; return; }
+    if (!state.matches.length) { count.textContent = '0'; count.style.color = 'var(--red)'; return; }
+    count.style.color = 'var(--subtext0)';
+    count.textContent = state.matches.length === 1
+      ? '1'
+      : `${state.matchIndex + 1}/${state.matches.length}`;
+  }
+
+  // Graph view: rebuild the network so match-aware styling lands cleanly,
+  // then focus the current cursor. buildNetwork() reads state.search.
+  function paintGraphSearch(focusId) {
+    if (!state.graph) return;
+    buildNetwork();
+    const target = focusId || state.matches[state.matchIndex];
+    if (target && state.network) {
+      try { state.network.focus(target, { scale: 1.2, animation: { duration: 350, easingFunction: 'easeInOutQuad' } }); } catch (_) {}
+    }
+  }
+
+  // Map view: re-render with state.search so community circles tint based on
+  // whether they contain a matched node, then focus the relevant community.
+  function paintMapSearch(focusId) {
+    if (!state.graph) return;
+    renderMap();
+    if (!state.search) return;
+    const matchSet = new Set(state.matches);
+    let focusCommunity = null;
+    if (focusId) {
+      const node = state.graph.nodes.find(n => n.id === focusId);
+      if (node && typeof node.communityId === 'number') focusCommunity = 'c' + node.communityId;
+    }
+    if (!focusCommunity) {
+      for (const n of state.graph.nodes) {
+        if (matchSet.has(n.id) && typeof n.communityId === 'number') {
+          focusCommunity = 'c' + n.communityId;
+          break;
+        }
+      }
+    }
+    if (focusCommunity && state.network) {
+      try { state.network.focus(focusCommunity, { scale: 1.2, animation: { duration: 350 } }); } catch (_) {}
+    }
   }
 
   function connectWS() {
@@ -146,6 +293,7 @@
 
     const html = `
       <div class="mind-dash">
+        ${renderSearchResultsPanel()}
         <div class="mind-stat-strip">
           ${statCard('Nodes', stats.nodes ?? g.nodes.length, '#89b4fa')}
           ${statCard('Edges', stats.edges ?? g.edges.length, '#a6e3a1')}
@@ -320,6 +468,34 @@
     </div>`;
   }
 
+  // Compact search result list used by the Dashboard view. Other views handle
+  // search inline (filter cards / paint canvas) so they don't need this.
+  function renderSearchResultsPanel() {
+    if (!state.search) return '';
+    const g = state.graph;
+    if (!g) return '';
+    const matchSet = state.matches.slice(0, 30);
+    const empty = matchSet.length === 0;
+    const rows = matchSet.map(id => {
+      const n = g.nodes.find(x => x.id === id);
+      if (!n) return '';
+      const color = communityColor(n.communityId);
+      return `<a href="#" data-id="${escapeHtml(n.id)}" style="display:flex;align-items:baseline;gap:8px;padding:5px 9px;background:var(--base);border-radius:4px;text-decoration:none;color:var(--text);font-size:11px;border-left:2px solid ${color};">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(n.label)}</span>
+        <span style="font-size:10px;color:var(--subtext0);">${escapeHtml(n.kind)}</span>
+        ${n.communityId != null ? `<span style="font-size:9px;color:${color};">c${n.communityId}</span>` : ''}
+      </a>`;
+    }).join('');
+    return `
+      <div style="background:var(--mantle);border:1px solid var(--surface1);border-radius:6px;padding:10px 12px;margin-bottom:14px;">
+        <div style="font-size:10px;font-weight:700;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;">
+          <span>Search: "${escapeHtml(state.search)}"</span>
+          <span style="font-weight:500;">${state.matches.length} match${state.matches.length === 1 ? '' : 'es'}${state.matches.length > 30 ? ' (showing 30)' : ''}</span>
+        </div>
+        ${empty ? '<div style="font-size:11px;color:var(--subtext0);font-style:italic;">No nodes match.</div>' : `<div style="display:flex;flex-direction:column;gap:3px;">${rows}</div>`}
+      </div>`;
+  }
+
   function cliColor(name) {
     const map = {
       claude: '#fab387', codex: '#a6e3a1', gemini: '#89b4fa', copilot: '#cba6f7',
@@ -362,16 +538,33 @@
       bridgeCount.set(key, (bridgeCount.get(key) || 0) + 1);
     }
 
+    // If a search is active, figure out which communities contain matches.
+    const matchSet = state.search ? new Set(state.matches) : null;
+    const matchedCommunities = new Set();
+    if (matchSet) {
+      for (const n of g.nodes) {
+        if (matchSet.has(n.id) && typeof n.communityId === 'number') {
+          matchedCommunities.add(String(n.communityId));
+        }
+      }
+    }
+
     const nodes = cIds.map(cid => {
       const c = communities[cid];
+      const baseColor = communityColor(parseInt(cid, 10));
+      const isMatch = matchedCommunities.has(cid);
+      const dim = matchSet && !isMatch;
+      const fill = isMatch ? '#f9e2af' : (dim ? 'rgba(108,112,134,0.3)' : baseColor);
+      const border = isMatch ? '#f9e2af' : (dim ? 'rgba(108,112,134,0.3)' : baseColor);
       return {
         id: 'c' + cid,
         label: `#${cid}\n${c.label.slice(0, 28)}`,
         title: `${c.label}\n${c.size} nodes - cohesion ${Math.round((c.cohesion || 0) * 100)}%`,
         shape: 'dot',
         size: Math.min(70, Math.max(15, 15 + Math.sqrt(c.size) * 4)),
-        color: { background: communityColor(parseInt(cid, 10)), border: communityColor(parseInt(cid, 10)), highlight: { background: '#fff', border: communityColor(parseInt(cid, 10)) } },
-        font: { color: '#cdd6f4', size: 10, face: 'monospace', strokeWidth: 0, multi: true },
+        borderWidth: isMatch ? 4 : 1,
+        color: { background: fill, border, highlight: { background: '#fff', border } },
+        font: { color: dim ? 'rgba(205,214,244,0.35)' : '#cdd6f4', size: 10, face: 'monospace', strokeWidth: 0, multi: true },
       };
     });
     const edges = Array.from(bridgeCount.entries()).map(([key, count], i) => {
@@ -410,9 +603,16 @@
 
   function renderCommunities() {
     const g = state.graph;
-    const cards = Object.entries(g.communities || {})
+    let cards = Object.entries(g.communities || {})
       .map(([cid, c]) => ({ cid, ...c }))
       .sort((a, b) => b.size - a.size);
+    // Search: keep only communities containing at least one matched node.
+    if (state.search && state.matches.length) {
+      const matchSet = new Set(state.matches);
+      cards = cards.filter(c => (c.nodeIds || []).some(nid => matchSet.has(nid)));
+    } else if (state.search) {
+      cards = [];
+    }
     const html = `
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
         ${cards.map(c => communityCard(c, g)).join('')}
@@ -452,8 +652,13 @@
 
   function renderHotspots() {
     const g = state.graph;
-    const gods = g.gods || [];
-    const surprises = g.surprises || [];
+    let gods = g.gods || [];
+    let surprises = g.surprises || [];
+    if (state.search) {
+      const matchSet = new Set(state.matches);
+      gods = gods.filter(x => matchSet.has(x.id));
+      surprises = surprises.filter(s => matchSet.has(s.source) || matchSet.has(s.target));
+    }
     const html = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
         <div>
@@ -559,21 +764,41 @@
       degree.set(e.target, (degree.get(e.target) || 0) + 1);
     }
     if (nodes.length > cap) {
-      nodes = nodes.slice().sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0)).slice(0, cap);
+      const ranked = nodes.slice().sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0));
+      const top = ranked.slice(0, cap);
+      // If a search is active, ensure matched nodes always survive the cap -
+      // otherwise the user searches for a low-degree node and it disappears.
+      if (state.search && state.matches.length) {
+        const seen = new Set(top.map(n => n.id));
+        const matchSet = new Set(state.matches);
+        for (const n of nodes) {
+          if (!seen.has(n.id) && matchSet.has(n.id)) top.push(n);
+        }
+      }
+      nodes = top;
     }
     const idSet = new Set(nodes.map(n => n.id));
     const edges = g.edges.filter(e => idSet.has(e.source) && idSet.has(e.target));
 
+    const matchSet = state.search ? new Set(state.matches) : null;
     const visNodes = nodes.map(n => {
-      const color = communityColor(n.communityId);
+      const baseColor = communityColor(n.communityId);
+      const isMatch = matchSet ? matchSet.has(n.id) : false;
+      const dim = !!matchSet && !isMatch;
+      // Highlight: yellow fill + thicker border. Dim: shrink alpha via a muted
+      // grey so non-matches recede without disappearing.
+      const fill = isMatch ? '#f9e2af' : (dim ? 'rgba(108,112,134,0.25)' : baseColor);
+      const border = isMatch ? '#f9e2af' : (dim ? 'rgba(108,112,134,0.25)' : baseColor);
+      const fontColor = dim ? 'rgba(205,214,244,0.35)' : '#cdd6f4';
       return {
         id: n.id,
         label: n.label.length > 36 ? n.label.slice(0, 33) + '...' : n.label,
         title: `${n.label}\nkind: ${n.kind}\ncommunity: ${n.communityId ?? '-'}\nid: ${n.id}`,
         shape: KIND_SHAPE[n.kind] || 'dot',
         size: nodeSize(degree.get(n.id) || 0),
-        color: { background: color, border: color, highlight: { background: '#fff', border: color } },
-        font: { color: '#cdd6f4', size: 11, face: 'monospace', strokeWidth: 0 },
+        borderWidth: isMatch ? 3 : 1,
+        color: { background: fill, border, highlight: { background: '#fff', border } },
+        font: { color: fontColor, size: 11, face: 'monospace', strokeWidth: 0 },
         group: typeof n.communityId === 'number' ? `c${n.communityId}` : 'unset',
       };
     });
@@ -887,5 +1112,5 @@
     } catch (_) { return iso; }
   }
 
-  window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics };
+  window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics, clearSearch };
 })();

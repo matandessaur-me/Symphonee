@@ -925,6 +925,11 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
     if (typeof broadcast === 'function') {
       broadcast({ type: 'apps-agent-step', sessionId: session.id, ...step, at: Date.now() });
     }
+    // Session-scoped terminal listener (used by /api/apps/do to block on
+    // completion). Best-effort, does not affect normal operation.
+    try {
+      if (typeof session._terminalListener === 'function') session._terminalListener(step);
+    } catch (_) {}
   };
   session._emit = emit; // so executeTool (ask_user) can push UI events too.
   session._providerEntry = providerEntry;

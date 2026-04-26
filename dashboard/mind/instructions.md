@@ -8,9 +8,19 @@ the same graph.
 
 The graph contains the user's notes, the team's curated learnings, the
 shell's instruction docs, every plugin's metadata, every recipe, the active
-repo's code and docs, and the conversation outcomes that previous CLI
-sessions saved back. Provenance is on every node: who taught the brain that
-fact and from what source.
+repo's code and docs, the conversation outcomes that previous CLI sessions
+saved back, **and the user-level skills/agents/plugins each CLI ships with**
+(Claude Code agents, Codex skills, Qwen skills, Claude marketplace plugins).
+Provenance is on every node: who taught the brain that fact and from what
+source.
+
+Cross-CLI procedure sharing: even though only Claude can fire its `Agent`
+tool and only Codex can load its own SKILL.md at runtime, the *procedure*
+inside any sibling CLI's skill body is readable knowledge for everyone. If
+you ask the brain "how do I scaffold a WPP project?" and the answer cites
+a Claude agent body, you (whatever CLI you are) can execute the same
+workflow manually. Filter for these via the `cli_<provider>` and
+`skillkind_<agent|skill|plugin>` tags returned in query results.
 
 ## When to query the graph
 

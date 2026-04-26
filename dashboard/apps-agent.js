@@ -144,6 +144,166 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate } = {}
     }
   });
 
+  // Orchestrated chain: installed -> launch -> windows -> session/start, all
+  // in one call. Designed for terminal AIs (Claude Code, Codex, etc.) so a
+  // request like "open Spotify and play rock music" doesn't stall after the
+  // launch step. The agent gets back { ok, sessionId, hwnd, app } once the
+  // session is running, then either streams to completion (default, blocks
+  // up to waitMs) or returns immediately (waitMs=0) so the caller can
+  // observe via the apps-agent-step WS.
+  addRoute('POST', '/api/apps/do', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+
+    const appName = String(body.app || body.appName || '').trim();
+    const goal = String(body.goal || '').trim();
+    const provider = body.provider || null;
+    const model = body.model || null;
+    const waitMs = body.waitMs === 0 ? 0 : Math.max(1000, Math.min(Number(body.waitMs) || 600000, 1800000));
+    if (!appName) return json(res, { error: 'app required (name to match against /api/apps/installed)' }, 400);
+    if (!goal) return json(res, { error: 'goal required (what should the agent do once the app is open?)' }, 400);
+
+    // Single permission gate for the whole chain. Naming both the app and
+    // the goal so the user sees the full intent in the modal.
+    if (typeof permGate === 'function') {
+      const label = `Drive ${appName}: ${goal.slice(0, 100)}`;
+      const ok = await permGate(res, 'api', 'POST /api/apps/do', label);
+      if (!ok) return;
+    }
+
+    let installed;
+    try { installed = await driver.listInstalledApps(); }
+    catch (e) { return json(res, { error: 'listInstalledApps failed: ' + e.message }, 500); }
+
+    const needle = appName.toLowerCase();
+    let match = installed.find(a => (a.name || '').toLowerCase() === needle)
+      || installed.find(a => (a.name || '').toLowerCase().startsWith(needle))
+      || installed.find(a => (a.name || '').toLowerCase().includes(needle));
+
+    let hwnd = null;
+    let title = null;
+    if (!match) {
+      // Fallback: maybe the app is already running. Look for a window whose
+      // title or processName matches the needle, skip the launch step.
+      const running = await driver.listWindows({ force: true });
+      const win = running.find(w => (w.title || '').toLowerCase().includes(needle))
+        || running.find(w => (w.processName || '').toLowerCase().includes(needle));
+      if (!win) {
+        return json(res, {
+          error: `App not found in /api/apps/installed and no running window matched "${appName}". Try /api/apps/installed and pass an exact name.`,
+          suggestions: installed.filter(a => (a.name || '').toLowerCase().includes(needle.split(' ')[0])).slice(0, 5).map(a => a.name),
+        }, 404);
+      }
+      hwnd = win.hwnd; title = win.title;
+    } else {
+      try {
+        const launched = await driver.launchApp({ id: match.id, path: match.path, name: match.name });
+        hwnd = launched.hwnd; title = launched.title;
+      } catch (e) {
+        return json(res, { error: 'launchApp failed: ' + e.message, app: match.name }, 500);
+      }
+    }
+    if (!Number.isFinite(hwnd) || hwnd <= 0) {
+      return json(res, { error: 'Resolved app but no window hwnd available' }, 500);
+    }
+
+    // Hand off to the existing session/start machinery directly (no HTTP
+    // self-call) so we keep the gate, recipe handling, and provider picking
+    // consistent.
+    const sessionId = body.sessionId || ('apps-do-' + Date.now().toString(36));
+    const session = chat.getSession(sessionId);
+    if (session.running) return json(res, { error: 'Session already running. Stop it first or pass a different sessionId.' }, 409);
+
+    try {
+      const focused = await driver.focusWindow(hwnd);
+      session.hwnd = hwnd;
+      session.title = focused.title || title;
+      session.app = match ? match.name : appName;
+      session.goal = goal;
+      session.stopped = false;
+      driver.resetStopped();
+    } catch (e) {
+      const code = e && e.code;
+      if (code === 'deny_listed') return json(res, { error: e.message, code }, 403);
+      return json(res, { error: 'Failed to focus target window: ' + e.message }, 400);
+    }
+
+    const registry = buildRegistry();
+    const entry = chat.pickProvider(registry, provider);
+    if (!entry) {
+      return json(res, {
+        error: 'No AI provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, or DASHSCOPE_API_KEY.',
+        providers: Object.keys(registry),
+      }, 400);
+    }
+    const resolvedModel = model || entry.adapter.defaultModel;
+
+    const task = [
+      `Goal: ${goal}`,
+      '',
+      `Target window: "${session.title}" (hwnd=${hwnd}, app=${session.app})`,
+      'The window is already focused. Start with a screenshot and work toward the goal.',
+    ].join('\n');
+
+    session._providerRegistry = registry;
+    const runPromise = runSessionForEntry({ entry, session, task, driver, model: resolvedModel, broadcast });
+
+    if (waitMs === 0) {
+      json(res, { ok: true, sessionId, hwnd, app: session.app, title: session.title, provider: entry.adapter.kind, model: resolvedModel, mode: 'fire-and-forget' });
+      runPromise.catch(e => {
+        if (typeof broadcast === 'function') broadcast({ type: 'apps-agent-step', sessionId: session.id, kind: 'error', message: e.message, at: Date.now() });
+      });
+      return;
+    }
+
+    // Synchronous mode: block until the session emits done | error | stopped,
+    // or waitMs elapses. We tap into the broadcast bus by wrapping it once.
+    const terminal = await new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ kind: 'timeout' }), waitMs);
+      const origBroadcast = broadcast;
+      // Wrap in-place; restore in finally branch.
+      const wrapper = (msg) => {
+        try { origBroadcast(msg); } catch (_) {}
+        if (msg && msg.type === 'apps-agent-step' && msg.sessionId === sessionId) {
+          if (msg.kind === 'done' || msg.kind === 'error' || msg.kind === 'stopped') {
+            clearTimeout(timeout);
+            resolve(msg);
+          }
+        }
+      };
+      // Replace broadcast in the closure used by runSessionForEntry. The
+      // function uses the captured `broadcast` variable from registerAppsRoutes
+      // arguments, so monkey-patching won't reach it - instead, install a
+      // session-scoped listener via the session object's hooks the chat
+      // module already supports.
+      session._terminalListener = (event) => {
+        if (event.kind === 'done' || event.kind === 'error' || event.kind === 'stopped') {
+          clearTimeout(timeout);
+          resolve({ kind: event.kind, summary: event.summary, message: event.message });
+          session._terminalListener = null;
+        }
+      };
+      runPromise.catch(e => {
+        clearTimeout(timeout);
+        resolve({ kind: 'error', message: e.message });
+      });
+    });
+
+    json(res, {
+      ok: terminal.kind === 'done',
+      sessionId,
+      hwnd,
+      app: session.app,
+      title: session.title,
+      provider: entry.adapter.kind,
+      model: resolvedModel,
+      terminal: terminal.kind,
+      summary: terminal.summary || null,
+      error: terminal.message || null,
+    });
+  });
+
   addRoute('POST', '/api/apps/session/start', async (req, res) => {
     if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;

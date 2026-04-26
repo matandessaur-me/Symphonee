@@ -186,9 +186,11 @@ Adds your answer as a `conversation` node with `derived_from` edges to the cited
 
 ### Building, watching, and ingesting
 
-- **Full build:** `POST /api/mind/build` (or `./scripts/Build-Mind.ps1` / `node scripts/build-mind.js`). Sources default to all 8: notes, learnings, cli-memory, recipes, plugins, instructions, repo-code.
+Mind always ingests every repo Symphonee knows about (each `cfg.Repos` entry), tagging each node with `cwd:<repoName>`. Cross-project knowledge accumulates by default - a question about repo A can surface relevant code from repo B.
+
+- **Full build:** `POST /api/mind/build` (or `./scripts/Build-Mind.ps1` / `node scripts/build-mind.js`). Sources default to all 8: notes, learnings, cli-memory, recipes, plugins, instructions, repo-code, cli-history.
 - **Incremental update:** `POST /api/mind/update` - skips files whose SHA256 hasn't changed.
-- **Watch mode:** `POST /api/mind/watch {"enabled":true}` - chokidar on the active repo + notes + recipes + instructions, 3s debounce, auto-incremental rebuild.
+- **Watch mode:** `POST /api/mind/watch {"enabled":true}` - chokidar on every connected repo + notes + recipes + instructions, 3s debounce, auto-incremental rebuild.
 - **Add one artefact:** `POST /api/mind/add` with `{url|path, label, kind, createdBy}`. URLs go through SSRF guards.
 - **Purge a hallucinated node:** `DELETE /api/mind/node {"id":"..."}`.
 
@@ -252,8 +254,9 @@ The Apps tab exposes a deterministic automation platform over REST so a terminal
 - `GET /api/apps/status` - provider list (Anthropic / OpenAI / Gemini) + current session.
 
 ### Launch + control
-- `POST /api/apps/launch` `{id?, path?, name?}` - start an app.
-- `POST /api/apps/session/start` `{goal, hwnd, app, provider?, recipeId?, inputs?, stepThrough?}` - start an AI or recipe-driven session. `recipeId` branches to the deterministic runner; otherwise a natural-language `goal` drives the AI loop.
+- **`POST /api/apps/do` `{app, goal, provider?, model?, waitMs?}` - one-call orchestrated chain. Use this for ANY "open X and do Y" request from the user. Internally: listInstalledApps -> launchApp -> focus window -> session/start with the full goal -> blocks until the agent emits `done`/`error`/`stopped` (or waitMs elapses; default 600000). Pass `waitMs: 0` to fire-and-forget. THIS IS THE DEFAULT ENTRY POINT for app automation - do NOT chain `/installed`+`/launch`+`/session/start` by hand unless you genuinely need step-by-step control.**
+- `POST /api/apps/launch` `{id?, path?, name?}` - low-level: just launch, no agent. Prefer `/api/apps/do` unless the user explicitly only wants to open the app.
+- `POST /api/apps/session/start` `{goal, hwnd, app, provider?, recipeId?, inputs?, stepThrough?}` - low-level: start an agent against a window you already have. Most CLIs should use `/api/apps/do` instead.
 - `POST /api/apps/session/stop` `{sessionId}` - halt a running session.
 - `POST /api/apps/session/answer` `{sessionId, answer}` - respond to an `ask_user` prompt.
 - `POST /api/apps/session/inject` `{sessionId, message}` - queue a mid-run user turn (NOT used to answer an ask_user; use /answer for that). Capped at 4000 chars and 50 injections per session.
@@ -277,12 +280,21 @@ A test references a recipe + inputs + post-run assertions (`outcome`, `elementsP
 - `POST /api/apps/tests/run` `{app, testId, hwnd}` - run. Emits `test_pass` / `test_fail` on the WebSocket.
 
 ### Typical terminal-AI flow
-When the user says "run Figma and export a PNG":
-1. `POST /api/apps/installed`, match "figma", take the id.
-2. `POST /api/apps/launch` with that id (ask first in edit/review mode).
-3. `POST /api/apps/windows` to confirm the hwnd.
-4. Either: (a) `POST /api/apps/session/start` with a free-form goal to let the AI click through, or (b) generate a recipe via `POST /api/apps/recipes/generate` (with `app:'figma'` so it reads the user's notes) then `POST /api/apps/session/start` with `recipeId`.
-5. Listen to the `apps-agent-step` WebSocket channel for live progress.
+
+When the user says "run Figma and export a PNG", "open Spotify and play rock", "launch Notepad and write a poem", or anything of the shape "open X and do Y":
+
+**Default - one call, blocks until done:**
+```
+POST /api/apps/do
+{
+  "app": "Spotify",
+  "goal": "Search for rock music and start playing the first track",
+  "waitMs": 600000
+}
+```
+The endpoint runs the whole chain (resolve installed app -> launch -> focus window -> AI session driving toward the goal). Returns when the agent emits `done`, `error`, or `stopped`. Stream `apps-agent-step` over the WebSocket if you want to show live progress.
+
+If the user says "just open Spotify" with no follow-up action, then use `/api/apps/launch` alone. Reach for the low-level `/installed` + `/launch` + `/windows` + `/session/start` chain only when you genuinely need step-by-step control (a recipe-driven run with `recipeId`, an in-flight inject, etc.).
 
 <!-- PLUGIN_INSTRUCTIONS_START -->
 <!-- PLUGIN_INSTRUCTIONS_END -->

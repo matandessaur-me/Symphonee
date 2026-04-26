@@ -4707,6 +4707,14 @@
           <span style="font-size:12px;font-weight:600;color:var(--text);">Mind</span>
           <span id="mindStatusLine" style="font-size:11px;color:var(--subtext0);">Loading...</span>
           <span style="flex:1;"></span>
+          <div class="mind-search-wrap" style="display:flex;align-items:center;gap:4px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;padding:1px 6px;">
+            <span style="font-size:10px;color:var(--subtext0);">Search</span>
+            <input id="mindSearchInput" type="text" placeholder="search the mind" autocomplete="off" spellcheck="false"
+              style="background:transparent;border:none;outline:none;color:var(--text);font-size:11px;width:180px;padding:3px 0;" />
+            <span id="mindSearchCount" style="font-size:10px;color:var(--subtext0);font-variant-numeric:tabular-nums;min-width:32px;text-align:right;"></span>
+            <button id="mindSearchClear" type="button" title="Clear (Esc)" onclick="MindUI.clearSearch()"
+              style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;display:none;">×</button>
+          </div>
           <div class="mind-view-switch" style="display:flex;gap:4px;border:1px solid var(--surface1);border-radius:4px;padding:2px;">
             <button class="tab-bar-btn mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')" style="padding:3px 10px;font-size:11px;">Dashboard</button>
             <button class="tab-bar-btn mind-view-btn" data-view="communities" onclick="MindUI.setView('communities')" style="padding:3px 10px;font-size:11px;">Communities</button>
