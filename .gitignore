@@ -11,6 +11,7 @@ dashboard/plugins/*
 !dashboard/plugins/sdk/
 !dashboard/plugins/browser-use/
 !dashboard/plugins/video-use/
+!dashboard/plugins/stagehand/
 dashboard/app-memory/*
 !dashboard/app-memory/README.md
 dashboard/app-recipes/*

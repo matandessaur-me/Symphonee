@@ -1,0 +1,41 @@
+{
+  "id": "stagehand",
+  "name": "Stagehand",
+  "version": "0.1.0",
+  "sdkVersion": 2,
+  "description": "Natural-language browser automation on top of a local Chromium. Adds act / extract / observe / agent primitives with self-healing selectors and a per-session selector cache. Local-only -- never contacts Browserbase cloud. Pairs with the existing browser-use plugin: use this for natural-language one-shots and DOM resilience, browser-use for typed/recipe automation.",
+  "icon": "compass",
+  "tint": "210, 165, 240",
+  "instructions": "instructions.md",
+  "lazyRoutes": true,
+  "aiKeywords": [
+    "stagehand",
+    "natural language browser",
+    "self-healing selector",
+    "ai browser act",
+    "ai browser extract",
+    "ai browser observe",
+    "browser agent loop",
+    "structured extraction",
+    "zod extract",
+    "browser automation natural language"
+  ],
+  "activationConditions": {},
+  "settings": [
+    {
+      "key": "model",
+      "label": "Model (provider/model-id, e.g. anthropic/claude-sonnet-4-6)",
+      "type": "string",
+      "default": "anthropic/claude-sonnet-4-6"
+    },
+    {
+      "key": "headless",
+      "label": "Run Chromium headless",
+      "type": "boolean",
+      "default": false
+    }
+  ],
+  "contributions": {
+    "routes": "routes.js"
+  }
+}
