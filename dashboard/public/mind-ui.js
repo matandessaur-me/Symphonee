@@ -22,7 +22,10 @@
   // so a "Show everything" + paused-physics setup stays put when the user
   // wanders off and comes back.
   const PREFS_KEY = 'mind-ui-prefs:v1';
-  const DEFAULT_PREFS = { graphCap: '1000', graphFilter: 'all', physicsEnabled: true };
+  // Physics default = off (frozen). Stabilization still runs once to lay
+  // out the graph, then physics is disabled so weaker machines aren't stuck
+  // animating forever. The user can resume it from the Freeze button.
+  const DEFAULT_PREFS = { graphCap: '1000', graphFilter: 'all', physicsEnabled: false };
   function loadPrefs() {
     try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }
     catch (_) { return Object.assign({}, DEFAULT_PREFS); }
@@ -647,7 +650,11 @@
       }
     });
     state.network.on('stabilizationIterationsDone', () => {
-      try { state.network.setOptions({ physics: { stabilization: { enabled: false } } }); } catch (_) {}
+      // Same rule as the Graph view: respect the user's physics pref once
+      // the initial layout settles. Defaults to frozen (see DEFAULT_PREFS).
+      try {
+        state.network.setOptions({ physics: { stabilization: { enabled: false }, enabled: state.prefs.physicsEnabled !== false } });
+      } catch (_) {}
     });
   }
 
