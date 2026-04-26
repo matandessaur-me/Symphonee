@@ -1803,6 +1803,69 @@
     .inapp-agent-refine.refining { opacity: 0.6; pointer-events: none; }
     .tab-panel#panel-orchestrator.active { display: flex; flex-direction: column; }
 
+    /* ── Mind panel ─────────────────────────────────────────────────────── */
+    /* Toolbar wraps so it survives narrow windows; status truncates with
+       ellipsis instead of pushing other controls off-screen. */
+    .mind-toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-bottom: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0; flex-wrap: wrap;
+    }
+    .mind-toolbar-title { font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+    .mind-toolbar-status {
+      font-size: 11px; color: var(--subtext0);
+      min-width: 0; max-width: 320px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .mind-toolbar-spacer { flex: 1 1 auto; min-width: 0; }
+    .mind-search-wrap {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: 4px; padding: 1px 6px;
+      flex: 0 1 220px; min-width: 120px;
+    }
+    .mind-search-wrap input { flex: 1 1 0; min-width: 0; }
+    /* Square sub-tab strip on its own row, styled like .intel-tab.
+       No pill container, no individual button borders - just text with
+       an underline on the active tab. */
+    .mind-tabs {
+      display: flex; border-bottom: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0;
+      overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+      padding: 0 8px;
+    }
+    .mind-tabs::-webkit-scrollbar { display: none; }
+    .mind-tab {
+      flex: 0 0 auto; padding: 8px 14px; background: transparent;
+      border: none; border-bottom: 2px solid transparent;
+      color: var(--subtext0); font: 11px var(--font-ui); cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      white-space: nowrap;
+    }
+    .mind-tab:hover { color: var(--text); }
+    .mind-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    /* Reusable loader overlay for any Mind view that runs an expensive
+       synchronous operation (graph rebuild, large filter swap, etc). The
+       caller toggles display:flex to show. */
+    .mind-loader-overlay {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px;
+      background: color-mix(in srgb, var(--base) 70%, transparent);
+      backdrop-filter: blur(2px);
+      z-index: 10;
+    }
+    .mind-loader-text { font-size: 11px; color: var(--subtext0); letter-spacing: 0.3px; }
+    .mind-spinner {
+      width: 28px; height: 28px;
+      border: 2px solid var(--surface1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: mind-spin 0.7s linear infinite;
+    }
+    @keyframes mind-spin { to { transform: rotate(360deg); } }
+
     /* ── Orchestrator panel ─────────────────────────────────────────────── */
     .orch-header {
       display: flex; align-items: center; gap: 10px;
@@ -4703,28 +4766,28 @@
     <!-- Mind: Symphonee's shared knowledge graph -->
     <div class="tab-panel" id="panel-mind">
       <div class="mind-root" style="display:flex;flex-direction:column;width:100%;height:100%;background:var(--base);">
-        <div class="mind-toolbar" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--surface0);background:var(--mantle);flex-shrink:0;">
-          <span style="font-size:12px;font-weight:600;color:var(--text);">Mind</span>
-          <span id="mindStatusLine" style="font-size:11px;color:var(--subtext0);">Loading...</span>
-          <span style="flex:1;"></span>
-          <div class="mind-search-wrap" style="display:flex;align-items:center;gap:4px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;padding:1px 6px;">
+        <div class="mind-toolbar">
+          <span class="mind-toolbar-title">Mind</span>
+          <span class="mind-toolbar-status" id="mindStatusLine" title="">Loading...</span>
+          <span class="mind-toolbar-spacer"></span>
+          <div class="mind-search-wrap">
             <span style="font-size:10px;color:var(--subtext0);">Search</span>
             <input id="mindSearchInput" type="text" placeholder="search the mind" autocomplete="off" spellcheck="false"
-              style="background:transparent;border:none;outline:none;color:var(--text);font-size:11px;width:180px;padding:3px 0;" />
+              style="background:transparent;border:none;outline:none;color:var(--text);font-size:11px;padding:3px 0;" />
             <span id="mindSearchCount" style="font-size:10px;color:var(--subtext0);font-variant-numeric:tabular-nums;min-width:32px;text-align:right;"></span>
             <button id="mindSearchClear" type="button" title="Clear (Esc)" onclick="MindUI.clearSearch()"
               style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;display:none;">×</button>
           </div>
-          <div class="mind-view-switch" style="display:flex;gap:4px;border:1px solid var(--surface1);border-radius:4px;padding:2px;">
-            <button class="tab-bar-btn mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')" style="padding:3px 10px;font-size:11px;">Dashboard</button>
-            <button class="tab-bar-btn mind-view-btn" data-view="communities" onclick="MindUI.setView('communities')" style="padding:3px 10px;font-size:11px;">Communities</button>
-            <button class="tab-bar-btn mind-view-btn" data-view="hotspots" onclick="MindUI.setView('hotspots')" style="padding:3px 10px;font-size:11px;">Hotspots</button>
-            <button class="tab-bar-btn mind-view-btn" data-view="map" onclick="MindUI.setView('map')" style="padding:3px 10px;font-size:11px;" title="Communities as super-nodes - bridges between clusters">Map</button>
-            <button class="tab-bar-btn mind-view-btn" data-view="graph" onclick="MindUI.setView('graph')" style="padding:3px 10px;font-size:11px;">Graph</button>
-          </div>
           <button class="tab-bar-btn" onclick="MindUI.build()" title="Rebuild the brain from all sources">Rebuild</button>
           <button class="tab-bar-btn" onclick="MindUI.update()" title="Incremental update (only changed files)">Update</button>
           <button class="tab-bar-btn" id="mindWatchBtn" onclick="MindUI.toggleWatch()" title="Watch the active repo and auto-update">Watch: off</button>
+        </div>
+        <div class="mind-tabs" role="tablist">
+          <button class="mind-tab mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')">Dashboard</button>
+          <button class="mind-tab mind-view-btn" data-view="communities" onclick="MindUI.setView('communities')">Communities</button>
+          <button class="mind-tab mind-view-btn" data-view="hotspots" onclick="MindUI.setView('hotspots')">Hotspots</button>
+          <button class="mind-tab mind-view-btn" data-view="map" onclick="MindUI.setView('map')" title="Communities as super-nodes - bridges between clusters">Map</button>
+          <button class="mind-tab mind-view-btn" data-view="graph" onclick="MindUI.setView('graph')">Graph</button>
         </div>
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>

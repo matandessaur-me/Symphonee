@@ -18,6 +18,19 @@
   const API = (path, opts = {}) => fetch(path, opts).then(r => r.json());
   const $ = (id) => document.getElementById(id);
 
+  // Persisted UI prefs for the graph view. Survives tab switches and reloads
+  // so a "Show everything" + paused-physics setup stays put when the user
+  // wanders off and comes back.
+  const PREFS_KEY = 'mind-ui-prefs:v1';
+  const DEFAULT_PREFS = { graphCap: '1000', graphFilter: 'all', physicsEnabled: true };
+  function loadPrefs() {
+    try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }
+    catch (_) { return Object.assign({}, DEFAULT_PREFS); }
+  }
+  function savePrefs() {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (_) {}
+  }
+
   let state = {
     view: 'dashboard',
     graph: null,
@@ -30,6 +43,7 @@
     search: '',            // current search term (lowercased, trimmed)
     matches: [],           // ids of nodes matching state.search, ordered
     matchIndex: 0,         // current cursor for Enter-cycling
+    prefs: loadPrefs(),    // persisted graph cap/filter/physics
   };
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -151,11 +165,21 @@
   // then focus the current cursor. buildNetwork() reads state.search.
   function paintGraphSearch(focusId) {
     if (!state.graph) return;
-    buildNetwork();
-    const target = focusId || state.matches[state.matchIndex];
-    if (target && state.network) {
-      try { state.network.focus(target, { scale: 1.2, animation: { duration: 350, easingFunction: 'easeInOutQuad' } }); } catch (_) {}
-    }
+    const loader = $('mindGraphLoader');
+    if (loader) loader.style.display = 'flex';
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          buildNetwork();
+          const target = focusId || state.matches[state.matchIndex];
+          if (target && state.network) {
+            try { state.network.focus(target, { scale: 1.2, animation: { duration: 350, easingFunction: 'easeInOutQuad' } }); } catch (_) {}
+          }
+        } finally {
+          if (loader) loader.style.display = 'none';
+        }
+      }, 0);
+    });
   }
 
   // Map view: re-render with state.search so community circles tint based on
@@ -203,7 +227,7 @@
     if (payload.kind === 'build-progress') setStatus(payload.msg || 'building...');
     if (payload.kind === 'build-complete' || payload.kind === 'update-complete') {
       setStatus('build complete - reloading');
-      loadGraph().then(render);
+      loadGraph().then(() => { render(); refreshStatus(); });
     }
     if (payload.kind === 'build-failed') setStatus('build failed: ' + (payload.error || 'unknown'));
     if (payload.kind === 'watch-trigger') setStatus('change: ' + (payload.file || ''));
@@ -228,7 +252,12 @@
     setWatch(!!w.enabled);
   }
 
-  function setStatus(msg) { const el = $('mindStatusLine'); if (el) el.textContent = msg; }
+  function setStatus(msg) {
+    const el = $('mindStatusLine');
+    if (!el) return;
+    el.textContent = msg;
+    el.title = msg;
+  }
   function setWatch(on) {
     state.watchEnabled = on;
     const b = $('mindWatchBtn'); if (b) b.textContent = `Watch: ${on ? 'on' : 'off'}`;
@@ -370,7 +399,7 @@
         .mind-dash { display:flex; flex-direction:column; gap:14px; }
         .mind-stat-strip { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px; }
         @media (max-width: 900px) { .mind-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-        .mind-stat-card { background:var(--mantle); border:1px solid var(--surface1); border-radius:6px; padding:10px 12px; display:flex; flex-direction:column; gap:2px; border-left-width:3px; }
+        .mind-stat-card { background:var(--mantle); border:1px solid var(--surface1); border-radius:6px; padding:10px 12px; display:flex; flex-direction:column; gap:2px; }
         .mind-stat-card .mind-stat-label { font-size:10px; color:var(--subtext0); text-transform:uppercase; letter-spacing:0.5px; }
         .mind-stat-card .mind-stat-value { font-size:20px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
         .mind-stat-card .mind-stat-hint  { font-size:10px; color:var(--subtext0); }
@@ -385,11 +414,32 @@
         .mind-bar-num   { min-width:40px; text-align:right; color:var(--subtext1); font-variant-numeric:tabular-nums; font-size:10px; }
         .mind-list { display:flex; flex-direction:column; gap:5px; }
         .mind-feed { display:flex; flex-direction:column; gap:6px; max-height:400px; overflow:auto; }
-        .mind-feed-row { padding:7px 9px; background:var(--base); border-radius:4px; border-left:3px solid var(--surface2); cursor:pointer; transition: background 0.1s; }
+        .mind-feed-row { padding:7px 9px; background:var(--base); border-radius:4px; cursor:pointer; transition: background 0.1s; }
         .mind-feed-row:hover { background:var(--surface0); }
         .mind-feed-row .mind-feed-meta { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--subtext0); margin-bottom:3px; }
         .mind-feed-row .mind-cli-badge { padding:1px 6px; border-radius:8px; font-size:9px; font-weight:600; text-transform:uppercase; }
         .mind-feed-row .mind-feed-text { font-size:11px; color:var(--text); overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .mind-surprise-row {
+          display:grid;
+          grid-template-columns: minmax(0, 1fr) 90px minmax(0, 1fr) 70px;
+          align-items:center; gap:8px;
+          font-size:11px; padding:5px 10px;
+          background:var(--base); border-radius:4px;
+        }
+        .mind-surprise-row > .mind-surprise-src,
+        .mind-surprise-row > .mind-surprise-tgt {
+          color:var(--accent); text-decoration:none;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        }
+        .mind-surprise-row > .mind-surprise-rel {
+          color:var(--subtext0); font-size:10px;
+          text-align:center;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        }
+        .mind-surprise-row > .mind-surprise-com {
+          color:var(--subtext0); font-size:10px;
+          text-align:right; font-variant-numeric:tabular-nums;
+        }
       </style>`;
     $('mindMain').innerHTML = html;
     $('mindMain').querySelectorAll('[data-id]').forEach(el => {
@@ -401,7 +451,7 @@
   }
 
   function statCard(label, value, color, hint) {
-    return `<div class="mind-stat-card" style="border-left-color:${color}"><div class="mind-stat-label">${escapeHtml(label)}</div><div class="mind-stat-value" style="color:${color}">${escapeHtml(String(value))}</div>${hint ? `<div class="mind-stat-hint">${escapeHtml(hint)}</div>` : ''}</div>`;
+    return `<div class="mind-stat-card"><div class="mind-stat-label">${escapeHtml(label)}</div><div class="mind-stat-value" style="color:${color}">${escapeHtml(String(value))}</div>${hint ? `<div class="mind-stat-hint">${escapeHtml(hint)}</div>` : ''}</div>`;
   }
 
   function barChart(rows, maxRows) {
@@ -453,18 +503,18 @@
     const color = cliColor(cli);
     const date = n.createdAt ? new Date(n.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
     const tags = (n.tags || []).filter(t => !['cli-session', 'conversation', cli].includes(t)).slice(0, 3).map(t => `<span style="font-size:9px;color:var(--subtext0);">#${escapeHtml(t)}</span>`).join(' ');
-    return `<div class="mind-feed-row" data-id="${escapeHtml(n.id)}" style="border-left-color:${color};">
+    return `<div class="mind-feed-row" data-id="${escapeHtml(n.id)}">
       <div class="mind-feed-meta"><span class="mind-cli-badge" style="background:${color};color:#1e1e2e;">${escapeHtml(cli)}</span><span>${escapeHtml(date)}</span>${tags}</div>
       <div class="mind-feed-text">${escapeHtml(n.preview || n.label)}</div>
     </div>`;
   }
 
   function surpriseRow(g, s) {
-    return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:5px 8px;background:var(--base);border-radius:4px;">
-      <a href="#" data-id="${escapeHtml(s.source)}" style="color:var(--accent);text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%;">${escapeHtml(nodeLabel(g, s.source))}</a>
-      <span style="color:var(--subtext0);font-size:10px;">${escapeHtml(s.relation)}</span>
-      <a href="#" data-id="${escapeHtml(s.target)}" style="color:var(--accent);text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%;">${escapeHtml(nodeLabel(g, s.target))}</a>
-      <span style="color:var(--subtext0);font-size:9px;flex-shrink:0;">c${s.crossesCommunities.join('/')}</span>
+    return `<div class="mind-surprise-row">
+      <a href="#" data-id="${escapeHtml(s.source)}" class="mind-surprise-src">${escapeHtml(nodeLabel(g, s.source))}</a>
+      <span class="mind-surprise-rel">${escapeHtml(s.relation)}</span>
+      <a href="#" data-id="${escapeHtml(s.target)}" class="mind-surprise-tgt">${escapeHtml(nodeLabel(g, s.target))}</a>
+      <span class="mind-surprise-com">c${s.crossesCommunities.join('/')}</span>
     </div>`;
   }
 
@@ -480,7 +530,7 @@
       const n = g.nodes.find(x => x.id === id);
       if (!n) return '';
       const color = communityColor(n.communityId);
-      return `<a href="#" data-id="${escapeHtml(n.id)}" style="display:flex;align-items:baseline;gap:8px;padding:5px 9px;background:var(--base);border-radius:4px;text-decoration:none;color:var(--text);font-size:11px;border-left:2px solid ${color};">
+      return `<a href="#" data-id="${escapeHtml(n.id)}" style="display:flex;align-items:baseline;gap:8px;padding:5px 9px;background:var(--base);border-radius:4px;text-decoration:none;color:var(--text);font-size:11px;">
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(n.label)}</span>
         <span style="font-size:10px;color:var(--subtext0);">${escapeHtml(n.kind)}</span>
         ${n.communityId != null ? `<span style="font-size:9px;color:${color};">c${n.communityId}</span>` : ''}
@@ -713,20 +763,57 @@
           <option value="plugin">plugins only</option>
           <option value="conversation">conversations only</option>
         </select>
-        <select id="mindGraphCap" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:4px;padding:3px 6px;font-size:11px;" title="Cap node count to keep layout fast">
-          <option value="500">top 500</option>
-          <option value="1000" selected>top 1000</option>
-          <option value="2000">top 2000</option>
-          <option value="5000">top 5000</option>
+        <select id="mindGraphCap" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:4px;padding:3px 6px;font-size:11px;" title="How many nodes to draw. Lower = snappier and easier to read.">
+          <option value="500" title="Snappy. Most-connected nodes only. Easy to read.">Light (500)</option>
+          <option value="1000" selected title="Balanced default - structure is visible, layout is fast.">Default (1000)</option>
+          <option value="2000" title="Shows the long tail too. Slower layout, denser canvas.">Important (2000)</option>
+          <option value="all" title="Every node. Slow layout, hairball view - search to navigate.">Everything</option>
         </select>
         <button class="tab-bar-btn" onclick="MindUI.fitGraph()" style="font-size:11px;" title="Fit graph to view">Fit</button>
         <button class="tab-bar-btn" onclick="MindUI.togglePhysics()" id="mindPhysicsBtn" style="font-size:11px;" title="Pause/resume layout physics">Freeze</button>
       </div>
-      <div id="mindCanvasHost" style="flex:1;min-height:0;width:100%;background:var(--mantle);"></div>`;
+      <div id="mindCanvasHost" style="flex:1;min-height:0;width:100%;background:var(--mantle);position:relative;">
+        <div id="mindGraphLoader" class="mind-loader-overlay" style="display:none;">
+          <div class="mind-spinner"></div>
+          <div class="mind-loader-text">Laying out graph...</div>
+        </div>
+      </div>`;
 
-    buildNetwork();
-    $('mindGraphFilter').addEventListener('change', buildNetwork);
-    $('mindGraphCap').addEventListener('change', buildNetwork);
+    // Hydrate the controls from saved prefs before the first build so we
+    // don't waste a layout on the wrong cap.
+    const filterEl = $('mindGraphFilter');
+    const capEl = $('mindGraphCap');
+    if (filterEl) filterEl.value = state.prefs.graphFilter;
+    if (capEl) capEl.value = state.prefs.graphCap;
+    updatePhysicsBtnLabel();
+
+    buildNetworkAsync();
+    filterEl.addEventListener('change', () => {
+      state.prefs.graphFilter = filterEl.value;
+      savePrefs();
+      buildNetworkAsync();
+    });
+    capEl.addEventListener('change', () => {
+      state.prefs.graphCap = capEl.value;
+      savePrefs();
+      buildNetworkAsync();
+    });
+  }
+
+  // Wraps buildNetwork() so the loader overlay actually paints before the
+  // synchronous DataSet construction + vis.Network init blocks the main thread.
+  // Without the rAF + setTimeout chain the browser batches the style change
+  // with the heavy work and the user sees a frozen screen for top 2000/5000.
+  function buildNetworkAsync() {
+    const loader = $('mindGraphLoader');
+    if (loader) loader.style.display = 'flex';
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try { buildNetwork(); } finally {
+          if (loader) loader.style.display = 'none';
+        }
+      }, 0);
+    });
   }
 
   // Catppuccin Mocha-ish 12-color palette - readable on dark bg
@@ -752,7 +839,9 @@
     if (!host || !g) return;
 
     const filter = $('mindGraphFilter')?.value || 'all';
-    const cap = parseInt($('mindGraphCap')?.value || '1000', 10);
+    const capRaw = $('mindGraphCap')?.value || '1000';
+    // "all" = no cap (Everything option). Anything else parses to a node count.
+    const cap = capRaw === 'all' ? Infinity : parseInt(capRaw, 10);
 
     let nodes = g.nodes;
     if (filter !== 'all') nodes = nodes.filter(n => n.kind === filter);
@@ -848,9 +937,19 @@
     });
     state.network.on('stabilizationIterationsDone', () => {
       // Pin the first stabilization end so the user can interact without
-      // the whole graph re-flowing on every click.
-      try { state.network.setOptions({ physics: { stabilization: { enabled: false } } }); } catch (_) {}
+      // the whole graph re-flowing on every click. If the user previously
+      // froze physics, honour that on the rebuilt network too.
+      try {
+        state.network.setOptions({ physics: { stabilization: { enabled: false }, enabled: state.prefs.physicsEnabled !== false } });
+      } catch (_) {}
+      updatePhysicsBtnLabel();
     });
+  }
+
+  function updatePhysicsBtnLabel() {
+    const btn = $('mindPhysicsBtn');
+    if (!btn) return;
+    btn.textContent = state.prefs.physicsEnabled === false ? 'Resume' : 'Freeze';
   }
 
   function teardownNetwork() {
@@ -864,8 +963,11 @@
   function togglePhysics() {
     if (!state.network) return;
     const cur = state.network.physics.physicsEnabled;
-    state.network.setOptions({ physics: { enabled: !cur } });
-    const btn = $('mindPhysicsBtn'); if (btn) btn.textContent = cur ? 'Resume' : 'Freeze';
+    const next = !cur;
+    state.network.setOptions({ physics: { enabled: next } });
+    state.prefs.physicsEnabled = next;
+    savePrefs();
+    updatePhysicsBtnLabel();
   }
 
   // ── Detail side panel ──────────────────────────────────────────────────────
