@@ -39,10 +39,9 @@ function _pretrustCodex(cwd) {
     // Codex uses [projects.'<path>'] sections. Keys are quoted paths that
     // include backslashes on Windows. Check for an existing trusted entry
     // for this cwd (either raw or with the \\?\ long-path prefix).
-    const q = (s) => s.replace(/\\/g, '\\\\');
     const variants = [cwd, `\\\\?\\${cwd}`];
     const hasTrust = variants.some((v) => {
-      const re = new RegExp(`\\[projects\\.'${q(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\][^\\[]*trust_level\\s*=\\s*"trusted"`, 'i');
+      const re = new RegExp(`\\[projects\\.'${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\][^\\[]*trust_level\\s*=\\s*"trusted"`, 'i');
       return re.test(toml);
     });
     if (hasTrust) return;
