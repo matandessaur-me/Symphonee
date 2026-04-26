@@ -1,0 +1,56 @@
+{
+  "id": "video-use",
+  "name": "Video Use",
+  "version": "0.1.0",
+  "sdkVersion": 2,
+  "description": "Conversation-driven video editor ported from github.com/browser-use/video-use - transcript-as-DOM, EDL render pipeline, ffmpeg-based cuts with 30ms fades, optional Whisper or ElevenLabs Scribe transcription.",
+  "icon": "film",
+  "tint": "200, 130, 90",
+  "instructions": "instructions.md",
+  "aiKeywords": [
+    "video-use",
+    "video use",
+    "video edit",
+    "edit video",
+    "cut footage",
+    "trim video",
+    "video transcript",
+    "transcribe video",
+    "edl",
+    "edit decision list",
+    "ffmpeg",
+    "subtitle",
+    "burn subtitles",
+    "videos folder",
+    "raw takes"
+  ],
+  "activationConditions": {},
+  "settings": [
+    {
+      "key": "ElevenLabsApiKey",
+      "label": "ElevenLabs API Key",
+      "type": "string",
+      "sensitive": true,
+      "description": "Optional. If set, transcription uses ElevenLabs Scribe (paid). Otherwise the plugin tries local Whisper (whisper-cli or whisper on PATH)."
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg executable",
+      "type": "string",
+      "default": "ffmpeg",
+      "description": "Path to ffmpeg. Default 'ffmpeg' assumes it is on PATH."
+    },
+    {
+      "key": "FfprobePath",
+      "label": "ffprobe executable",
+      "type": "string",
+      "default": "ffprobe",
+      "description": "Path to ffprobe. Default 'ffprobe' assumes it is on PATH."
+    }
+  ],
+  "contributions": {
+    "routes": "routes.js",
+    "configKeys": ["ElevenLabsApiKey", "FfmpegPath", "FfprobePath"],
+    "sensitiveKeys": ["ElevenLabsApiKey"]
+  }
+}

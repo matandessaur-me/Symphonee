@@ -113,10 +113,18 @@ function _getDebugState(wc) {
       networkEnabled: false,
       runtimeEnabled: false,
       logEnabled: false,
+      pageEnabled: false,
       events: [],
       consoleEvents: [],
       requests: new Map(),
       responseBodies: new Map(),
+      // Watchdog buffers, parity with the Playwright driver's
+      // dashboard/lib/browser-watchdogs.js attachAll() output shape.
+      popups: [],
+      aboutBlank: [],
+      downloads: [],
+      // Per-type popup policy. Conservative default: dismiss everything.
+      popupPolicy: { alert: 'dismiss', confirm: 'dismiss', prompt: 'dismiss', beforeunload: 'dismiss' },
     };
     _debugState.set(wc, state);
   }
@@ -251,6 +259,53 @@ async function _ensureDebugger(wc) {
             url: entry.url || null,
             at: Date.now(),
           });
+          return;
+        }
+        if (method === 'Page.javascriptDialogOpening') {
+          const type = params && params.type ? params.type : 'alert'; // alert | confirm | prompt | beforeunload
+          const action = (state.popupPolicy && state.popupPolicy[type]) || 'dismiss';
+          const message = params.message || '';
+          const url = params.url || null;
+          // CDP fires this event on both the page and any embedded webview's
+          // hosting context. Dedupe by (type, message, url) within a 500ms
+          // window so the snapshot has one row per actual dialog.
+          const last = state.popups.length ? state.popups[state.popups.length - 1] : null;
+          const isDup = last && last.type === type && last.message === message && last.url === url && (Date.now() - last.at) < 500;
+          if (!isDup) {
+            state.popups.push({ at: Date.now(), type, message, defaultValue: params.defaultPrompt != null ? params.defaultPrompt : null, url, action });
+            if (state.popups.length > MAX_BROWSER_NETWORK_EVENTS) state.popups.splice(0, state.popups.length - MAX_BROWSER_NETWORK_EVENTS);
+          }
+          // Always answer - without this Chromium hangs forever, even on dups.
+          const accept = action === 'accept';
+          wc.debugger.sendCommand('Page.handleJavaScriptDialog', { accept, promptText: '' }).catch(() => {});
+          return;
+        }
+        if (method === 'Page.frameNavigated') {
+          const f = params && params.frame ? params.frame : {};
+          if (!f.parentId) {
+            const url = f.url || '';
+            if (url === 'about:blank' || url === '' || url.startsWith('about:')) {
+              const last = state.aboutBlank.length ? state.aboutBlank[state.aboutBlank.length - 1] : null;
+              const isDup = last && last.url === url && (Date.now() - last.at) < 500;
+              if (!isDup) {
+                state.aboutBlank.push({ at: Date.now(), url, kind: 'mainframe-blank' });
+                if (state.aboutBlank.length > MAX_BROWSER_NETWORK_EVENTS) state.aboutBlank.splice(0, state.aboutBlank.length - MAX_BROWSER_NETWORK_EVENTS);
+              }
+            }
+          }
+          return;
+        }
+        if (method === 'Page.downloadWillBegin') {
+          const url = params.url || null;
+          const suggestedFilename = params.suggestedFilename || null;
+          // Dedupe by (url, filename) within 500ms - same CDP duplication
+          // pattern as dialogs.
+          const last = state.downloads.length ? state.downloads[state.downloads.length - 1] : null;
+          const isDup = last && last.url === url && last.suggestedFilename === suggestedFilename && (Date.now() - last.at) < 500;
+          if (!isDup) {
+            state.downloads.push({ at: Date.now(), url, suggestedFilename, guid: params.guid || null, savedPath: null });
+            if (state.downloads.length > MAX_BROWSER_NETWORK_EVENTS) state.downloads.splice(0, state.downloads.length - MAX_BROWSER_NETWORK_EVENTS);
+          }
         }
       } catch (_) {}
     });
@@ -268,6 +323,14 @@ async function _ensureDebugger(wc) {
   if (!state.logEnabled) {
     await wc.debugger.sendCommand('Log.enable');
     state.logEnabled = true;
+  }
+  if (!state.pageEnabled) {
+    // Page.enable surfaces javascriptDialogOpening, frameNavigated, and
+    // downloadWillBegin so the watchdogs can capture them. Best-effort -
+    // older Electron / certain webContents may reject this.
+    try { await wc.debugger.sendCommand('Page.enable'); } catch (_) {}
+    try { await wc.debugger.sendCommand('Page.setDownloadBehavior', { behavior: 'default' }); } catch (_) {}
+    state.pageEnabled = true;
   }
   return state;
 }
@@ -541,6 +604,145 @@ function describeForm(form, framePath) {
     submitControls: Array.from(form.querySelectorAll('button, input[type="submit"], input[type="button"]')).slice(0, 10).map(function(el) { return describeInteractive(el, framePath || []); })
   };
 }
+function _hasFormControlDescendant(el, maxDepth) {
+  if (!el || maxDepth <= 0) return false;
+  var children = el.children ? Array.from(el.children) : [];
+  for (var i = 0; i < children.length; i++) {
+    var c = children[i];
+    if (c.nodeType !== 1) continue;
+    var tag = (c.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return true;
+    if (_hasFormControlDescendant(c, maxDepth - 1)) return true;
+  }
+  return false;
+}
+function hasJsClickListener(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (typeof el.onclick === 'function') return true;
+  if (!el.attributes) return false;
+  for (var i = 0; i < el.attributes.length; i++) {
+    var name = el.attributes[i].name;
+    if (name === '@click' || name === 'v-on:click' || name === '(click)') return true;
+    if (name === 'data-onclick' || name === 'data-action' || name === 'data-click') return true;
+    if (name.indexOf('data-action-') === 0) return true;
+  }
+  return false;
+}
+function isInteractive(el) {
+  if (!el || el.nodeType !== 1) return false;
+  var tag = (el.tagName || '').toLowerCase();
+  if (tag === 'html' || tag === 'body') return false;
+  if (hasJsClickListener(el)) return true;
+  if (tag === 'iframe' || tag === 'frame') {
+    var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (rect && rect.width > 100 && rect.height > 100) return true;
+    return false;
+  }
+  if (tag === 'a' || tag === 'button' || tag === 'select' || tag === 'textarea') return true;
+  if (tag === 'input') {
+    var t = (el.type || '').toLowerCase();
+    if (t !== 'hidden') return true;
+  }
+  if (tag === 'summary' || tag === 'details') return true;
+  if (tag === 'label') {
+    if (el.attributes && el.getAttribute('for')) return false;
+    if (_hasFormControlDescendant(el, 2)) return true;
+  }
+  if (tag === 'span' && _hasFormControlDescendant(el, 2)) return true;
+  var role = el.getAttribute && el.getAttribute('role');
+  if (role) {
+    var ROLES = { button: 1, link: 1, checkbox: 1, radio: 1, switch: 1, tab: 1, menuitem: 1, option: 1, combobox: 1, textbox: 1, searchbox: 1, slider: 1, spinbutton: 1 };
+    if (ROLES[role]) return true;
+  }
+  if (el.isContentEditable) return true;
+  if (el.attributes) {
+    var classStr = (el.className && typeof el.className === 'string') ? el.className.toLowerCase() : '';
+    var idStr = (el.id || '').toLowerCase();
+    var SEARCH_HINTS = ['search', 'magnify', 'glass', 'clickable', 'btn', 'button'];
+    for (var j = 0; j < SEARCH_HINTS.length; j++) {
+      if (classStr.indexOf(SEARCH_HINTS[j]) >= 0 || idStr.indexOf(SEARCH_HINTS[j]) >= 0) return true;
+    }
+  }
+  try {
+    var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+    var cs = win.getComputedStyle(el);
+    if (cs && cs.cursor === 'pointer') return true;
+  } catch (_) {}
+  return false;
+}
+function isOccluded(el) {
+  try {
+    var doc = el.ownerDocument;
+    if (!doc || !doc.elementFromPoint) return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    var x = rect.left + rect.width / 2;
+    var y = rect.top + rect.height / 2;
+    var hit = doc.elementFromPoint(x, y);
+    if (!hit) return false;
+    if (hit === el) return false;
+    if (el.contains(hit) || hit.contains(el)) return false;
+    return true;
+  } catch (_) { return false; }
+}
+function pagesAwayFromViewport(el) {
+  try {
+    var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+    var vh = win.innerHeight || 768;
+    if (vh <= 0) return 0;
+    var rect = el.getBoundingClientRect();
+    if (rect.top >= 0 && rect.bottom <= vh) return 0;
+    if (rect.bottom < 0) return Math.round((rect.bottom / vh) * 10) / 10;
+    if (rect.top > vh) return Math.round(((rect.top - vh) / vh) * 10) / 10;
+    return 0;
+  } catch (_) { return 0; }
+}
+function enumerateInteractive(opts) {
+  opts = opts || {};
+  var maxDepth = opts.maxFrameDepth || 4;
+  var maxIframes = opts.maxIframes || 100;
+  var includeHidden = !!opts.includeHidden;
+  var limit = opts.limit || 200;
+  var iframesSeen = 0;
+  var out = [];
+  walkDocuments(maxDepth).forEach(function(entry) {
+    if (!entry.accessible) return;
+    if (iframesSeen++ > maxIframes) return;
+    var nodes = Array.from(entry.doc.querySelectorAll('*'));
+    for (var i = 0; i < nodes.length && out.length < limit; i++) {
+      var el = nodes[i];
+      if (!isInteractive(el)) continue;
+      var visible = isVisible(el);
+      if (!visible && !includeHidden) {
+        var pagesDown = pagesAwayFromViewport(el);
+        if (Math.abs(pagesDown) < 0.05) continue;
+        out.push({
+          handle: makeHandle(entry.framePath, el),
+          tag: el.tagName.toLowerCase(),
+          text: cleanText(el.innerText || el.textContent || el.value || el.getAttribute && el.getAttribute('aria-label') || '', 80),
+          visible: false,
+          hiddenReason: 'offscreen',
+          pagesAway: pagesDown,
+          framePath: entry.framePath
+        });
+        continue;
+      }
+      out.push({
+        handle: makeHandle(entry.framePath, el),
+        tag: el.tagName.toLowerCase(),
+        text: cleanText(el.innerText || el.textContent || el.value || el.getAttribute && el.getAttribute('aria-label') || '', 80),
+        href: el.getAttribute && el.getAttribute('href') || null,
+        type: el.type || null,
+        role: el.getAttribute && el.getAttribute('role') || null,
+        visible: visible,
+        hiddenReason: visible ? null : 'css',
+        occluded: visible ? isOccluded(el) : false,
+        framePath: entry.framePath
+      });
+    }
+  });
+  return out;
+}
 `;
 
 const internalWebviewDriver = {
@@ -548,7 +750,11 @@ const internalWebviewDriver = {
 
   async launch({ headless = false } = {}) {
     // headless has no meaning here; we always drive the visible in-app tab.
-    await _ensureBrowserTab();
+    const wc = await _ensureBrowserTab();
+    // Arm the debugger up front so Page.* events are captured before the
+    // very first navigate. Otherwise a dialog fired by the landing page
+    // slips through before we attach.
+    try { await _ensureDebugger(wc); } catch (_) {}
     return { launchedVia: 'in-app webview' };
   },
 
@@ -904,6 +1110,27 @@ const internalWebviewDriver = {
     return await _exec(wc, js);
   },
 
+  async listInteractive({ limit = 200, includeHidden = false, maxFrameDepth = 4, maxIframes = 100 } = {}) {
+    const wc = await _ensureBrowserTab();
+    const opts = {
+      limit: Math.max(1, Math.min(Number(limit) || 200, 500)),
+      includeHidden: !!includeHidden,
+      maxFrameDepth: Math.max(0, Math.min(Number(maxFrameDepth) || 4, 8)),
+      maxIframes: Math.max(1, Math.min(Number(maxIframes) || 100, 500))
+    };
+    const js = `(function(){
+      ${BROWSER_DOM_HELPERS}
+      var opts = ${JSON.stringify(opts)};
+      return {
+        url: location.href,
+        title: document.title,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        elements: enumerateInteractive(opts)
+      };
+    })();`;
+    return await _exec(wc, js);
+  },
+
   async queryAll(selector) {
     const wc = await _ensureBrowserTab();
     const js = `(function(){
@@ -1050,6 +1277,17 @@ const internalWebviewDriver = {
         });
       } catch (_) { /* best effort */ }
     }
+  },
+
+  async getWatchdogEvents() {
+    const wc = _findWebviewContents();
+    if (!wc) return { popups: [], aboutBlank: [], downloads: [] };
+    const state = _getDebugState(wc);
+    return {
+      popups: (state.popups || []).slice(),
+      aboutBlank: (state.aboutBlank || []).slice(),
+      downloads: (state.downloads || []).slice(),
+    };
   },
 
   async close() {

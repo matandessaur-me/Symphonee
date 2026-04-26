@@ -302,14 +302,187 @@ function describeForm(form, framePath) {
     submitControls: Array.from(form.querySelectorAll('button, input[type="submit"], input[type="button"]')).slice(0, 10).map(function(el) { return describeInteractive(el, framePath || []); })
   };
 }
+
+// ── Interactivity heuristics (ported from browser-use ClickableElementDetector) ─
+// browser-use uses CDP to ask the runtime which elements have a JS click
+// listener. We don't have CDP here, but the on* attributes + a small set of
+// framework markers (data-action, data-onclick, [\\@click], [data-v-on]) cover
+// the same ground for ~80% of pages without DOM mutation.
+function _hasFormControlDescendant(el, maxDepth) {
+  if (!el || maxDepth <= 0) return false;
+  var children = el.children ? Array.from(el.children) : [];
+  for (var i = 0; i < children.length; i++) {
+    var c = children[i];
+    if (c.nodeType !== 1) continue;
+    var tag = (c.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return true;
+    if (_hasFormControlDescendant(c, maxDepth - 1)) return true;
+  }
+  return false;
+}
+function hasJsClickListener(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (typeof el.onclick === 'function') return true;
+  if (!el.attributes) return false;
+  for (var i = 0; i < el.attributes.length; i++) {
+    var name = el.attributes[i].name;
+    // Vue: @click v-on:click ; React surfaces as on* properties already
+    // handled above. Angular: (click). Stencil/Lit: data-onclick. Generic:
+    // data-action or data-click.
+    if (name === '@click' || name === 'v-on:click' || name === '(click)') return true;
+    if (name === 'data-onclick' || name === 'data-action' || name === 'data-click') return true;
+    if (name.indexOf('data-action-') === 0) return true;  // Stimulus
+  }
+  return false;
+}
+function isInteractive(el) {
+  if (!el || el.nodeType !== 1) return false;
+  var tag = (el.tagName || '').toLowerCase();
+  if (tag === 'html' || tag === 'body') return false;
+
+  if (hasJsClickListener(el)) return true;
+
+  // Iframes only count if they're large enough to actually need scrolling.
+  if (tag === 'iframe' || tag === 'frame') {
+    var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (rect && rect.width > 100 && rect.height > 100) return true;
+    return false;
+  }
+
+  // Native interactive elements.
+  if (tag === 'a' || tag === 'button' || tag === 'select' || tag === 'textarea') return true;
+  if (tag === 'input') {
+    var t = (el.type || '').toLowerCase();
+    if (t !== 'hidden') return true;
+  }
+  if (tag === 'summary' || tag === 'details') return true;
+
+  // Labels that proxy via "for" double-fire if we treat them as interactive.
+  if (tag === 'label') {
+    if (el.attributes && el.getAttribute('for')) return false;
+    if (_hasFormControlDescendant(el, 2)) return true;
+  }
+  if (tag === 'span' && _hasFormControlDescendant(el, 2)) return true;
+
+  // ARIA roles.
+  var role = el.getAttribute && el.getAttribute('role');
+  if (role) {
+    var ROLES = { button: 1, link: 1, checkbox: 1, radio: 1, switch: 1, tab: 1, menuitem: 1, option: 1, combobox: 1, textbox: 1, searchbox: 1, slider: 1, spinbutton: 1 };
+    if (ROLES[role]) return true;
+  }
+
+  // contenteditable.
+  if (el.isContentEditable) return true;
+
+  // Search-element class/attribute hints (Ant Design, Bootstrap, etc.).
+  if (el.attributes) {
+    var classStr = (el.className && typeof el.className === 'string') ? el.className.toLowerCase() : '';
+    var idStr = (el.id || '').toLowerCase();
+    var SEARCH_HINTS = ['search', 'magnify', 'glass', 'clickable', 'btn', 'button'];
+    for (var j = 0; j < SEARCH_HINTS.length; j++) {
+      if (classStr.indexOf(SEARCH_HINTS[j]) >= 0 || idStr.indexOf(SEARCH_HINTS[j]) >= 0) return true;
+    }
+  }
+
+  // Pointer cursor is a strong signal.
+  try {
+    var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+    var cs = win.getComputedStyle(el);
+    if (cs && cs.cursor === 'pointer') return true;
+  } catch (_) {}
+  return false;
+}
+// True when the element is at least partially behind another, opaque element.
+// Single-point center test - cheap and good enough for "is this hit-testable"
+function isOccluded(el) {
+  try {
+    var doc = el.ownerDocument;
+    if (!doc || !doc.elementFromPoint) return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    var x = rect.left + rect.width / 2;
+    var y = rect.top + rect.height / 2;
+    var hit = doc.elementFromPoint(x, y);
+    if (!hit) return false;
+    if (hit === el) return false;
+    if (el.contains(hit) || hit.contains(el)) return false;
+    return true;
+  } catch (_) { return false; }
+}
+// How far down/up the page is this element from the current viewport, in
+// "pages" (1 page = 1 viewport height). Negative = above the fold.
+function pagesAwayFromViewport(el) {
+  try {
+    var win = el.ownerDocument && el.ownerDocument.defaultView ? el.ownerDocument.defaultView : window;
+    var vh = win.innerHeight || 768;
+    if (vh <= 0) return 0;
+    var rect = el.getBoundingClientRect();
+    if (rect.top >= 0 && rect.bottom <= vh) return 0;
+    if (rect.bottom < 0) return Math.round((rect.bottom / vh) * 10) / 10;
+    if (rect.top > vh) return Math.round(((rect.top - vh) / vh) * 10) / 10;
+    return 0;
+  } catch (_) { return 0; }
+}
+// Enumerate interactive elements across all accessible frames.
+// Mirrors browser-use's "clickable list" - the LLM gets a tight, ranked
+// inventory instead of the whole DOM.
+function enumerateInteractive(opts) {
+  opts = opts || {};
+  var maxDepth = opts.maxFrameDepth || 4;
+  var maxIframes = opts.maxIframes || 100;
+  var includeHidden = !!opts.includeHidden;
+  var limit = opts.limit || 200;
+  var iframesSeen = 0;
+  var out = [];
+  walkDocuments(maxDepth).forEach(function(entry) {
+    if (!entry.accessible) return;
+    if (iframesSeen++ > maxIframes) return;
+    var nodes = Array.from(entry.doc.querySelectorAll('*'));
+    for (var i = 0; i < nodes.length && out.length < limit; i++) {
+      var el = nodes[i];
+      if (!isInteractive(el)) continue;
+      var visible = isVisible(el);
+      if (!visible && !includeHidden) {
+        // Surface "scrollable, N pages down" hints even when hidden.
+        var pagesDown = pagesAwayFromViewport(el);
+        if (Math.abs(pagesDown) < 0.05) continue;
+        out.push({
+          handle: makeHandle(entry.framePath, el),
+          tag: el.tagName.toLowerCase(),
+          text: cleanText(el.innerText || el.textContent || el.value || el.getAttribute && el.getAttribute('aria-label') || '', 80),
+          visible: false,
+          hiddenReason: 'offscreen',
+          pagesAway: pagesDown,
+          framePath: entry.framePath
+        });
+        continue;
+      }
+      out.push({
+        handle: makeHandle(entry.framePath, el),
+        tag: el.tagName.toLowerCase(),
+        text: cleanText(el.innerText || el.textContent || el.value || el.getAttribute && el.getAttribute('aria-label') || '', 80),
+        href: el.getAttribute && el.getAttribute('href') || null,
+        type: el.type || null,
+        role: el.getAttribute && el.getAttribute('role') || null,
+        visible: visible,
+        hiddenReason: visible ? null : 'css',
+        occluded: visible ? isOccluded(el) : false,
+        framePath: entry.framePath
+      });
+    }
+  });
+  return out;
+}
 `;
 
 // ── Playwright driver (fallback when not in Electron) ──────────────────────
+const watchdogsModule = require('./lib/browser-watchdogs');
 function makePlaywrightDriver() {
   let browser = null;
   let context = null;
   let page = null;
   let launchedVia = null;
+  let watchdogs = null;
   let networkEvents = [];
   let consoleEvents = [];
   let requestSeq = 0;
@@ -507,6 +680,19 @@ function makePlaywrightDriver() {
           at: Date.now(),
         });
       });
+      // Attach popups/aboutblank/downloads watchdogs (ported from
+      // browser-use's watchdog architecture).
+      try {
+        if (watchdogs) watchdogs.detach();
+        // Use the conservative default popups policy (dismiss confirm/prompt/
+        // beforeunload, dismiss alert). Callers that need auto-accept can
+        // re-attach a watchdog with explicit policy via getWatchdogEvents API
+        // extension or pass through a future driver option.
+        watchdogs = watchdogsModule.attachAll(page, { popups: {}, downloads: {} });
+      } catch (e) {
+        watchdogs = null;
+        _pushConsoleEvent({ kind: 'exception', type: 'watchdog-init', text: e && e.message ? e.message : String(e), url: page ? page.url() : '', at: Date.now() });
+      }
       return { launchedVia };
     },
     async navigate(url) {
@@ -783,6 +969,26 @@ function makePlaywrightDriver() {
         return { url: location.href, title: document.title, forms: forms.slice(0, maxItems) };
       }, { maxItems: Math.max(1, Math.min(Number(limit) || 50, 100)), helpers: BROWSER_DOM_HELPERS });
     },
+    async listInteractive({ limit = 200, includeHidden = false, maxFrameDepth = 4, maxIframes = 100 } = {}) {
+      _ensurePage();
+      return await page.evaluate(({ opts, helpers }) => {
+        eval(helpers);
+        return {
+          url: location.href,
+          title: document.title,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          elements: enumerateInteractive(opts)
+        };
+      }, {
+        opts: {
+          limit: Math.max(1, Math.min(Number(limit) || 200, 500)),
+          includeHidden: !!includeHidden,
+          maxFrameDepth: Math.max(0, Math.min(Number(maxFrameDepth) || 4, 8)),
+          maxIframes: Math.max(1, Math.min(Number(maxIframes) || 100, 500))
+        },
+        helpers: BROWSER_DOM_HELPERS
+      });
+    },
     async queryAll(selector) {
       _ensurePage();
       const elements = await page.evaluate(({ sel, helpers }) => {
@@ -827,7 +1033,13 @@ function makePlaywrightDriver() {
       if (!context) return;
       await context.addCookies(cookies);
     },
+    async getWatchdogEvents() {
+      if (!watchdogs) return { popups: [], aboutBlank: [], downloads: [] };
+      return watchdogs.snapshot();
+    },
     async close() {
+      try { if (watchdogs) watchdogs.detach(); } catch (_) {}
+      watchdogs = null;
       if (browser) {
         await browser.close().catch(() => {});
         browser = null; context = null; page = null;
@@ -1023,6 +1235,24 @@ class BrowserAgent {
     return { ok: true, ...(r || {}) };
   }
 
+  async listInteractive(opts = {}) {
+    const drv = this._driver();
+    if (typeof drv.listInteractive !== 'function') {
+      return { ok: false, error: 'listInteractive not supported by current driver' };
+    }
+    const r = await drv.listInteractive(opts);
+    return { ok: true, ...(r || {}) };
+  }
+
+  async getWatchdogEvents() {
+    const drv = this._driver();
+    if (typeof drv.getWatchdogEvents !== 'function') {
+      return { ok: true, popups: [], aboutBlank: [], downloads: [] };
+    }
+    const r = await drv.getWatchdogEvents();
+    return { ok: true, ...(r || {}) };
+  }
+
   async queryAll(selector) {
     const r = await this._driver().queryAll(selector);
     const elements = (r && r.elements) || [];
@@ -1192,6 +1422,13 @@ function mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast, dr
   browserRoute('GET', '/api/browser/source', () => agent.getPageSource(), { checkIncognito: false });
   browserRoute('GET', '/api/browser/dom', (_, url) => agent.inspectDom({ limit: Number(url.searchParams.get('limit') || 120) }), { checkIncognito: false });
   browserRoute('GET', '/api/browser/forms', (_, url) => agent.getForms({ limit: Number(url.searchParams.get('limit') || 50) }), { checkIncognito: false });
+  browserRoute('GET', '/api/browser/watchdogs', () => agent.getWatchdogEvents(), { checkIncognito: false });
+  browserRoute('GET', '/api/browser/interactive', (_, url) => agent.listInteractive({
+    limit: Number(url.searchParams.get('limit') || 200),
+    includeHidden: url.searchParams.get('includeHidden') === 'true' || url.searchParams.get('includeHidden') === '1',
+    maxFrameDepth: Number(url.searchParams.get('maxFrameDepth') || 4),
+    maxIframes: Number(url.searchParams.get('maxIframes') || 100)
+  }), { checkIncognito: false });
   browserRoute('GET', '/api/browser/query-all', (_, url) => agent.queryAll(url.searchParams.get('selector') || '*'), { checkIncognito: false });
   browserRoute('GET', '/api/browser/network', (_, url) => agent.getNetworkLog({ limit: Number(url.searchParams.get('limit') || 50) }), { checkIncognito: false });
   browserRoute('GET', '/api/browser/network-body', (_, url) => agent.getNetworkBody(url.searchParams.get('requestId') || ''), { checkIncognito: false });

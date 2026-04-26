@@ -1,0 +1,27 @@
+{
+  "id": "browser-use",
+  "name": "Browser Use",
+  "version": "0.1.0",
+  "sdkVersion": 2,
+  "description": "AI-friendly browser automation primitives ported from github.com/browser-use/browser-use - clickable element registry, action registry, watchdog snapshots, Mind-aware step logging.",
+  "icon": "compass",
+  "tint": "120, 170, 220",
+  "instructions": "instructions.md",
+  "aiKeywords": [
+    "browser-use",
+    "browser use",
+    "browser agent",
+    "ai browser",
+    "clickable elements",
+    "interactive elements",
+    "web agent",
+    "page interactive",
+    "page clickables",
+    "agent steps"
+  ],
+  "activationConditions": {},
+  "settings": [],
+  "contributions": {
+    "routes": "routes.js"
+  }
+}
