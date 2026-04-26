@@ -78,6 +78,7 @@ const ROUTES = {
   '/xterm-addon-unicode11.js':{ file: path.join(nodeModules, '@xterm/addon-unicode11/lib/addon-unicode11.js'),       type: 'application/javascript' },
   '/logo.svg':                { file: path.join(publicDir, 'logo.svg'),                                            type: 'image/svg+xml' },
   '/contributions-client.js': { file: path.join(publicDir, 'contributions-client.js'),                             type: 'application/javascript' },
+  '/mind-ui.js':              { file: path.join(publicDir, 'mind-ui.js'),                                          type: 'application/javascript' },
 };
 
 // ── Pluggable route handlers (Electron adds its own via addRoute) ────────────
@@ -675,13 +676,25 @@ const server = http.createServer(async (req, res) => {
         }));
         // Learnings: full list, AI must scan
         const learnings = _learningsInstance ? _learningsInstance.list() : [];
+        // Mind: shared knowledge graph status, exposed so every CLI sees it
+        // on session start regardless of which CLI it is.
+        let mindField = null;
+        try { mindField = mind && typeof mind.bootstrapField === 'function' ? mind.bootstrapField() : null; } catch (_) {}
+        // Append mind instructions to the main instructions blob so every CLI
+        // is told how to query and contribute to the shared brain.
+        try {
+          const mindInstr = fs.readFileSync(path.join(__dirname, 'mind', 'instructions.md'), 'utf8');
+          instructions = instructions + '\n\n---\n\n' + mindInstr;
+        } catch (_) {}
         // Compose payload
         const payload = {
           context, instructions, plugins, learnings, permissions: permissionsData,
+          mind: mindField,
           loadedAt: new Date().toISOString(),
           features: {
             orchestrateMode: true,
             graphRunsMode: true,
+            mindMode: true,
             incognitoMode: cfg.IncognitoMode === true,
           },
         };
@@ -690,6 +703,7 @@ const server = http.createServer(async (req, res) => {
           activeRepo: context.activeRepo, mode: permissionsData.settings.mode,
           pluginCount: plugins.length, learningCount: learnings.length,
           features: payload.features, instructionsLen: instructions.length,
+          mindNodes: mindField?.graphStats?.nodes || 0,
         });
         const crypto = require('crypto');
         payload.checksum = 'b' + crypto.createHash('sha256').update(stable).digest('hex').slice(0, 10);
@@ -2995,6 +3009,23 @@ const orchestrator = mountOrchestrator(addRoute, json, { terminals, broadcast, r
 const { mountJobs } = require('./jobs-scheduler');
 mountJobs(addRoute, json, { repoRoot, orchestrator, broadcast });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
+
+// ── Mount Mind (shared knowledge graph for every dispatched CLI) ────────────
+const { mountMind } = require('./mind');
+const mind = mountMind(addRoute, json, {
+  repoRoot, broadcast,
+  getUiContext: getUiContextWithPath,
+  getLearnings: () => _learningsInstance,
+  getPlugins: () => loadedPlugins,
+});
+console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
+// Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
+// with the brain's current state (node count, staleness, query URL), and
+// every completed task gets saved back as a shared conversation node.
+if (orchestrator) {
+  orchestrator.getMindHint = () => mind.orchestratorHint();
+  orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
+}
 
 // ── Mount learnings ─────────────────────────────────────────────────────────
 const learningsDataDir = path.join(repoRoot, '.ai-workspace');

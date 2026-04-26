@@ -20,7 +20,7 @@ From **PowerShell PTY** (NEVER use `curl -s` -- that's an alias for `Invoke-WebR
 Invoke-RestMethod http://127.0.0.1:3800/api/bootstrap
 ```
 
-Returns `{ context, instructions, plugins, learnings, permissions, checksum, loadedAt }` in a single response.
+Returns `{ context, instructions, plugins, learnings, permissions, mind, checksum, loadedAt }` in a single response. The `mind` field tells you whether the shared knowledge graph (see "Mind" section below) is populated for this space - check it before answering questions.
 
 Legacy fallback (only if `/api/bootstrap` is unreachable): five parallel requests (bash syntax shown; swap to `Invoke-RestMethod` in PowerShell).
 ```bash
@@ -51,6 +51,10 @@ Know `permissions.settings.mode` (`review`, `edit`, `trusted`, or `bypass`). Bef
 
 `learnings` is the accumulated list of mistakes past sessions made. Do NOT repeat any of them. If you are about to do something similar, check the list first.
 
+### Phase 6.5 - Consult Mind (shared knowledge graph)
+
+If `bootstrap.mind.enabled` is true, the brain is populated. Before answering questions about the codebase, prior decisions, learnings, or "what does X do?" type questions, call `POST /api/mind/query` with the user's question. The brain returns a BFS sub-graph the engine considers most relevant - use it as ground truth instead of guessing or re-reading raw files. After you answer, save findings back via `POST /api/mind/save-result` with `{question, answer, citedNodeIds, createdBy}`. Whatever you figure out becomes available to every other CLI in the next session.
+
 ### Phase 7 - Respond
 
 Only now answer the user. Prefer scripts (`./scripts/*.ps1` and `./scripts/*.js`) over raw curl. Run scripts from the Symphonee directory (your starting CWD). Operate on code only via `activeRepoPath`.
@@ -62,8 +66,9 @@ Only now answer the user. Prefer scripts (`./scripts/*.ps1` and `./scripts/*.js`
 - [ ] I can state `activeRepo`, `activeRepoPath`, and the current permission mode.
 - [ ] I checked the plugin keywords against the active repo and the user's task.
 - [ ] I scanned the learnings for anything relevant to the task.
+- [ ] I checked `bootstrap.mind.enabled` and queried the brain if it is populated.
 
-If any box is unchecked: stop and finish Phases 1-6 before replying.
+If any box is unchecked: stop and finish Phases 1-6.5 before replying.
 
 In your first reply of the session, include `[bootstrap: <checksum>]` somewhere (e.g. the end of the first line). That is how the app verifies you actually bootstrapped. Sessions without the tag are treated as un-bootstrapped.
 
@@ -147,6 +152,65 @@ You are a Supervisor. Other CLIs (Gemini, Codex, Grok, Copilot) are your workers
 - Write self-contained prompts; workers have ZERO context.
 - Dispatch automatically. Don't ask "should I dispatch this?".
 <!-- ORCHESTRATION_END -->
+
+<!-- MIND_START -->
+## Mind (Symphonee's Shared Knowledge Graph)
+
+You are not the brain. **Symphonee** is the brain, and you - whichever CLI you are (Claude Code, Codex, Gemini, Copilot, Grok, Qwen, or any future tool) - are one of many mouths connected to it. Every dispatched worker reads from and writes to the same graph through one REST surface. What Codex figures out at 2pm becomes available to Gemini at 4pm and to you next week, with provenance, confidence labels, and source.
+
+Mind contains: the user's notes, the team's curated learnings, the shell's instruction docs (this file included), every plugin's metadata, every recipe, the active repo's code and docs, and the conversation outcomes that previous CLI sessions saved back. Provenance is on every node: who taught the brain that fact and from what source.
+
+**Storage:** `<repoRoot>/.symphonee/mind/spaces/<space>/graph.json` (one brain per space, human-readable JSON).
+
+### When to query (do this before answering)
+
+For any question about: "what did we decide about X?", "why is X this way?", the active codebase, who-calls-what, where-defined, past learnings, gotchas, notes the user has taken, which plugin/recipe/script handles a given task.
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/mind/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"<the user question>","budget":2000}'
+```
+
+Returns `{ nodes, edges, seedIds, answer: { suggestion, summary, note } }`. Cite node IDs in your answer. Solid edges = EXTRACTED (explicit in source). Dashed = INFERRED. Dotted-red = AMBIGUOUS - prefer EXTRACTED when in doubt.
+
+### After you answer (always save back)
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/mind/save-result \
+  -H "Content-Type: application/json" \
+  -d '{"question":"...","answer":"...","citedNodeIds":["..."],"createdBy":"<your CLI: claude|codex|gemini|copilot|grok|qwen>"}'
+```
+
+Adds your answer as a `conversation` node with `derived_from` edges to the cited nodes. The brain literally gets smarter every time it is used. **Orchestrator-dispatched worker tasks save automatically** - the orchestrator hooks `_broadcastTaskUpdate` to write a `task_<id>` node tagged with the CLI on every completion. So if you dispatched the work, the conversation lands in Mind without you doing anything. If YOU answered the user directly, save it explicitly.
+
+### Building, watching, and ingesting
+
+- **Full build:** `POST /api/mind/build` (or `./scripts/Build-Mind.ps1` / `node scripts/build-mind.js`). Sources default to all 8: notes, learnings, cli-memory, recipes, plugins, instructions, repo-code.
+- **Incremental update:** `POST /api/mind/update` - skips files whose SHA256 hasn't changed.
+- **Watch mode:** `POST /api/mind/watch {"enabled":true}` - chokidar on the active repo + notes + recipes + instructions, 3s debounce, auto-incremental rebuild.
+- **Add one artefact:** `POST /api/mind/add` with `{url|path, label, kind, createdBy}`. URLs go through SSRF guards.
+- **Purge a hallucinated node:** `DELETE /api/mind/node {"id":"..."}`.
+
+### Other endpoints
+
+`GET /api/mind/graph` (full graph), `GET /api/mind/stats`, `GET /api/mind/node?id=`, `GET /api/mind/community?id=`, `GET /api/mind/gods`, `GET /api/mind/surprises`, `GET /api/mind/jobs?id=`, `GET /api/mind/instructions` (this section, full version), `GET /api/mind/watch`.
+
+### Hint injection
+
+Every prompt the orchestrator dispatches to a worker is automatically prefixed with `[mind: <space> nodes=<n> edges=<n> communities=<n> staleness=<m>m] Query before answering: ...`. So workers know the brain exists and how fresh it is even if they don't read this file.
+
+### What you must NOT do
+
+- Do NOT invent node IDs. Only cite IDs that came back from a query.
+- Do NOT mark guesses as `EXTRACTED` - if you're inferring, the edge confidence is `INFERRED` or `AMBIGUOUS`.
+- Do NOT dispatch a sub-task to another CLI without first checking the brain - you may rediscover something a previous CLI already saved.
+- Do NOT delete nodes without asking the user.
+
+### Scripts
+
+`Build-Mind.ps1`, `Query-Mind.ps1`, `Show-Mind.ps1`, `Add-To-Mind.ps1` (PowerShell). `build-mind.js`, `query-mind.js` (Node). All under `./scripts/`.
+<!-- MIND_END -->
 
 <!-- GRAPH_RUNS_START -->
 ## Graph Runs

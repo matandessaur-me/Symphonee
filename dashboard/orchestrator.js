@@ -419,6 +419,8 @@ class Orchestrator extends EventEmitter {
     this.createTerminal = createTerminal;
     this.getConfig = getConfig || (() => ({}));
     this.getLearnings = null; // set by mountOrchestrator after construction
+    this.getMindHint = null;  // set by server.js after Mind is mounted; () => string | null
+    this.saveTaskToMind = null; // set by server.js; (task) => void, called on task completion
 
     /** @type {Map<string, Task>} */
     this.tasks = new Map();
@@ -562,6 +564,18 @@ class Orchestrator extends EventEmitter {
   spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, space, _retryAttempt = 0 }) {
     const cfg = HEADLESS_FLAGS[cli];
     if (!cfg) throw new Error(`Unknown CLI: "${cli}". Use: ${Object.keys(HEADLESS_FLAGS).join(', ')}`);
+
+    // Mind hint: prepend a short status line so the worker knows the shared
+    // brain exists, how fresh it is, and how to query / contribute. Single
+    // line, ASCII only. Skipped silently if Mind is not available.
+    if (typeof this.getMindHint === 'function' && _retryAttempt === 0) {
+      try {
+        const hint = this.getMindHint();
+        if (hint && typeof prompt === 'string' && !prompt.startsWith('[mind:')) {
+          prompt = `${hint}\n\n${prompt}`;
+        }
+      } catch (_) {}
+    }
 
     // Circuit breaker: check if CLI is available
     if (!this.circuitBreaker.isAvailable(cli)) {
@@ -1971,6 +1985,13 @@ class Orchestrator extends EventEmitter {
     // Release queued tasks whose dependencies are now met
     const taskFinished = task.state === STATE.COMPLETED || task.state === STATE.FAILED || task.state === STATE.TIMEOUT;
     if (taskFinished) this._releaseQueuedTasks();
+
+    // Mind: completed tasks become conversation nodes in the shared brain.
+    // This is the "shared consciousness" mechanic - what each CLI figures
+    // out becomes available to every other CLI in the next session.
+    if (task.state === STATE.COMPLETED && task.result && typeof this.saveTaskToMind === 'function') {
+      try { this.saveTaskToMind(task); } catch (_) { /* never let Mind errors break orchestration */ }
+    }
 
     // Track orchestration mode: active when any task is running
     const wasOrchestrating = this.orchestrating;

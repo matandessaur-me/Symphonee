@@ -4279,6 +4279,7 @@
           <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
           <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
           <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
+          <button class="tab-btn" data-tab="mind" onclick="switchTab('mind')" title="Symphonee's shared knowledge graph">Mind</button>
         </div>
         <button class="tab-scroll-arrow right" id="tabScrollRight" onclick="scrollTabs(200)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div>
@@ -4696,6 +4697,28 @@
             <i data-lucide="file-text"></i>
             <div class="empty-state-text">Select or create a note</div>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- Mind: Symphonee's shared knowledge graph -->
+    <div class="tab-panel" id="panel-mind">
+      <div class="mind-root" style="display:flex;flex-direction:column;width:100%;height:100%;background:var(--base);">
+        <div class="mind-toolbar" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--surface0);background:var(--mantle);flex-shrink:0;">
+          <span style="font-size:12px;font-weight:600;color:var(--text);">Mind</span>
+          <span id="mindStatusLine" style="font-size:11px;color:var(--subtext0);">Loading...</span>
+          <span style="flex:1;"></span>
+          <div class="mind-view-switch" style="display:flex;gap:4px;border:1px solid var(--surface1);border-radius:4px;padding:2px;">
+            <button class="tab-bar-btn mind-view-btn active" data-view="communities" onclick="MindUI.setView('communities')" style="padding:3px 10px;font-size:11px;">Communities</button>
+            <button class="tab-bar-btn mind-view-btn" data-view="hotspots" onclick="MindUI.setView('hotspots')" style="padding:3px 10px;font-size:11px;">Hotspots</button>
+            <button class="tab-bar-btn mind-view-btn" data-view="graph" onclick="MindUI.setView('graph')" style="padding:3px 10px;font-size:11px;">Graph</button>
+          </div>
+          <button class="tab-bar-btn" onclick="MindUI.build()" title="Rebuild the brain from all sources">Rebuild</button>
+          <button class="tab-bar-btn" onclick="MindUI.update()" title="Incremental update (only changed files)">Update</button>
+          <button class="tab-bar-btn" id="mindWatchBtn" onclick="MindUI.toggleWatch()" title="Watch the active repo and auto-update">Watch: off</button>
+        </div>
+        <div class="mind-body" style="flex:1;display:flex;min-height:0;">
+          <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>
+          <div id="mindDetail" style="width:340px;border-left:1px solid var(--surface0);background:var(--mantle);overflow:auto;padding:14px;flex-shrink:0;display:none;"></div>
         </div>
       </div>
     </div>
@@ -11618,6 +11641,7 @@ function switchTab(tab, preserveSearch) {
   if (tab === 'files') { populateFilesRepoSelect(); if (filesCurrentRepo) { loadFileTree(filesCurrentPath); loadProjectScripts(); } }
   if (tab === 'prs') { populatePRsRepoSelect(); loadPRs(); }
   if (tab === 'notes') loadNotesList();
+  if (tab === 'mind') { try { window.MindUI && window.MindUI.onActivate(); } catch (_) {} }
   if (tab === 'orchestrator') orchRefresh();
   if (panelTab === 'apps' && typeof appsRefreshWindows === 'function') appsRefreshWindows();
   notifyPluginIframes('tabActivated', { tab: panelTab });
@@ -26379,5 +26403,6 @@ function showRecipePreviewModal(id, fm, prompt) {
 }
 
 </script>
+<script src="/mind-ui.js"></script>
 </body>
 </html>
