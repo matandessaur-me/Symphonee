@@ -4708,8 +4708,10 @@
           <span id="mindStatusLine" style="font-size:11px;color:var(--subtext0);">Loading...</span>
           <span style="flex:1;"></span>
           <div class="mind-view-switch" style="display:flex;gap:4px;border:1px solid var(--surface1);border-radius:4px;padding:2px;">
-            <button class="tab-bar-btn mind-view-btn active" data-view="communities" onclick="MindUI.setView('communities')" style="padding:3px 10px;font-size:11px;">Communities</button>
+            <button class="tab-bar-btn mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')" style="padding:3px 10px;font-size:11px;">Dashboard</button>
+            <button class="tab-bar-btn mind-view-btn" data-view="communities" onclick="MindUI.setView('communities')" style="padding:3px 10px;font-size:11px;">Communities</button>
             <button class="tab-bar-btn mind-view-btn" data-view="hotspots" onclick="MindUI.setView('hotspots')" style="padding:3px 10px;font-size:11px;">Hotspots</button>
+            <button class="tab-bar-btn mind-view-btn" data-view="map" onclick="MindUI.setView('map')" style="padding:3px 10px;font-size:11px;" title="Communities as super-nodes - bridges between clusters">Map</button>
             <button class="tab-bar-btn mind-view-btn" data-view="graph" onclick="MindUI.setView('graph')" style="padding:3px 10px;font-size:11px;">Graph</button>
           </div>
           <button class="tab-bar-btn" onclick="MindUI.build()" title="Rebuild the brain from all sources">Rebuild</button>
@@ -26403,6 +26405,8 @@ function showRecipePreviewModal(id, fm, prompt) {
 }
 
 </script>
+<link rel="stylesheet" href="/vis-network.min.css">
+<script src="/vis-network.min.js"></script>
 <script src="/mind-ui.js"></script>
 </body>
 </html>

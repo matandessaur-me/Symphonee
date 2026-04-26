@@ -4,13 +4,14 @@
  * Three views over the same graph:
  *   - communities: card grid, each card is one community with cohesion + top gods
  *   - hotspots:    god nodes ranked + surprises ranked (the "what should I look at?" view)
- *   - graph:       interactive force-directed graph canvas, capped at ~5000 nodes
+ *   - graph:       interactive force-directed graph powered by vis-network
  *
  * Side panel on the right shows full node detail when a node is clicked.
  *
- * No external graph library required - the canvas view uses a tiny built-in
- * force layout. Sufficient for showing the brain at human-comprehensible
- * scale; for full graphify-grade rendering, swap in vis-network later.
+ * vis-network is the same library graphify uses for its graph.html output -
+ * battle-tested physics, smooth zoom/pan, edge labels on hover, community
+ * highlighting, focus animation. Loaded as a global `vis` from the static
+ * bundle at /vis-network.min.js.
  */
 
 (function () {
@@ -18,16 +19,13 @@
   const $ = (id) => document.getElementById(id);
 
   let state = {
-    view: 'communities',
+    view: 'dashboard',
     graph: null,
     selectedNode: null,
     watchEnabled: false,
-    canvas: null,
-    canvasCtx: null,
-    layout: null,
-    rafId: null,
-    transform: { x: 0, y: 0, k: 1 },
-    drag: null,
+    network: null,         // vis.Network instance
+    visNodes: null,        // vis.DataSet for nodes
+    visEdges: null,        // vis.DataSet for edges
     ws: null,
   };
 
@@ -97,7 +95,7 @@
   }
 
   function render() {
-    cancelLayout();
+    teardownNetwork();
     if (!state.graph) {
       $('mindMain').innerHTML = `
         <div style="text-align:center;padding:60px 20px;color:var(--subtext0);">
@@ -107,9 +105,296 @@
         </div>`;
       return;
     }
-    if (state.view === 'communities') renderCommunities();
+    if (state.view === 'dashboard') renderDashboard();
+    else if (state.view === 'communities') renderCommunities();
     else if (state.view === 'hotspots') renderHotspots();
+    else if (state.view === 'map') renderMap();
     else if (state.view === 'graph') renderGraph();
+  }
+
+  // ── Dashboard view (the "dashboard into the brain") ────────────────────────
+  function renderDashboard() {
+    const g = state.graph;
+    const stats = g.stats || {};
+    const sources = stats.sources || {};
+
+    // --- aggregations ---
+    const kindCounts = {}; const cliCounts = {}; const confCounts = { EXTRACTED: 0, INFERRED: 0, AMBIGUOUS: 0 };
+    const recent = []; // recent conversation nodes
+    for (const n of g.nodes) {
+      kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1;
+      const cb = n.createdBy || 'unknown';
+      cliCounts[cb] = (cliCounts[cb] || 0) + 1;
+      if (n.kind === 'conversation') recent.push(n);
+    }
+    for (const e of g.edges) confCounts[e.confidence] = (confCounts[e.confidence] || 0) + 1;
+    recent.sort((a, b) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0));
+
+    const totalEdges = g.edges.length || 1;
+    const lastBuildAt = stats.buildMs ? `${(stats.buildMs / 1000).toFixed(1)}s build` : '';
+    const ageMin = g.generatedAt ? Math.round((Date.now() - new Date(g.generatedAt).getTime()) / 60000) : 0;
+
+    const html = `
+      <div class="mind-dash">
+        <div class="mind-stat-strip">
+          ${statCard('Nodes', stats.nodes ?? g.nodes.length, '#89b4fa')}
+          ${statCard('Edges', stats.edges ?? g.edges.length, '#a6e3a1')}
+          ${statCard('Communities', stats.communities ?? Object.keys(g.communities || {}).length, '#fab387')}
+          ${statCard('Sources', Object.keys(sources).length || '-', '#cba6f7')}
+          ${statCard('God nodes', (g.gods || []).length, '#f9e2af')}
+          ${statCard('Bridges', (g.surprises || []).length, '#f38ba8')}
+          ${statCard('Last build', `${ageMin}m ago`, '#94e2d5', lastBuildAt)}
+          ${statCard('Watch', state.watchEnabled ? 'on' : 'off', state.watchEnabled ? '#a6e3a1' : '#6c7086')}
+        </div>
+
+        <div class="mind-dash-grid">
+          <div class="mind-card">
+            <div class="mind-card-title">Sources contribution</div>
+            ${barChart(Object.entries(sources).map(([k, v]) => ({ label: k, value: v.nodes || 0, hint: `${v.scanned ?? '?'} scanned` })), 12)}
+          </div>
+
+          <div class="mind-card">
+            <div class="mind-card-title">Edge confidence</div>
+            <div style="display:flex;align-items:center;gap:14px;">
+              ${donut([
+                { label: 'EXTRACTED', value: confCounts.EXTRACTED, color: '#a6e3a1' },
+                { label: 'INFERRED',  value: confCounts.INFERRED,  color: '#f9e2af' },
+                { label: 'AMBIGUOUS', value: confCounts.AMBIGUOUS, color: '#f38ba8' },
+              ], 110)}
+              <div style="flex:1;font-size:11px;display:flex;flex-direction:column;gap:4px;">
+                ${legendItem('#a6e3a1', 'EXTRACTED', confCounts.EXTRACTED, totalEdges)}
+                ${legendItem('#f9e2af', 'INFERRED',  confCounts.INFERRED,  totalEdges)}
+                ${legendItem('#f38ba8', 'AMBIGUOUS', confCounts.AMBIGUOUS, totalEdges)}
+              </div>
+            </div>
+          </div>
+
+          <div class="mind-card">
+            <div class="mind-card-title">Nodes by kind</div>
+            ${barChart(Object.entries(kindCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: k, value: v })), 10)}
+          </div>
+
+          <div class="mind-card">
+            <div class="mind-card-title">Contributors (createdBy)</div>
+            ${barChart(Object.entries(cliCounts).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => ({ label: k, value: v, color: cliColor(k) })), 8)}
+          </div>
+
+          <div class="mind-card">
+            <div class="mind-card-title">Top god nodes</div>
+            <div class="mind-list">
+              ${(g.gods || []).slice(0, 10).map(x => godRow(x, (g.gods[0]?.degree || 1))).join('')}
+            </div>
+          </div>
+
+          <div class="mind-card">
+            <div class="mind-card-title">Largest communities</div>
+            <div class="mind-list">
+              ${Object.entries(g.communities || {}).sort((a, b) => b[1].size - a[1].size).slice(0, 10).map(([cid, c]) => communityRow(cid, c)).join('')}
+            </div>
+          </div>
+
+          <div class="mind-card mind-card-wide">
+            <div class="mind-card-title">Recent CLI conversations</div>
+            ${recent.length === 0
+              ? '<div style="color:var(--subtext0);font-size:11px;font-style:italic;padding:6px;">no conversations yet - dispatch a worker via the orchestrator and Mind will save it here automatically</div>'
+              : '<div class="mind-feed">' + recent.slice(0, 12).map(convRow).join('') + '</div>'}
+          </div>
+
+          <div class="mind-card mind-card-wide">
+            <div class="mind-card-title">Surprising bridges (cross-community)</div>
+            <div class="mind-list">
+              ${(g.surprises || []).slice(0, 8).map(s => surpriseRow(g, s)).join('') || '<div style="color:var(--subtext0);font-size:11px;font-style:italic;padding:6px;">no cross-community bridges yet</div>'}
+            </div>
+          </div>
+        </div>
+      </div>
+      <style>
+        .mind-dash { display:flex; flex-direction:column; gap:14px; }
+        .mind-stat-strip { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; }
+        .mind-stat-card { background:var(--mantle); border:1px solid var(--surface1); border-radius:6px; padding:10px 12px; display:flex; flex-direction:column; gap:2px; border-left-width:3px; }
+        .mind-stat-card .mind-stat-label { font-size:10px; color:var(--subtext0); text-transform:uppercase; letter-spacing:0.5px; }
+        .mind-stat-card .mind-stat-value { font-size:20px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
+        .mind-stat-card .mind-stat-hint  { font-size:10px; color:var(--subtext0); }
+        .mind-dash-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+        .mind-card { background:var(--mantle); border:1px solid var(--surface1); border-radius:6px; padding:12px; }
+        .mind-card-wide { grid-column: 1 / -1; }
+        .mind-card-title { font-size:11px; font-weight:600; color:var(--subtext0); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; }
+        .mind-bar { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text); }
+        .mind-bar-label { min-width:80px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--subtext0); }
+        .mind-bar-track { flex:1; height:6px; background:var(--surface0); border-radius:3px; overflow:hidden; }
+        .mind-bar-fill  { height:100%; border-radius:3px; }
+        .mind-bar-num   { min-width:40px; text-align:right; color:var(--subtext1); font-variant-numeric:tabular-nums; font-size:10px; }
+        .mind-list { display:flex; flex-direction:column; gap:5px; }
+        .mind-feed { display:flex; flex-direction:column; gap:6px; max-height:400px; overflow:auto; }
+        .mind-feed-row { padding:7px 9px; background:var(--base); border-radius:4px; border-left:3px solid var(--surface2); cursor:pointer; transition: background 0.1s; }
+        .mind-feed-row:hover { background:var(--surface0); }
+        .mind-feed-row .mind-feed-meta { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--subtext0); margin-bottom:3px; }
+        .mind-feed-row .mind-cli-badge { padding:1px 6px; border-radius:8px; font-size:9px; font-weight:600; text-transform:uppercase; }
+        .mind-feed-row .mind-feed-text { font-size:11px; color:var(--text); overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+      </style>`;
+    $('mindMain').innerHTML = html;
+    $('mindMain').querySelectorAll('[data-id]').forEach(el => {
+      el.addEventListener('click', (ev) => { ev.preventDefault(); showNodeDetail(el.dataset.id); });
+    });
+    $('mindMain').querySelectorAll('[data-cid]').forEach(el => {
+      el.addEventListener('click', (ev) => { ev.preventDefault(); showCommunityDetail(el.dataset.cid); });
+    });
+  }
+
+  function statCard(label, value, color, hint) {
+    return `<div class="mind-stat-card" style="border-left-color:${color}"><div class="mind-stat-label">${escapeHtml(label)}</div><div class="mind-stat-value" style="color:${color}">${escapeHtml(String(value))}</div>${hint ? `<div class="mind-stat-hint">${escapeHtml(hint)}</div>` : ''}</div>`;
+  }
+
+  function barChart(rows, maxRows) {
+    if (!rows || rows.length === 0) return '<div style="color:var(--subtext0);font-size:11px;font-style:italic;">empty</div>';
+    const cap = Math.max(1, ...rows.map(r => r.value));
+    return '<div class="mind-list">' + rows.slice(0, maxRows || 12).map(r => {
+      const pct = (r.value / cap) * 100;
+      const color = r.color || '#89b4fa';
+      return `<div class="mind-bar"><div class="mind-bar-label" title="${escapeHtml(r.label)}${r.hint ? ' (' + escapeHtml(r.hint) + ')' : ''}">${escapeHtml(r.label)}</div><div class="mind-bar-track"><div class="mind-bar-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div><div class="mind-bar-num">${escapeHtml(String(r.value))}</div></div>`;
+    }).join('') + '</div>';
+  }
+
+  function donut(slices, size) {
+    const total = slices.reduce((s, x) => s + x.value, 0) || 1;
+    const r = size / 2 - 8;
+    const cx = size / 2, cy = size / 2;
+    let acc = 0;
+    const arcs = slices.map(s => {
+      const start = (acc / total) * Math.PI * 2 - Math.PI / 2;
+      acc += s.value;
+      const end = (acc / total) * Math.PI * 2 - Math.PI / 2;
+      const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end),   y2 = cy + r * Math.sin(end);
+      const large = end - start > Math.PI ? 1 : 0;
+      if (s.value === 0) return '';
+      return `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${s.color}" stroke="var(--mantle)" stroke-width="2"></path>`;
+    }).join('');
+    const inner = r * 0.55;
+    return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${arcs}<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--mantle)"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="13" fill="var(--text)" font-family="monospace">${total}</text></svg>`;
+  }
+
+  function legendItem(color, label, value, total) {
+    const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;background:${color};border-radius:2px;flex-shrink:0;"></span><span style="color:var(--subtext1);min-width:80px;">${label}</span><span style="color:var(--text);font-variant-numeric:tabular-nums;">${value}</span><span style="color:var(--subtext0);font-size:10px;">(${pct}%)</span></div>`;
+  }
+
+  function godRow(x, max) {
+    const pct = (x.degree / max) * 100;
+    return `<div class="mind-bar" data-id="${escapeHtml(x.id)}" style="cursor:pointer;"><div class="mind-bar-label" style="color:var(--text);" title="${escapeHtml(x.label)}">${escapeHtml(x.label)}</div><div class="mind-bar-track"><div class="mind-bar-fill" style="width:${pct.toFixed(1)}%;background:#fab387"></div></div><div class="mind-bar-num">${x.degree}</div></div>`;
+  }
+
+  function communityRow(cid, c) {
+    const cohesionPct = Math.round((c.cohesion || 0) * 100);
+    return `<div class="mind-bar" data-cid="${escapeHtml(cid)}" style="cursor:pointer;"><div class="mind-bar-label" style="color:var(--text);" title="${escapeHtml(c.label)}">#${cid} ${escapeHtml(c.label)}</div><div class="mind-bar-track"><div class="mind-bar-fill" style="width:${Math.min(100, c.size / 2)}%;background:${communityColor(parseInt(cid, 10))}"></div></div><div class="mind-bar-num">${c.size} - ${cohesionPct}%</div></div>`;
+  }
+
+  function convRow(n) {
+    const cli = (n.createdBy || 'unknown').split('-')[0]; // strip "claude-code" -> "claude"
+    const color = cliColor(cli);
+    const date = n.createdAt ? new Date(n.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const tags = (n.tags || []).filter(t => !['cli-session', 'conversation', cli].includes(t)).slice(0, 3).map(t => `<span style="font-size:9px;color:var(--subtext0);">#${escapeHtml(t)}</span>`).join(' ');
+    return `<div class="mind-feed-row" data-id="${escapeHtml(n.id)}" style="border-left-color:${color};">
+      <div class="mind-feed-meta"><span class="mind-cli-badge" style="background:${color};color:#1e1e2e;">${escapeHtml(cli)}</span><span>${escapeHtml(date)}</span>${tags}</div>
+      <div class="mind-feed-text">${escapeHtml(n.preview || n.label)}</div>
+    </div>`;
+  }
+
+  function surpriseRow(g, s) {
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:5px 8px;background:var(--base);border-radius:4px;">
+      <a href="#" data-id="${escapeHtml(s.source)}" style="color:var(--accent);text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%;">${escapeHtml(nodeLabel(g, s.source))}</a>
+      <span style="color:var(--subtext0);font-size:10px;">${escapeHtml(s.relation)}</span>
+      <a href="#" data-id="${escapeHtml(s.target)}" style="color:var(--accent);text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%;">${escapeHtml(nodeLabel(g, s.target))}</a>
+      <span style="color:var(--subtext0);font-size:9px;flex-shrink:0;">c${s.crossesCommunities.join('/')}</span>
+    </div>`;
+  }
+
+  function cliColor(name) {
+    const map = {
+      claude: '#fab387', codex: '#a6e3a1', gemini: '#89b4fa', copilot: '#cba6f7',
+      grok: '#f38ba8', qwen: '#f9e2af', orchestrator: '#94e2d5',
+    };
+    return map[name] || '#9399b2';
+  }
+
+  // ── Map view: communities as super-nodes (vis-network) ─────────────────────
+  function renderMap() {
+    const main = $('mindMain');
+    if (typeof window.vis === 'undefined') {
+      main.innerHTML = `<div style="padding:20px;color:var(--red);">vis-network failed to load.</div>`;
+      return;
+    }
+    const g = state.graph;
+    const communities = g.communities || {};
+    const cIds = Object.keys(communities);
+    if (cIds.length === 0) {
+      main.innerHTML = `<div style="padding:30px;text-align:center;color:var(--subtext0);">No communities yet.</div>`;
+      return;
+    }
+
+    main.innerHTML = `
+      <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">
+        Each circle is a community. Edges show cross-community bridges (sized by traffic). Click a circle to drill in.
+      </div>
+      <div id="mindCanvasHost" style="width:100%;height:600px;border:1px solid var(--surface1);background:var(--mantle);border-radius:4px;"></div>`;
+
+    // Aggregate cross-community edge counts.
+    const idCommunity = new Map();
+    for (const [cid, c] of Object.entries(communities)) {
+      for (const nid of c.nodeIds) idCommunity.set(nid, +cid);
+    }
+    const bridgeCount = new Map(); // "a|b" -> count
+    for (const e of g.edges) {
+      const ca = idCommunity.get(e.source); const cb = idCommunity.get(e.target);
+      if (ca == null || cb == null || ca === cb) continue;
+      const key = ca < cb ? `${ca}|${cb}` : `${cb}|${ca}`;
+      bridgeCount.set(key, (bridgeCount.get(key) || 0) + 1);
+    }
+
+    const nodes = cIds.map(cid => {
+      const c = communities[cid];
+      return {
+        id: 'c' + cid,
+        label: `#${cid}\n${c.label.slice(0, 28)}`,
+        title: `${c.label}\n${c.size} nodes - cohesion ${Math.round((c.cohesion || 0) * 100)}%`,
+        shape: 'dot',
+        size: Math.min(70, Math.max(15, 15 + Math.sqrt(c.size) * 4)),
+        color: { background: communityColor(parseInt(cid, 10)), border: communityColor(parseInt(cid, 10)), highlight: { background: '#fff', border: communityColor(parseInt(cid, 10)) } },
+        font: { color: '#cdd6f4', size: 10, face: 'monospace', strokeWidth: 0, multi: true },
+      };
+    });
+    const edges = Array.from(bridgeCount.entries()).map(([key, count], i) => {
+      const [a, b] = key.split('|');
+      return {
+        id: 'b' + i,
+        from: 'c' + a, to: 'c' + b,
+        title: `${count} bridge edge${count !== 1 ? 's' : ''}`,
+        width: Math.min(8, Math.max(1, Math.log2(count + 1))),
+        color: { color: 'rgba(245,194,231,0.4)', highlight: '#cba6f7' },
+        smooth: { enabled: true, type: 'continuous' },
+      };
+    });
+
+    teardownNetwork();
+    state.visNodes = new vis.DataSet(nodes);
+    state.visEdges = new vis.DataSet(edges);
+    state.network = new vis.Network($('mindCanvasHost'), { nodes: state.visNodes, edges: state.visEdges }, {
+      physics: {
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: { gravitationalConstant: -120, centralGravity: 0.02, springLength: 140, springConstant: 0.1, damping: 0.55 },
+        stabilization: { enabled: true, iterations: 200, fit: true },
+      },
+      interaction: { hover: true, tooltipDelay: 150, dragView: true, zoomView: true },
+    });
+    state.network.on('click', (params) => {
+      if (params.nodes && params.nodes.length) {
+        const cid = params.nodes[0].slice(1); // strip leading "c"
+        showCommunityDetail(cid);
+      }
+    });
+    state.network.on('stabilizationIterationsDone', () => {
+      try { state.network.setOptions({ physics: { stabilization: { enabled: false } } }); } catch (_) {}
+    });
   }
 
   function renderCommunities() {
@@ -191,231 +476,160 @@
     });
   }
 
-  // ── Graph canvas (force-directed) ───────────────────────────────────────────
+  // ── Graph view (vis-network) ───────────────────────────────────────────────
   function renderGraph() {
-    const g = state.graph;
     const main = $('mindMain');
+    if (typeof window.vis === 'undefined') {
+      main.innerHTML = `<div style="padding:20px;color:var(--red);">vis-network failed to load. Check that /vis-network.min.js is reachable.</div>`;
+      return;
+    }
     main.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <div style="font-size:11px;color:var(--subtext0);">Drag nodes. Scroll to zoom. Solid = EXTRACTED, dashed = INFERRED, dotted = AMBIGUOUS.</div>
-        <span style="flex:1;"></span>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <div style="font-size:11px;color:var(--subtext0);flex:1;min-width:0;">
+          Drag nodes - scroll to zoom - hover edges for relation - click node for detail. Solid = EXTRACTED, dashed = INFERRED, dotted-red = AMBIGUOUS.
+        </div>
         <select id="mindGraphFilter" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:4px;padding:3px 6px;font-size:11px;">
           <option value="all">All node kinds</option>
           <option value="code">code only</option>
           <option value="doc">docs only</option>
           <option value="note">notes only</option>
           <option value="concept">concepts only</option>
+          <option value="plugin">plugins only</option>
+          <option value="conversation">conversations only</option>
         </select>
+        <select id="mindGraphCap" style="background:var(--surface0);color:var(--text);border:1px solid var(--surface1);border-radius:4px;padding:3px 6px;font-size:11px;" title="Cap node count to keep layout fast">
+          <option value="500">top 500</option>
+          <option value="1000" selected>top 1000</option>
+          <option value="2000">top 2000</option>
+          <option value="5000">top 5000</option>
+        </select>
+        <button class="tab-bar-btn" onclick="MindUI.fitGraph()" style="font-size:11px;" title="Fit graph to view">Fit</button>
+        <button class="tab-bar-btn" onclick="MindUI.togglePhysics()" id="mindPhysicsBtn" style="font-size:11px;" title="Pause/resume layout physics">Freeze</button>
       </div>
-      <canvas id="mindCanvas" width="800" height="560" style="border:1px solid var(--surface1);background:var(--mantle);width:100%;height:560px;border-radius:4px;"></canvas>`;
-    const canvas = $('mindCanvas');
-    state.canvas = canvas;
-    state.canvasCtx = canvas.getContext('2d');
-    sizeCanvas();
-    initLayout(g);
-    attachCanvasEvents();
-    $('mindGraphFilter').addEventListener('change', () => { initLayout(g); });
-    runLayoutLoop();
+      <div id="mindCanvasHost" style="width:100%;height:600px;border:1px solid var(--surface1);background:var(--mantle);border-radius:4px;"></div>`;
+
+    buildNetwork();
+    $('mindGraphFilter').addEventListener('change', buildNetwork);
+    $('mindGraphCap').addEventListener('change', buildNetwork);
   }
 
-  function sizeCanvas() {
-    const c = state.canvas; if (!c) return;
-    const rect = c.getBoundingClientRect();
-    c.width = Math.max(400, Math.floor(rect.width));
-    c.height = Math.max(300, Math.floor(rect.height));
+  // Catppuccin Mocha-ish 12-color palette - readable on dark bg
+  const PALETTE = ['#89b4fa', '#f38ba8', '#a6e3a1', '#fab387', '#cba6f7', '#94e2d5', '#f9e2af', '#74c7ec', '#eba0ac', '#b4befe', '#f5c2e7', '#89dceb'];
+  function communityColor(cid) {
+    if (typeof cid !== 'number') return '#9399b2';
+    return PALETTE[cid % PALETTE.length];
   }
 
-  function initLayout(g) {
+  const KIND_SHAPE = {
+    code: 'dot', doc: 'square', note: 'star', plugin: 'diamond',
+    recipe: 'triangle', tag: 'dot', concept: 'dot', conversation: 'hexagon',
+    workitem: 'box', image: 'image', paper: 'square',
+  };
+
+  function nodeSize(degree) {
+    return Math.min(40, Math.max(8, 8 + Math.sqrt(degree) * 3));
+  }
+
+  function buildNetwork() {
+    const g = state.graph;
+    const host = $('mindCanvasHost');
+    if (!host || !g) return;
+
     const filter = $('mindGraphFilter')?.value || 'all';
+    const cap = parseInt($('mindGraphCap')?.value || '1000', 10);
+
     let nodes = g.nodes;
     if (filter !== 'all') nodes = nodes.filter(n => n.kind === filter);
-    if (nodes.length > 1500) nodes = topByDegree(nodes, g.edges, 1500);
+
+    // Compute degree for sizing AND for top-N filtering at the cap.
+    const degree = new Map();
+    for (const e of g.edges) {
+      degree.set(e.source, (degree.get(e.source) || 0) + 1);
+      degree.set(e.target, (degree.get(e.target) || 0) + 1);
+    }
+    if (nodes.length > cap) {
+      nodes = nodes.slice().sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0)).slice(0, cap);
+    }
     const idSet = new Set(nodes.map(n => n.id));
     const edges = g.edges.filter(e => idSet.has(e.source) && idSet.has(e.target));
 
-    const w = state.canvas.width, h = state.canvas.height;
-    const layout = {
-      nodes: nodes.map(n => ({
-        id: n.id, label: n.label, kind: n.kind, communityId: n.communityId,
-        x: w / 2 + (Math.random() - 0.5) * 200,
-        y: h / 2 + (Math.random() - 0.5) * 200,
-        vx: 0, vy: 0,
-        radius: nodeRadius(n),
-        color: nodeColor(n),
-      })),
-      edges: edges.map(e => ({ source: e.source, target: e.target, confidence: e.confidence, relation: e.relation })),
-      idIndex: new Map(),
-      iter: 0,
-    };
-    layout.nodes.forEach((n, i) => layout.idIndex.set(n.id, i));
-    state.layout = layout;
-    state.transform = { x: 0, y: 0, k: 1 };
-  }
+    const visNodes = nodes.map(n => {
+      const color = communityColor(n.communityId);
+      return {
+        id: n.id,
+        label: n.label.length > 36 ? n.label.slice(0, 33) + '...' : n.label,
+        title: `${n.label}\nkind: ${n.kind}\ncommunity: ${n.communityId ?? '-'}\nid: ${n.id}`,
+        shape: KIND_SHAPE[n.kind] || 'dot',
+        size: nodeSize(degree.get(n.id) || 0),
+        color: { background: color, border: color, highlight: { background: '#fff', border: color } },
+        font: { color: '#cdd6f4', size: 11, face: 'monospace', strokeWidth: 0 },
+        group: typeof n.communityId === 'number' ? `c${n.communityId}` : 'unset',
+      };
+    });
 
-  function topByDegree(nodes, edges, k) {
-    const deg = new Map();
-    for (const e of edges) {
-      deg.set(e.source, (deg.get(e.source) || 0) + 1);
-      deg.set(e.target, (deg.get(e.target) || 0) + 1);
-    }
-    return nodes.slice().sort((a, b) => (deg.get(b.id) || 0) - (deg.get(a.id) || 0)).slice(0, k);
-  }
+    const visEdges = edges.map((e, i) => {
+      const styles = e.confidence === 'EXTRACTED'
+        ? { dashes: false, color: 'rgba(180,190,254,0.45)' }
+        : e.confidence === 'INFERRED'
+        ? { dashes: [6, 4], color: 'rgba(245,194,231,0.45)' }
+        : { dashes: [2, 4], color: 'rgba(243,139,168,0.65)' };
+      return {
+        id: `e${i}`,
+        from: e.source,
+        to: e.target,
+        title: `${e.relation} (${e.confidence})`,
+        arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+        smooth: { enabled: true, type: 'continuous' },
+        width: 0.6,
+        ...styles,
+      };
+    });
 
-  function nodeRadius(n) {
-    if (n.kind === 'code') return 4;
-    if (n.kind === 'doc') return 5;
-    if (n.kind === 'note') return 6;
-    if (n.kind === 'plugin') return 7;
-    if (n.kind === 'tag') return 3;
-    return 5;
-  }
+    teardownNetwork();
+    state.visNodes = new vis.DataSet(visNodes);
+    state.visEdges = new vis.DataSet(visEdges);
+    state.network = new vis.Network(host, { nodes: state.visNodes, edges: state.visEdges }, {
+      autoResize: true,
+      interaction: {
+        hover: true, tooltipDelay: 150, navigationButtons: false, keyboard: false,
+        multiselect: false, dragView: true, zoomView: true,
+      },
+      physics: {
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: { gravitationalConstant: -55, centralGravity: 0.01, springLength: 90, springConstant: 0.08, damping: 0.5 },
+        stabilization: { enabled: true, iterations: 250, fit: true, updateInterval: 25 },
+        maxVelocity: 60, minVelocity: 0.6,
+      },
+      nodes: { borderWidth: 1, scaling: { label: { enabled: true, min: 8, max: 14 } } },
+      edges: { selectionWidth: 1.5 },
+    });
 
-  // 12 community palette - readable on dark bg
-  const PALETTE = ['#89b4fa', '#f38ba8', '#a6e3a1', '#fab387', '#cba6f7', '#94e2d5', '#f9e2af', '#74c7ec', '#eba0ac', '#b4befe', '#f5c2e7', '#89dceb'];
-  function nodeColor(n) {
-    if (typeof n.communityId === 'number') return PALETTE[n.communityId % PALETTE.length];
-    return '#9399b2';
-  }
-
-  function runLayoutLoop() {
-    if (state.rafId) cancelAnimationFrame(state.rafId);
-    const tick = () => {
-      const L = state.layout; if (!L) return;
-      stepLayout(L);
-      drawGraph();
-      L.iter++;
-      if (L.iter < 600) state.rafId = requestAnimationFrame(tick);
-    };
-    state.rafId = requestAnimationFrame(tick);
-  }
-
-  function cancelLayout() {
-    if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
-    state.layout = null;
-  }
-
-  function stepLayout(L) {
-    const w = state.canvas.width, h = state.canvas.height;
-    const nodes = L.nodes; const edges = L.edges;
-    // Repulsion (Barnes-Hut would be better, this is O(n^2) but capped at 1500)
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = nodes[j];
-        const dx = a.x - b.x, dy = a.y - b.y;
-        const dist2 = dx * dx + dy * dy + 0.01;
-        const force = 350 / dist2;
-        const fx = dx * force, fy = dy * force;
-        a.vx += fx; a.vy += fy;
-        b.vx -= fx; b.vy -= fy;
-      }
-    }
-    // Spring forces along edges
-    for (const e of edges) {
-      const ai = L.idIndex.get(e.source); const bi = L.idIndex.get(e.target);
-      const a = nodes[ai], b = nodes[bi];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const force = (dist - 60) * 0.04;
-      const fx = (dx / dist) * force, fy = (dy / dist) * force;
-      a.vx += fx; a.vy += fy;
-      b.vx -= fx; b.vy -= fy;
-    }
-    // Center gravity + damping + integrate
-    const cx = w / 2, cy = h / 2;
-    for (const n of nodes) {
-      n.vx += (cx - n.x) * 0.005;
-      n.vy += (cy - n.y) * 0.005;
-      n.vx *= 0.85; n.vy *= 0.85;
-      n.x += n.vx; n.y += n.vy;
-    }
-  }
-
-  function drawGraph() {
-    const ctx = state.canvasCtx; const c = state.canvas;
-    if (!ctx || !c || !state.layout) return;
-    ctx.clearRect(0, 0, c.width, c.height);
-    ctx.save();
-    ctx.translate(state.transform.x, state.transform.y);
-    ctx.scale(state.transform.k, state.transform.k);
-    // Edges first
-    for (const e of state.layout.edges) {
-      const ai = state.layout.idIndex.get(e.source); const bi = state.layout.idIndex.get(e.target);
-      const a = state.layout.nodes[ai], b = state.layout.nodes[bi];
-      ctx.beginPath();
-      if (e.confidence === 'EXTRACTED') { ctx.strokeStyle = 'rgba(180,190,254,0.35)'; ctx.setLineDash([]); }
-      else if (e.confidence === 'INFERRED') { ctx.strokeStyle = 'rgba(245,194,231,0.35)'; ctx.setLineDash([4, 3]); }
-      else { ctx.strokeStyle = 'rgba(243,139,168,0.5)'; ctx.setLineDash([2, 3]); }
-      ctx.lineWidth = 0.7;
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    // Nodes
-    for (const n of state.layout.nodes) {
-      ctx.beginPath();
-      ctx.fillStyle = n.color;
-      ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-      ctx.fill();
-      if (state.selectedNode === n.id) {
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
-  function attachCanvasEvents() {
-    const c = state.canvas; if (!c) return;
-    c.addEventListener('wheel', (ev) => {
-      ev.preventDefault();
-      const factor = ev.deltaY < 0 ? 1.1 : 1 / 1.1;
-      const rect = c.getBoundingClientRect();
-      const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
-      state.transform.x = mx - (mx - state.transform.x) * factor;
-      state.transform.y = my - (my - state.transform.y) * factor;
-      state.transform.k *= factor;
-      drawGraph();
-    }, { passive: false });
-    c.addEventListener('mousedown', (ev) => {
-      const rect = c.getBoundingClientRect();
-      const x = (ev.clientX - rect.left - state.transform.x) / state.transform.k;
-      const y = (ev.clientY - rect.top - state.transform.y) / state.transform.k;
-      const hit = pickNode(x, y);
-      if (hit) {
-        state.drag = { id: hit.id, hit };
-        state.selectedNode = hit.id;
-        showNodeDetail(hit.id);
-      } else {
-        state.drag = { pan: true, sx: ev.clientX, sy: ev.clientY, ox: state.transform.x, oy: state.transform.y };
+    state.network.on('click', (params) => {
+      if (params.nodes && params.nodes.length) {
+        state.selectedNode = params.nodes[0];
+        showNodeDetail(params.nodes[0]);
       }
     });
-    c.addEventListener('mousemove', (ev) => {
-      if (!state.drag) return;
-      if (state.drag.pan) {
-        state.transform.x = state.drag.ox + (ev.clientX - state.drag.sx);
-        state.transform.y = state.drag.oy + (ev.clientY - state.drag.sy);
-        drawGraph();
-        return;
-      }
-      const rect = c.getBoundingClientRect();
-      const x = (ev.clientX - rect.left - state.transform.x) / state.transform.k;
-      const y = (ev.clientY - rect.top - state.transform.y) / state.transform.k;
-      state.drag.hit.x = x; state.drag.hit.y = y;
-      state.drag.hit.vx = 0; state.drag.hit.vy = 0;
+    state.network.on('stabilizationIterationsDone', () => {
+      // Pin the first stabilization end so the user can interact without
+      // the whole graph re-flowing on every click.
+      try { state.network.setOptions({ physics: { stabilization: { enabled: false } } }); } catch (_) {}
     });
-    c.addEventListener('mouseup', () => { state.drag = null; });
-    c.addEventListener('mouseleave', () => { state.drag = null; });
   }
 
-  function pickNode(x, y) {
-    if (!state.layout) return null;
-    for (let i = state.layout.nodes.length - 1; i >= 0; i--) {
-      const n = state.layout.nodes[i];
-      const dx = x - n.x, dy = y - n.y;
-      if (dx * dx + dy * dy <= (n.radius + 3) * (n.radius + 3)) return n;
-    }
-    return null;
+  function teardownNetwork() {
+    if (state.network) { try { state.network.destroy(); } catch (_) {} state.network = null; }
+    state.visNodes = null;
+    state.visEdges = null;
+  }
+
+  function fitGraph() { if (state.network) state.network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } }); }
+
+  function togglePhysics() {
+    if (!state.network) return;
+    const cur = state.network.physics.physicsEnabled;
+    state.network.setOptions({ physics: { enabled: !cur } });
+    const btn = $('mindPhysicsBtn'); if (btn) btn.textContent = cur ? 'Resume' : 'Freeze';
   }
 
   // ── Detail side panel ──────────────────────────────────────────────────────
@@ -544,5 +758,5 @@
   function confColor(c) { return c === 'EXTRACTED' ? 'var(--green)' : c === 'INFERRED' ? 'var(--yellow)' : 'var(--red)'; }
   function escapeHtml(s) { if (typeof s !== 'string') s = String(s ?? ''); return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-  window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail };
+  window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics };
 })();

@@ -23,6 +23,7 @@ const { extractRecipes } = require('./extractors/recipes');
 const { extractPlugins } = require('./extractors/plugins');
 const { extractInstructions } = require('./extractors/instructions');
 const { extractRepoCode } = require('./extractors/repo-code');
+const { extractCliHistory } = require('./extractors/cli-history');
 
 async function runBuild({ repoRoot, space, sources = [], incremental = false, ctx = {}, onProgress = () => {} }) {
   const t0 = Date.now();
@@ -75,6 +76,13 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
     onProgress(`Extracting repo code from ${activeRepoPath || '(no active repo path)'}...`);
     const f = extractRepoCode({ activeRepoPath, manifest });
     fragments.push(f); summary.repoCode = { scanned: f.scanned, skippedCache: f.skippedCache, nodes: f.nodes.length, edges: f.edges.length };
+  }
+
+  if (sources.includes('cli-history')) {
+    onProgress('Extracting CLI session history (claude / codex / gemini / grok / qwen / copilot)...');
+    const f = extractCliHistory({ activeRepoPath, allRepos: !!ctx.cliHistoryAllRepos });
+    fragments.push(f);
+    summary.cliHistory = { scanned: f.scanned, skippedOtherRepo: f.skippedOtherRepo, perCli: f.perCli, nodes: f.nodes.length, edges: f.edges.length };
   }
 
   manifest.flushSync();

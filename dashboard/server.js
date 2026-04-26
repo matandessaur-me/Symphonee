@@ -79,6 +79,8 @@ const ROUTES = {
   '/logo.svg':                { file: path.join(publicDir, 'logo.svg'),                                            type: 'image/svg+xml' },
   '/contributions-client.js': { file: path.join(publicDir, 'contributions-client.js'),                             type: 'application/javascript' },
   '/mind-ui.js':              { file: path.join(publicDir, 'mind-ui.js'),                                          type: 'application/javascript' },
+  '/vis-network.min.js':      { file: path.join(nodeModules, 'vis-network/standalone/umd/vis-network.min.js'),     type: 'application/javascript' },
+  '/vis-network.min.css':     { file: path.join(nodeModules, 'vis-network/dist/dist/vis-network.min.css'),         type: 'text/css' },
 };
 
 // ── Pluggable route handlers (Electron adds its own via addRoute) ────────────
