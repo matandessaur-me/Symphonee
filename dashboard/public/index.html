@@ -19835,6 +19835,10 @@ async function _saveAuditToNote() {
 })();
 
 // ── Spaces (non-git workspaces) ─────────────────────────────────────────
+const CORE_SPACE_PLUGIN_IDS = new Set(['browser-use', 'video-use', 'stagehand']);
+function isCoreSpacePluginId(id) {
+  return CORE_SPACE_PLUGIN_IDS.has(id);
+}
 // Single wizard handles both create and edit. In edit mode it pre-populates
 // identity, repos, and plugins from the existing space so the user can adjust
 // any of them in one place (matches the create flow 1:1).
@@ -19864,7 +19868,7 @@ async function openAddSpaceDialog(opts = {}) {
       .flatMap(([, s]) => s.repos || [])
   );
   const freeRepos = Object.keys(allRepos).filter(r => !takenRepos.has(r));
-  const pluginList = Array.isArray(allPlugins) ? allPlugins : [];
+  const pluginList = (Array.isArray(allPlugins) ? allPlugins : []).filter(p => p && !isCoreSpacePluginId(p.id));
   const originalRepos = isEdit ? (Array.isArray(opts.repos) ? opts.repos.slice() : []) : [];
 
   let overlay = document.getElementById('_asoOverlay');
@@ -19959,7 +19963,7 @@ async function openAddSpaceDialog(opts = {}) {
           }).join('')
         : '<div style="padding:12px 10px;color:var(--subtext0);font-size:11px;">No plugins installed. Install plugins from Settings &rsaquo; Plugins.</div>';
       bodyHtml = `
-        <p style="font-size:11px;color:var(--subtext0);margin:0 0 10px;line-height:1.5;">Choose which plugins are surfaced while this space is active. Leave all unchecked to show every plugin.</p>
+        <p style="font-size:11px;color:var(--subtext0);margin:0 0 10px;line-height:1.5;">Choose which plugins are surfaced while this space is active. Leave all unchecked to show every plugin. Browser tools are always available and are not listed here.</p>
         <div style="max-height:240px;overflow-y:auto;border:1px solid var(--surface1);border-radius:var(--radius);padding:4px;">${items}</div>`;
     }
 
@@ -20605,7 +20609,7 @@ async function openManageSpaceDialog(name) {
   } catch (_) {}
   const s = spaces[name] || {};
   const repoNames = Object.keys(repos);
-  const pluginList = Array.isArray(plugins) ? plugins : [];
+  const pluginList = (Array.isArray(plugins) ? plugins : []).filter(p => p && !isCoreSpacePluginId(p.id));
 
   const toggle = (dataAttr, val, checked) =>
     '<label class="ms-toggle"><input type="checkbox" ' + dataAttr + '="' + esc(val) + '"' + (checked ? ' checked' : '') + '><span class="ms-toggle-track"></span></label>';
@@ -20667,7 +20671,7 @@ async function openManageSpaceDialog(name) {
       '</div>' +
       '<div class="ms-tab-panel" id="msTabPlugins">' +
         '<div class="ms-list">' + pluginsHtml + '</div>' +
-        '<div class="ms-tab-hint">Leave all off to surface every installed plugin while this space is active.</div>' +
+        '<div class="ms-tab-hint">Leave all off to surface every installed plugin while this space is active. Browser tools remain available even when not listed here.</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;margin-top:16px;flex-shrink:0;">' +
         '<div style="flex:1;"></div>' +
@@ -20754,9 +20758,12 @@ async function applyPluginSpaceFilter() {
   } catch (_) { window._spacesCache = window._spacesCache || {}; }
   if (activeSpace) {
     const spaces = window._spacesCache;
-    const preset = spaces[activeSpace] && Array.isArray(spaces[activeSpace].plugins)
-      ? spaces[activeSpace].plugins : [];
-    if (preset.length) allowed = new Set(preset);
+    const preset = (spaces[activeSpace] && Array.isArray(spaces[activeSpace].plugins)
+      ? spaces[activeSpace].plugins : []).filter(id => !isCoreSpacePluginId(id));
+    if (preset.length) {
+      allowed = new Set(preset);
+      CORE_SPACE_PLUGIN_IDS.forEach(id => allowed.add(id));
+    }
   }
   document.querySelectorAll('[data-plugin-id]').forEach(el => {
     const id = el.getAttribute('data-plugin-id');
@@ -25081,7 +25088,11 @@ function toggleOpenTabMenu() {
     try {
       if (activeSpace && window._spacesCache) {
         var preset = window._spacesCache[activeSpace] && window._spacesCache[activeSpace].plugins;
-        if (Array.isArray(preset) && preset.length) allowed = new Set(preset);
+        if (Array.isArray(preset)) preset = preset.filter(function(id) { return !isCoreSpacePluginId(id); });
+        if (Array.isArray(preset) && preset.length) {
+          allowed = new Set(preset);
+          CORE_SPACE_PLUGIN_IDS.forEach(function(id) { allowed.add(id); });
+        }
       }
     } catch (_) {}
     for (var i = 0; i < pluginTabRegistry.length; i++) {

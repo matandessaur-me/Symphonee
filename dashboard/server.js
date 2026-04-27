@@ -1377,6 +1377,18 @@ function handleGetSpaces(res) {
   const cfg = getConfig();
   json(res, cfg.Spaces || {});
 }
+const CORE_SPACE_PLUGIN_IDS = new Set(['browser-use', 'video-use', 'stagehand']);
+function normalizeSpacePluginList(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    if (typeof item !== 'string') continue;
+    if (CORE_SPACE_PLUGIN_IDS.has(item)) continue;
+    if (out.includes(item)) continue;
+    out.push(item);
+  }
+  return out;
+}
 async function handleSaveSpace(req, res) {
   const body = await readBody(req);
   const { name, icon, description, repos, plugins } = body || {};
@@ -1389,7 +1401,7 @@ async function handleSaveSpace(req, res) {
     icon: icon || prev.icon || 'layers',
     description: description !== undefined ? description : (prev.description || ''),
     repos: Array.isArray(repos) ? repos.filter(r => typeof r === 'string') : (prev.repos || []),
-    plugins: Array.isArray(plugins) ? plugins.filter(p => typeof p === 'string') : (prev.plugins || []),
+    plugins: Array.isArray(plugins) ? normalizeSpacePluginList(plugins) : normalizeSpacePluginList(prev.plugins || []),
     createdAt: prev.createdAt || Date.now(),
   };
   atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
@@ -1425,6 +1437,7 @@ async function handleSpaceAttachRepo(req, res) {
 async function handleSpaceTogglePlugin(req, res) {
   const { space, plugin, enabled } = await readBody(req);
   if (!space || !plugin) return json(res, { error: 'space and plugin are required' }, 400);
+  if (CORE_SPACE_PLUGIN_IDS.has(plugin)) return json(res, { ok: true, plugins: normalizeSpacePluginList(((getConfig().Spaces || {})[space] || {}).plugins || []) });
   let cfg = {};
   try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
   cfg.Spaces = cfg.Spaces || {};
@@ -1437,10 +1450,10 @@ async function handleSpaceTogglePlugin(req, res) {
   } else if (idx < 0) {
     list.push(plugin);
   }
-  cfg.Spaces[space] = { ...s, plugins: list };
+  cfg.Spaces[space] = { ...s, plugins: normalizeSpacePluginList(list) };
   atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
   broadcast({ type: 'config-changed' });
-  json(res, { ok: true, plugins: list });
+  json(res, { ok: true, plugins: cfg.Spaces[space].plugins });
 }
 const _skillsDir = path.join(__dirname, 'skills');
 function _parseSkillFrontmatter(content) {
