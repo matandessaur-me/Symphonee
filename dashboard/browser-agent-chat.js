@@ -1153,8 +1153,9 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
 
   try { await agent.launch({}); } catch (e) {
     emit({ kind: 'error', message: 'Failed to open browser: ' + e.message });
+    thread.lastResult = { ok: false, kind: 'error', error: 'Failed to open browser: ' + e.message, finishedAt: Date.now() };
     thread.running = false;
-    return { ok: false, error: e.message };
+    return thread.lastResult;
   }
 
   // Reset thread state when provider changes mid-thread to avoid mixed formats.
