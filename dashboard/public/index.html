@@ -756,6 +756,15 @@
       0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--yellow) 50%, transparent); }
       50% { opacity: 0.5; box-shadow: 0 0 0 4px color-mix(in srgb, var(--yellow) 0%, transparent); }
     }
+    .browser-pulse-dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); margin-right: 6px; vertical-align: middle;
+      animation: browserPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes browserPulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 50%, transparent); }
+      50% { opacity: 0.5; box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 0%, transparent); }
+    }
 
     /* ── Terminal sub-tabs ────────────────────────────────────────────────── */
     .term-tabs {
@@ -17094,6 +17103,30 @@ function _appendBrowserAgentWaitingRow(message) {
   return row;
 }
 
+// ── Browser tab activity indicator ─────────────────────────────────────────
+// Mirrors the orchestrator-tab pulse: a green pulse dot appears on the left
+// of the Browser tab whenever automation is running (Stagehand or browser-use).
+// Pings are debounced -- the dot stays for 8s after the last signal, then
+// disappears.
+const _browserTabActivity = { lastPing: 0, idleTimer: null };
+function _markBrowserTabActive() {
+  _browserTabActivity.lastPing = Date.now();
+  const btn = document.getElementById('browserTabBtn');
+  if (btn && !btn.querySelector('.browser-pulse-dot')) {
+    const dot = document.createElement('span');
+    dot.className = 'browser-pulse-dot';
+    btn.insertBefore(dot, btn.firstChild);
+  }
+  if (_browserTabActivity.idleTimer) clearTimeout(_browserTabActivity.idleTimer);
+  _browserTabActivity.idleTimer = setTimeout(() => {
+    if (Date.now() - _browserTabActivity.lastPing >= 8000) {
+      const b = document.getElementById('browserTabBtn');
+      const d = b && b.querySelector('.browser-pulse-dot');
+      if (d) d.remove();
+    }
+  }, 8500);
+}
+
 // ── Stagehand screencast viewer ────────────────────────────────────────────
 // Renders the CDP screencast frames broadcast by the Stagehand plugin so the
 // user sees Stagehand's session inside the same Browser tab they use for the
@@ -17101,6 +17134,7 @@ function _appendBrowserAgentWaitingRow(message) {
 const _stagehandCast = { lastFrame: 0, idleTimer: null, img: null };
 function handleStagehandScreencast(msg) {
   if (!msg || !msg.data) return;
+  _markBrowserTabActive();
   const overlay = document.getElementById('stagehandScreencastOverlay');
   const canvas = document.getElementById('stagehandScreencastCanvas');
   const urlEl = document.getElementById('stagehandScreencastUrl');
@@ -17133,6 +17167,7 @@ function closeStagehandScreencast() {
 }
 function handleBrowserRouterDispatch(msg) {
   if (!msg) return;
+  _markBrowserTabActive();
   if (msg.driver === 'stagehand') {
     const overlay = document.getElementById('stagehandScreencastOverlay');
     if (overlay && overlay.style.display === 'none') overlay.style.display = 'block';
@@ -17140,7 +17175,9 @@ function handleBrowserRouterDispatch(msg) {
 }
 
 function handleBrowserAgentStep(msg) {
-  if (!msg || msg.threadId !== _browserAgentState.threadId) return;
+  if (!msg) return;
+  _markBrowserTabActive();
+  if (msg.threadId !== _browserAgentState.threadId) return;
   switch (msg.kind) {
     case 'provider': {
       const state = document.getElementById('inappAgentState');
