@@ -25,7 +25,7 @@
   // Physics default = off (frozen). Stabilization still runs once to lay
   // out the graph, then physics is disabled so weaker machines aren't stuck
   // animating forever. The user can resume it from the Freeze button.
-  const DEFAULT_PREFS = { graphCap: '1000', graphFilter: 'all', physicsEnabled: false };
+  const DEFAULT_PREFS = { graphCap: '1000', graphFilter: 'all', physicsEnabled: false, searchOnly: false };
   function loadPrefs() {
     try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }
     catch (_) { return Object.assign({}, DEFAULT_PREFS); }
@@ -55,6 +55,7 @@
     loadGraph().then(render);
     if (!state.ws) connectWS();
     bindSearchInput();
+    updateSearchOnlyBtn();
   }
 
   // ── Search: one input, every view honours state.search ─────────────────────
@@ -80,8 +81,33 @@
       } else if (ev.key === 'Escape') {
         ev.preventDefault();
         clearSearch();
+      } else if ((ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') && state.matches.length) {
+        // Cycle matches with arrow keys when a search is active. Lets the user
+        // sweep through hits without leaving the input.
+        ev.preventDefault();
+        cycleMatch(ev.key === 'ArrowRight' ? 1 : -1);
       }
     });
+  }
+
+  function toggleSearchOnly() {
+    state.prefs.searchOnly = !state.prefs.searchOnly;
+    savePrefs();
+    updateSearchOnlyBtn();
+    // Re-render the active view so the new mode lands. Same dispatch as
+    // applySearch(): graph/map paint in place, others rebuild.
+    if (state.view === 'graph') paintGraphSearch();
+    else if (state.view === 'map') paintMapSearch();
+    else render();
+  }
+
+  function updateSearchOnlyBtn() {
+    const btn = $('mindSearchOnlyBtn');
+    if (!btn) return;
+    const on = !!state.prefs.searchOnly;
+    btn.textContent = on ? 'Search only: on' : 'Search only: off';
+    btn.style.color = on ? 'var(--accent)' : 'var(--subtext0)';
+    btn.style.borderColor = on ? 'var(--accent)' : 'var(--surface1)';
   }
 
   function clearSearch() {
@@ -602,7 +628,9 @@
       }
     }
 
-    const nodes = cIds.map(cid => {
+    const searchOnly = !!(state.prefs.searchOnly && matchSet && matchedCommunities.size);
+    const visibleCIds = searchOnly ? cIds.filter(cid => matchedCommunities.has(cid)) : cIds;
+    const nodes = visibleCIds.map(cid => {
       const c = communities[cid];
       const baseColor = communityColor(parseInt(cid, 10));
       const isMatch = matchedCommunities.has(cid);
@@ -620,7 +648,13 @@
         font: { color: dim ? 'rgba(205,214,244,0.35)' : '#cdd6f4', size: 10, face: 'monospace', strokeWidth: 0, multi: true },
       };
     });
-    const edges = Array.from(bridgeCount.entries()).map(([key, count], i) => {
+    const visibleSet = new Set(visibleCIds);
+    const edges = Array.from(bridgeCount.entries())
+      .filter(([key]) => {
+        const [a, b] = key.split('|');
+        return visibleSet.has(a) && visibleSet.has(b);
+      })
+      .map(([key, count], i) => {
       const [a, b] = key.split('|');
       return {
         id: 'b' + i,
@@ -852,6 +886,12 @@
 
     let nodes = g.nodes;
     if (filter !== 'all') nodes = nodes.filter(n => n.kind === filter);
+    // Search-only mode: drop everything that doesn't match. Skips the cap
+    // logic entirely - matches are usually small enough to draw in full.
+    if (state.prefs.searchOnly && state.search && state.matches.length) {
+      const onlySet = new Set(state.matches);
+      nodes = nodes.filter(n => onlySet.has(n.id));
+    }
 
     // Compute degree for sizing AND for top-N filtering at the cap.
     const degree = new Map();
@@ -1221,5 +1261,5 @@
     } catch (_) { return iso; }
   }
 
-  window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics, clearSearch };
+  window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics, clearSearch, toggleSearchOnly };
 })();
