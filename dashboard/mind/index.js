@@ -16,6 +16,8 @@ const store = require('./store');
 const { Manifest } = require('./manifest');
 const engine = require('./engine');
 const query = require('./query');
+const { cluster } = require('./cluster');
+const { analyze } = require('./analyze');
 const { composeWakeUp, DEFAULT_BUDGET_TOKENS } = require('./wakeup');
 const { sanitizeLabel, validateUrl } = require('./security');
 const { MindWatcher } = require('./watch');
@@ -43,6 +45,19 @@ function mountMind(addRoute, json, ctx) {
     const c = getUiContext ? getUiContext() : {};
     return c.activeSpace || c.notesNamespace || '_global';
   };
+
+  function persistDerivedGraph(space, graph) {
+    const next = graph || store.emptyGraph({ space });
+    next.version = next.version || 1;
+    next.scope = next.scope || { space, isGlobal: false };
+    const { communities } = cluster(next);
+    const { gods, surprises, suggested } = analyze({ ...next, communities });
+    next.communities = communities;
+    next.gods = gods;
+    next.surprises = surprises;
+    next.suggested = suggested;
+    return store.saveGraph(repoRoot, space, next);
+  }
 
   // ── Reads ────────────────────────────────────────────────────────────────
   addRoute('GET', '/api/mind/graph', (req, res) => {
@@ -316,7 +331,7 @@ function mountMind(addRoute, json, ctx) {
         createdBy, createdAt: new Date().toISOString(),
       });
     }
-    store.saveGraph(repoRoot, space, g);
+    persistDerivedGraph(space, g);
     if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'node-added', id, createdBy } });
     return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length });
   });
@@ -336,7 +351,7 @@ function mountMind(addRoute, json, ctx) {
       createdBy: body.createdBy || 'manual', createdAt: new Date().toISOString(),
       tags: Array.isArray(body.tags) ? body.tags : [],
     });
-    store.saveGraph(repoRoot, space, g);
+    persistDerivedGraph(space, g);
     return json(res, { ok: true, nodeId: id });
   });
 
@@ -396,7 +411,7 @@ function mountMind(addRoute, json, ctx) {
     g.nodes = g.nodes.filter(n => n.id !== id);
     g.edges = g.edges.filter(e => e.source !== id && e.target !== id);
     if (g.nodes.length === before) return json(res, { error: 'not found' }, 404);
-    store.saveGraph(repoRoot, space, g);
+    persistDerivedGraph(space, g);
     return json(res, { ok: true, removed: id });
   });
 
@@ -470,7 +485,7 @@ function mountMind(addRoute, json, ctx) {
         confidence: 'EXTRACTED', confidenceScore: 1.0, weight: 1.0,
         createdBy: task.cli || 'orchestrator', createdAt: new Date().toISOString(),
       });
-      try { store.saveGraph(repoRoot, space, g); } catch (_) { /* schema validation failure - non-fatal */ }
+      try { persistDerivedGraph(space, g); } catch (_) { /* schema validation failure - non-fatal */ }
       if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'node-added', id, createdBy: task.cli } });
     },
 

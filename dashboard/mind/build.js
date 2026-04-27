@@ -9,6 +9,38 @@
 const { normalizeId, deduplicateByLabel } = require('./ids');
 const { sanitizeLabel } = require('./security');
 
+function edgeKey(edge) {
+  return [
+    edge.source || '',
+    edge.target || '',
+    edge.relation || '',
+    edge.validFrom || '',
+    edge.validTo || '',
+  ].join('\u0001');
+}
+
+function deduplicateEdges(edges) {
+  const byKey = new Map();
+  for (const edge of edges) {
+    const key = edgeKey(edge);
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, edge);
+      continue;
+    }
+
+    const prevScore = typeof prev.confidenceScore === 'number' ? prev.confidenceScore : -1;
+    const nextScore = typeof edge.confidenceScore === 'number' ? edge.confidenceScore : -1;
+    const prevWeight = typeof prev.weight === 'number' ? prev.weight : 0;
+    const nextWeight = typeof edge.weight === 'number' ? edge.weight : 0;
+
+    if (nextScore > prevScore || (nextScore === prevScore && nextWeight > prevWeight)) {
+      byKey.set(key, { ...prev, ...edge });
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 function build(extractions, { directed = true } = {}) {
   const allNodes = [];
   const allEdges = [];
@@ -49,7 +81,7 @@ function build(extractions, { directed = true } = {}) {
     if (!nodeIdSet.has(src) || !nodeIdSet.has(tgt)) continue;
     survivingEdges.push({ ...e, source: src, target: tgt });
   }
-  edges = survivingEdges;
+  edges = deduplicateEdges(survivingEdges);
 
   return {
     nodes, edges, hyperedges: allHyper,
@@ -99,4 +131,4 @@ function buildMerge(existingGraph, newFragments, { pruneSources = null, directed
   return combined;
 }
 
-module.exports = { build, buildMerge };
+module.exports = { build, buildMerge, deduplicateEdges };
