@@ -3173,6 +3173,54 @@ writePluginHints();
     if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
     return null;
   }
+  // Lists AI providers Symphonee can talk to via SDK, marking which ones the
+  // user actually has keys for (saved in Settings -> AI Keys, or in env). Used
+  // by plugin settings dropdowns so users only see models they can actually run.
+  addRoute('GET', '/api/ai/providers', (req, res) => {
+    const cfg = getConfig() || {};
+    const saved = cfg.AiApiKeys || {};
+    const providers = [
+      {
+        key: 'anthropic', label: 'Anthropic', envKey: 'ANTHROPIC_API_KEY',
+        models: [
+          { id: 'anthropic/claude-opus-4-7', label: 'Claude Opus 4.7' },
+          { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+          { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+          { id: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+        ],
+      },
+      {
+        key: 'openai', label: 'OpenAI', envKey: 'OPENAI_API_KEY',
+        models: [
+          { id: 'openai/gpt-4.1', label: 'GPT-4.1' },
+          { id: 'openai/gpt-4o', label: 'GPT-4o' },
+          { id: 'openai/o3', label: 'o3' },
+          { id: 'openai/o4-mini', label: 'o4-mini' },
+        ],
+      },
+      {
+        key: 'google', label: 'Google Gemini', envKey: 'GEMINI_API_KEY',
+        models: [
+          { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+          { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+          { id: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro (preview)' },
+        ],
+      },
+      {
+        key: 'xai', label: 'xAI Grok', envKey: 'XAI_API_KEY',
+        models: [
+          { id: 'xai/grok-4', label: 'Grok 4' },
+          { id: 'xai/grok-3', label: 'Grok 3' },
+          { id: 'xai/grok-3-mini-fast', label: 'Grok 3 Mini Fast' },
+        ],
+      },
+    ].map(p => ({
+      ...p,
+      configured: !!saved[p.envKey] || !!process.env[p.envKey],
+    }));
+    json(res, { ok: true, providers });
+  });
+
   // Core instructions are plugin-agnostic. Plugin-specific rules live in each
   // plugin's own instructions.md (served by /api/plugins/instructions), so no
   // runtime stripping is needed here.

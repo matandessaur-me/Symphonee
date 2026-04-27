@@ -24,9 +24,11 @@
   "settings": [
     {
       "key": "model",
-      "label": "Model (provider/model-id, e.g. anthropic/claude-sonnet-4-6)",
-      "type": "string",
-      "default": "anthropic/claude-sonnet-4-6"
+      "label": "Model",
+      "type": "select",
+      "optionsFrom": "aiModels",
+      "default": "anthropic/claude-sonnet-4-6",
+      "placeholder": "Default (Claude Sonnet 4.6)"
     },
     {
       "key": "headless",

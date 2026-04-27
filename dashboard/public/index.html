@@ -25220,7 +25220,6 @@ function renderPluginSettings(plugins) {
     for (var j = 0; j < settings.length; j++) {
       var s = settings[j];
       var fieldId = 'pluginSetting_' + p.id + '_' + s.key;
-      var inputType = s.secret ? 'password' : 'text';
       nav += '<div class="modal-field">';
       nav += '<label>' + (s.label || s.key) + '</label>';
       if (s.description) nav += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">' + s.description + '</div>';
@@ -25229,6 +25228,14 @@ function renderPluginSettings(plugins) {
         nav += '<input id="' + fieldId + '" type="password" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input" style="border-radius:var(--radius) 0 0 var(--radius);flex:1;">';
         nav += '<button type="button" onclick="toggleSecretField(\'' + fieldId + '\',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>';
         nav += '</div>';
+      } else if (s.type === 'select' || s.optionsFrom) {
+        var hint = s.optionsFrom === 'aiModels'
+          ? 'Selects the default AI when not set. Only models for which you have an API key in Settings -> AI Keys appear here.'
+          : (s.hint || '');
+        if (hint) nav += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;font-style:italic;">' + hint + '</div>';
+        nav += '<select id="' + fieldId + '" data-plugin="' + p.id + '" data-key="' + s.key + '"'
+          + (s.optionsFrom ? ' data-options-from="' + s.optionsFrom + '"' : '')
+          + ' class="plugin-setting-input"></select>';
       } else {
         nav += '<input id="' + fieldId + '" type="text" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
       }
@@ -25261,6 +25268,17 @@ function renderPluginSettings(plugins) {
     }
   });
 
+  // Populate any dynamic select fields (e.g. type=select with optionsFrom='aiModels')
+  // before loading values, so the saved value lands on a real option.
+  plugins.forEach(function (p) {
+    (p.settings || []).forEach(function (s) {
+      if (!(s.type === 'select' || s.optionsFrom)) return;
+      var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
+      if (!el) return;
+      _populatePluginSettingOptions(el, s);
+    });
+  });
+
   // Load current values
   plugins.forEach(function (p) {
     if (!p.settings || !p.settings.length) return;
@@ -25268,11 +25286,72 @@ function renderPluginSettings(plugins) {
       (p.settings || []).forEach(function (s) {
         var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
         if (!el) return;
-        if (cfg[s.key] !== undefined) el.value = cfg[s.key];
-        else if (s.secret && cfg[s.key + 'Set']) el.placeholder = '(configured)';
+        if (cfg[s.key] !== undefined) {
+          el.value = cfg[s.key];
+          // Browsers ignore .value if no matching <option> exists yet (dynamic
+          // selects). Re-apply once the populate fetch resolves.
+          if (el.tagName === 'SELECT' && el.value !== cfg[s.key]) {
+            el.dataset.pendingValue = cfg[s.key];
+          }
+        } else if (s.secret && cfg[s.key + 'Set']) el.placeholder = '(configured)';
       });
     }).catch(function () {});
   });
+}
+
+// Resolves dropdown options for plugin settings. Static: setting.options array.
+// Dynamic: setting.optionsFrom = 'aiModels' fetches /api/ai/providers and
+// shows only providers the user has saved a key for, grouped by provider.
+function _populatePluginSettingOptions(el, setting) {
+  if (!el || el.tagName !== 'SELECT') return;
+  var defaultLabel = setting.placeholder || 'Default (selects automatically)';
+  el.innerHTML = '<option value="">' + defaultLabel + '</option>';
+
+  if (Array.isArray(setting.options) && setting.options.length) {
+    setting.options.forEach(function (opt) {
+      var value = typeof opt === 'string' ? opt : opt.value;
+      var label = typeof opt === 'string' ? opt : (opt.label || opt.value);
+      var o = document.createElement('option');
+      o.value = value; o.textContent = label;
+      el.appendChild(o);
+    });
+    _applyPendingPluginSelectValue(el);
+    return;
+  }
+
+  if (setting.optionsFrom === 'aiModels') {
+    fetch('/api/ai/providers').then(function (r) { return r.json(); }).then(function (data) {
+      var providers = (data && data.providers) || [];
+      var configured = providers.filter(function (p) { return p.configured && p.models && p.models.length; });
+      if (!configured.length) {
+        var empty = document.createElement('option');
+        empty.value = ''; empty.textContent = 'No AI keys saved -- add one in Settings -> AI Keys';
+        empty.disabled = true;
+        el.innerHTML = '';
+        el.appendChild(empty);
+        return;
+      }
+      configured.forEach(function (p) {
+        var group = document.createElement('optgroup');
+        group.label = p.label;
+        p.models.forEach(function (m) {
+          var o = document.createElement('option');
+          o.value = m.id; o.textContent = m.label;
+          group.appendChild(o);
+        });
+        el.appendChild(group);
+      });
+      _applyPendingPluginSelectValue(el);
+    }).catch(function () {});
+  }
+}
+
+function _applyPendingPluginSelectValue(el) {
+  if (el && el.dataset && el.dataset.pendingValue) {
+    var v = el.dataset.pendingValue;
+    delete el.dataset.pendingValue;
+    el.value = v;
+  }
 }
 
 function switchPluginSettingsTab(pluginId, btn) {
