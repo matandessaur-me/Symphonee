@@ -100,6 +100,12 @@ async function getSession({ getSettings, getConfig } = {}) {
       model,
       modelClientOptions: { apiKey },
       verbose: 0,
+      // keepAlive prevents Stagehand's shutdown supervisor from killing the
+      // launched Chrome between separate HTTP requests. Without it, /goto
+      // succeeds but the agent's first tool call hits a closed CDP socket
+      // (code=1006) and ariaTree dereferences a null v3.context. We tear the
+      // browser down explicitly in closeSession() instead.
+      keepAlive: true,
       localBrowserLaunchOptions: { headless },
     });
     await sh.init();
