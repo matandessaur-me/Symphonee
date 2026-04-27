@@ -8,7 +8,7 @@ For browser automation, **call the router instead of picking a driver yourself**
 | --- | --- | --- | --- |
 | `browser-use` | no -- typed actions only | the in-app `<webview>` (live, interactable) | The caller already knows the selector / handle / typed action. Cheapest, fastest, no LLM tokens. |
 | `in-app-agent` | yes (Symphonee's tool-use loop) | the in-app `<webview>` (live, interactable) | Free-text goal where the user wants to watch live and possibly take over. **Default.** |
-| `stagehand` | yes (Stagehand SDK) | a separate headless Chromium streamed to a screencast canvas | Sandboxed/clean profile, schema-validated `extract`, or anything explicitly opted into via `prefer: "stagehand"` / `sandboxed: true` / `mode: "extract"`. |
+| `stagehand` | yes (Stagehand SDK) | a separate headless Chromium streamed to a screencast canvas | Sandboxed/clean profile, schema-driven `extract`, or anything explicitly opted into via `prefer: "stagehand"` / `sandboxed: true` / `mode: "extract"`. |
 
 ## Endpoints
 
@@ -40,7 +40,6 @@ All under `/api/browser/router/*`:
 | `params` | params for `action`. |
 | `selector` | CSS selector. Forces browser-use. |
 | `handle` | clickable handle from `/api/plugins/browser-use/clickables`. Forces browser-use. |
-| `recipeId` | saved browser-use recipe. Forces browser-use. |
 | `sandboxed` / `fresh` | `true` -> Stagehand (clean profile, no user cookies). |
 | `schema` | a JSON schema for structured extraction -> Stagehand. |
 | `prefer` | `"auto"`, `"in-app-agent"`, `"stagehand"`, or `"browser-use"`. Overrides the heuristic. |
@@ -50,10 +49,11 @@ All under `/api/browser/router/*`:
 ## Decision rules (highest priority first)
 
 1. Explicit `prefer` always wins (unless `"auto"`).
-2. `action` / `selector` / `handle` / `recipeId` -> **browser-use** (deterministic, no LLM).
+2. `action` / `selector` / `handle` -> **browser-use** (deterministic, no LLM).
 3. Free-text goal + (`sandboxed` / `fresh` / `schema` / `mode: "extract"`) -> **Stagehand**.
-4. Free-text goal otherwise -> **in-app-agent**.
-5. Empty input -> in-app-agent default.
+4. Ambiguous short verb-noun goals (for example `click login`) -> **browser-use** by default, or **Stagehand** when `BrowserRouter.preferStagehand` is enabled in Settings.
+5. Free-text goal otherwise -> **in-app-agent**.
+6. Empty input -> in-app-agent default.
 
 ## Visual surface and tab behaviour
 
@@ -64,7 +64,7 @@ All under `/api/browser/router/*`:
 ## Fallback
 
 - `in-app-agent` unreachable -> tries `stagehand` -> falls back to `browser-use`.
-- `stagehand` unreachable / 501 -> falls back to `browser-use`.
+- `stagehand` not ready, missing its package, missing an API key, or returning 501 -> falls back to `browser-use`.
 
 Each downgrade is recorded in `result.fallbacks[]`.
 

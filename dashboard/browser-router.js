@@ -46,12 +46,13 @@ const ROUTER_PREFIX = '/api/browser/router';
 function decide(input, settings) {
   const s = settings || {};
   const prefer = (input && input.prefer) || (s.default && s.default !== 'auto' ? s.default : null);
+  const preferStagehand = s.preferStagehand !== false;
   if (prefer === 'stagehand' || prefer === 'browser-use' || prefer === 'in-app-agent') {
     return { driver: prefer, reason: 'explicit prefer=' + prefer, confidence: 1 };
   }
 
-  if (input && (input.action || input.handle != null || input.selector || input.recipeId)) {
-    const which = input.action ? 'typed action' : input.handle != null ? 'handle' : input.selector ? 'selector' : 'recipe';
+  if (input && (input.action || input.handle != null || input.selector)) {
+    const which = input.action ? 'typed action' : input.handle != null ? 'handle' : 'selector';
     return { driver: 'browser-use', reason: which + ' supplied -- deterministic path, no LLM needed', confidence: 0.95 };
   }
 
@@ -69,6 +70,9 @@ function decide(input, settings) {
     }
     const looksRepeat = /^(click|type|fill|press|navigate|goto|wait)\b\s+\S+$/i.test(text);
     if (looksRepeat) {
+      if (preferStagehand) {
+        return { driver: 'stagehand', reason: 'preferStagehand enabled for ambiguous short verb-noun goal', confidence: 0.8 };
+      }
       return { driver: 'browser-use', reason: 'short verb-noun phrase parses as a typed action', confidence: 0.7 };
     }
     return { driver: 'in-app-agent', reason: 'free-text goal -- LLM tool-use loop on the live in-app webview', confidence: 0.85 };
@@ -120,9 +124,14 @@ function _localGet(port, urlPath) {
   });
 }
 
-async function _stagehandReachable(port) {
+async function _stagehandHealth(port) {
   const r = await _localGet(port, '/api/plugins/stagehand/health');
-  return r.status === 200 && r.body && r.body.ok === true;
+  return r.status === 200 && r.body && typeof r.body === 'object' ? r.body : null;
+}
+
+async function _stagehandReachable(port) {
+  const health = await _stagehandHealth(port);
+  return !!(health && health.ok === true && health.ready === true);
 }
 
 async function _inAppAgentReachable(port) {
@@ -193,13 +202,16 @@ async function _dispatchStagehand(port, body) {
   if (body.url) {
     await _localPost(port, '/api/plugins/stagehand/goto', { url: body.url });
   }
-  if (mode === 'extract') return _localPost(port, '/api/plugins/stagehand/extract', { instruction: text });
+  if (mode === 'extract') return _localPost(port, '/api/plugins/stagehand/extract', { instruction: text, schema: body.schema });
   if (mode === 'observe') return _localPost(port, '/api/plugins/stagehand/observe', { instruction: text });
   if (mode === 'agent') return _localPost(port, '/api/plugins/stagehand/agent', { task: text, maxSteps: body.maxSteps });
   return _localPost(port, '/api/plugins/stagehand/act', { instruction: text, url: body.url });
 }
 
 async function _dispatchBrowserUse(port, body) {
+  if (body.recipeId) {
+    return { status: 400, body: { ok: false, error: 'recipeId is not supported by the Browser Router yet' } };
+  }
   if (body.action) {
     return _localPost(port, '/api/plugins/browser-use/run-action', { action: body.action, params: body.params || {} });
   }
@@ -219,6 +231,19 @@ async function _dispatchBrowserUse(port, body) {
   return { status: 400, body: { ok: false, error: 'browser-use needs an action, selector, handle, or text' } };
 }
 
+function _shouldFallbackFromStagehand(r) {
+  if (!r || typeof r.status !== 'number') return false;
+  const code = r.body && r.body.code;
+  return r.status === 501
+    || (r.status === 400 && (code === 'STAGEHAND_NO_API_KEY' || code === 'STAGEHAND_NOT_INSTALLED'));
+}
+
+function _stagehandFallbackReason(r, fallback) {
+  if (fallback) return fallback;
+  if (r && r.body && r.body.error) return r.body.error;
+  return 'Stagehand unavailable';
+}
+
 function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port } = {}) {
   const settingsFor = () => {
     try {
@@ -235,7 +260,8 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
   const _port = port || (process.env.SYMPHONEE_PORT && Number(process.env.SYMPHONEE_PORT)) || 3800;
 
   addRoute('GET', ROUTER_PREFIX + '/status', async (req, res) => {
-    const stagehand = await _stagehandReachable(_port);
+    const stagehandHealth = await _stagehandHealth(_port);
+    const stagehand = !!(stagehandHealth && stagehandHealth.ok === true && stagehandHealth.ready === true);
     const browserUse = (await _localGet(_port, '/api/plugins/browser-use/health')).status === 200;
     const inAppAgent = await _inAppAgentReachable(_port);
     json(res, {
@@ -245,6 +271,9 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
         stagehand,
         'browser-use': true,
         'browser-use-plugin': browserUse,
+      },
+      details: {
+        stagehand: stagehandHealth,
       },
       settings: settingsFor(),
     });
@@ -258,6 +287,9 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
 
   addRoute('POST', ROUTER_PREFIX + '/run', async (req, res) => {
     let body; try { body = await _readBody(req); } catch (e) { return json(res, { ok: false, error: 'Invalid JSON' }, 400); }
+    if (body && body.recipeId) {
+      return json(res, { ok: false, error: 'recipeId is not supported by the Browser Router yet' }, 400);
+    }
     const decision = decide(body, settingsFor());
     const fallbacks = [];
     let driver = decision.driver;
@@ -267,7 +299,8 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
       driver = (await _stagehandReachable(_port)) ? 'stagehand' : 'browser-use';
     }
     if (driver === 'stagehand' && !(await _stagehandReachable(_port))) {
-      fallbacks.push({ from: 'stagehand', reason: 'plugin not reachable' });
+      const health = await _stagehandHealth(_port);
+      fallbacks.push({ from: 'stagehand', reason: _stagehandFallbackReason(null, health && health.error ? health.error : 'plugin not ready') });
       driver = 'browser-use';
     }
 
@@ -288,8 +321,8 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
           ? await _dispatchStagehand(_port, body)
           : await _dispatchBrowserUse(_port, body);
 
-      if (driver === 'stagehand' && r.status === 501) {
-        fallbacks.push({ from: 'stagehand', reason: r.body && r.body.error || 'Stagehand not installed (501)' });
+      if (driver === 'stagehand' && _shouldFallbackFromStagehand(r)) {
+        fallbacks.push({ from: 'stagehand', reason: _stagehandFallbackReason(r) });
         const r2 = await _dispatchBrowserUse(_port, body);
         if (typeof broadcast === 'function') { try { broadcast({ type: 'browser-router-dispatch', phase: 'end', driver: 'browser-use', decision, fallbacks, at: Date.now() }); } catch (_) {} }
         return json(res, {

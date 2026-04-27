@@ -21,6 +21,7 @@
 const session = require('./lib/session');
 const mindLog = require('./lib/mind-log');
 const screencast = require('./lib/screencast');
+const { normalizeSchema, schemaToZod } = require('./lib/schema');
 
 function _err(json, res, e, status) {
   let code = status || 500;
@@ -57,11 +58,19 @@ module.exports = function register(ctx) {
   }
 
   ctx.addRoute('GET', '/health', async (req, res) => {
+    const readiness = session.getReadiness({ getSettings, getConfig });
     json(res, {
       ok: true,
       plugin: 'stagehand',
       env: 'LOCAL',
-      ready: session.isReady(),
+      ready: readiness.ready,
+      initialized: readiness.initialized,
+      installed: readiness.installed,
+      hasApiKey: readiness.hasApiKey,
+      model: readiness.model,
+      provider: readiness.provider,
+      code: readiness.code,
+      error: readiness.error,
       streaming: screencast.isStreaming(),
       cloudReachable: false,
     });
@@ -130,13 +139,16 @@ module.exports = function register(ctx) {
     try {
       const sh = await session.getSession({ getSettings, getConfig });
       const opts = {};
-      if (body.schema && typeof body.schema === 'object') {
-        // We don't take a Zod object over the wire -- pass the raw prompt and
-        // let Stagehand return a free-form extraction. Callers that need
-        // typed data can validate downstream.
+      let schema = null;
+      if (body.schema !== undefined) {
+        try {
+          schema = schemaToZod(normalizeSchema(body.schema));
+        } catch (e) {
+          return json(res, { ok: false, error: 'Invalid schema: ' + e.message }, 400);
+        }
       }
       _ensureAutoCast();
-      const result = await sh.extract(instruction, opts);
+      const result = schema ? await sh.extract(instruction, schema, opts) : await sh.extract(instruction, opts);
       const url = await _currentUrl(sh);
       mindLog.saveStep({ primitive: 'extract', prompt: instruction, url, result });
       json(res, { ok: true, primitive: 'extract', url, result });

@@ -132,4 +132,37 @@ async function closeSession() {
 
 function isReady() { return !!_stagehand; }
 
-module.exports = { getSession, closeSession, isReady };
+function getReadiness({ getSettings, getConfig } = {}) {
+  const settings = (typeof getSettings === 'function' ? getSettings() : {}) || {};
+  const model = settings.model || 'anthropic/claude-sonnet-4-6';
+  const provider = _providerForModel(model);
+  const initialized = !!_stagehand;
+  const hasApiKey = !!_resolveApiKey(model, getConfig);
+  let installed = true;
+  let code = null;
+  let error = null;
+  try {
+    _loadStagehand();
+  } catch (e) {
+    installed = false;
+    code = e && e.code || 'STAGEHAND_NOT_INSTALLED';
+    error = e && e.message || 'Stagehand is not installed';
+  }
+  if (installed && !hasApiKey) {
+    code = 'STAGEHAND_NO_API_KEY';
+    error = 'No API key configured for model "' + model + '"';
+  }
+  return {
+    ready: installed && hasApiKey,
+    initialized,
+    installed,
+    hasApiKey,
+    model,
+    provider: provider.configKey,
+    headless: settings.headless !== false,
+    code,
+    error,
+  };
+}
+
+module.exports = { getSession, closeSession, isReady, getReadiness };

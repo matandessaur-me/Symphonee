@@ -17251,6 +17251,8 @@ function closeStagehandScreencast() {
 function handleBrowserRouterDispatch(msg) {
   if (!msg) return;
   _markAutomationActive();
+  const fallbacks = Array.isArray(msg.fallbacks) ? msg.fallbacks : [];
+  const stagehandFallback = fallbacks.find(f => f && f.from === 'stagehand');
   // Start: switch to Automation -> Browser so the user watches the run live.
   if (!msg.phase || msg.phase === 'start') {
     _focusAutomationBrowser();
@@ -17271,6 +17273,19 @@ function handleBrowserRouterDispatch(msg) {
     // Stop the Chromium-side screencast so we're not paying for frames the
     // user can no longer see.
     fetch('/api/plugins/stagehand/screencast/stop', { method: 'POST' }).catch(() => {});
+  }
+  if (stagehandFallback && typeof notify === 'function') {
+    notify(
+      'Stagehand unavailable',
+      (stagehandFallback.reason || 'Stagehand failed') + '. Fell back to browser-use.',
+      { icon: 'alert-triangle' }
+    );
+  } else if (msg.phase === 'error' && msg.driver === 'stagehand' && typeof notify === 'function') {
+    notify(
+      'Stagehand failed',
+      msg.error || 'Browser automation failed before a fallback could run.',
+      { icon: 'alert-circle' }
+    );
   }
 }
 
