@@ -3063,6 +3063,15 @@ try {
   console.log('  Browser agent skipped:', e.message);
 }
 
+// ── Mount browser router (auto-picks between Stagehand and browser-use) ─────
+try {
+  const { mountBrowserRouterRoutes } = require('./browser-router');
+  mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port: PORT });
+  console.log('  Browser router mounted (/api/browser/router/*)');
+} catch (e) {
+  console.log('  Browser router skipped:', e.message);
+}
+
 // ── Mount apps agent (desktop control) ──────────────────────────────────────
 try {
   const { mountAppsRoutes } = require('./apps-agent');
