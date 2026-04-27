@@ -19,11 +19,21 @@ const CONTROL_CHARS = (() => {
 })();
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
+/**
+ * Strip control characters and cap length. Does NOT HTML-escape.
+ *
+ * Labels and content stored in the graph are consumed by many surfaces:
+ * the UI (escapes at render time), curl, scripts, prompt prefixes injected
+ * into AI workers. HTML-escaping at write time corrupts every non-HTML
+ * consumer (`"foo"` becomes `&quot;foo&quot;` in their output) and double-
+ * escapes when the UI escapes again at render. The right place to escape
+ * is the render layer; this function keeps the data clean.
+ */
 function sanitizeLabel(s) {
   if (typeof s !== 'string') return '';
   let out = s.replace(CONTROL_CHARS, '');
   if (out.length > LABEL_MAX) out = out.slice(0, LABEL_MAX);
-  return out.replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
+  return out;
 }
 
 function isPrivateOrLoopback(host) {

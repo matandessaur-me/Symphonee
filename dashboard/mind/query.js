@@ -41,15 +41,21 @@ function bestSeeds(graph, question, max = 3) {
   const maxBm = Math.max(...raw, 0);
 
   if (maxBm > 0) {
+    // Min-score threshold: when no query term is even moderately
+    // discriminative in the corpus (e.g. user asks about "bathfitter" but
+    // the brain has never seen that word — only the stop words "what" and
+    // "is" survive in the corpus), bm25Scores returns mostly tiny scores
+    // from incidental matches. Cut those off so the UI shows "no relevant
+    // context" instead of a misleading top-5 of unrelated headings.
+    const MIN_ABSOLUTE_BM25 = 0.5;
+    if (maxBm < MIN_ABSOLUTE_BM25) return [];
+
     const godSet = new Set((graph.gods || []).map(g => (typeof g === 'string' ? g : g && g.id)).filter(Boolean));
     const scored = graph.nodes.map((n, i) => {
       const base = raw[i] / maxBm;
-      // God prior boosts existing matches; it must NOT create matches.
-      // Otherwise an unrelated god (e.g. "route.ts" while the user asks
-      // about cooking recipes) would lead the seed list and pollute L1.
       const godBoost = (base > 0 && godSet.has(n.id)) ? 0.15 : 0;
-      return { id: n.id, score: base + godBoost };
-    }).filter(r => r.score > 0);
+      return { id: n.id, score: base + godBoost, raw: raw[i] };
+    }).filter(r => r.score > 0 && r.raw >= MIN_ABSOLUTE_BM25 * 0.4); // also cut weak hits
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, max).map(r => r.id);
   }

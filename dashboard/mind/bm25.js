@@ -14,17 +14,45 @@
 
 const TOKEN_RE = /[\p{L}\p{N}]{2,}/gu;
 
-function tokenize(text) {
+// Stop words: closed-class function words that appear in nearly every node
+// label and provide no retrieval signal. Filter them BEFORE BM25 so a
+// question like "what is X?" — where X isn't in the corpus — returns no
+// matches instead of ranking every heading containing "what" or "is".
+//
+// Kept short on purpose: only the worst offenders for English-language
+// queries against code/doc/note labels. Domain-specific stop words
+// belong in the caller, not here.
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'or', 'but', 'if', 'as', 'is', 'are', 'was', 'were',
+  'be', 'been', 'being', 'the', 'of', 'in', 'on', 'at', 'to', 'for',
+  'with', 'by', 'from', 'into', 'about', 'against', 'between',
+  'this', 'that', 'these', 'those',
+  'i', 'you', 'we', 'they', 'it', 'he', 'she',
+  'do', 'does', 'did', 'have', 'has', 'had',
+  'will', 'would', 'should', 'could', 'can', 'may', 'might',
+  'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how',
+  'not', 'no', 'yes',
+  'than', 'then', 'so', 'such',
+]);
+
+function tokenize(text, { dropStopWords = false } = {}) {
   if (!text) return [];
-  return (text.toLowerCase().match(TOKEN_RE) || []);
+  const all = text.toLowerCase().match(TOKEN_RE) || [];
+  return dropStopWords ? all.filter(t => !STOP_WORDS.has(t)) : all;
 }
 
-function bm25Scores(query, documents, { k1 = 1.5, b = 0.75 } = {}) {
+function bm25Scores(query, documents, { k1 = 1.5, b = 0.75, dropStopWords = true } = {}) {
   const n = documents.length;
-  const queryTerms = new Set(tokenize(query));
+  const queryTerms = new Set(tokenize(query, { dropStopWords }));
+  // If after filtering we have NO query terms, fall back to the unfiltered
+  // tokens — better to return SOMETHING than to silently return zeros for
+  // a 1-word common-word query like "graph".
+  if (queryTerms.size === 0 && dropStopWords) {
+    for (const t of tokenize(query)) queryTerms.add(t);
+  }
   if (!queryTerms.size || !n) return new Array(n).fill(0);
 
-  const tokenized = documents.map(tokenize);
+  const tokenized = documents.map(d => tokenize(d));
   const docLens = tokenized.map(t => t.length);
   if (!docLens.some(l => l > 0)) return new Array(n).fill(0);
   const avgdl = docLens.reduce((a, x) => a + x, 0) / n || 1;
