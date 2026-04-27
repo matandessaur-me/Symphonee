@@ -234,7 +234,12 @@ Accumulated technical mistakes. Fetched at bootstrap via `/api/learnings`. Recor
 
 ## Browser Automation
 
-**Default entry point: the Browser Router (`/api/browser/router/*`).** Don't pick between Stagehand and browser-use yourself -- POST your task to `/api/browser/router/run` and the router decides, dispatches, falls back, and broadcasts a Stagehand screencast into the in-app Browser tab when applicable. Full instructions at `/api/instructions/browser-router`.
+**Default entry point: the Browser Router (`/api/browser/router/*`).** Don't pick between drivers yourself -- POST your task to `/api/browser/router/run` and the router decides, dispatches, and falls back. Full instructions at `/api/instructions/browser-router`.
+
+Three drivers the router can pick:
+- `in-app-agent` (default for free-text goals) -- LLM tool-use loop driving the live in-app webview. User watches live and can take over.
+- `browser-use` (default for typed actions / selectors / handles / recipes) -- deterministic, no LLM tokens.
+- `stagehand` -- sandboxed headless Chromium with screencast view. Pick this with `prefer: "stagehand"`, `sandboxed: true`, `mode: "extract"`, or a `schema`.
 
 Behavioral:
 - MUST ask the user before launching, filling credentials, submitting forms, or clicking external-action buttons.
@@ -244,7 +249,8 @@ Behavioral:
 
 Direct driver routes (when you genuinely need them):
 - Typed/recipe automation: `/api/browser/*` and `/api/plugins/browser-use/*`.
-- Natural-language: `/api/plugins/stagehand/*`.
+- In-app agent: `/api/browser/agent/*`.
+- Stagehand: `/api/plugins/stagehand/*`.
 
 ## Desktop App Automation (Apps tab)
 

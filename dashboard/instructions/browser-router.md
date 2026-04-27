@@ -1,6 +1,14 @@
 # Browser Router (core, ships with Symphonee)
 
-For browser automation, **call the router instead of picking a driver yourself**. It chooses between Stagehand (natural-language, DOM-resilient) and the in-app browser-use driver (typed actions, recipes, in-app webview), dispatches the request, and falls back automatically when one driver is unavailable.
+For browser automation, **call the router instead of picking a driver yourself**. It chooses between three drivers, dispatches the request, and falls back automatically when one isn't reachable.
+
+## Drivers
+
+| Driver | LLM loop? | Browser surface | When to pick |
+| --- | --- | --- | --- |
+| `browser-use` | no -- typed actions only | the in-app `<webview>` (live, interactable) | The caller already knows the selector / handle / typed action. Cheapest, fastest, no LLM tokens. |
+| `in-app-agent` | yes (Symphonee's tool-use loop) | the in-app `<webview>` (live, interactable) | Free-text goal where the user wants to watch live and possibly take over. **Default.** |
+| `stagehand` | yes (Stagehand SDK) | a separate headless Chromium streamed to a screencast canvas | Sandboxed/clean profile, schema-validated `extract`, or anything explicitly opted into via `prefer: "stagehand"` / `sandboxed: true` / `mode: "extract"`. |
 
 ## Endpoints
 
@@ -24,39 +32,80 @@ All under `/api/browser/router/*`:
 
 | field | when to set |
 | --- | --- |
-| `goal` / `instruction` | free-text task. Routes to Stagehand. |
+| `goal` / `instruction` | free-text task. Routes to in-app-agent by default. |
 | `url` | optional pre-navigation. |
-| `mode` | Stagehand-only: `act` (default), `extract`, `observe`, `agent`. |
-| `maxSteps` | cap on the Stagehand agent loop. |
+| `mode` | Stagehand-only hint: `act` / `extract` / `observe` / `agent`. `extract` forces Stagehand. |
+| `maxSteps` | cap on the agent loop. |
 | `action` | typed action name (`click_text`, `fill_label`, ...). Forces browser-use. |
 | `params` | params for `action`. |
 | `selector` | CSS selector. Forces browser-use. |
 | `handle` | clickable handle from `/api/plugins/browser-use/clickables`. Forces browser-use. |
-| `prefer` | `"auto"`, `"stagehand"`, or `"browser-use"`. Overrides the heuristic. |
+| `recipeId` | saved browser-use recipe. Forces browser-use. |
+| `sandboxed` / `fresh` | `true` -> Stagehand (clean profile, no user cookies). |
+| `schema` | a JSON schema for structured extraction -> Stagehand. |
+| `prefer` | `"auto"`, `"in-app-agent"`, `"stagehand"`, or `"browser-use"`. Overrides the heuristic. |
+| `provider` / `model` | in-app-agent only: pick which AI key drives it. |
+| `timeoutMs` | in-app-agent dispatch timeout. Defaults to 600_000. |
 
 ## Decision rules (highest priority first)
 
 1. Explicit `prefer` always wins (unless `"auto"`).
-2. If `action`, `selector`, `handle`, or `recipeId` is supplied, the request is already a deterministic recipe step -- the router picks **browser-use** (no LLM needed).
-3. Free-text `goal` / `instruction` with no selector -> **Stagehand**.
-4. Empty input -> falls back to the configured default (Stagehand by default).
+2. `action` / `selector` / `handle` / `recipeId` -> **browser-use** (deterministic, no LLM).
+3. Free-text goal + (`sandboxed` / `fresh` / `schema` / `mode: "extract"`) -> **Stagehand**.
+4. Free-text goal otherwise -> **in-app-agent**.
+5. Empty input -> in-app-agent default.
 
-## Visual surface
+## Visual surface and tab behaviour
 
-When Stagehand handles a request, the plugin auto-starts a CDP screencast on the first primitive call. Frames are broadcast as `stagehand-screencast` events on the dashboard websocket and rendered on a canvas overlay inside the existing **Browser** tab. The user sees the same tab whether browser-use (in-app webview) or Stagehand (overlay) is driving.
-
-The overlay auto-hides 8 seconds after the last frame. To stop earlier, call `POST /api/plugins/stagehand/screencast/stop` or click "Close" on the overlay.
+- For `in-app-agent` and `browser-use`, the **in-app `<webview>` itself** is the live view. The user can watch and click in real time.
+- For `stagehand`, the plugin opens a CDP screencast and renders frames into a canvas overlay on top of the Browser tab. The screencast is read-only -- it's a video, not an interactable browser.
+- The router emits `browser-router-dispatch` broadcasts (phase=`start` / `end` / `error`). The dashboard auto-jumps to **Automation -> Browser** on `start` and back to **Terminal** on `end`/`error`. The Automation tab gets a green pulse dot while a run is active.
 
 ## Fallback
 
-If the router picks `stagehand` but the plugin is not installed or the package is missing, it retries against browser-use and reports the downgrade in `fallbacks[]`. Callers don't need to handle this -- just check `result.ok`.
+- `in-app-agent` unreachable -> tries `stagehand` -> falls back to `browser-use`.
+- `stagehand` unreachable / 501 -> falls back to `browser-use`.
 
-## Example: one call replaces "should I use Stagehand or browser-use?"
+Each downgrade is recorded in `result.fallbacks[]`.
+
+## Example: free-text goal (live, interactable)
 
 ```bash
 curl -s -X POST http://127.0.0.1:3800/api/browser/router/run \
   -H 'Content-Type: application/json' \
-  -d '{"goal":"go to hacker news, click the top story, summarize the comments","mode":"agent","maxSteps":6}'
+  -d '{"goal":"go to hacker news, click the top story, summarize the comments","url":"https://news.ycombinator.com/"}'
 ```
 
-Response: `{ ok, driver, decision: { reason, confidence }, fallbacks, result }`.
+Routes to **in-app-agent**. The user watches the agent in the Browser tab.
+
+## Example: schema-validated extraction (sandboxed)
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/browser/router/run \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"get the price and currency from this product page","url":"https://example.com/p/42","mode":"extract","schema":{"price":"number","currency":"string"}}'
+```
+
+Routes to **Stagehand** because `mode: extract` + `schema` are present.
+
+## Example: deterministic typed action (no LLM)
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/browser/router/run \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"navigate","params":{"url":"https://news.ycombinator.com/"}}'
+```
+
+Routes to **browser-use** at confidence 0.95 -- sub-second, zero LLM tokens.
+
+## Response shape
+
+```json
+{
+  "ok": true,
+  "driver": "in-app-agent",
+  "decision": { "driver": "in-app-agent", "reason": "...", "confidence": 0.85 },
+  "fallbacks": [],
+  "result": { ... }
+}
+```

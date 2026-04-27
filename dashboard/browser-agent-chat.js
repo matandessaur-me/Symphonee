@@ -1286,10 +1286,12 @@ async function runThread({ thread, task, agent, providerEntry, model, broadcast,
     if (!finalSummary) finalSummary = iter >= MAX_ITERATIONS ? `Stopped after ${MAX_ITERATIONS} steps.` : 'Done.';
     const finalReport = buildFinalBrowserReport(finalSummary, actionReports);
     emit({ kind: 'done', summary: finalSummary, markdown: finalReport, reports: actionReports });
-    return { ok: true, summary: finalSummary, iterations: iter, report: finalReport, actionReports };
+    thread.lastResult = { ok: true, kind: 'done', summary: finalSummary, iterations: iter, report: finalReport, actionReports, finishedAt: Date.now() };
+    return thread.lastResult;
   } catch (e) {
     emit({ kind: 'error', message: e.message });
-    return { ok: false, error: e.message };
+    thread.lastResult = { ok: false, kind: 'error', error: e.message, finishedAt: Date.now() };
+    return thread.lastResult;
   } finally {
     thread.running = false;
     pruneThreads();
@@ -1341,6 +1343,7 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
     if (thread.running) return json(res, { error: 'Thread already running. Stop it first.' }, 409);
     thread.stopped = false;
     thread.resumed = false;
+    thread.lastResult = null;
     const model = body.model || entry.adapter.defaultModel;
 
     const credentials = getConfig().BrowserCredentials || {};
@@ -1424,6 +1427,10 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
       running: !!(t && t.running),
       stopped: !!(t && t.stopped),
       messages: t ? t.messages.length : 0,
+      // lastResult is set by runThread on done/error so callers (incl. the
+      // browser router) can pick up the final outcome without needing to
+      // subscribe to broadcast events.
+      lastResult: (t && t.lastResult) || null,
       providers,
       defaultProvider: providers.length ? (pickProvider(registry).adapter.kind || null) : null,
     });

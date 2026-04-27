@@ -37,10 +37,16 @@ const http = require('http');
 
 const ROUTER_PREFIX = '/api/browser/router';
 
+// Driver options:
+//   "browser-use"   -- typed actions on the in-app webview, no LLM round-trips.
+//   "in-app-agent"  -- LLM tool-use loop driving the in-app webview directly,
+//                      so the user can watch live AND interact mid-run.
+//   "stagehand"     -- LLM agent loop driving a separate headless Chromium
+//                      (sandboxed, fresh profile, schema-validated extract).
 function decide(input, settings) {
   const s = settings || {};
   const prefer = (input && input.prefer) || (s.default && s.default !== 'auto' ? s.default : null);
-  if (prefer === 'stagehand' || prefer === 'browser-use') {
+  if (prefer === 'stagehand' || prefer === 'browser-use' || prefer === 'in-app-agent') {
     return { driver: prefer, reason: 'explicit prefer=' + prefer, confidence: 1 };
   }
 
@@ -50,15 +56,25 @@ function decide(input, settings) {
   }
 
   const text = (input && (input.goal || input.instruction || '')).toString().trim();
+  // Sandboxed/schema requests benefit from Stagehand's clean profile + Zod
+  // extract. Otherwise default to the in-app agent so the user watches the
+  // run in their normal browser and can take over at any point.
+  const wantsSandbox = !!(input && (input.sandboxed || input.fresh || input.headless));
+  const wantsSchema = !!(input && input.schema);
+  const wantsExtractMode = (input && String(input.mode || '').toLowerCase()) === 'extract';
+
   if (text) {
-    const looksRepeat = /^(click|type|fill|press|navigate|goto|wait)\b\s+\S+$/i.test(text);
-    if (looksRepeat && s.preferStagehand === false) {
-      return { driver: 'browser-use', reason: 'short verb-noun phrase parses as a typed action', confidence: 0.6 };
+    if (wantsSandbox || wantsSchema || wantsExtractMode) {
+      return { driver: 'stagehand', reason: 'sandboxed/structured-extract task -- Stagehand SDK preferred', confidence: 0.9 };
     }
-    return { driver: 'stagehand', reason: 'free-text goal -- DOM-resilient natural-language path', confidence: 0.85 };
+    const looksRepeat = /^(click|type|fill|press|navigate|goto|wait)\b\s+\S+$/i.test(text);
+    if (looksRepeat) {
+      return { driver: 'browser-use', reason: 'short verb-noun phrase parses as a typed action', confidence: 0.7 };
+    }
+    return { driver: 'in-app-agent', reason: 'free-text goal -- LLM tool-use loop on the live in-app webview', confidence: 0.85 };
   }
 
-  return { driver: s.preferStagehand === false ? 'browser-use' : 'stagehand', reason: 'no signals, fell back to default', confidence: 0.4 };
+  return { driver: 'in-app-agent', reason: 'no signals, fell back to in-app default', confidence: 0.4 };
 }
 
 function _readBody(req) {
@@ -107,6 +123,52 @@ function _localGet(port, urlPath) {
 async function _stagehandReachable(port) {
   const r = await _localGet(port, '/api/plugins/stagehand/health');
   return r.status === 200 && r.body && r.body.ok === true;
+}
+
+async function _inAppAgentReachable(port) {
+  const r = await _localGet(port, '/api/browser/agent/status');
+  return r.status === 200 && r.body && r.body.ok === true;
+}
+
+function _wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function _dispatchInAppAgent(port, body) {
+  // Generate a router-owned threadId so we don't collide with the user's
+  // in-tab "Ask AI" thread (which always uses 'default').
+  const threadId = 'router-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  const task = body.goal || body.instruction || '';
+  const start = await _localPost(port, '/api/browser/agent/chat', {
+    task, threadId,
+    provider: body.provider || undefined,
+    model: body.model || undefined,
+  });
+  if (start.status >= 400) return start;
+
+  // Pre-navigate if a URL was supplied; the agent will pick it up from there.
+  if (body.url) {
+    await _localPost(port, '/api/browser/navigate', { url: body.url });
+  }
+
+  // Poll status until the run finishes. Status returns lastResult once
+  // runThread reaches its emit({kind:'done'|'error'|'stopped'}) sites.
+  const deadline = Date.now() + (Number.isFinite(body.timeoutMs) ? body.timeoutMs : 600_000);
+  while (Date.now() < deadline) {
+    const st = await _localGet(port, '/api/browser/agent/status?threadId=' + encodeURIComponent(threadId));
+    if (st.status === 200 && st.body && st.body.lastResult) {
+      return { status: 200, body: { ok: !!st.body.lastResult.ok, ...st.body.lastResult, threadId } };
+    }
+    if (st.status === 200 && st.body && !st.body.running) {
+      // Race: thread finished before lastResult landed; brief retry.
+      await _wait(150);
+      const st2 = await _localGet(port, '/api/browser/agent/status?threadId=' + encodeURIComponent(threadId));
+      if (st2.body && st2.body.lastResult) {
+        return { status: 200, body: { ok: !!st2.body.lastResult.ok, ...st2.body.lastResult, threadId } };
+      }
+      return { status: 200, body: { ok: false, error: 'In-app agent finished but no result captured', threadId } };
+    }
+    await _wait(500);
+  }
+  return { status: 504, body: { ok: false, error: 'In-app agent timed out', threadId } };
 }
 
 async function _dispatchStagehand(port, body) {
@@ -160,7 +222,17 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
   addRoute('GET', ROUTER_PREFIX + '/status', async (req, res) => {
     const stagehand = await _stagehandReachable(_port);
     const browserUse = (await _localGet(_port, '/api/plugins/browser-use/health')).status === 200;
-    json(res, { ok: true, drivers: { stagehand, 'browser-use': true, 'browser-use-plugin': browserUse }, settings: settingsFor() });
+    const inAppAgent = await _inAppAgentReachable(_port);
+    json(res, {
+      ok: true,
+      drivers: {
+        'in-app-agent': inAppAgent,
+        stagehand,
+        'browser-use': true,
+        'browser-use-plugin': browserUse,
+      },
+      settings: settingsFor(),
+    });
   });
 
   addRoute('POST', ROUTER_PREFIX + '/recommend', async (req, res) => {
@@ -175,6 +247,10 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
     const fallbacks = [];
     let driver = decision.driver;
 
+    if (driver === 'in-app-agent' && !(await _inAppAgentReachable(_port))) {
+      fallbacks.push({ from: 'in-app-agent', reason: 'agent chat route not reachable' });
+      driver = (await _stagehandReachable(_port)) ? 'stagehand' : 'browser-use';
+    }
     if (driver === 'stagehand' && !(await _stagehandReachable(_port))) {
       fallbacks.push({ from: 'stagehand', reason: 'plugin not reachable' });
       driver = 'browser-use';
@@ -190,9 +266,11 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
     }
 
     try {
-      const r = driver === 'stagehand'
-        ? await _dispatchStagehand(_port, body)
-        : await _dispatchBrowserUse(_port, body);
+      const r = driver === 'in-app-agent'
+        ? await _dispatchInAppAgent(_port, body)
+        : driver === 'stagehand'
+          ? await _dispatchStagehand(_port, body)
+          : await _dispatchBrowserUse(_port, body);
 
       if (driver === 'stagehand' && r.status === 501) {
         fallbacks.push({ from: 'stagehand', reason: r.body && r.body.error || 'Stagehand not installed (501)' });
