@@ -98,6 +98,9 @@ module.exports = function register(ctx) {
       // stagehand.activePage null and breaks the agent on first step.
       const page = sh.page || sh.context.pages()[0] || await sh.context.newPage();
       await page.goto(url);
+      // Now that the page exists, start the screencast eagerly so frames flow
+      // before the agent loop adds further work.
+      _ensureAutoCast();
       json(res, { ok: true, url: page.url() });
     } catch (e) { _err(json, res, e); }
   });

@@ -17103,28 +17103,36 @@ function _appendBrowserAgentWaitingRow(message) {
   return row;
 }
 
-// ── Browser tab activity indicator ─────────────────────────────────────────
+// ── Automation tab activity indicator ──────────────────────────────────────
 // Mirrors the orchestrator-tab pulse: a green pulse dot appears on the left
-// of the Browser tab whenever automation is running (Stagehand or browser-use).
-// Pings are debounced -- the dot stays for 8s after the last signal, then
-// disappears.
-const _browserTabActivity = { lastPing: 0, idleTimer: null };
-function _markBrowserTabActive() {
-  _browserTabActivity.lastPing = Date.now();
-  const btn = document.getElementById('browserTabBtn');
+// of the Automation parent tab whenever automation is running (Stagehand or
+// browser-use). Pings are debounced -- the dot stays for 8s after the last
+// signal, then disappears.
+const _automationActivity = { lastPing: 0, idleTimer: null };
+function _markAutomationActive() {
+  _automationActivity.lastPing = Date.now();
+  const btn = document.getElementById('automationTabBtn');
   if (btn && !btn.querySelector('.browser-pulse-dot')) {
     const dot = document.createElement('span');
     dot.className = 'browser-pulse-dot';
     btn.insertBefore(dot, btn.firstChild);
   }
-  if (_browserTabActivity.idleTimer) clearTimeout(_browserTabActivity.idleTimer);
-  _browserTabActivity.idleTimer = setTimeout(() => {
-    if (Date.now() - _browserTabActivity.lastPing >= 8000) {
-      const b = document.getElementById('browserTabBtn');
+  if (_automationActivity.idleTimer) clearTimeout(_automationActivity.idleTimer);
+  _automationActivity.idleTimer = setTimeout(() => {
+    if (Date.now() - _automationActivity.lastPing >= 8000) {
+      const b = document.getElementById('automationTabBtn');
       const d = b && b.querySelector('.browser-pulse-dot');
       if (d) d.remove();
     }
   }, 8500);
+}
+// Backwards-compat alias for older call sites.
+function _markBrowserTabActive() { _markAutomationActive(); }
+function _focusAutomationBrowser() {
+  try {
+    if (typeof switchTab === 'function') switchTab('automation');
+    if (typeof switchAutomationSubTab === 'function') switchAutomationSubTab('browser');
+  } catch (_) {}
 }
 
 // ── Stagehand screencast viewer ────────────────────────────────────────────
@@ -17134,7 +17142,7 @@ function _markBrowserTabActive() {
 const _stagehandCast = { lastFrame: 0, idleTimer: null, img: null };
 function handleStagehandScreencast(msg) {
   if (!msg || !msg.data) return;
-  _markBrowserTabActive();
+  _markAutomationActive();
   const overlay = document.getElementById('stagehandScreencastOverlay');
   const canvas = document.getElementById('stagehandScreencastCanvas');
   const urlEl = document.getElementById('stagehandScreencastUrl');
@@ -17150,14 +17158,17 @@ function handleStagehandScreencast(msg) {
     }
   }, 8500);
 
-  if (!_stagehandCast.img) _stagehandCast.img = new Image();
-  const img = _stagehandCast.img;
+  // Use a fresh Image per frame so a slow decode never gets cancelled by the
+  // next frame's src assignment, and so the canvas keeps showing the latest
+  // fully-decoded frame even when frames arrive faster than the GPU draws.
+  const img = new Image();
   img.onload = () => {
     const ctx = canvas.getContext('2d');
-    canvas.width = img.naturalWidth || canvas.clientWidth || 1280;
-    canvas.height = img.naturalHeight || canvas.clientHeight || 720;
+    if (canvas.width !== img.naturalWidth) canvas.width = img.naturalWidth || 1280;
+    if (canvas.height !== img.naturalHeight) canvas.height = img.naturalHeight || 720;
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   };
+  img.onerror = () => { /* ignore malformed frame */ };
   img.src = 'data:image/jpeg;base64,' + msg.data;
 }
 function closeStagehandScreencast() {
@@ -17167,7 +17178,9 @@ function closeStagehandScreencast() {
 }
 function handleBrowserRouterDispatch(msg) {
   if (!msg) return;
-  _markBrowserTabActive();
+  _markAutomationActive();
+  // Bring the user to where they can watch the run unfold.
+  _focusAutomationBrowser();
   if (msg.driver === 'stagehand') {
     const overlay = document.getElementById('stagehandScreencastOverlay');
     if (overlay && overlay.style.display === 'none') overlay.style.display = 'block';
