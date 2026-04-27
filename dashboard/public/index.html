@@ -17143,6 +17143,10 @@ const _stagehandCast = { lastFrame: 0, idleTimer: null, img: null };
 function handleStagehandScreencast(msg) {
   if (!msg || !msg.data) return;
   _markAutomationActive();
+  // First-frame fallback: if the dispatch broadcast was missed (or dropped
+  // because the user was switching tabs), the first screencast frame still
+  // pulls them onto the Browser tab so they don't miss the run.
+  if (!_stagehandCast.lastFrame) _focusAutomationBrowser();
   const overlay = document.getElementById('stagehandScreencastOverlay');
   const canvas = document.getElementById('stagehandScreencastCanvas');
   const urlEl = document.getElementById('stagehandScreencastUrl');
@@ -17179,9 +17183,10 @@ function closeStagehandScreencast() {
 function handleBrowserRouterDispatch(msg) {
   if (!msg) return;
   _markAutomationActive();
-  // Bring the user to where they can watch the run unfold.
-  _focusAutomationBrowser();
-  if (msg.driver === 'stagehand') {
+  // Only auto-navigate on the start of a run. Don't yank the user back to
+  // the Browser tab when the run completes -- they may have moved on.
+  if (!msg.phase || msg.phase === 'start') _focusAutomationBrowser();
+  if (msg.driver === 'stagehand' && (!msg.phase || msg.phase === 'start')) {
     const overlay = document.getElementById('stagehandScreencastOverlay');
     if (overlay && overlay.style.display === 'none') overlay.style.display = 'block';
   }

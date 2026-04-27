@@ -180,6 +180,15 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
       driver = 'browser-use';
     }
 
+    // Broadcast START so the dashboard switches to Automation -> Browser
+    // BEFORE the agent runs, not after. Otherwise the user only sees the
+    // navigation event after the work is already done.
+    if (typeof broadcast === 'function') {
+      try {
+        broadcast({ type: 'browser-router-dispatch', phase: 'start', driver, decision, fallbacks, at: Date.now() });
+      } catch (_) {}
+    }
+
     try {
       const r = driver === 'stagehand'
         ? await _dispatchStagehand(_port, body)
@@ -188,24 +197,21 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
       if (driver === 'stagehand' && r.status === 501) {
         fallbacks.push({ from: 'stagehand', reason: r.body && r.body.error || 'Stagehand not installed (501)' });
         const r2 = await _dispatchBrowserUse(_port, body);
+        if (typeof broadcast === 'function') { try { broadcast({ type: 'browser-router-dispatch', phase: 'end', driver: 'browser-use', decision, fallbacks, at: Date.now() }); } catch (_) {} }
         return json(res, {
           ok: r2.status >= 200 && r2.status < 300 && r2.body && r2.body.ok !== false,
           driver: 'browser-use', decision, fallbacks, result: r2.body,
         }, r2.status || 200);
       }
 
+      if (typeof broadcast === 'function') { try { broadcast({ type: 'browser-router-dispatch', phase: 'end', driver, decision, fallbacks, at: Date.now() }); } catch (_) {} }
       json(res, {
         ok: r.status >= 200 && r.status < 300 && r.body && r.body.ok !== false,
         driver, decision, fallbacks, result: r.body,
       }, r.status || 200);
     } catch (e) {
+      if (typeof broadcast === 'function') { try { broadcast({ type: 'browser-router-dispatch', phase: 'error', driver, decision, fallbacks, error: e.message, at: Date.now() }); } catch (_) {} }
       json(res, { ok: false, driver, decision, fallbacks, error: e.message }, 500);
-    }
-
-    if (typeof broadcast === 'function') {
-      try {
-        broadcast({ type: 'browser-router-dispatch', driver, decision, fallbacks, at: Date.now() });
-      } catch (_) {}
     }
   });
 }
