@@ -234,11 +234,17 @@ Accumulated technical mistakes. Fetched at bootstrap via `/api/learnings`. Recor
 
 ## Browser Automation
 
-Details in the API reference. Behavioral:
+**Default entry point: the Browser Router (`/api/browser/router/*`).** Don't pick between Stagehand and browser-use yourself -- POST your task to `/api/browser/router/run` and the router decides, dispatches, falls back, and broadcasts a Stagehand screencast into the in-app Browser tab when applicable. Full instructions at `/api/instructions/browser-router`.
+
+Behavioral:
 - MUST ask the user before launching, filling credentials, submitting forms, or clicking external-action buttons.
 - Reading pages, screenshots, element queries: no permission needed.
 - POST endpoints blocked in Incognito.
 - Saved accounts: `curl -s http://127.0.0.1:3800/api/browser/accounts`.
+
+Direct driver routes (when you genuinely need them):
+- Typed/recipe automation: `/api/browser/*` and `/api/plugins/browser-use/*`.
+- Natural-language: `/api/plugins/stagehand/*`.
 
 ## Desktop App Automation (Apps tab)
 
