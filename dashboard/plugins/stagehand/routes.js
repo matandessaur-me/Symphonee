@@ -96,7 +96,7 @@ module.exports = function register(ctx) {
       // Prefer the StagehandPage wrapper -- it's what the agent loop's
       // awaitActivePage tracks. Falling back to the raw context page leaves
       // stagehand.activePage null and breaks the agent on first step.
-      const page = sh.page || sh.context.pages()[0] || await sh.context.newPage();
+      const page = sh.context.pages()[0] || await sh.context.newPage();
       await page.goto(url);
       // Now that the page exists, start the screencast eagerly so frames flow
       // before the agent loop adds further work.
@@ -112,7 +112,7 @@ module.exports = function register(ctx) {
     try {
       const sh = await session.getSession({ getSettings, getConfig });
       if (body.url) {
-        const page = sh.page || sh.context.pages()[0] || await sh.context.newPage();
+        const page = sh.context.pages()[0] || await sh.context.newPage();
         await page.goto(body.url);
       }
       _ensureAutoCast();

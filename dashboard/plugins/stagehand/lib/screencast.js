@@ -22,8 +22,17 @@ async function startScreencast(sh, { broadcast, format = 'jpeg', quality = 60, e
 
   _starting = (async () => {
     if (!sh) throw new Error('Stagehand session not initialised');
-    const page = sh.page;
-    if (!page) throw new Error('Stagehand page not ready -- call /goto first');
+    // Stagehand v3 doesn't expose `sh.page` -- pages live on the V3Context.
+    // Pick the most recent page (active target) so the screencast follows
+    // whatever the agent is currently driving.
+    const ctx = sh.context;
+    if (!ctx) throw new Error('Stagehand context not ready');
+    let page = null;
+    if (typeof ctx.awaitActivePage === 'function') {
+      try { page = await ctx.awaitActivePage(); } catch (_) { /* fall through */ }
+    }
+    if (!page && typeof ctx.pages === 'function') page = ctx.pages()[0];
+    if (!page) throw new Error('Stagehand has no open page yet -- call /goto first');
     const session = page.mainSession;
     if (!session || typeof session.send !== 'function') throw new Error('Stagehand mainSession unavailable');
 
