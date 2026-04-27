@@ -25305,6 +25305,12 @@ function renderPluginSettings(plugins) {
         nav += '<select id="' + fieldId + '" data-plugin="' + p.id + '" data-key="' + s.key + '"'
           + (s.optionsFrom ? ' data-options-from="' + s.optionsFrom + '"' : '')
           + ' class="plugin-setting-input"></select>';
+      } else if (s.type === 'boolean') {
+        nav += '<label class="plugin-setting-toggle" style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">';
+        nav += '<input id="' + fieldId + '" type="checkbox" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input plugin-setting-bool" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">';
+        nav += '<span class="plugin-setting-track" style="position:relative;display:inline-block;width:36px;height:20px;background:var(--surface1);border-radius:999px;transition:background 0.15s ease;"><span class="plugin-setting-thumb" style="position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform 0.15s ease,background 0.15s ease;box-shadow:0 1px 2px rgba(0,0,0,0.3);"></span></span>';
+        nav += '<span style="font-size:12px;color:var(--subtext0);" data-toggle-label="off">Off</span>';
+        nav += '</label>';
       } else {
         nav += '<input id="' + fieldId + '" type="text" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
       }
@@ -25355,6 +25361,15 @@ function renderPluginSettings(plugins) {
       (p.settings || []).forEach(function (s) {
         var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
         if (!el) return;
+        if (s.type === 'boolean') {
+          // Apply current value (fall back to manifest default when undefined)
+          var current = cfg[s.key];
+          if (current === undefined) current = !!s.default;
+          el.checked = !!current;
+          _syncPluginToggleVisual(el);
+          el.addEventListener('change', function () { _syncPluginToggleVisual(el); });
+          return;
+        }
         if (cfg[s.key] !== undefined) {
           el.value = cfg[s.key];
           // Browsers ignore .value if no matching <option> exists yet (dynamic
@@ -25366,6 +25381,21 @@ function renderPluginSettings(plugins) {
       });
     }).catch(function () {});
   });
+}
+
+// Drives the visual state of the boolean plugin-setting toggle: track color,
+// thumb position, and the "On"/"Off" label next to it.
+function _syncPluginToggleVisual(input) {
+  if (!input) return;
+  var label = input.closest('label.plugin-setting-toggle');
+  if (!label) return;
+  var track = label.querySelector('.plugin-setting-track');
+  var thumb = label.querySelector('.plugin-setting-thumb');
+  var text = label.querySelector('[data-toggle-label]');
+  var on = !!input.checked;
+  if (track) track.style.background = on ? 'var(--green)' : 'var(--surface1)';
+  if (thumb) thumb.style.transform = on ? 'translateX(16px)' : 'translateX(0)';
+  if (text) { text.textContent = on ? 'On' : 'Off'; text.dataset.toggleLabel = on ? 'on' : 'off'; }
 }
 
 // Resolves dropdown options for plugin settings. Static: setting.options array.
@@ -25707,7 +25737,14 @@ async function savePluginSettings() {
   inputs.forEach(function (el) {
     var pid = el.dataset.plugin;
     var key = el.dataset.key;
-    var val = el.value.trim();
+    if (!pid || !key) return;
+    if (el.classList.contains('plugin-setting-bool') || el.type === 'checkbox') {
+      // Always persist booleans -- empty value would falsely flip the toggle off.
+      if (!byPlugin[pid]) byPlugin[pid] = {};
+      byPlugin[pid][key] = !!el.checked;
+      return;
+    }
+    var val = (el.value || '').trim();
     if (!val) return; // skip empty (don't overwrite with blank)
     if (!byPlugin[pid]) byPlugin[pid] = {};
     byPlugin[pid][key] = val;
