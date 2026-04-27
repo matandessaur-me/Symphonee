@@ -5365,6 +5365,9 @@
         <button class="settings-nav-btn active" data-settings-tab="plugins" onclick="switchSettingsTab('plugins', this)" id="settingsPluginsBtn">
           <i data-lucide="puzzle" style="width:14px;height:14px;"></i> Plugins
         </button>
+        <button class="settings-nav-btn" data-settings-tab="browser" onclick="switchSettingsTab('browser', this); refreshBrowserSettings();">
+          <i data-lucide="globe" style="width:14px;height:14px;"></i> Browser
+        </button>
         <button class="settings-nav-btn" data-settings-tab="mcp" onclick="switchSettingsTab('mcp', this); refreshMcpServers();">
           <i data-lucide="plug" style="width:14px;height:14px;"></i> MCP Servers
         </button>
@@ -5458,19 +5461,16 @@
               <div style="display:flex;gap:0;"><input id="settingsXaiKey" type="password" placeholder="xai-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsXaiKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             </div>
           </div>
-          <div class="settings-section">
-            <div class="settings-section-title">Browser Automation</div>
-            <div class="settings-section-desc">AI-controlled browser sessions for account creation and authentication. Requires <code>playwright-core</code> to be installed. Embedded pages now use their own site-defined colors without a Symphonee dark-mode override.</div>
+          <!-- Browser automation settings now live in their own dedicated
+               Settings -> Browser tab. Hidden DOM kept so saveSettings() can
+               still serialise BrowserCredentials without a guard. -->
+          <div class="settings-section" style="display:none;">
             <div id="settingsBrowserCreds">
-              <div style="font-size:11px;color:var(--subtext0);margin-bottom:6px;">Saved credentials (AI-owned accounts):</div>
-              <div id="browserCredList" style="margin-bottom:8px;"></div>
+              <div id="browserCredList"></div>
             </div>
-            <div style="display:flex;gap:8px;">
-              <input id="browserCredName" type="text" placeholder="Account name" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
-              <input id="browserCredEmail" type="email" placeholder="Email" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
-              <input id="browserCredPass" type="password" placeholder="Password" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
-              <button class="modal-btn" onclick="addBrowserCredential()" style="padding:6px 12px;font-size:11px;white-space:nowrap;">Add</button>
-            </div>
+            <input id="browserCredName" type="text" />
+            <input id="browserCredEmail" type="email" />
+            <input id="browserCredPass" type="password" />
           </div>
         </div>
 
@@ -5508,6 +5508,74 @@
             <button onclick="browsePlugins()" style="font-size:11px;padding:6px 14px;background:var(--surface1);border:1px solid var(--overlay0);color:var(--text);border-radius:var(--radius);cursor:pointer;">Browse Plugins</button>
           </div>
           <div id="pluginSettingsContainer"><div style="color:var(--subtext0);padding:12px;">No plugins installed.</div></div>
+        </div>
+
+        <!-- Browser Tab -->
+        <div class="settings-tab" id="settingsTab-browser">
+          <div class="settings-section">
+            <div class="settings-section-title">Browser Router</div>
+            <div class="settings-section-desc">Symphonee picks between three browser drivers automatically. Configure the defaults the heuristic uses when a request is ambiguous.</div>
+            <div class="modal-field">
+              <label>Default driver (when no signals are present)</label>
+              <select id="settingsBrowserRouterDefault" style="width:100%;">
+                <option value="auto">Auto (let the heuristic decide)</option>
+                <option value="in-app-agent">In-app agent (LLM loop on the live webview, user can take over)</option>
+                <option value="stagehand">Stagehand (sandboxed headless Chromium)</option>
+                <option value="browser-use">browser-use (deterministic typed actions)</option>
+              </select>
+            </div>
+            <div class="modal-field">
+              <label class="plugin-setting-toggle" style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">
+                <input id="settingsBrowserRouterPreferStagehand" type="checkbox" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
+                <span class="plugin-setting-track" style="position:relative;display:inline-block;width:36px;height:20px;background:var(--surface1);border-radius:999px;transition:background 0.15s ease;"><span class="plugin-setting-thumb" style="position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform 0.15s ease,background 0.15s ease;box-shadow:0 1px 2px rgba(0,0,0,0.3);"></span></span>
+                <span style="font-size:12px;color:var(--subtext0);" data-toggle-label="off">Off</span>
+                <span style="font-size:12px;color:var(--text);">Prefer Stagehand for ambiguous short verb-noun phrases (advanced)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">In-app Agent (default driver)</div>
+            <div class="settings-section-desc">The LLM tool-use loop that drives the live in-app webview. Free-text goals route here by default.</div>
+            <div class="modal-field">
+              <label>Default model</label>
+              <div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;font-style:italic;">Selects the default AI when not set. Only models for which you have an API key in Settings -&gt; AI Keys appear here.</div>
+              <select id="settingsInAppAgentModel" data-options-from="aiModels" style="width:100%;"></select>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Stagehand (sandboxed driver)</div>
+            <div class="settings-section-desc">Headless Chromium with a screencast view. Used for sandboxed sessions and schema-validated extraction. Local-only -- never contacts Browserbase cloud.</div>
+            <div class="modal-field">
+              <label>Model</label>
+              <div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;font-style:italic;">Selects the default AI when not set. Only models for which you have an API key in Settings -&gt; AI Keys appear here.</div>
+              <select id="settingsStagehandModel" data-options-from="aiModels" style="width:100%;"></select>
+            </div>
+            <div class="modal-field">
+              <label class="plugin-setting-toggle" style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">
+                <input id="settingsStagehandHeadless" type="checkbox" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
+                <span class="plugin-setting-track" style="position:relative;display:inline-block;width:36px;height:20px;background:var(--surface1);border-radius:999px;transition:background 0.15s ease;"><span class="plugin-setting-thumb" style="position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform 0.15s ease,background 0.15s ease;box-shadow:0 1px 2px rgba(0,0,0,0.3);"></span></span>
+                <span style="font-size:12px;color:var(--subtext0);" data-toggle-label="off">Off</span>
+                <span style="font-size:12px;color:var(--text);">Run Chromium headless (recommended -- the in-app screencast is your view; turn off only to see the external Chrome window)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Saved browser credentials</div>
+            <div class="settings-section-desc">AI-owned accounts the browser drivers can use to sign in. Stored encrypted at rest.</div>
+            <div id="settingsBrowserCredsBrowser">
+              <div style="font-size:11px;color:var(--subtext0);margin-bottom:6px;">Saved credentials:</div>
+              <div id="browserCredListBrowser" style="margin-bottom:8px;"></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <input id="browserCredNameBrowser" type="text" placeholder="Account name" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
+              <input id="browserCredEmailBrowser" type="email" placeholder="Email" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
+              <input id="browserCredPassBrowser" type="password" placeholder="Password" style="flex:1;padding:6px 8px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font-size:12px;">
+              <button class="modal-btn" onclick="addBrowserCredentialBrowserTab()" style="padding:6px 12px;font-size:11px;white-space:nowrap;">Add</button>
+            </div>
+          </div>
         </div>
 
         <!-- MCP Servers Tab -->
@@ -21315,6 +21383,13 @@ async function saveSettings() {
       },
       OrchestrateResultDelivery: 'inject',
       BrowserCredentials: configData.BrowserCredentials || {},
+      BrowserRouter: {
+        default: _txt('settingsBrowserRouterDefault') || 'auto',
+        preferStagehand: _chk('settingsBrowserRouterPreferStagehand'),
+      },
+      InAppAgent: {
+        model: _txt('settingsInAppAgentModel') || undefined,
+      },
       DefaultCli: defaultCli,
       Repos: configData.Repos || {},
     };
@@ -21324,8 +21399,9 @@ async function saveSettings() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    // Also save plugin settings
+    // Also save plugin settings + the Browser tab's plugin-scoped fields.
     await savePluginSettings();
+    await saveBrowserSettings();
     if (data.ok) {
       const needsRestart = document.getElementById('settingsSaveBtn')?._needsRestart;
       if (needsRestart) {
@@ -25248,6 +25324,11 @@ async function refreshPluginActivation() {
 // Render plugin settings fields in the Settings > Plugins tab
 function renderPluginSettings(plugins) {
   var container = document.getElementById('pluginSettingsContainer');
+  // Hide browser-router-managed plugins from the generic Plugins list -- their
+  // settings live under Settings -> Browser instead. They're not user-installed
+  // plugins, they're core drivers.
+  var BROWSER_DRIVER_IDS = { 'stagehand': true, 'browser-use': true };
+  plugins = (plugins || []).filter(function (p) { return p && !BROWSER_DRIVER_IDS[p.id]; });
   if (!plugins.length) { container.innerHTML = '<div style="color:var(--subtext0);padding:12px;">No plugins installed.</div>'; return; }
 
   // Vertical nav column + settings panel (matching main settings pattern)
@@ -25468,19 +25549,24 @@ function toggleSecretField(fieldId, btn) {
 }
 
 // ── Browser Credential Management ───────────────────────────────────────
-function renderBrowserCreds() {
+function _renderBrowserCredsInto(listEl) {
+  if (!listEl) return;
   const creds = configData.BrowserCredentials || {};
-  const list = document.getElementById('browserCredList');
-  if (!list) return;
   const entries = Object.entries(creds);
-  if (!entries.length) { list.innerHTML = '<div style="font-size:11px;color:var(--subtext1);padding:4px 0;">No credentials saved.</div>'; return; }
-  list.innerHTML = entries.map(([name, data]) =>
+  if (!entries.length) { listEl.innerHTML = '<div style="font-size:11px;color:var(--subtext1);padding:4px 0;">No credentials saved.</div>'; return; }
+  listEl.innerHTML = entries.map(([name, data]) =>
     `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--surface0);">
       <span style="font-size:12px;color:var(--text);flex:1;">${esc(name)}</span>
       <span style="font-size:11px;color:var(--subtext0);flex:1;">${esc(data.email || '')}</span>
       <button class="modal-btn" onclick="removeBrowserCredential('${esc(name)}')" style="padding:2px 8px;font-size:10px;color:var(--red);">Remove</button>
     </div>`
   ).join('');
+}
+function renderBrowserCreds() {
+  // Render into both surfaces (legacy AI Tools section, and the dedicated
+  // Browser settings tab) so credentials stay in sync wherever the user looks.
+  _renderBrowserCredsInto(document.getElementById('browserCredList'));
+  _renderBrowserCredsInto(document.getElementById('browserCredListBrowser'));
 }
 
 function addBrowserCredential() {
@@ -25495,10 +25581,88 @@ function addBrowserCredential() {
   document.getElementById('browserCredPass').value = '';
   renderBrowserCreds();
 }
+function addBrowserCredentialBrowserTab() {
+  const name = document.getElementById('browserCredNameBrowser').value.trim();
+  const email = document.getElementById('browserCredEmailBrowser').value.trim();
+  const pass = document.getElementById('browserCredPassBrowser').value;
+  if (!name || !email || !pass) { toast('All fields required', 'error'); return; }
+  if (!configData.BrowserCredentials) configData.BrowserCredentials = {};
+  configData.BrowserCredentials[name] = { email, password: pass };
+  document.getElementById('browserCredNameBrowser').value = '';
+  document.getElementById('browserCredEmailBrowser').value = '';
+  document.getElementById('browserCredPassBrowser').value = '';
+  renderBrowserCreds();
+}
 
 function removeBrowserCredential(name) {
   if (configData.BrowserCredentials) delete configData.BrowserCredentials[name];
   renderBrowserCreds();
+}
+
+// ── Browser settings tab loader / saver ────────────────────────────────────
+async function refreshBrowserSettings() {
+  // Router defaults (live in main config under BrowserRouter).
+  const r = (configData.BrowserRouter || {});
+  const defEl = document.getElementById('settingsBrowserRouterDefault');
+  if (defEl) defEl.value = r.default || 'auto';
+  const preferEl = document.getElementById('settingsBrowserRouterPreferStagehand');
+  if (preferEl) {
+    preferEl.checked = r.preferStagehand !== false;
+    _syncPluginToggleVisual(preferEl);
+    if (!preferEl._wired) { preferEl.addEventListener('change', () => _syncPluginToggleVisual(preferEl)); preferEl._wired = true; }
+  }
+
+  // Populate dynamic model dropdowns.
+  const inAppModelEl = document.getElementById('settingsInAppAgentModel');
+  if (inAppModelEl) _populatePluginSettingOptions(inAppModelEl, { optionsFrom: 'aiModels', placeholder: 'Default (auto-pick from saved keys)' });
+  const stagehandModelEl = document.getElementById('settingsStagehandModel');
+  if (stagehandModelEl) _populatePluginSettingOptions(stagehandModelEl, { optionsFrom: 'aiModels', placeholder: 'Default (Claude Sonnet 4.6)' });
+
+  // Stagehand plugin settings live on the plugin's own config endpoint.
+  try {
+    const res = await fetch('/api/plugins/stagehand/config', { cache: 'no-store' });
+    const cfg = res.ok ? await res.json() : {};
+    if (stagehandModelEl) {
+      if (cfg.model !== undefined) {
+        stagehandModelEl.value = cfg.model;
+        if (stagehandModelEl.value !== cfg.model) stagehandModelEl.dataset.pendingValue = cfg.model;
+      }
+    }
+    const headlessEl = document.getElementById('settingsStagehandHeadless');
+    if (headlessEl) {
+      // Manifest default is on; treat undefined as on.
+      headlessEl.checked = cfg.headless !== false;
+      _syncPluginToggleVisual(headlessEl);
+      if (!headlessEl._wired) { headlessEl.addEventListener('change', () => _syncPluginToggleVisual(headlessEl)); headlessEl._wired = true; }
+    }
+  } catch (_) {}
+
+  // In-app agent model (lives under InAppAgent in main config).
+  const inApp = (configData.InAppAgent || {});
+  if (inAppModelEl && inApp.model) {
+    inAppModelEl.value = inApp.model;
+    if (inAppModelEl.value !== inApp.model) inAppModelEl.dataset.pendingValue = inApp.model;
+  }
+
+  // Refresh the credentials list.
+  renderBrowserCreds();
+}
+
+async function saveBrowserSettings() {
+  // Router and in-app agent prefs go into the main config payload via
+  // saveSettings(); this helper just persists the plugin-scoped Stagehand
+  // settings out-of-band so a single Save click writes everything.
+  try {
+    const stagehandModel = (document.getElementById('settingsStagehandModel') || {}).value || '';
+    const stagehandHeadless = !!(document.getElementById('settingsStagehandHeadless') || {}).checked;
+    const body = { headless: stagehandHeadless };
+    if (stagehandModel) body.model = stagehandModel;
+    await fetch('/api/plugins/stagehand/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (_) {}
 }
 
 var _registryPlugins = [];

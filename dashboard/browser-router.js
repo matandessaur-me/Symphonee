@@ -132,15 +132,28 @@ async function _inAppAgentReachable(port) {
 
 function _wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function _dispatchInAppAgent(port, body) {
+async function _dispatchInAppAgent(port, body, settings) {
   // Generate a router-owned threadId so we don't collide with the user's
   // in-tab "Ask AI" thread (which always uses 'default').
   const threadId = 'router-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   const task = body.goal || body.instruction || '';
+  // Apply user's saved In-App Agent default (Settings -> Browser) when the
+  // request doesn't specify a model. Provider is inferred from the model
+  // prefix (anthropic/, openai/, google/, xai/).
+  let modelOverride = body.model;
+  let providerOverride = body.provider;
+  if (!modelOverride && settings && settings.inAppAgentModel) {
+    const m = String(settings.inAppAgentModel);
+    modelOverride = m.includes('/') ? m.split('/').slice(1).join('/') : m;
+    if (!providerOverride && m.includes('/')) {
+      const p = m.split('/')[0];
+      providerOverride = p === 'google' ? 'gemini' : (p === 'anthropic' ? 'anthropic' : (p === 'openai' ? 'openai' : (p === 'xai' ? 'xai' : undefined)));
+    }
+  }
   const start = await _localPost(port, '/api/browser/agent/chat', {
     task, threadId,
-    provider: body.provider || undefined,
-    model: body.model || undefined,
+    provider: providerOverride || undefined,
+    model: modelOverride || undefined,
   });
   if (start.status >= 400) return start;
 
@@ -211,11 +224,13 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
     try {
       const cfg = (getConfig && getConfig()) || {};
       const r = cfg.BrowserRouter || {};
+      const a = cfg.InAppAgent || {};
       return {
         default: r.default || 'auto',
         preferStagehand: r.preferStagehand !== false,
+        inAppAgentModel: a.model || null,
       };
-    } catch (_) { return { default: 'auto', preferStagehand: true }; }
+    } catch (_) { return { default: 'auto', preferStagehand: true, inAppAgentModel: null }; }
   };
   const _port = port || (process.env.SYMPHONEE_PORT && Number(process.env.SYMPHONEE_PORT)) || 3800;
 
@@ -266,8 +281,9 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
     }
 
     try {
+      const settings = settingsFor();
       const r = driver === 'in-app-agent'
-        ? await _dispatchInAppAgent(_port, body)
+        ? await _dispatchInAppAgent(_port, body, settings)
         : driver === 'stagehand'
           ? await _dispatchStagehand(_port, body)
           : await _dispatchBrowserUse(_port, body);
