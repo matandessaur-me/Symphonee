@@ -2727,7 +2727,20 @@ function _handleTerminalCwd(termId, cwd) {
   broadcast({ type: 'term-cwd', termId, cwd, repo: _repoForPath(cwd) });
 }
 
-function createTerminal(termId, cols = 120, rows = 30, cwd = repoRoot) {
+function createTerminal(termId, cols = 120, rows = 30, cwd = null) {
+  // Default new terminals to the user's active repo path so opening a new
+  // shell tab does not yank the dashboard back to Symphonee's own repoRoot.
+  // Falling back to repoRoot would trigger _handleTerminalCwd to broadcast
+  // repo:"Symphonee", which the client interprets as a repo switch and can
+  // clear activeRepo when it does not belong to the current space.
+  if (!cwd) {
+    try {
+      const ctx = getUiContextWithPath();
+      cwd = ctx.activeRepoPath || repoRoot;
+    } catch (_) {
+      cwd = repoRoot;
+    }
+  }
   // Kill existing if same ID
   if (terminals.has(termId)) {
     try { terminals.get(termId).pty.kill(); } catch (_) {}
@@ -2930,7 +2943,7 @@ wss.on('connection', (ws) => {
           break;
         }
         case 'create-term': {
-          createTerminal(termId, msg.cols || defaultCols, msg.rows || defaultRows, msg.cwd || repoRoot);
+          createTerminal(termId, msg.cols || defaultCols, msg.rows || defaultRows, msg.cwd);
           break;
         }
         case 'kill-term': {
