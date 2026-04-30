@@ -21,6 +21,8 @@ const { sanitizeLabel } = require('../security');
 const { makeIdFromLabel, normalizeId } = require('../ids');
 const { extractMarkdown } = require('./markdown');
 const { hashContent } = require('../manifest');
+const { loadPathAliases } = require('../aliases');
+const { resolveImport: resolveImportSmart } = require('../resolve-import');
 
 const CODE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.cs']);
 const DOC_EXT = new Set(['.md', '.mdx']);
@@ -61,7 +63,7 @@ const ARROW_FN_RE = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s
 const CLASS_DECL_RE = /^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/gm;
 const CALL_RE = /\b([A-Za-z_$][\w$]*)\s*\(/g;
 
-function extractJsTs({ relPath, fullPath, body, repoRoot, createdBy }) {
+function extractJsTs({ relPath, fullPath, body, repoRoot, createdBy, aliases, fileSet }) {
   const id = makeIdFromLabel(relPath, 'code');
   const nodes = [{
     id, label: sanitizeLabel(path.basename(relPath)),
@@ -76,20 +78,22 @@ function extractJsTs({ relPath, fullPath, body, repoRoot, createdBy }) {
   IMPORT_RE.lastIndex = 0;
   let m;
   while ((m = IMPORT_RE.exec(body))) {
-    const target = resolveImport(m[1], relPath);
+    const { target, unresolved } = resolveOne(m[1], relPath, aliases, fileSet);
     edges.push({
       source: id, target, relation: 'imports',
       confidence: 'EXTRACTED', confidenceScore: 1.0, weight: 1.0,
       createdBy, createdAt: new Date().toISOString(),
+      ...(unresolved ? { unresolved: true, spec: m[1] } : {}),
     });
   }
   REQUIRE_RE.lastIndex = 0;
   while ((m = REQUIRE_RE.exec(body))) {
-    const target = resolveImport(m[1], relPath);
+    const { target, unresolved } = resolveOne(m[1], relPath, aliases, fileSet);
     edges.push({
       source: id, target, relation: 'imports',
       confidence: 'EXTRACTED', confidenceScore: 1.0, weight: 1.0,
       createdBy, createdAt: new Date().toISOString(),
+      ...(unresolved ? { unresolved: true, spec: m[1] } : {}),
     });
   }
 
@@ -135,13 +139,33 @@ const JS_KEYWORDS = new Set([
 ]);
 
 function resolveImport(spec, fromRel) {
+  // legacy resolver kept for callers that don't pass alias context
   if (spec.startsWith('.')) {
     const dir = path.posix.dirname(fromRel.replace(/\\/g, '/'));
     const cleaned = path.posix.normalize(`${dir}/${spec}`).replace(/^\.\//, '');
     return makeIdFromLabel(cleaned, 'code');
   }
-  // External package
   return `pkg_${normalizeId(spec)}`;
+}
+
+function resolveOne(spec, fromRel, aliases, fileSet) {
+  if (fileSet) {
+    const real = resolveImportSmart({
+      spec,
+      fromFile: fromRel,
+      fileSet,
+      aliases,
+      kind: spec.match(/\.(css|scss|sass|less|styl)$/) ? 'css' : 'js',
+    });
+    if (real) return { target: makeIdFromLabel(real, 'code'), unresolved: false };
+  }
+  if (spec.startsWith('.')) {
+    const dir = path.posix.dirname(fromRel.replace(/\\/g, '/'));
+    const cleaned = path.posix.normalize(`${dir}/${spec}`).replace(/^\.\//, '');
+    return { target: makeIdFromLabel(cleaned, 'code'), unresolved: false };
+  }
+  // External - keep an ext_ marker so the quality calculator can identify it.
+  return { target: `ext_${normalizeId(spec)}`, unresolved: true };
 }
 
 // ── Python / C# (very lightweight) ───────────────────────────────────────────
@@ -221,15 +245,26 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
   if (!activeRepoPath || !fs.existsSync(activeRepoPath)) {
     return { nodes: [], edges: [], scanned: 0, skippedCache: 0 };
   }
+  // Pass 1 - collect file set (relative posix paths) so the alias resolver
+  // can verify candidates exist on disk before emitting an edge.
+  const fileSet = new Set();
+  const seen = [];
+  for (const full of walk(activeRepoPath)) {
+    if (seen.length >= limit) break;
+    const ext = fileExt(full);
+    if (!CODE_EXT.has(ext) && !DOC_EXT.has(ext)) continue;
+    const rel = path.relative(activeRepoPath, full).replace(/\\/g, '/');
+    fileSet.add(rel);
+    seen.push({ full, rel, ext });
+  }
+  const aliases = loadPathAliases(activeRepoPath);
+
   const allNodes = [];
   const allEdges = [];
   const allRawCalls = [];
   let scanned = 0, skippedCache = 0;
 
-  for (const full of walk(activeRepoPath)) {
-    if (scanned >= limit) break;
-    const ext = fileExt(full);
-    if (!CODE_EXT.has(ext) && !DOC_EXT.has(ext)) continue;
+  for (const { full, rel, ext } of seen) {
     let buf;
     try {
       const stat = fs.statSync(full);
@@ -237,7 +272,6 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
       buf = fs.readFileSync(full);
     } catch (_) { continue; }
     const sha = hashContent(buf);
-    const rel = path.relative(activeRepoPath, full).replace(/\\/g, '/');
 
     // Skip unchanged files when an incremental run is happening (manifest hit).
     const prev = manifest && manifest.get(rel);
@@ -267,7 +301,7 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
     } else if (ext === '.cs') {
       frag = extractPyOrCs({ relPath: rel, fullPath: full, body, createdBy, kindLabel: 'cs' });
     } else {
-      frag = extractJsTs({ relPath: rel, fullPath: full, body, repoRoot: activeRepoPath, createdBy });
+      frag = extractJsTs({ relPath: rel, fullPath: full, body, repoRoot: activeRepoPath, createdBy, aliases, fileSet });
     }
 
     allNodes.push(...frag.nodes);
@@ -288,7 +322,7 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
   const callEdges = resolveCalls(allRawCalls, allNodes, createdBy);
   allEdges.push(...callEdges);
 
-  return { nodes: allNodes, edges: allEdges, scanned, skippedCache };
+  return { nodes: allNodes, edges: allEdges, scanned, skippedCache, aliasesUsed: aliases.aliases.length };
 }
 
 module.exports = { extractRepoCode, walk };
