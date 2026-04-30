@@ -4800,19 +4800,13 @@
             style="background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--subtext0);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;">Search only: off</button>
           <button class="tab-bar-btn" onclick="MindUI.build()" title="Build or rebuild the brain from all sources">Build</button>
           <button class="tab-bar-btn" id="mindWatchBtn" onclick="MindUI.toggleWatch()" title="Watch the active repo and auto-update">Watch: off</button>
-          <button class="tab-bar-btn" onclick="MindUI.openInteractive()" title="Open the interactive Cytoscape graph viewer in a popup">Visualize</button>
         </div>
         <div class="mind-tabs" role="tablist">
           <button class="mind-tab mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')">Dashboard</button>
-          <button class="mind-tab mind-view-btn" data-view="wakeup" onclick="MindUI.setView('wakeup')" title="Preview the context every dispatched worker starts with">Worker context</button>
-          <button class="mind-tab mind-view-btn" data-view="query" onclick="MindUI.setView('query')" title="BM25 + temporal sub-graph queries">Query</button>
-          <button class="mind-tab mind-view-btn" data-view="communities" onclick="MindUI.setView('communities')">Communities</button>
-          <button class="mind-tab mind-view-btn" data-view="hotspots" onclick="MindUI.setView('hotspots')">Hotspots</button>
-          <button class="mind-tab mind-view-btn" data-view="smart" onclick="MindUI.setView('smart')" title="Hybrid BM25 + semantic search across the brain">Smart search</button>
+          <button class="mind-tab mind-view-btn" data-view="search" onclick="MindUI.setView('search')" title="Hybrid semantic + BM25 search with sub-graph + temporal filtering">Search</button>
           <button class="mind-tab mind-view-btn" data-view="impact" onclick="MindUI.setView('impact')" title="Symbol-level call graph - what breaks if I change X?">Impact</button>
           <button class="mind-tab mind-view-btn" data-view="knowledge" onclick="MindUI.setView('knowledge')" title="Project schemas, specs, ADRs declared via .symphonee/context-artifacts.json">Knowledge</button>
-          <button class="mind-tab mind-view-btn" data-view="map" onclick="MindUI.setView('map')" title="Communities as super-nodes - bridges between clusters">Map</button>
-          <button class="mind-tab mind-view-btn" data-view="graph" onclick="MindUI.setView('graph')">Graph</button>
+          <button class="mind-tab mind-view-btn" data-view="mindmap" onclick="MindUI.setView('mindmap')" title="The graph itself - switch between graph, community map, and mermaid">Mind map</button>
         </div>
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>
