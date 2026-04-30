@@ -521,10 +521,27 @@ function mountMind(addRoute, json, ctx) {
 
   // ── Context artifacts (declared in .symphonee/context-artifacts.json) ──
   addRoute('POST', '/api/mind/artifacts/list', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
     const space = getSpace();
     const ui = getUiContext ? getUiContext() : {};
+    const allRepos = (typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {});
     const { readArtifactsConfig } = require('./extractors/context-artifacts');
-    const cfg = readArtifactsConfig(ui.activeRepoPath, repoRoot);
+    const fs = require('fs');
+
+    // Always-global pass: read declared artifacts from EVERY repo Symphonee
+    // knows about. Mind is global, so artifacts surface from all repos
+    // unless the caller explicitly asks scope:'active'.
+    const scope = body.scope || 'all';
+    const repos = [];
+    if (scope === 'active') {
+      if (ui.activeRepo && ui.activeRepoPath) repos.push({ name: ui.activeRepo, path: ui.activeRepoPath });
+    } else {
+      for (const [name, p] of Object.entries(allRepos)) if (p) repos.push({ name, path: p });
+      if (ui.activeRepo && ui.activeRepoPath && !repos.find(r => r.name === ui.activeRepo)) {
+        repos.unshift({ name: ui.activeRepo, path: ui.activeRepoPath });
+      }
+    }
+
     const g = store.loadGraph(repoRoot, space);
     const indexedByName = new Map();
     if (g) {
@@ -534,72 +551,109 @@ function mountMind(addRoute, json, ctx) {
         indexedByName.set(n.label, n);
       }
     }
-    const enriched = (cfg.artifacts || []).map(a => ({
-      name: a.name,
-      path: a.path,
-      description: a.description || '',
-      indexed: indexedByName.has(a.name),
-      fileCount: indexedByName.get(a.name)?.fileCount || 0,
-    }));
+
+    const groups = repos.map(r => {
+      const cfg = readArtifactsConfig(r.path, repoRoot);
+      const enriched = (cfg.artifacts || []).map(a => ({
+        name: a.name,
+        path: a.path,
+        description: a.description || '',
+        indexed: indexedByName.has(a.name),
+        fileCount: indexedByName.get(a.name)?.fileCount || 0,
+      }));
+      return {
+        repo: r.name,
+        repoPath: r.path,
+        configPath: cfg.configPath,
+        configExists: !!cfg.configPath && fs.existsSync(cfg.configPath),
+        error: cfg.error || null,
+        artifacts: enriched,
+      };
+    });
+
+    // Backwards-compat: keep top-level fields for the active repo so any
+    // existing caller doesn't break.
+    const active = groups.find(g => g.repo === ui.activeRepo) || groups[0] || {};
     return json(res, {
       space,
-      configPath: cfg.configPath,
-      configExists: !!cfg.configPath && require('fs').existsSync(cfg.configPath),
-      error: cfg.error || null,
-      artifacts: enriched,
+      scope,
+      groups,
+      // legacy shape:
+      configPath: active.configPath || null,
+      configExists: !!active.configExists,
+      error: active.error || null,
+      artifacts: active.artifacts || [],
     });
   });
 
-  // Auto-detect likely artifacts in the active repo. Looks for
-  // schema.{sql,prisma}, openapi.{yaml,yml,json}, swagger.*, docs/, adr/,
-  // glossary.md, and similar conventional locations. Returns a list of
-  // suggestions the UI can show as one-click "add this artifact" buttons.
-  addRoute('POST', '/api/mind/artifacts/suggest', async (req, res) => {
-    const ui = getUiContext ? getUiContext() : {};
-    const root = ui.activeRepoPath;
-    if (!root) return json(res, { error: 'no active repo', suggestions: [] });
+  const ARTIFACT_PATTERNS = [
+    { name: 'database-schema', candidates: ['schema.sql', 'docs/schema.sql', 'db/schema.sql', 'prisma/schema.prisma', 'db/schema.rb', 'database.sql'], description: 'Database schema. Check before writing migrations to match column conventions, FK rules, and trigger patterns.' },
+    { name: 'api-spec',        candidates: ['openapi.yaml', 'openapi.yml', 'openapi.json', 'docs/openapi.yaml', 'api/openapi.yaml', 'swagger.yaml', 'swagger.json'], description: 'OpenAPI / Swagger spec. Check before adding or modifying endpoints to match auth, pagination, and response-envelope conventions.' },
+    { name: 'graphql-schema',  candidates: ['schema.graphql', 'docs/schema.graphql', 'graphql/schema.graphql'], description: 'GraphQL schema. Check before adding queries / mutations to keep types consistent.' },
+    { name: 'adrs',            candidates: ['docs/adr', 'docs/adr/', 'adr/', '.adr/', 'docs/decisions/'], description: 'Architecture Decision Records. Check before introducing a new pattern - we may have rejected this approach already.' },
+    { name: 'readme',          candidates: ['README.md', 'README'], description: 'Project README. Quick orientation - what this repo does, conventions, how to run.' },
+    { name: 'claude-md',       candidates: ['CLAUDE.md', 'AGENTS.md', '.cursorrules', '.windsurfrules'], description: 'Repo-level AI rules. Tells the AI how to behave inside this codebase. Always consulted at session start.' },
+    { name: 'docs',            candidates: ['docs/', 'documentation/'], description: 'Project documentation. Check for design notes, conventions, and onboarding info.' },
+    { name: 'ubiquitous-language', candidates: ['docs/ubiquitous-language.md', 'docs/glossary.md', 'GLOSSARY.md', 'docs/GLOSSARY.md'], description: 'Domain glossary. Always check before naming entities, events, or commands so we use the correct domain terms.' },
+    { name: 'package-json',    candidates: ['package.json'], description: 'Top-level package manifest. Check for tech stack, scripts, dependencies before suggesting changes.' },
+    { name: 'tsconfig',        candidates: ['tsconfig.json', 'jsconfig.json'], description: 'TypeScript / JS path aliases + compiler options. Check before introducing new path conventions.' },
+  ];
+
+  function _scanRepoArtifacts(root) {
     const fs = require('fs');
     const path = require('path');
+    if (!root || !fs.existsSync(root)) return [];
+    function exists(rel) { try { return fs.existsSync(path.join(root, rel)); } catch (_) { return false; } }
+    function isDir(rel) { try { return fs.statSync(path.join(root, rel)).isDirectory(); } catch (_) { return false; } }
     const out = [];
-
-    function exists(rel) {
-      try { return fs.existsSync(path.join(root, rel)); } catch (_) { return false; }
-    }
-    function isDir(rel) {
-      try { return fs.statSync(path.join(root, rel)).isDirectory(); } catch (_) { return false; }
-    }
-
-    const patterns = [
-      { name: 'database-schema', candidates: ['schema.sql', 'docs/schema.sql', 'db/schema.sql', 'prisma/schema.prisma', 'db/schema.rb'], description: 'Database schema. Check before writing migrations to match column conventions, FK rules, and trigger patterns.' },
-      { name: 'api-spec',        candidates: ['openapi.yaml', 'openapi.yml', 'openapi.json', 'docs/openapi.yaml', 'api/openapi.yaml', 'swagger.yaml', 'swagger.json'], description: 'OpenAPI / Swagger spec. Check before adding or modifying endpoints to match auth, pagination, and response-envelope conventions.' },
-      { name: 'graphql-schema',  candidates: ['schema.graphql', 'docs/schema.graphql', 'graphql/schema.graphql'], description: 'GraphQL schema. Check before adding queries / mutations to keep types consistent.' },
-      { name: 'adrs',            candidates: ['docs/adr', 'docs/adr/', 'adr/', '.adr/', 'docs/decisions/'], description: 'Architecture Decision Records. Check before introducing a new pattern - we may have rejected this approach already.' },
-      { name: 'docs',            candidates: ['docs/', 'documentation/'], description: 'Project documentation. Check for design notes, conventions, and onboarding info.' },
-      { name: 'ubiquitous-language', candidates: ['docs/ubiquitous-language.md', 'docs/glossary.md', 'GLOSSARY.md'], description: 'Domain glossary. Always check before naming entities, events, or commands so we use the correct domain terms.' },
-    ];
-
-    for (const p of patterns) {
+    for (const p of ARTIFACT_PATTERNS) {
       const found = p.candidates.find(c => exists(c) && (c.endsWith('/') ? isDir(c) : true));
-      if (found) {
-        out.push({
-          name: p.name,
-          path: './' + found.replace(/\/$/, ''),
-          description: p.description,
-          alreadyExists: true,
-        });
+      if (found) out.push({ name: p.name, path: './' + found.replace(/\/$/, ''), description: p.description });
+    }
+    return out;
+  }
+
+  // Auto-detect likely artifacts. Mind is global - the brain ingests every
+  // repo Symphonee manages - so artifact detection runs across ALL repos by
+  // default. Pass `scope: 'active'` to limit to the active repo.
+  addRoute('POST', '/api/mind/artifacts/suggest', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const ui = getUiContext ? getUiContext() : {};
+    const allRepos = (typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {});
+    const scope = body.scope || 'all';
+    const repos = [];
+    if (scope === 'active') {
+      if (ui.activeRepo && ui.activeRepoPath) repos.push({ name: ui.activeRepo, path: ui.activeRepoPath });
+    } else {
+      for (const [name, p] of Object.entries(allRepos)) {
+        if (p) repos.push({ name, path: p });
+      }
+      // ensure the active repo is in the list even if not in cfg.Repos
+      if (ui.activeRepo && ui.activeRepoPath && !repos.find(r => r.name === ui.activeRepo)) {
+        repos.unshift({ name: ui.activeRepo, path: ui.activeRepoPath });
       }
     }
-    return json(res, { suggestions: out, root });
+
+    const groups = repos.map(r => ({
+      repo: r.name,
+      repoPath: r.path,
+      hasConfigFile: require('fs').existsSync(require('path').join(r.path, '.symphonee', 'context-artifacts.json')),
+      suggestions: _scanRepoArtifacts(r.path),
+    }));
+    return json(res, { scope, groups });
   });
 
-  // Write a starter .symphonee/context-artifacts.json into the active repo.
-  // Uses the suggestions provided in the request body, or auto-detected ones
-  // if none specified. Won't overwrite an existing file.
+  // Write a starter .symphonee/context-artifacts.json. Defaults to the
+  // active repo; pass `repo: <name>` (or `repoPath`) to write into a
+  // different one.
   addRoute('POST', '/api/mind/artifacts/init', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
     const ui = getUiContext ? getUiContext() : {};
-    const root = ui.activeRepoPath;
-    if (!root) return json(res, { error: 'no active repo' }, 400);
+    const allRepos = (typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {});
+    let root = body.repoPath;
+    if (!root && body.repo) root = allRepos[body.repo] || null;
+    if (!root) root = ui.activeRepoPath;
+    if (!root) return json(res, { error: 'no repo path resolved', hint: 'pass repo: <name> or repoPath: <abs>' }, 400);
     const fs = require('fs');
     const path = require('path');
     const target = path.join(root, '.symphonee', 'context-artifacts.json');
@@ -614,7 +668,7 @@ function mountMind(addRoute, json, ctx) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       const cleaned = artifacts.map(a => ({ name: a.name, path: a.path, description: a.description || '' }));
       fs.writeFileSync(target, JSON.stringify({ artifacts: cleaned }, null, 2), 'utf8');
-      return json(res, { ok: true, path: target, count: cleaned.length });
+      return json(res, { ok: true, path: target, repoPath: root, count: cleaned.length });
     } catch (e) {
       return json(res, { error: 'write failed: ' + e.message }, 500);
     }

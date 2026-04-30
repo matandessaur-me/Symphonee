@@ -2054,6 +2054,185 @@
       .mind-impact-body { grid-template-columns: 1fr; }
       .mind-impact-cards { grid-template-columns: 1fr; }
     }
+
+    /* ── Knowledge view ─────────────────────────────────────────────────── */
+    .mind-knowledge {
+      max-width: 1100px; margin: 0 auto;
+      padding: 22px 24px 80px;
+      display: flex; flex-direction: column; gap: 24px;
+    }
+    .mind-knowledge-header { margin: 0; }
+    .mind-knowledge-title {
+      font: 600 22px var(--font-ui);
+      color: var(--text);
+      margin: 0 0 8px 0;
+      letter-spacing: -0.01em;
+    }
+    .mind-knowledge-lead {
+      font: 13px var(--font-ui);
+      color: var(--subtext0);
+      line-height: 1.5;
+      margin: 0;
+      max-width: 720px;
+    }
+    .mind-knowledge-info {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .mind-knowledge-info-item {
+      display: flex; gap: 12px;
+      padding: 14px 16px;
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 8px;
+    }
+    .mind-knowledge-info-icon {
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: color-mix(in srgb, currentColor 16%, var(--mantle));
+      display: flex; align-items: center; justify-content: center;
+      font: 700 14px var(--font-ui);
+    }
+    .mind-knowledge-info-title {
+      font: 600 12px var(--font-ui);
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .mind-knowledge-info-body {
+      font: 12px var(--font-ui);
+      color: var(--subtext0);
+      line-height: 1.6;
+    }
+    .mind-knowledge-info-body code {
+      background: var(--surface0);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text);
+      font: 11px monospace;
+    }
+    .mind-knowledge-loading,
+    .mind-knowledge-empty {
+      padding: 18px;
+      background: var(--base);
+      border: 1px dashed var(--surface1);
+      border-radius: 6px;
+      color: var(--subtext0);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .mind-knowledge-empty code {
+      background: var(--surface0);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text);
+      font: 11px monospace;
+    }
+    .mind-knowledge-repo {
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+    .mind-knowledge-repo-head {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      padding-bottom: 12px; margin-bottom: 12px;
+      border-bottom: 1px solid var(--surface0);
+    }
+    .mind-knowledge-repo-name {
+      font: 600 16px var(--font-ui);
+      color: var(--text);
+    }
+    .mind-knowledge-repo-path {
+      font: 11px monospace;
+      color: var(--subtext0);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 60%;
+    }
+    .mind-knowledge-section-title {
+      font: 600 10px var(--font-ui);
+      color: var(--subtext0);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin: 14px 0 8px;
+    }
+    .mind-artifact-card {
+      background: var(--base);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+    }
+    .mind-artifact-head {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .mind-artifact-name {
+      font: 600 13px var(--font-ui);
+      color: var(--text);
+    }
+    .mind-artifact-status {
+      font: 600 10px var(--font-ui);
+      color: var(--subtext0);
+      background: var(--surface0);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .mind-artifact-status.indexed {
+      background: color-mix(in srgb, var(--green) 22%, var(--surface0));
+      color: var(--green);
+    }
+    .mind-artifact-path {
+      font: 11px monospace;
+      color: var(--subtext0);
+      margin: 4px 0;
+    }
+    .mind-artifact-desc {
+      font: 12px var(--font-ui);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .mind-knowledge-suggest {
+      display: flex; flex-direction: column;
+      background: var(--base);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 4px 0;
+      overflow: hidden;
+    }
+    .mind-suggest-row {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--surface0);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .mind-suggest-row:last-child { border-bottom: none; }
+    .mind-suggest-row:hover { background: var(--surface0); }
+    .mind-suggest-row input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+    .mind-suggest-body { flex: 1; min-width: 0; }
+    .mind-suggest-head {
+      display: flex; gap: 8px; align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .mind-suggest-name {
+      font: 600 12px var(--font-ui);
+      color: var(--text);
+    }
+    .mind-suggest-path {
+      font: 10px monospace;
+      color: var(--subtext0);
+    }
+    .mind-suggest-desc {
+      font: 11px var(--font-ui);
+      color: var(--subtext0);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    .mind-knowledge-create-btn {
+      margin-top: 12px;
+    }
     /* Reusable loader overlay for any Mind view that runs an expensive
        synchronous operation (graph rebuild, large filter swap, etc). The
        caller toggles display:flex to show. */

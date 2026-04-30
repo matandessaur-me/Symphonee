@@ -833,95 +833,165 @@
     const main = $('mindMain');
     if (!main) return;
     main.innerHTML = `
-      <div class="mind-card" style="max-width:1100px;margin:0 auto;">
-        <div class="mind-card-title">Project knowledge</div>
-        <div style="font-size:12px;color:var(--subtext0);margin-bottom:14px;line-height:1.65;">
-          <b style="color:var(--text);">What this is:</b> a curated list of important non-code files (database schemas, OpenAPI specs, ADRs, domain glossaries) that you want the AI to consult <i>before</i> answering questions about migrations, endpoints, conventions, etc. Mind indexes them so the AI can search them by description.
-          <br><br>
-          <b style="color:var(--text);">Where it lives:</b> <code>.symphonee/context-artifacts.json</code> in the active repo. You write it once - Symphonee re-reads it on every Mind build.
+      <div class="mind-knowledge">
+        <header class="mind-knowledge-header">
+          <h2 class="mind-knowledge-title">Project knowledge</h2>
+          <p class="mind-knowledge-lead">
+            Tell the AI which non-code files matter most in your project so it consults them before answering.
+          </p>
+        </header>
+        <div class="mind-knowledge-info">
+          <div class="mind-knowledge-info-item">
+            <div class="mind-knowledge-info-icon" style="color:var(--accent);">i</div>
+            <div>
+              <div class="mind-knowledge-info-title">What is an "artifact"?</div>
+              <div class="mind-knowledge-info-body">
+                A pointer to a non-code file or folder that holds project-wide knowledge - your database schema, an
+                OpenAPI spec, architecture decision records, a domain glossary, deployment manifests. The AI can <i>read</i>
+                any file already, but artifacts tell it <b style="color:var(--text);">when to consult what</b>: "before writing migrations, look at
+                the schema." Each artifact has a name, a path, and a one-sentence description.
+              </div>
+            </div>
+          </div>
+          <div class="mind-knowledge-info-item">
+            <div class="mind-knowledge-info-icon" style="color:var(--green);">+</div>
+            <div>
+              <div class="mind-knowledge-info-title">Why so few suggested?</div>
+              <div class="mind-knowledge-info-body">
+                Mind only suggests files at <i>conventional</i> locations (<code>schema.sql</code>, <code>openapi.yaml</code>, <code>docs/adr/</code>, etc).
+                Anything else - a custom internal wiki, a Notion export, a generated TS types file - has to be added manually
+                because no convention covers it. You're not missing anything; the list will grow as you add the things <i>you</i> consider important.
+              </div>
+            </div>
+          </div>
+          <div class="mind-knowledge-info-item">
+            <div class="mind-knowledge-info-icon" style="color:var(--mauve);">⌘</div>
+            <div>
+              <div class="mind-knowledge-info-title">Scope</div>
+              <div class="mind-knowledge-info-body">
+                Mind is global - it ingests every repo Symphonee knows about - so artifacts are scanned across <b style="color:var(--text);">all
+                repos</b>, grouped below. Each repo has its own <code>.symphonee/context-artifacts.json</code>.
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="mindKnowledgeList" style="font-size:12px;color:var(--text);">Loading...</div>
+        <div id="mindKnowledgeList">
+          <div class="mind-knowledge-loading">Loading artifacts across all repos…</div>
+        </div>
       </div>`;
     try {
       const [listRes, suggestRes] = await Promise.all([
-        fetch('/api/mind/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ artifacts: [] })),
-        fetch('/api/mind/artifacts/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ suggestions: [] })),
+        fetch('/api/mind/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'all' }) }).then(r => r.json()).catch(() => ({ groups: [] })),
+        fetch('/api/mind/artifacts/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'all' }) }).then(r => r.json()).catch(() => ({ groups: [] })),
       ]);
+
       const list = $('mindKnowledgeList');
       if (!list) return;
-      const declared = listRes.artifacts || [];
-      const suggestions = suggestRes.suggestions || [];
 
-      if (declared.length === 0) {
-        const sugBlock = suggestions.length ? `
-          <div style="margin-top:14px;padding:12px;background:var(--mantle);border:1px solid var(--surface0);border-radius:6px;">
-            <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:8px;">We found ${suggestions.length} likely artifact${suggestions.length === 1 ? '' : 's'} in this repo:</div>
-            <div id="mindArtifactSuggestions">
-              ${suggestions.map((s, i) => `
-                <label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--surface0);">
-                  <input type="checkbox" data-idx="${i}" checked style="margin-top:3px;">
-                  <div style="flex:1;">
-                    <div style="font-weight:600;font-size:12px;color:var(--text);">${escapeHtml(s.name)} <span style="color:var(--subtext0);font-weight:normal;font-size:10px;font-family:monospace;">${escapeHtml(s.path)}</span></div>
-                    <div style="font-size:11px;color:var(--subtext0);margin-top:2px;">${escapeHtml(s.description)}</div>
-                  </div>
-                </label>`).join('')}
-            </div>
-            <button class="mindmap-ribbon-btn primary" style="margin-top:10px;" onclick="MindUI._artifactsCreate()">Create context-artifacts.json with checked items</button>
-          </div>` : '';
-
-        const noSugBlock = !suggestions.length ? `
-          <div style="margin-top:14px;padding:12px;background:var(--mantle);border:1px solid var(--surface0);border-radius:6px;color:var(--subtext0);font-size:12px;">
-            No conventional artifact locations were found in this repo. You can create the file manually:
-            <pre style="background:var(--base);padding:10px;margin-top:8px;border-radius:4px;font-size:11px;color:var(--text);overflow:auto;">{
-  "artifacts": [
-    { "name": "schema", "path": "./docs/schema.sql",
-      "description": "Postgres schema. Check before writing migrations." }
-  ]
-}</pre>
-          </div>` : '';
-
-        list.innerHTML = `
-          <div style="padding:14px;background:var(--base);border:1px dashed var(--surface1);border-radius:6px;color:var(--subtext0);font-size:12px;line-height:1.6;">
-            <b style="color:var(--text);">No artifacts declared yet.</b>
-            Mind doesn't auto-detect schemas / specs / docs - you tell it what matters.
-          </div>
-          ${sugBlock}
-          ${noSugBlock}`;
+      const declaredGroups = listRes.groups || [];
+      const suggestGroups = suggestRes.groups || [];
+      // Merge by repo name
+      const byRepo = new Map();
+      for (const g of declaredGroups) byRepo.set(g.repo, { repo: g.repo, repoPath: g.repoPath, declared: g.artifacts || [], suggested: [] });
+      for (const g of suggestGroups) {
+        const slot = byRepo.get(g.repo) || { repo: g.repo, repoPath: g.repoPath, declared: [], suggested: [] };
+        const existingNames = new Set(slot.declared.map(a => a.name));
+        slot.suggested = (g.suggestions || []).filter(s => !existingNames.has(s.name));
+        byRepo.set(g.repo, slot);
+      }
+      const groups = Array.from(byRepo.values());
+      if (!groups.length) {
+        list.innerHTML = '<div class="mind-knowledge-empty">No repos configured. Add repos in Symphonee settings to scan for artifacts.</div>';
         return;
       }
 
-      list.innerHTML = declared.map(a => `
-        <div style="padding:10px 12px;background:var(--base);border:1px solid var(--surface0);border-radius:6px;margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-            <div style="font-weight:600;font-size:13px;color:var(--text);">${escapeHtml(a.name)}</div>
-            <div style="font-size:10px;color:${a.indexed ? 'var(--green)' : 'var(--subtext0)'};">${a.indexed ? 'indexed' : 'not indexed'} · ${a.fileCount || 0} file${(a.fileCount || 0) === 1 ? '' : 's'}</div>
-          </div>
-          <div style="font-size:11px;color:var(--subtext0);margin:4px 0;font-family:monospace;">${escapeHtml(a.path || '')}</div>
-          <div style="font-size:11px;color:var(--text);line-height:1.5;">${escapeHtml(a.description || '')}</div>
-        </div>`).join('');
-    } catch (_) { /* ignore */ }
+      _knowledgeSuggestionsByRepo = {};
+      list.innerHTML = groups.map(g => renderKnowledgeRepoCard(g)).join('');
+      // Stash suggestion arrays so artifactsCreate(repo) can resolve them
+      for (const g of groups) _knowledgeSuggestionsByRepo[g.repo] = g.suggested;
+      list.querySelectorAll('[data-action="create-artifacts"]').forEach(btn => {
+        btn.addEventListener('click', () => artifactsCreate(btn.dataset.repo));
+      });
+    } catch (e) {
+      const list = $('mindKnowledgeList');
+      if (list) list.innerHTML = `<div class="mind-knowledge-empty">Error loading artifacts: ${escapeHtml(e.message || String(e))}</div>`;
+    }
   }
 
-  async function artifactsCreate() {
-    const block = document.getElementById('mindArtifactSuggestions');
+  let _knowledgeSuggestionsByRepo = {};
+
+  function renderKnowledgeRepoCard(g) {
+    const declared = g.declared || [];
+    const suggested = g.suggested || [];
+    const declaredHtml = declared.length ? `
+      <div class="mind-knowledge-section-title">Declared (${declared.length})</div>
+      ${declared.map(a => `
+        <article class="mind-artifact-card">
+          <header class="mind-artifact-head">
+            <span class="mind-artifact-name">${escapeHtml(a.name)}</span>
+            <span class="mind-artifact-status ${a.indexed ? 'indexed' : ''}">${a.indexed ? '● indexed' : '○ not indexed'}${a.fileCount ? ' · ' + a.fileCount + ' file' + (a.fileCount === 1 ? '' : 's') : ''}</span>
+          </header>
+          <div class="mind-artifact-path">${escapeHtml(a.path || '')}</div>
+          <div class="mind-artifact-desc">${escapeHtml(a.description || '')}</div>
+        </article>`).join('')}` : '';
+
+    const suggestedHtml = suggested.length ? `
+      <div class="mind-knowledge-section-title">Detected — not yet declared (${suggested.length})</div>
+      <div class="mind-knowledge-suggest" data-repo="${escapeHtml(g.repo)}">
+        ${suggested.map((s, i) => `
+          <label class="mind-suggest-row">
+            <input type="checkbox" data-idx="${i}" checked>
+            <div class="mind-suggest-body">
+              <div class="mind-suggest-head">
+                <span class="mind-suggest-name">${escapeHtml(s.name)}</span>
+                <span class="mind-suggest-path">${escapeHtml(s.path)}</span>
+              </div>
+              <div class="mind-suggest-desc">${escapeHtml(s.description)}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+      <button class="mindmap-ribbon-btn primary mind-knowledge-create-btn" data-action="create-artifacts" data-repo="${escapeHtml(g.repo)}">
+        Create context-artifacts.json with checked items
+      </button>` : '';
+
+    const emptyHtml = (!declared.length && !suggested.length) ? `
+      <div class="mind-knowledge-empty">
+        Nothing detected at conventional locations and nothing declared yet. Add a
+        <code>.symphonee/context-artifacts.json</code> manually if this repo has
+        documentation worth surfacing.
+      </div>` : '';
+
+    return `
+      <section class="mind-knowledge-repo">
+        <header class="mind-knowledge-repo-head">
+          <div class="mind-knowledge-repo-name">${escapeHtml(g.repo)}</div>
+          <div class="mind-knowledge-repo-path">${escapeHtml(g.repoPath || '')}</div>
+        </header>
+        ${declaredHtml}
+        ${suggestedHtml}
+        ${emptyHtml}
+      </section>`;
+  }
+
+  async function artifactsCreate(repoName) {
+    const block = document.querySelector(`.mind-knowledge-suggest[data-repo="${repoName}"]`);
     if (!block) return;
-    const sugRes = await fetch('/api/mind/artifacts/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ suggestions: [] }));
+    const suggestions = _knowledgeSuggestionsByRepo[repoName] || [];
     const checks = block.querySelectorAll('input[type=checkbox]');
     const picked = [];
     checks.forEach(cb => {
       const idx = parseInt(cb.dataset.idx, 10);
-      if (cb.checked && sugRes.suggestions[idx]) picked.push(sugRes.suggestions[idx]);
+      if (cb.checked && suggestions[idx]) picked.push(suggestions[idx]);
     });
     if (!picked.length) { setStatus('select at least one artifact'); return; }
     try {
       const r = await fetch('/api/mind/artifacts/init', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ artifacts: picked }),
+        body: JSON.stringify({ artifacts: picked, repo: repoName }),
       });
       const data = await r.json();
       if (data.error) { setStatus('init: ' + data.error); return; }
       setStatus(`Created ${data.path} with ${data.count} artifact(s). Run a build to index them.`);
-      // Re-render the Knowledge view so the user sees the populated list.
       renderKnowledge();
     } catch (e) { setStatus('init failed: ' + (e.message || e)); }
   }
