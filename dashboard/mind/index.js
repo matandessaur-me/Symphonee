@@ -597,27 +597,63 @@ function mountMind(addRoute, json, ctx) {
   addRoute('POST', '/api/mind/embed', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
     refreshEmbedKeys();
-    const provider = body.provider || embeddings.pickProvider();
     const space = getSpace();
     const g = store.loadGraph(repoRoot, space);
     if (!g) return json(res, { error: 'graph empty' }, 404);
     const acq = lock.acquire(space, 'embed');
     if (!acq.ok) return json(res, { error: 'embedding already running', holderPid: acq.holderPid }, 409);
-    json(res, { ok: true, started: true, provider });
-    try {
-      const r = await engine.refreshEmbeddings({
-        repoRoot, space, graph: g,
-        ctx: { embedProvider: provider },
-        onProgress: (msg) => {
-          if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-progress', msg } });
-        },
-      });
-      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-complete', result: r } });
-    } catch (err) {
-      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-failed', error: err.message } });
-    } finally {
-      lock.release(space, 'embed');
+
+    // Build a provider chain: requested first, then the rest in priority order.
+    const keys = (typeof getAiApiKeys === 'function' ? getAiApiKeys() : {}) || {};
+    const candidates = [];
+    if (body.provider) candidates.push(body.provider);
+    if (keys.OPENAI_API_KEY && !candidates.includes('openai')) candidates.push('openai');
+    if (keys.GOOGLE_API_KEY && !candidates.includes('google')) candidates.push('google');
+    if (!candidates.length) candidates.push(embeddings.pickProvider()); // ollama fallback
+
+    json(res, { ok: true, started: true, providerChain: candidates });
+    let lastErr = null;
+    for (const provider of candidates) {
+      try {
+        const r = await engine.refreshEmbeddings({
+          repoRoot, space, graph: g,
+          ctx: { embedProvider: provider },
+          onProgress: (msg) => {
+            if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-progress', msg, provider } });
+          },
+        });
+        if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-complete', result: { ...r, provider } } });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const msg = err.message || String(err);
+        const isProviderError = /api[_ ]?key|credit|quota|insufficient|RESOURCE_EXHAUSTED|401|402|403|429|unavailable|ECONNREFUSED|fetch failed/i.test(msg);
+        if (!isProviderError || candidates.indexOf(provider) === candidates.length - 1) {
+          // Either not a failover-able error, or we're out of candidates.
+          break;
+        }
+        // Try next provider; broadcast a notice so the UI can toast.
+        if (broadcast) broadcast({
+          type: 'orchestrator-event',
+          event: 'provider-failover',
+          from: provider,
+          reason: 'embedding ' + (msg.match(/credit|quota/i) ? 'out of credits' : 'failed'),
+          errorSnippet: msg.slice(0, 160),
+        });
+      }
     }
+    if (lastErr) {
+      const msg = lastErr.message || String(lastErr);
+      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-failed', error: msg } });
+      if (broadcast) broadcast({
+        type: 'orchestrator-event',
+        event: 'provider-exhausted',
+        lastCli: candidates[candidates.length - 1],
+        reason: 'embedding failed after trying ' + candidates.length + ' provider(s)',
+      });
+    }
+    lock.release(space, 'embed');
   });
 
   // ── Health (embeddings + vectors store status) ───────────────────────────

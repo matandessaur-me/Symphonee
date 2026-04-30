@@ -11333,6 +11333,16 @@ async function orchDoDispatch() {
 
 // Listen for orchestrator WebSocket events
 function handleOrchestratorEvent(msg) {
+  if (msg.event === 'provider-failover') {
+    const fromLabel = (CLI_CONFIG[msg.from] && CLI_CONFIG[msg.from].label) || msg.from;
+    toast(`${fromLabel}: ${msg.reason || 'provider error'} — falling back to next available AI`, 'warning', { duration: 4500 });
+    return;
+  }
+  if (msg.event === 'provider-exhausted') {
+    const lastLabel = (CLI_CONFIG[msg.lastCli] && CLI_CONFIG[msg.lastCli].label) || msg.lastCli;
+    toast(`All AI providers exhausted (last: ${lastLabel} — ${msg.reason || 'failed'}). Add credits or another API key in Settings.`, 'error', { duration: 8000 });
+    return;
+  }
   if (msg.event === 'task-update') {
     orchRefreshTasks();
     orchRefreshAgents();
