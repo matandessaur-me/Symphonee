@@ -1855,6 +1855,384 @@
     }
     .mind-tab:hover { color: var(--text); }
     .mind-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+    /* ── Mind map sub-ribbon (Graph / Map / Mermaid + actions) ──────────── */
+    .mindmap-ribbon {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 12px;
+      background: var(--mantle);
+      border-bottom: 1px solid var(--surface0);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      min-height: 36px;
+    }
+    .mindmap-ribbon-spacer { flex: 1 1 auto; min-width: 0; }
+    .mindmap-ribbon-hint {
+      font-size: 11px; color: var(--subtext0);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex: 0 1 auto;
+    }
+    .mindmap-segctl {
+      display: inline-flex;
+      background: var(--surface0);
+      border: 1px solid var(--surface1);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 0;
+    }
+    .mindmap-seg-btn {
+      background: transparent; border: none;
+      color: var(--subtext0);
+      font: 600 11px var(--font-ui);
+      cursor: pointer;
+      padding: 4px 14px;
+      border-radius: 4px;
+      transition: background 0.12s, color 0.12s;
+      letter-spacing: 0.3px;
+    }
+    .mindmap-seg-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+    .mindmap-seg-btn.active {
+      background: var(--accent);
+      color: var(--base);
+    }
+    .mindmap-ribbon-btn {
+      background: var(--surface0);
+      border: 1px solid var(--surface1);
+      border-radius: 4px;
+      color: var(--text);
+      font: 600 11px var(--font-ui);
+      padding: 5px 12px;
+      cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .mindmap-ribbon-btn:hover { background: var(--surface1); border-color: var(--surface2); }
+    .mindmap-ribbon-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--base);
+    }
+    .mindmap-ribbon-btn.primary:hover { filter: brightness(1.08); }
+    .mindmap-body {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    /* Mind map body fills the canvas area; child renderers (graph, map)
+       claim the full space via their own internal layouts. */
+
+    /* ── Impact view (list-first) ───────────────────────────────────────── */
+    .mind-impact {
+      display: flex; flex-direction: column;
+      height: 100%; min-height: 0;
+      max-width: 1400px; margin: 0 auto; width: 100%;
+      gap: 12px; padding: 14px 18px; box-sizing: border-box;
+    }
+    .mind-impact-head {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-shrink: 0;
+    }
+    .mind-impact-title { font-size: 14px; font-weight: 600; color: var(--text); }
+    .mind-impact-sub  { font-size: 12px; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-warn {
+      font-size: 11px; color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--mantle));
+      border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+      padding: 6px 10px; border-radius: 4px; font-weight: 600;
+    }
+    .mind-impact-body {
+      flex: 1; min-height: 0;
+      display: grid; grid-template-columns: 320px 1fr; gap: 14px;
+    }
+    .mind-impact-rail {
+      display: flex; flex-direction: column;
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px;
+      min-height: 0; overflow: hidden;
+    }
+    .mind-impact-rail-search {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+    }
+    .mind-impact-rail-search input {
+      flex: 1; background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: 4px; color: var(--text); font: 12px var(--font-ui); padding: 6px 8px;
+    }
+    .mind-impact-count { font-size: 10px; color: var(--subtext0); font-variant-numeric: tabular-nums; }
+    .mind-impact-eps { padding: 8px 10px; border-bottom: 1px solid var(--surface0); flex-shrink: 0; }
+    .mind-impact-eps:empty { display: none; }
+    .mind-impact-eps-title {
+      font-size: 10px; color: var(--subtext0); text-transform: uppercase; letter-spacing: .4px;
+      margin-bottom: 6px;
+    }
+    .mind-impact-ep-chip {
+      display: inline-block;
+      background: var(--surface0); border: 1px solid var(--surface1); color: var(--accent);
+      font: 600 11px var(--font-ui); padding: 3px 8px; border-radius: 999px;
+      cursor: pointer; margin: 2px 4px 2px 0;
+      transition: background 0.12s;
+    }
+    .mind-impact-ep-chip:hover { background: var(--surface1); }
+    .mind-impact-list {
+      flex: 1; min-height: 0; overflow: auto;
+    }
+    .mind-impact-row {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+      width: 100%; background: transparent; border: none;
+      padding: 7px 12px; cursor: pointer;
+      border-bottom: 1px solid color-mix(in srgb, var(--surface0) 40%, transparent);
+      text-align: left; transition: background 0.1s;
+    }
+    .mind-impact-row:hover { background: var(--surface0); }
+    .mind-impact-row.active {
+      background: color-mix(in srgb, var(--accent) 16%, var(--mantle));
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .mind-impact-row-name { font: 600 12px var(--font-ui); color: var(--text); }
+    .mind-impact-row-file { font: 10px monospace; color: var(--subtext0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+    .mind-impact-row-meta { font: 10px monospace; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-pip {
+      display: inline-block; padding: 1px 6px; border-radius: 3px;
+      background: var(--surface0); color: var(--subtext0);
+      font-variant-numeric: tabular-nums;
+    }
+    .mind-impact-pip.warm { background: color-mix(in srgb, var(--yellow) 22%, var(--surface0)); color: var(--yellow); }
+    .mind-impact-pip.hot  { background: color-mix(in srgb, var(--red) 24%, var(--surface0)); color: var(--red); }
+    .mind-impact-link {
+      display: flex; gap: 6px; align-items: baseline;
+      width: 100%; background: transparent; border: none;
+      padding: 4px 8px; cursor: pointer; text-align: left;
+      border-radius: 3px;
+      font-family: monospace; font-size: 11px; color: var(--text);
+    }
+    .mind-impact-link:hover:not(:disabled) { background: var(--surface0); }
+    .mind-impact-link:disabled { cursor: default; opacity: 0.7; }
+    .mind-impact-link.external { color: var(--subtext0); }
+    .mind-impact-detail {
+      display: flex; flex-direction: column; gap: 12px;
+      min-height: 0; overflow: auto;
+      padding-right: 4px;
+    }
+    .mind-impact-empty {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: var(--subtext0); padding: 40px;
+    }
+    .mind-impact-detail-head {
+      display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px; padding: 12px 14px;
+    }
+    .mind-impact-detail-name { font: 600 14px var(--font-ui); color: var(--text); }
+    .mind-impact-detail-file { font: 11px monospace; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .mind-impact-cards {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .mind-impact-card {
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px; padding: 12px 14px;
+    }
+    .mind-impact-card-wide { grid-column: 1 / -1; }
+    .mind-impact-card-title {
+      font: 600 10px var(--font-ui); color: var(--subtext0); text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: 8px;
+    }
+    .mind-impact-card-body { font-size: 11px; color: var(--text); max-height: 320px; overflow: auto; }
+    .mind-impact-call {
+      display: flex; gap: 6px; align-items: baseline;
+      padding: 3px 0; font-family: monospace; font-size: 11px;
+    }
+    .mind-impact-call-arrow { color: var(--subtext0); width: 14px; flex-shrink: 0; }
+    .mind-impact-call-name { color: var(--text); }
+    .mind-impact-call-file { color: var(--subtext0); font-size: 10px; margin-left: auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mind-impact-hop { margin-bottom: 10px; }
+    .mind-impact-hop-title { font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+    .mind-impact-hop-file {
+      padding: 2px 8px; margin: 2px 0; font: 11px monospace; color: var(--text);
+      border-left: 2px solid; background: color-mix(in srgb, var(--base) 60%, transparent);
+    }
+    .mind-impact-flow-row { font: 11px monospace; white-space: pre; padding: 1px 0; }
+
+    /* Narrow screens: rail collapses above the detail. */
+    @media (max-width: 900px) {
+      .mind-impact-body { grid-template-columns: 1fr; }
+      .mind-impact-cards { grid-template-columns: 1fr; }
+    }
+
+    /* ── Knowledge view ─────────────────────────────────────────────────── */
+    .mind-knowledge {
+      max-width: 1100px; margin: 0 auto;
+      padding: 22px 24px 80px;
+      display: flex; flex-direction: column; gap: 24px;
+    }
+    .mind-knowledge-header { margin: 0; }
+    .mind-knowledge-title {
+      font: 600 22px var(--font-ui);
+      color: var(--text);
+      margin: 0 0 8px 0;
+      letter-spacing: -0.01em;
+    }
+    .mind-knowledge-lead {
+      font: 13px var(--font-ui);
+      color: var(--subtext0);
+      line-height: 1.5;
+      margin: 0;
+      max-width: 720px;
+    }
+    .mind-knowledge-info {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .mind-knowledge-info-item {
+      display: flex; gap: 12px;
+      padding: 14px 16px;
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 8px;
+    }
+    .mind-knowledge-info-icon {
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: color-mix(in srgb, currentColor 16%, var(--mantle));
+      display: flex; align-items: center; justify-content: center;
+      font: 700 14px var(--font-ui);
+    }
+    .mind-knowledge-info-title {
+      font: 600 12px var(--font-ui);
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .mind-knowledge-info-body {
+      font: 12px var(--font-ui);
+      color: var(--subtext0);
+      line-height: 1.6;
+    }
+    .mind-knowledge-info-body code {
+      background: var(--surface0);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text);
+      font: 11px monospace;
+    }
+    .mind-knowledge-loading,
+    .mind-knowledge-empty {
+      padding: 18px;
+      background: var(--base);
+      border: 1px dashed var(--surface1);
+      border-radius: 6px;
+      color: var(--subtext0);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .mind-knowledge-empty code {
+      background: var(--surface0);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text);
+      font: 11px monospace;
+    }
+    .mind-knowledge-repo {
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+    .mind-knowledge-repo-head {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      padding-bottom: 12px; margin-bottom: 12px;
+      border-bottom: 1px solid var(--surface0);
+    }
+    .mind-knowledge-repo-name {
+      font: 600 16px var(--font-ui);
+      color: var(--text);
+    }
+    .mind-knowledge-repo-path {
+      font: 11px monospace;
+      color: var(--subtext0);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 60%;
+    }
+    .mind-knowledge-section-title {
+      font: 600 10px var(--font-ui);
+      color: var(--subtext0);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin: 14px 0 8px;
+    }
+    .mind-artifact-card {
+      background: var(--base);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+    }
+    .mind-artifact-head {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .mind-artifact-name {
+      font: 600 13px var(--font-ui);
+      color: var(--text);
+    }
+    .mind-artifact-status {
+      font: 600 10px var(--font-ui);
+      color: var(--subtext0);
+      background: var(--surface0);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .mind-artifact-status.indexed {
+      background: color-mix(in srgb, var(--green) 22%, var(--surface0));
+      color: var(--green);
+    }
+    .mind-artifact-path {
+      font: 11px monospace;
+      color: var(--subtext0);
+      margin: 4px 0;
+    }
+    .mind-artifact-desc {
+      font: 12px var(--font-ui);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .mind-knowledge-suggest {
+      display: flex; flex-direction: column;
+      background: var(--base);
+      border: 1px solid var(--surface0);
+      border-radius: 6px;
+      padding: 4px 0;
+      overflow: hidden;
+    }
+    .mind-suggest-row {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--surface0);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .mind-suggest-row:last-child { border-bottom: none; }
+    .mind-suggest-row:hover { background: var(--surface0); }
+    .mind-suggest-row input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+    .mind-suggest-body { flex: 1; min-width: 0; }
+    .mind-suggest-head {
+      display: flex; gap: 8px; align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .mind-suggest-name {
+      font: 600 12px var(--font-ui);
+      color: var(--text);
+    }
+    .mind-suggest-path {
+      font: 10px monospace;
+      color: var(--subtext0);
+    }
+    .mind-suggest-desc {
+      font: 11px var(--font-ui);
+      color: var(--subtext0);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    .mind-knowledge-create-btn {
+      margin-top: 12px;
+    }
     /* Reusable loader overlay for any Mind view that runs an expensive
        synchronous operation (graph rebuild, large filter swap, etc). The
        caller toggles display:flex to show. */
@@ -4780,6 +5158,12 @@
         <div class="mind-toolbar">
           <span class="mind-toolbar-title">Mind</span>
           <span class="mind-toolbar-status" id="mindStatusLine" title="">Loading...</span>
+          <span id="mindLockPill" title="" style="display:none;align-items:center;gap:4px;font-size:10px;background:var(--yellow);color:var(--base);border-radius:8px;padding:2px 8px;font-weight:600;">
+            <span id="mindLockIcon">⚙</span><span id="mindLockText">build running</span>
+          </span>
+          <span id="mindQualityPill" title="Resolved import edges out of total" style="display:none;align-items:center;gap:4px;font-size:10px;background:var(--surface0);color:var(--subtext0);border-radius:8px;padding:2px 8px;border:1px solid var(--surface1);">
+            <span id="mindQualityText">quality —</span>
+          </span>
           <span class="mind-toolbar-spacer"></span>
           <div class="mind-search-wrap">
             <span style="font-size:10px;color:var(--subtext0);">Search</span>
@@ -4797,12 +5181,10 @@
         </div>
         <div class="mind-tabs" role="tablist">
           <button class="mind-tab mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')">Dashboard</button>
-          <button class="mind-tab mind-view-btn" data-view="wakeup" onclick="MindUI.setView('wakeup')" title="Preview the context every dispatched worker starts with">Worker context</button>
-          <button class="mind-tab mind-view-btn" data-view="query" onclick="MindUI.setView('query')" title="BM25 + temporal sub-graph queries">Query</button>
-          <button class="mind-tab mind-view-btn" data-view="communities" onclick="MindUI.setView('communities')">Communities</button>
-          <button class="mind-tab mind-view-btn" data-view="hotspots" onclick="MindUI.setView('hotspots')">Hotspots</button>
-          <button class="mind-tab mind-view-btn" data-view="map" onclick="MindUI.setView('map')" title="Communities as super-nodes - bridges between clusters">Map</button>
-          <button class="mind-tab mind-view-btn" data-view="graph" onclick="MindUI.setView('graph')">Graph</button>
+          <button class="mind-tab mind-view-btn" data-view="search" onclick="MindUI.setView('search')" title="Hybrid semantic + BM25 search with sub-graph + temporal filtering">Search</button>
+          <button class="mind-tab mind-view-btn" data-view="impact" onclick="MindUI.setView('impact')" title="Symbol-level call graph - what breaks if I change X?">Impact</button>
+          <button class="mind-tab mind-view-btn" data-view="knowledge" onclick="MindUI.setView('knowledge')" title="Project schemas, specs, ADRs declared via .symphonee/context-artifacts.json">Knowledge</button>
+          <button class="mind-tab mind-view-btn" data-view="mindmap" onclick="MindUI.setView('mindmap')" title="The graph itself - switch between graph, community map, and mermaid">Mind map</button>
         </div>
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>
@@ -6488,9 +6870,11 @@ requestAnimationFrame(fitTerminalNow);
           const tid = msg.termId || 'main';
           const inst = termInstances.get(tid);
           if (inst) inst.cwd = msg.cwd || inst.cwd || '';
-          if (tid === activeTermId && msg.repo && msg.repo !== activeRepo) {
-            selectRepo(msg.repo);
-          }
+          // INTENTIONALLY do NOT auto-switch activeRepo when the terminal
+          // cwd lands in a known repo. The user picks the repo from the
+          // sidebar; cd-ing inside the terminal must not hijack that
+          // selection. Symphonee's tools (scripts/, Mind, intelligence)
+          // assume the terminal stays at Symphonee's own path.
           break;
         }
         case 'term-spawned': {
@@ -11146,6 +11530,16 @@ async function orchDoDispatch() {
 
 // Listen for orchestrator WebSocket events
 function handleOrchestratorEvent(msg) {
+  if (msg.event === 'provider-failover') {
+    const fromLabel = (CLI_CONFIG[msg.from] && CLI_CONFIG[msg.from].label) || msg.from;
+    toast(`${fromLabel}: ${msg.reason || 'provider error'} — falling back to next available AI`, 'warning', { duration: 4500 });
+    return;
+  }
+  if (msg.event === 'provider-exhausted') {
+    const lastLabel = (CLI_CONFIG[msg.lastCli] && CLI_CONFIG[msg.lastCli].label) || msg.lastCli;
+    toast(`All AI providers exhausted (last: ${lastLabel} — ${msg.reason || 'failed'}). Add credits or another API key in Settings.`, 'error', { duration: 8000 });
+    return;
+  }
   if (msg.event === 'task-update') {
     orchRefreshTasks();
     orchRefreshAgents();

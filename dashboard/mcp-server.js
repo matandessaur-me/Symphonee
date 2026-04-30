@@ -296,6 +296,182 @@ const TOOLS = [
     },
     handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', `/api/graph-runs/${encodeURIComponent(args.runId)}/approve/${encodeURIComponent(args.nodeId)}`, { approved: args.approved, note: args.note }), null, 2)),
   },
+
+  // ── Mind: code-understanding endpoints ───────────────────────────────────
+  {
+    name: 'mind_query',
+    description: 'Query Mind, the shared knowledge graph. Returns a sub-graph (BFS from BM25 + dense semantic seeds, fused via RRF) the calling AI can use as ground truth. Cite node IDs in your answer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string' },
+        budget: { type: 'number', description: 'Approximate token budget for the sub-graph.', default: 2000 },
+        hybrid: { type: 'boolean', description: 'Set false to disable dense seeds (BM25 only).', default: true },
+        asOf: { type: 'string', description: 'ISO date for time-aware filtering of edges.' },
+      },
+      required: ['question'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/query', args), null, 2)),
+  },
+  {
+    name: 'mind_impact',
+    description: 'Blast radius - what files break if I change X. BFS over reverse call+import edges. Use BEFORE renaming, deleting, or refactoring.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Symbol name or relative file path.' },
+        depth: { type: 'number', default: 3 },
+      },
+      required: ['target'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/impact', args), null, 2)),
+  },
+  {
+    name: 'mind_flow',
+    description: 'Trace forward execution flow from an entrypoint. Returns a call tree (DFS via calls + defines edges, cycle-safe).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entrypoint: { type: 'string', description: 'Symbol name or relative file path.' },
+        depth: { type: 'number', default: 5 },
+      },
+      required: ['entrypoint'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/flow', args), null, 2)),
+  },
+  {
+    name: 'mind_symbol',
+    description: '360-degree view of one symbol: definition + callers + callees with confidence scores.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        file: { type: 'string', description: 'Optional file hint to disambiguate overloads.' },
+      },
+      required: ['name'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/symbol', args), null, 2)),
+  },
+  {
+    name: 'mind_symbols',
+    description: 'List or search symbols by file or name across the indexed graph.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string' },
+        query: { type: 'string' },
+        limit: { type: 'number', default: 200 },
+      },
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/symbols', args), null, 2)),
+  },
+  {
+    name: 'mind_entrypoints',
+    description: 'Auto-detected entrypoints (file orphans, well-known names main/handler/run/start/init, framework conventions).',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/entrypoints', {}), null, 2)),
+  },
+  {
+    name: 'mind_circular',
+    description: 'Find circular file dependencies via Tarjan SCC. Run when debugging unexpected initialisation order or import errors.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/circular', {}), null, 2)),
+  },
+  {
+    name: 'mind_search_semantic',
+    description: 'Dense-only semantic search over Mind nodes via cosine similarity. Useful when the literal tokens of the question do not appear in the corpus. Requires embeddings to be built (run mind_embed first).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string' },
+        k: { type: 'number', default: 10 },
+      },
+      required: ['q'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/search-semantic', args), null, 2)),
+  },
+  {
+    name: 'mind_embed',
+    description: 'Embed (or re-embed) all eligible Mind nodes for semantic search. Async - returns immediately and broadcasts progress over Symphonee WebSocket.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string', enum: ['ollama', 'openai', 'google'] },
+      },
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/embed', args), null, 2)),
+  },
+  {
+    name: 'mind_artifacts_list',
+    description: 'List declared context artifacts (schemas, OpenAPI specs, ADRs) from .symphonee/context-artifacts.json with their indexed status.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/artifacts/list', {}), null, 2)),
+  },
+  {
+    name: 'mind_artifacts_search',
+    description: 'Hybrid search restricted to context artifacts. Use BEFORE writing migrations / endpoints / domain code so the agent matches existing project conventions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        q: { type: 'string' },
+        name: { type: 'string', description: 'Optional artifact name filter.' },
+      },
+      required: ['q'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/artifacts/search', args), null, 2)),
+  },
+  {
+    name: 'mind_save_result',
+    description: 'After answering a question with Mind context, save the answer back as a conversation node so future CLI sessions can reuse it. Cite node IDs that grounded your answer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string' },
+        answer: { type: 'string' },
+        citedNodeIds: { type: 'array', items: { type: 'string' }, default: [] },
+        createdBy: { type: 'string', description: 'Your CLI name (claude / codex / gemini / grok / qwen / copilot).' },
+        strict: { type: 'boolean', default: false },
+      },
+      required: ['question', 'answer'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/save-result', args), null, 2)),
+  },
+  {
+    name: 'mind_visualize',
+    description: 'Render the Mind graph. mode=mermaid returns text; mode=interactive writes an offline Cytoscape HTML file and returns its path.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', enum: ['mermaid', 'interactive'], default: 'mermaid' },
+        focus: { type: 'string', description: 'Node id to focus on (optional).' },
+        layout: { type: 'string', enum: ['cose', 'grid', 'circle', 'concentric', 'breadthfirst'], default: 'cose' },
+        max: { type: 'number', description: 'Max nodes for mermaid mode.', default: 200 },
+      },
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/visualize', args), null, 2)),
+  },
+  {
+    name: 'mind_health',
+    description: 'Embeddings + vectors store status. Tells you whether semantic search is online.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/mind/health'), null, 2)),
+  },
+  {
+    name: 'mind_quality',
+    description: 'Resolved-import ratio + sample of unresolved specs. Low quality usually means tsconfig path aliases need configuring.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/mind/quality'), null, 2)),
+  },
+  {
+    name: 'mind_patch_file',
+    description: 'Patch one file in Mind without re-walking the whole repo. Drop its manifest entry then run an incremental rebuild scoped to repo-code.',
+    inputSchema: {
+      type: 'object',
+      properties: { file: { type: 'string', description: 'Absolute or repo-relative path.' } },
+      required: ['file'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/patch-file', args), null, 2)),
+  },
 ];
 
 function textResult(text) {

@@ -31,11 +31,31 @@ const HOME = os.homedir();
 
 // Each source declares: provider tag, kind tag, and a function that returns
 // an array of { id, label, body, sourcePath, frontmatter? } items.
+//
+// Symmetry note: Symphonee is a multi-CLI system. Every supported CLI gets
+// its user-level skills/agents/extensions ingested into the brain - even
+// the ones whose runtime can't be invoked directly from a sibling CLI.
+// The PROCEDURE inside any skill body is readable knowledge for everyone
+// (Codex can manually execute the workflow described in a Claude agent;
+// Gemini can read a Cursor rule; Copilot can read a Windsurf workflow).
 const SOURCES = [
+  // Claude Code: ~/.claude/agents/<name>.md  +  ~/.claude/plugins/marketplaces/<mkt>/...
   { provider: 'claude', kind: 'agent',  scan: () => scanFlatMarkdown(path.join(HOME, '.claude', 'agents'), 'claude_agent') },
   { provider: 'claude', kind: 'plugin', scan: () => scanClaudePluginMarketplaces(path.join(HOME, '.claude', 'plugins', 'marketplaces')) },
+  // Codex: ~/.codex/skills/<name>/SKILL.md  (+ .system/ for built-ins)
   { provider: 'codex',  kind: 'skill',  scan: () => scanSkillFolders(path.join(HOME, '.codex', 'skills'), 'codex_skill') },
+  // Qwen Code: ~/.qwen/skills/<name>/SKILL.md
   { provider: 'qwen',   kind: 'skill',  scan: () => scanSkillFolders(path.join(HOME, '.qwen', 'skills'), 'qwen_skill') },
+  // Gemini CLI: extensions live at ~/.gemini/extensions/<name>/<name>.md
+  // (sometimes as flat .md or via a manifest). Try the conventional locations.
+  { provider: 'gemini', kind: 'extension', scan: () => scanFlatMarkdown(path.join(HOME, '.gemini', 'extensions'), 'gemini_ext') },
+  { provider: 'gemini', kind: 'skill',     scan: () => scanSkillFolders(path.join(HOME, '.gemini', 'skills'), 'gemini_skill') },
+  // Grok CLI: ~/.grok/skills/ if installed
+  { provider: 'grok',   kind: 'skill', scan: () => scanSkillFolders(path.join(HOME, '.grok', 'skills'), 'grok_skill') },
+  // GitHub Copilot: extension config / chat instructions
+  { provider: 'copilot', kind: 'instruction', scan: () => scanFlatMarkdown(path.join(HOME, '.copilot', 'instructions'), 'copilot_inst') },
+  // Cursor: ~/.cursor/rules/ (per-user rules)
+  { provider: 'cursor',  kind: 'rule',  scan: () => scanFlatMarkdown(path.join(HOME, '.cursor', 'rules'), 'cursor_rule') },
 ];
 
 function safeReaddir(dir) {

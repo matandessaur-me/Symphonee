@@ -2301,13 +2301,38 @@ function handleImageProxy(url, res) {
 // ── UI Context (tracks what's selected in the dashboard) ────────────────────
 // activeSpace is the organizational container (e.g. "Business"); activeRepo is
 // the specific working repo inside that space. They can be independent.
-let _uiContext = {
-  selectedIteration: null,
-  selectedIterationName: 'All Iterations',
-  activeSpace: null,
-  activeRepo: null,
-  activeRepoPath: null,
-};
+//
+// Persisted to <repoRoot>/.symphonee/ui-state.json so the user's selection
+// survives an app restart. Restoring on boot is best-effort - if the saved
+// repo no longer exists in config, fall back to nothing.
+const _uiStatePath = path.join(repoRoot, '.symphonee', 'ui-state.json');
+
+function _loadUiState() {
+  try {
+    if (!fs.existsSync(_uiStatePath)) return null;
+    return JSON.parse(fs.readFileSync(_uiStatePath, 'utf8'));
+  } catch (_) { return null; }
+}
+
+function _saveUiState(state) {
+  try {
+    fs.mkdirSync(path.dirname(_uiStatePath), { recursive: true });
+    fs.writeFileSync(_uiStatePath, JSON.stringify(state, null, 2), 'utf8');
+  } catch (_) { /* best effort */ }
+}
+
+let _uiContext = (() => {
+  const saved = _loadUiState() || {};
+  return {
+    selectedIteration: saved.selectedIteration ?? null,
+    selectedIterationName: saved.selectedIterationName || 'All Iterations',
+    selectedArea: saved.selectedArea ?? null,
+    selectedAreaName: saved.selectedAreaName || 'Team Default',
+    activeSpace: saved.activeSpace ?? null,
+    activeRepo: saved.activeRepo ?? null,
+    activeRepoPath: null, // re-derived from config below
+  };
+})();
 
 function getUiContextWithPath() {
   // Always resolve the repo path from config so it's up to date
@@ -2329,6 +2354,15 @@ async function handleUiContextUpdate(req, res) {
   if (data.activeRepo !== undefined && data.activeRepo !== prevRepo) {
     try { writePluginHints(); } catch (_) {}
   }
+  // Persist so the selection survives an app restart.
+  _saveUiState({
+    selectedIteration: _uiContext.selectedIteration,
+    selectedIterationName: _uiContext.selectedIterationName,
+    selectedArea: _uiContext.selectedArea,
+    selectedAreaName: _uiContext.selectedAreaName,
+    activeSpace: _uiContext.activeSpace,
+    activeRepo: _uiContext.activeRepo,
+  });
   json(res, { ok: true, context: getUiContextWithPath() });
 }
 
@@ -2728,19 +2762,13 @@ function _handleTerminalCwd(termId, cwd) {
 }
 
 function createTerminal(termId, cols = 120, rows = 30, cwd = null) {
-  // Default new terminals to the user's active repo path so opening a new
-  // shell tab does not yank the dashboard back to Symphonee's own repoRoot.
-  // Falling back to repoRoot would trigger _handleTerminalCwd to broadcast
-  // repo:"Symphonee", which the client interprets as a repo switch and can
-  // clear activeRepo when it does not belong to the current space.
-  if (!cwd) {
-    try {
-      const ctx = getUiContextWithPath();
-      cwd = ctx.activeRepoPath || repoRoot;
-    } catch (_) {
-      cwd = repoRoot;
-    }
-  }
+  // Default new terminals to Symphonee's repoRoot (where scripts/*.ps1 live)
+  // so the user always has access to Symphonee's tools regardless of which
+  // repo is active. The "active repo" is metadata Symphonee uses to know
+  // WHICH repo it's helping you with - it is NOT a working directory the
+  // user gets dropped into. Symphonee operates ON other repos from its own
+  // directory, not FROM inside them.
+  if (!cwd) cwd = repoRoot;
   // Kill existing if same ID
   if (terminals.has(termId)) {
     try { terminals.get(termId).pty.kill(); } catch (_) {}
@@ -3117,6 +3145,7 @@ const mind = mountMind(addRoute, json, {
   // or /api/mind/update, the engine pulls every repo Symphonee manages
   // (cfg.Repos) instead of just the active one.
   getAllRepos: () => (getConfig().Repos || {}),
+  getAiApiKeys: () => (getConfig().AiApiKeys || {}),
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed

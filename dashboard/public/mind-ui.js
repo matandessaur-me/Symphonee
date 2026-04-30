@@ -57,6 +57,8 @@
     if (!state.ws) connectWS();
     bindSearchInput();
     updateSearchOnlyBtn();
+    refreshLock();
+    refreshQuality();
   }
 
   // ── Search: one input, every view honours state.search ─────────────────────
@@ -243,13 +245,35 @@
 
   function onMindUpdate(payload) {
     if (!payload) return;
-    if (payload.kind === 'build-progress') setStatus(payload.msg || 'building...');
+    if (payload.kind === 'build-start') refreshLock();
+    if (payload.kind === 'build-progress') { setStatus(payload.msg || 'building...'); refreshLock(); }
     if (payload.kind === 'build-complete' || payload.kind === 'update-complete') {
       setStatus('build complete - reloading');
-      loadGraph().then(() => { render(); refreshStatus(); });
+      loadGraph().then(() => { render(); refreshStatus(); refreshLock(); refreshQuality(); });
     }
-    if (payload.kind === 'build-failed') setStatus('build failed: ' + (payload.error || 'unknown'));
+    if (payload.kind === 'build-failed') { setStatus('build failed: ' + (payload.error || 'unknown')); refreshLock(); }
     if (payload.kind === 'watch-trigger') setStatus('change: ' + (payload.file || ''));
+    if (payload.kind === 'embed-progress') setStatus(payload.msg || 'embedding...');
+    if (payload.kind === 'embed-complete') {
+      setStatus(`embedded ${(payload.result && payload.result.embedded) || 0} nodes`);
+      refreshSmartHealth && refreshSmartHealth();
+    }
+    if (payload.kind === 'embed-failed') setStatus('embed failed: ' + (payload.error || 'unknown'));
+  }
+  async function refreshQuality() {
+    try {
+      const r = await API('/api/mind/quality');
+      const pill = document.getElementById('mindQualityPill');
+      const txt = document.getElementById('mindQualityText');
+      if (!pill || !txt) return;
+      if (!r || typeof r.resolvedPct !== 'number' || r.totalImportEdges === 0) {
+        pill.style.display = 'none';
+        return;
+      }
+      pill.style.display = 'inline-flex';
+      txt.textContent = `quality ${r.resolvedPct}%`;
+      pill.title = `Resolved ${r.resolvedPct}% of ${r.totalImportEdges} import edges. ${r.unresolvedExamples?.length || 0} unresolved examples.`;
+    } catch (_) { /* ignore */ }
   }
 
   // ── Data ───────────────────────────────────────────────────────────────────
@@ -265,8 +289,8 @@
       setStatus(`${s.space || 'space'}: empty`);
       return;
     }
-    const ageMin = Math.round((Date.now() - new Date(s.stats.lastBuildAt).getTime()) / 60000);
-    setStatus(`${s.space}: ${s.stats.nodes} nodes, ${s.stats.edges} edges, ${s.stats.communities} communities, ${ageMin}m ago`);
+    const age = formatRelativeMs(Date.now() - new Date(s.stats.lastBuildAt).getTime());
+    setStatus(`${s.space}: ${s.stats.nodes} nodes, ${s.stats.edges} edges, ${s.stats.communities} communities, ${age}`);
     const w = await API('/api/mind/watch');
     setWatch(!!w.enabled);
   }
@@ -303,19 +327,30 @@
   }
 
   // ── View routing ───────────────────────────────────────────────────────────
+  // Aliases keep saved-state and old links working after the consolidation.
+  const VIEW_ALIASES = {
+    graph: 'mindmap',
+    map: 'mindmap',
+    smart: 'search',
+    query: 'search',
+    wakeup: 'dashboard',
+    communities: 'mindmap',
+    hotspots: 'dashboard',
+  };
+
   function setView(view) {
-    state.view = view;
-    document.querySelectorAll('.mind-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    const resolved = VIEW_ALIASES[view] || view;
+    state.view = resolved;
+    document.querySelectorAll('.mind-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === resolved));
     render();
   }
 
   function render() {
     teardownNetwork();
-    // Graph + Map views need a full-bleed canvas - turn padding/scroll off
-    // for those, restore for everything else.
+    // Mind map view always full-bleed (its own ribbon + body manage padding).
     const main = $('mindMain');
     if (main) {
-      const fullBleed = (state.view === 'graph' || state.view === 'map');
+      const fullBleed = (state.view === 'mindmap');
       main.style.padding = fullBleed ? '0' : '14px 18px';
       main.style.overflow = fullBleed ? 'hidden' : 'auto';
       main.style.display = fullBleed ? 'flex' : '';
@@ -331,12 +366,634 @@
       return;
     }
     if (state.view === 'dashboard') renderDashboard();
-    else if (state.view === 'wakeup') renderWakeup();
-    else if (state.view === 'query') renderQuery();
-    else if (state.view === 'communities') renderCommunities();
-    else if (state.view === 'hotspots') renderHotspots();
-    else if (state.view === 'map') renderMap();
-    else if (state.view === 'graph') renderGraph();
+    else if (state.view === 'search') renderSearch();
+    else if (state.view === 'impact') renderImpact();
+    else if (state.view === 'knowledge') renderKnowledge();
+    else if (state.view === 'mindmap') renderMindmap();
+  }
+
+  // ── Unified Search view (replaces both Query and Smart search) ──────────
+  // Single tab. Auto-uses hybrid (BM25 + dense) when vectors are loaded;
+  // falls back to BM25-only otherwise. Shows score badges per result so
+  // the user sees why each result ranked.
+  async function renderSearch() { return renderSmart(); }
+
+  // ── Unified Mind map view ───────────────────────────────────────────────
+  // Persistent sub-ribbon + dedicated body. Body contents swap based on
+  // mode (graph / map / mermaid); the ribbon stays put so switching view
+  // never feels like leaving the tab.
+  function renderMindmap() {
+    // Mermaid removed from the segmented control - kept as a one-click "Copy
+    // mermaid source" action for pasting into chat / docs context.
+    let mode = state.mindmapMode || 'graph';
+    if (mode === 'mermaid') mode = state.mindmapMode = 'graph';
+    const main = $('mindMain');
+    if (!main) return;
+    main.innerHTML = `
+      <div class="mindmap-ribbon">
+        <div class="mindmap-segctl" role="tablist" aria-label="Mind map view">
+          <button class="mindmap-seg-btn${mode === 'graph' ? ' active' : ''}" data-mode="graph">Graph</button>
+          <button class="mindmap-seg-btn${mode === 'map' ? ' active' : ''}" data-mode="map">Map</button>
+        </div>
+        <span class="mindmap-ribbon-spacer"></span>
+        <span class="mindmap-ribbon-hint" id="mindmapHint">${mindmapHint(mode)}</span>
+        <span class="mindmap-ribbon-spacer"></span>
+        <button class="mindmap-ribbon-btn" id="mindmapCopyMermaid" title="Copy a mermaid source representation for pasting into chat / docs">Copy mermaid</button>
+      </div>
+      <div id="mindmapBody" class="mindmap-body"></div>`;
+    main.querySelectorAll('.mindmap-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.mindmapMode = btn.dataset.mode;
+        render();
+      });
+    });
+    const copyBtn = main.querySelector('#mindmapCopyMermaid');
+    if (copyBtn) copyBtn.addEventListener('click', copyMermaidSource);
+    renderInBody(mode);
+  }
+
+  function mindmapHint(mode) {
+    if (mode === 'map') return 'Each circle is a community. Edges show cross-community bridges.';
+    return 'Full graph - drag, zoom, click any node to inspect.';
+  }
+
+  // Copy mermaid source on demand. Fetches /api/mind/visualize {mode:mermaid}
+  // and writes the text to the clipboard. Useful for pasting Mind context
+  // into chat or documentation.
+  async function copyMermaidSource() {
+    setStatus('generating mermaid source...');
+    try {
+      const r = await fetch('/api/mind/visualize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'mermaid', max: 80 }),
+      });
+      const d = await r.json();
+      if (!d.mermaid) { setStatus(d.error || 'no mermaid output'); return; }
+      const ok = await copyToClipboard(d.mermaid);
+      setStatus(ok ? 'mermaid source copied' : 'copy failed - try selecting and copying manually');
+    } catch (e) {
+      setStatus('mermaid error: ' + (e.message || e));
+    }
+  }
+
+  // Reliable copy with fallback for Electron contexts where the async
+  // clipboard API is blocked. Returns true on success.
+  async function copyToClipboard(text) {
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) { /* fall through to legacy path */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (_) { return false; }
+  }
+
+  // Graph + Map: existing renderers fully overwrite #mindMain. To keep the
+  // ribbon, we let them render, then the next render() call will rebuild
+  // the ribbon on top. To avoid that ping-pong here, we wrap the existing
+  // renderer in a temporary id swap: rename mindMain -> mindmap-host,
+  // rename mindmapBody -> mindMain, run the renderer (it writes into the
+  // body), then restore IDs.
+  function renderInBody(mode) {
+    const main = document.getElementById('mindMain');
+    const body = document.getElementById('mindmapBody');
+    if (!main || !body) return;
+    main.id = '__mindmap_host';
+    body.id = 'mindMain';
+    try {
+      if (mode === 'graph') renderGraph();
+      else if (mode === 'map') renderMap();
+    } finally {
+      // Restore IDs so subsequent calls to $('mindMain') hit the real one.
+      body.id = 'mindmapBody';
+      main.id = 'mindMain';
+    }
+  }
+
+  // ── Smart search (hybrid BM25 + dense via RRF) ──────────────────────────
+  async function renderSmart() {
+    const main = $('mindMain');
+    if (!main) return;
+    const last = state.smart || {};
+    main.innerHTML = `
+      <div class="mind-card" style="max-width:1100px;margin:0 auto;">
+        <div class="mind-card-title">Smart search</div>
+        <div style="font-size:12px;color:var(--subtext0);margin-bottom:12px;line-height:1.6;">
+          Hybrid BM25 + semantic search. Each result shows why it ranked: <b>BM25</b> = literal-token match, <b>Dense</b> = semantic similarity via embeddings.
+          Need to enable embeddings first? <button onclick="MindUI._embedAll()" style="background:transparent;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:12px;">embed the whole graph</button>.
+        </div>
+        <div id="mindSmartHealth" style="font-size:10px;color:var(--subtext0);margin-bottom:10px;font-variant-numeric:tabular-nums;"></div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <input id="mindSmartQ" type="text" placeholder="ask anything: 'how does auth work', 'where do we mount the orchestrator', 'tsconfig path aliases'" autofocus
+            style="flex:1;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:13px;" value="${escapeHtml(last.q || '')}">
+          <input id="mindSmartK" type="number" min="3" max="50" value="${last.k || 12}"
+            style="width:60px;padding:8px 6px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+          <button class="tab-bar-btn" onclick="MindUI._smartRun()" style="padding:8px 16px;font-size:12px;">Search</button>
+        </div>
+        <div id="mindSmartOut" style="font-size:12px;color:var(--text);"></div>
+      </div>`;
+    const inp = $('mindSmartQ');
+    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSmart(); });
+    refreshSmartHealth();
+  }
+
+  async function refreshSmartHealth() {
+    try {
+      const r = await API('/api/mind/health');
+      const el = $('mindSmartHealth');
+      if (!el) return;
+      const e = r.embeddings || {};
+      const v = r.vectors || {};
+      const eOk = e.ok ? `<span style="color:var(--green);">${escapeHtml(e.provider || '')} ok (${e.latencyMs || 0}ms, ${e.dimensions || '?'}d)</span>` :
+        `<span style="color:var(--red);">${escapeHtml(e.provider || 'embed')} unavailable: ${escapeHtml((e.error || '').slice(0, 80))}</span>`;
+      const vOk = v.count > 0 ? `<span style="color:var(--green);">${v.count} vectors indexed (${v.dim}d, ${escapeHtml(v.provider || '')})</span>` :
+        '<span style="color:var(--yellow);">no vectors yet — click "embed the whole graph"</span>';
+      el.innerHTML = `embeddings: ${eOk} · index: ${vOk}`;
+    } catch (_) { /* ignore */ }
+  }
+
+  async function runSmart() {
+    const q = ($('mindSmartQ') && $('mindSmartQ').value || '').trim();
+    const k = parseInt(($('mindSmartK') && $('mindSmartK').value) || '12', 10);
+    state.smart = { q, k };
+    const out = $('mindSmartOut');
+    if (!out) return;
+    if (!q) { out.innerHTML = '<span style="color:var(--subtext0);">enter a query</span>'; return; }
+    out.innerHTML = '<span style="color:var(--subtext0);">searching...</span>';
+    try {
+      // Run BM25 (via /api/mind/query seedIds extraction) + dense in parallel
+      const [bmRes, denseRes] = await Promise.all([
+        fetch('/api/mind/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, budget: 800, hybrid: false }) }).then(r => r.json()),
+        fetch('/api/mind/search-semantic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q, k }) }).then(r => r.json()),
+      ]);
+      const bmIds = (bmRes.seedIds || []).slice(0, k);
+      const bmRank = new Map(bmIds.map((id, i) => [id, i]));
+      const denseRank = new Map();
+      const denseScore = new Map();
+      (denseRes.results || []).forEach((r, i) => { denseRank.set(r.id, i); denseScore.set(r.id, r.score); });
+      // RRF locally
+      const k_rrf = 60;
+      const fused = new Map();
+      const allIds = new Set([...bmRank.keys(), ...denseRank.keys()]);
+      for (const id of allIds) {
+        let s = 0;
+        if (bmRank.has(id)) s += 1 / (k_rrf + bmRank.get(id));
+        if (denseRank.has(id)) s += 1 / (k_rrf + denseRank.get(id));
+        fused.set(id, s);
+      }
+      const ranked = Array.from(fused.entries()).sort((a, b) => b[1] - a[1]).slice(0, k);
+      const nodeMap = new Map();
+      for (const n of (bmRes.nodes || [])) nodeMap.set(n.id, n);
+      for (const r of (denseRes.results || [])) if (r.node) nodeMap.set(r.id, r.node);
+      out.innerHTML = ranked.map(([id, score], rank) => {
+        const node = nodeMap.get(id);
+        const bm = bmRank.has(id) ? `<span style="color:var(--green);">BM25 #${bmRank.get(id) + 1}</span>` : '';
+        const dn = denseRank.has(id) ? `<span style="color:var(--accent);">Dense #${denseRank.get(id) + 1} (${(denseScore.get(id) || 0).toFixed(2)})</span>` : '';
+        const both = [bm, dn].filter(Boolean).join(' · ');
+        const label = node ? escapeHtml(node.label) : escapeHtml(id);
+        const kind = node ? `<span style="color:var(--subtext0);font-size:10px;">[${escapeHtml(node.kind || '')}]</span>` : '';
+        return `
+          <a href="#" class="mind-smart-link" data-id="${escapeHtml(id)}" style="display:block;padding:8px 10px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;margin-bottom:6px;text-decoration:none;color:var(--text);">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+                <span style="font-size:11px;color:var(--subtext0);font-variant-numeric:tabular-nums;">#${rank + 1}</span>
+                ${label} ${kind}
+              </div>
+              <div style="font-size:10px;display:flex;gap:8px;flex-shrink:0;">${both}</div>
+            </div>
+          </a>`;
+      }).join('') || '<span style="color:var(--subtext0);">no matches</span>';
+      out.querySelectorAll('.mind-smart-link').forEach(a => {
+        a.addEventListener('click', (ev) => { ev.preventDefault(); showNodeDetail(a.dataset.id); });
+      });
+    } catch (e) {
+      out.innerHTML = `<span style="color:var(--red);">error: ${escapeHtml(e.message || String(e))}</span>`;
+    }
+  }
+
+  async function embedAll() {
+    if (!confirm('Embed the whole graph? This will call your embedding provider for ~hundreds of nodes.')) return;
+    setStatus('starting embedding...');
+    try {
+      await fetch('/api/mind/embed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      refreshSmartHealth();
+    } catch (_) { /* ignore */ }
+  }
+
+  // ── Impact view (symbols + blast-radius + call-flow + entrypoints) ──────
+  // ── Impact view (list-first) ────────────────────────────────────────────
+  // Two columns: searchable Symbols rail on the left, selected-symbol detail
+  // panel on the right. No more "type the exact symbol name" inputs - the
+  // user sees the full list, filters with a search box, clicks to inspect.
+  // Entrypoints are exposed as quick chips at the top of the rail. The raw
+  // /api/mind/impact, /flow, /symbol, /symbols, /entrypoints, /circular
+  // endpoints are unchanged - the AI surface keeps everything, we just
+  // strip the manual-input UI from the human surface.
+  // File-first Impact view. The symbol-level call graph is approximate
+  // (regex-based) so we show files first - the file-import graph is
+  // comprehensive and reliable. Symbols appear as a sub-list when a file
+  // is selected, with a clear notice when the call graph is sparse.
+  let _impactFiles = [];
+  let _impactSelectedPath = null;
+
+  async function renderImpact() {
+    const main = $('mindMain');
+    if (!main) return;
+    main.innerHTML = `
+      <div class="mind-impact">
+        <div class="mind-impact-head">
+          <div>
+            <div class="mind-impact-title">Impact</div>
+            <div class="mind-impact-sub">
+              <b>What breaks if I delete or rename this file?</b>
+              Pick a file to see its imports, dependents, and a one-click blast radius.
+            </div>
+          </div>
+          <div id="mindCircularBanner"></div>
+        </div>
+        <div class="mind-impact-body">
+          <aside class="mind-impact-rail">
+            <div class="mind-impact-rail-search">
+              <input id="mindImpactFilter" type="text" placeholder="filter files..." autocomplete="off" spellcheck="false">
+              <span id="mindImpactCount" class="mind-impact-count">…</span>
+            </div>
+            <div id="mindImpactList" class="mind-impact-list">
+              <div style="padding:14px;color:var(--subtext0);font-size:11px;">Loading files…</div>
+            </div>
+          </aside>
+          <section class="mind-impact-detail" id="mindImpactDetail">
+            <div class="mind-impact-empty">
+              <div style="font-size:13px;color:var(--text);margin-bottom:6px;">No file selected</div>
+              <div style="font-size:11px;color:var(--subtext0);">Pick a file on the left. Files are sorted by how many other files reference them - the most "load-bearing" ones at the top.</div>
+            </div>
+          </section>
+        </div>
+      </div>`;
+
+    Promise.all([
+      fetch('/api/mind/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ files: [] })),
+      fetch('/api/mind/circular', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ cycles: [] })),
+    ]).then(([fileData, cycData]) => {
+      _impactFiles = (fileData.files || []);
+      renderImpactList(_impactFiles);
+      renderImpactCircular(cycData);
+    });
+
+    const filter = $('mindImpactFilter');
+    if (filter) {
+      filter.addEventListener('input', () => {
+        const q = filter.value.trim().toLowerCase();
+        const filtered = q
+          ? _impactFiles.filter(f => (f.path || '').toLowerCase().includes(q))
+          : _impactFiles;
+        renderImpactList(filtered);
+      });
+    }
+  }
+
+  function renderImpactList(files) {
+    const list = $('mindImpactList');
+    const count = $('mindImpactCount');
+    if (count) count.textContent = files.length + (files.length === _impactFiles.length ? '' : '/' + _impactFiles.length);
+    if (!list) return;
+    if (!files.length) {
+      list.innerHTML = '<div style="padding:14px;color:var(--subtext0);font-size:11px;">No matches.</div>';
+      return;
+    }
+    list.innerHTML = files.slice(0, 800).map(f => {
+      const total = f.dependentsCount + f.importsCount;
+      const heat = total > 50 ? 'hot' : total > 10 ? 'warm' : '';
+      return `
+        <button class="mind-impact-row${_impactSelectedPath === f.path ? ' active' : ''}" data-path="${escapeHtml(f.path)}">
+          <span class="mind-impact-row-name">${escapeHtml(basenameOf(f.path))}</span>
+          <span class="mind-impact-row-file">${escapeHtml(f.path)}</span>
+          <span class="mind-impact-row-meta">
+            <span class="mind-impact-pip ${heat}" title="${f.dependentsCount} files import this · ${f.importsCount} imports">
+              ←${f.dependentsCount} →${f.importsCount}
+            </span>
+          </span>
+        </button>`;
+    }).join('');
+    list.querySelectorAll('.mind-impact-row').forEach(btn => {
+      btn.addEventListener('click', () => selectImpactFile(btn.dataset.path));
+    });
+  }
+
+  function basenameOf(p) {
+    if (!p) return '';
+    const parts = String(p).replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || p;
+  }
+
+  function renderImpactCircular(data) {
+    const banner = $('mindCircularBanner');
+    if (!banner) return;
+    if (!data || !data.count) { banner.innerHTML = ''; return; }
+    const sample = (data.cycles[0] || []).slice(0, 4).join(' → ');
+    banner.innerHTML = `
+      <div class="mind-impact-warn">
+        ⚠ ${data.count} circular dependenc${data.count === 1 ? 'y' : 'ies'}
+        <span style="color:var(--subtext0);font-weight:normal;">${escapeHtml(sample)}${(data.cycles[0] || []).length > 4 ? ' →' : ''}</span>
+      </div>`;
+  }
+
+  async function selectImpactFile(path) {
+    _impactSelectedPath = path;
+    document.querySelectorAll('.mind-impact-row').forEach(r => r.classList.toggle('active', r.dataset.path === path));
+    const detail = $('mindImpactDetail');
+    if (!detail) return;
+    detail.innerHTML = `
+      <div class="mind-impact-detail-head">
+        <div>
+          <div class="mind-impact-detail-name">${escapeHtml(basenameOf(path))}</div>
+          <div class="mind-impact-detail-file">${escapeHtml(path)}</div>
+        </div>
+        <div class="mind-impact-actions">
+          <button class="mindmap-ribbon-btn primary" id="mindImpactBlastBtn">Blast radius</button>
+        </div>
+      </div>
+      <div class="mind-impact-cards">
+        <div class="mind-impact-card" id="mindImpactDeps">
+          <div class="mind-impact-card-title">Imported by <span id="mindImpactDepsCount" style="color:var(--text);font-weight:normal;"></span></div>
+          <div class="mind-impact-card-body" id="mindImpactDepsBody">Loading…</div>
+        </div>
+        <div class="mind-impact-card" id="mindImpactImports">
+          <div class="mind-impact-card-title">Imports <span id="mindImpactImpCount" style="color:var(--text);font-weight:normal;"></span></div>
+          <div class="mind-impact-card-body" id="mindImpactImpBody">Loading…</div>
+        </div>
+      </div>
+      <div class="mind-impact-card" id="mindImpactSyms">
+        <div class="mind-impact-card-title">Symbols in this file <span id="mindImpactSymsCount" style="color:var(--text);font-weight:normal;"></span></div>
+        <div class="mind-impact-card-body" id="mindImpactSymsBody">Loading…</div>
+      </div>
+      <div class="mind-impact-card mind-impact-card-wide" id="mindImpactBlast" style="display:none;">
+        <div class="mind-impact-card-title">Blast radius (transitive dependents)</div>
+        <div class="mind-impact-card-body"></div>
+      </div>`;
+
+    try {
+      const r = await fetch('/api/mind/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+      const data = await r.json();
+      if (data.error) { document.getElementById('mindImpactDepsBody').textContent = data.error; return; }
+
+      const depsBody = document.getElementById('mindImpactDepsBody');
+      const depsCount = document.getElementById('mindImpactDepsCount');
+      if (depsCount) depsCount.textContent = '· ' + (data.dependents || []).length;
+      depsBody.innerHTML = (data.dependents && data.dependents.length)
+        ? data.dependents.map(d => `
+          <button class="mind-impact-link" data-path="${escapeHtml(d.path)}">
+            ← <span class="mind-impact-call-name">${escapeHtml(basenameOf(d.path))}</span>
+            <span class="mind-impact-call-file">${escapeHtml(d.path)}</span>
+          </button>`).join('')
+        : '<span style="color:var(--subtext0);font-size:11px;">Nothing imports this file. It may be an entrypoint, an orphan, or a leaf.</span>';
+
+      const impBody = document.getElementById('mindImpactImpBody');
+      const impCount = document.getElementById('mindImpactImpCount');
+      if (impCount) impCount.textContent = '· ' + (data.imports || []).length;
+      impBody.innerHTML = (data.imports && data.imports.length)
+        ? data.imports.map(d => `
+          <button class="mind-impact-link${d.external ? ' external' : ''}" data-path="${escapeHtml(d.path)}" ${d.external ? 'disabled' : ''}>
+            → <span class="mind-impact-call-name">${escapeHtml(d.external ? d.path.replace(/^ext_/, '') : basenameOf(d.path))}</span>
+            <span class="mind-impact-call-file">${escapeHtml(d.external ? '(external)' : d.path)}</span>
+          </button>`).join('')
+        : '<span style="color:var(--subtext0);font-size:11px;">No imports detected in this file.</span>';
+
+      const symsBody = document.getElementById('mindImpactSymsBody');
+      const symsCount = document.getElementById('mindImpactSymsCount');
+      if (symsCount) symsCount.textContent = '· ' + (data.symbols || []).length;
+      symsBody.innerHTML = (data.symbols && data.symbols.length)
+        ? data.symbols.slice(0, 50).map(s => `
+          <div class="mind-impact-call">
+            <span class="mind-impact-call-arrow">·</span>
+            <span class="mind-impact-call-name">${escapeHtml(s.name)}</span>
+            <span class="mind-impact-call-file">${s.line ? 'line ' + s.line : ''}</span>
+          </div>`).join('')
+        : '<span style="color:var(--subtext0);font-size:11px;">No symbols extracted from this file. Symphonee\'s extractor recognizes top-level functions, classes and methods - declaration patterns inside functions are not picked up.</span>';
+
+      // Wire click-to-navigate for imports and dependents links.
+      detail.querySelectorAll('.mind-impact-link').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.disabled) return;
+          const target = btn.dataset.path;
+          // Find in our cached list and select.
+          if (_impactFiles.find(f => f.path === target)) selectImpactFile(target);
+        });
+      });
+
+      const blastBtn = document.getElementById('mindImpactBlastBtn');
+      if (blastBtn) blastBtn.onclick = () => runImpactFileBlast(path);
+    } catch (e) {
+      document.getElementById('mindImpactDepsBody').textContent = 'error: ' + (e.message || e);
+    }
+  }
+
+  // File-level blast radius via the existing /api/mind/impact - it accepts
+  // file paths as the target and walks reverse 'imports' edges.
+  async function runImpactFileBlast(path) {
+    const card = document.getElementById('mindImpactBlast');
+    if (!card) return;
+    card.style.display = 'block';
+    const body = card.querySelector('.mind-impact-card-body');
+    if (body) body.innerHTML = '<span style="color:var(--subtext0);font-size:11px;">computing…</span>';
+    try {
+      const r = await fetch('/api/mind/impact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: path, depth: 4 }) });
+      const data = await r.json();
+      if (data.error) { body.textContent = data.error; return; }
+      const colors = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d5', '#74c7ec'];
+      const hops = Object.keys(data.filesByDepth || {}).map(hop => {
+        const c = colors[(parseInt(hop, 10) - 1) % colors.length];
+        const files = data.filesByDepth[hop] || [];
+        return `
+          <div class="mind-impact-hop">
+            <div class="mind-impact-hop-title" style="color:${c};">Hop ${hop} · ${files.length} file${files.length === 1 ? '' : 's'}</div>
+            ${files.map(f => `<div class="mind-impact-hop-file" style="border-left-color:${c};">${escapeHtml(f)}</div>`).join('')}
+          </div>`;
+      }).join('');
+      body.innerHTML = `
+        <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'} would break if you delete or rename <b style="color:var(--text);">${escapeHtml(basenameOf(path))}</b>${data.truncated ? ' (truncated)' : ''}</div>
+        ${hops || '<span style="color:var(--green);font-size:11px;">No files depend on this. Safe to delete or rename.</span>'}`;
+    } catch (e) { body.textContent = 'error: ' + (e.message || e); }
+  }
+
+  // ── Knowledge view (Phase 4 placeholder; populated when artifacts ship) ─
+  async function renderKnowledge() {
+    const main = $('mindMain');
+    if (!main) return;
+    main.innerHTML = `
+      <div class="mind-knowledge">
+        <header class="mind-knowledge-header">
+          <h2 class="mind-knowledge-title">Project knowledge</h2>
+          <p class="mind-knowledge-lead">
+            Tell the AI which non-code files matter most in your project so it consults them before answering.
+          </p>
+        </header>
+        <div class="mind-knowledge-info">
+          <div class="mind-knowledge-info-item">
+            <div class="mind-knowledge-info-icon" style="color:var(--accent);">i</div>
+            <div>
+              <div class="mind-knowledge-info-title">What is an "artifact"?</div>
+              <div class="mind-knowledge-info-body">
+                A pointer to a non-code file or folder that holds project-wide knowledge - your database schema, an
+                OpenAPI spec, architecture decision records, a domain glossary, deployment manifests. The AI can <i>read</i>
+                any file already, but artifacts tell it <b style="color:var(--text);">when to consult what</b>: "before writing migrations, look at
+                the schema." Each artifact has a name, a path, and a one-sentence description.
+              </div>
+            </div>
+          </div>
+          <div class="mind-knowledge-info-item">
+            <div class="mind-knowledge-info-icon" style="color:var(--green);">+</div>
+            <div>
+              <div class="mind-knowledge-info-title">Why so few suggested?</div>
+              <div class="mind-knowledge-info-body">
+                Mind only suggests files at <i>conventional</i> locations (<code>schema.sql</code>, <code>openapi.yaml</code>, <code>docs/adr/</code>, etc).
+                Anything else - a custom internal wiki, a Notion export, a generated TS types file - has to be added manually
+                because no convention covers it. You're not missing anything; the list will grow as you add the things <i>you</i> consider important.
+              </div>
+            </div>
+          </div>
+          <div class="mind-knowledge-info-item">
+            <div class="mind-knowledge-info-icon" style="color:var(--mauve);">⌘</div>
+            <div>
+              <div class="mind-knowledge-info-title">Scope</div>
+              <div class="mind-knowledge-info-body">
+                Mind is global - it ingests every repo Symphonee knows about - so artifacts are scanned across <b style="color:var(--text);">all
+                repos</b>, grouped below. Each repo has its own <code>.symphonee/context-artifacts.json</code>.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="mindKnowledgeList">
+          <div class="mind-knowledge-loading">Loading artifacts across all repos…</div>
+        </div>
+      </div>`;
+    try {
+      const [listRes, suggestRes] = await Promise.all([
+        fetch('/api/mind/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'all' }) }).then(r => r.json()).catch(() => ({ groups: [] })),
+        fetch('/api/mind/artifacts/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'all' }) }).then(r => r.json()).catch(() => ({ groups: [] })),
+      ]);
+
+      const list = $('mindKnowledgeList');
+      if (!list) return;
+
+      const declaredGroups = listRes.groups || [];
+      const suggestGroups = suggestRes.groups || [];
+      // Merge by repo name
+      const byRepo = new Map();
+      for (const g of declaredGroups) byRepo.set(g.repo, { repo: g.repo, repoPath: g.repoPath, declared: g.artifacts || [], suggested: [] });
+      for (const g of suggestGroups) {
+        const slot = byRepo.get(g.repo) || { repo: g.repo, repoPath: g.repoPath, declared: [], suggested: [] };
+        const existingNames = new Set(slot.declared.map(a => a.name));
+        slot.suggested = (g.suggestions || []).filter(s => !existingNames.has(s.name));
+        byRepo.set(g.repo, slot);
+      }
+      const groups = Array.from(byRepo.values());
+      if (!groups.length) {
+        list.innerHTML = '<div class="mind-knowledge-empty">No repos configured. Add repos in Symphonee settings to scan for artifacts.</div>';
+        return;
+      }
+
+      _knowledgeSuggestionsByRepo = {};
+      list.innerHTML = groups.map(g => renderKnowledgeRepoCard(g)).join('');
+      // Stash suggestion arrays so artifactsCreate(repo) can resolve them
+      for (const g of groups) _knowledgeSuggestionsByRepo[g.repo] = g.suggested;
+      list.querySelectorAll('[data-action="create-artifacts"]').forEach(btn => {
+        btn.addEventListener('click', () => artifactsCreate(btn.dataset.repo));
+      });
+    } catch (e) {
+      const list = $('mindKnowledgeList');
+      if (list) list.innerHTML = `<div class="mind-knowledge-empty">Error loading artifacts: ${escapeHtml(e.message || String(e))}</div>`;
+    }
+  }
+
+  let _knowledgeSuggestionsByRepo = {};
+
+  function renderKnowledgeRepoCard(g) {
+    const declared = g.declared || [];
+    const suggested = g.suggested || [];
+    const declaredHtml = declared.length ? `
+      <div class="mind-knowledge-section-title">Declared (${declared.length})</div>
+      ${declared.map(a => `
+        <article class="mind-artifact-card">
+          <header class="mind-artifact-head">
+            <span class="mind-artifact-name">${escapeHtml(a.name)}</span>
+            <span class="mind-artifact-status ${a.indexed ? 'indexed' : ''}">${a.indexed ? '● indexed' : '○ not indexed'}${a.fileCount ? ' · ' + a.fileCount + ' file' + (a.fileCount === 1 ? '' : 's') : ''}</span>
+          </header>
+          <div class="mind-artifact-path">${escapeHtml(a.path || '')}</div>
+          <div class="mind-artifact-desc">${escapeHtml(a.description || '')}</div>
+        </article>`).join('')}` : '';
+
+    const suggestedHtml = suggested.length ? `
+      <div class="mind-knowledge-section-title">Detected — not yet declared (${suggested.length})</div>
+      <div class="mind-knowledge-suggest" data-repo="${escapeHtml(g.repo)}">
+        ${suggested.map((s, i) => `
+          <label class="mind-suggest-row">
+            <input type="checkbox" data-idx="${i}" checked>
+            <div class="mind-suggest-body">
+              <div class="mind-suggest-head">
+                <span class="mind-suggest-name">${escapeHtml(s.name)}</span>
+                <span class="mind-suggest-path">${escapeHtml(s.path)}</span>
+              </div>
+              <div class="mind-suggest-desc">${escapeHtml(s.description)}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+      <button class="mindmap-ribbon-btn primary mind-knowledge-create-btn" data-action="create-artifacts" data-repo="${escapeHtml(g.repo)}">
+        Create context-artifacts.json with checked items
+      </button>` : '';
+
+    const emptyHtml = (!declared.length && !suggested.length) ? `
+      <div class="mind-knowledge-empty">
+        Nothing detected at conventional locations and nothing declared yet. Add a
+        <code>.symphonee/context-artifacts.json</code> manually if this repo has
+        documentation worth surfacing.
+      </div>` : '';
+
+    return `
+      <section class="mind-knowledge-repo">
+        <header class="mind-knowledge-repo-head">
+          <div class="mind-knowledge-repo-name">${escapeHtml(g.repo)}</div>
+          <div class="mind-knowledge-repo-path">${escapeHtml(g.repoPath || '')}</div>
+        </header>
+        ${declaredHtml}
+        ${suggestedHtml}
+        ${emptyHtml}
+      </section>`;
+  }
+
+  async function artifactsCreate(repoName) {
+    const block = document.querySelector(`.mind-knowledge-suggest[data-repo="${repoName}"]`);
+    if (!block) return;
+    const suggestions = _knowledgeSuggestionsByRepo[repoName] || [];
+    const checks = block.querySelectorAll('input[type=checkbox]');
+    const picked = [];
+    checks.forEach(cb => {
+      const idx = parseInt(cb.dataset.idx, 10);
+      if (cb.checked && suggestions[idx]) picked.push(suggestions[idx]);
+    });
+    if (!picked.length) { setStatus('select at least one artifact'); return; }
+    try {
+      const r = await fetch('/api/mind/artifacts/init', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifacts: picked, repo: repoName }),
+      });
+      const data = await r.json();
+      if (data.error) { setStatus('init: ' + data.error); return; }
+      setStatus(`Created ${data.path} with ${data.count} artifact(s). Run a build to index them.`);
+      renderKnowledge();
+    } catch (e) { setStatus('init failed: ' + (e.message || e)); }
   }
 
   // ── Wake-up view ──────────────────────────────────────────────────────────
@@ -539,7 +1196,7 @@
 
     const totalEdges = g.edges.length || 1;
     const lastBuildAt = stats.buildMs ? `${(stats.buildMs / 1000).toFixed(1)}s build` : '';
-    const ageMin = g.generatedAt ? Math.round((Date.now() - new Date(g.generatedAt).getTime()) / 60000) : 0;
+    const ageRel = g.generatedAt ? formatRelativeMs(Date.now() - new Date(g.generatedAt).getTime()) : '-';
     const maxCommunitySize = Math.max(1, ...Object.values(g.communities || {}).map(c => c.size || 0));
     const maxGodDegree = g.gods[0]?.degree || 1;
     const topContributors = Object.entries(cliCounts).sort((a, b) => b[1] - a[1]).slice(0, 12);
@@ -555,7 +1212,7 @@
           ${statCard('Sources', Object.keys(sources).length || '-', '#cba6f7')}
           ${statCard('God nodes', (g.gods || []).length, '#f9e2af')}
           ${statCard('Bridges', (g.surprises || []).length, '#f38ba8')}
-          ${statCard('Last build', `${ageMin}m ago`, '#94e2d5', lastBuildAt)}
+          ${statCard('Last build', ageRel, '#94e2d5', lastBuildAt)}
           ${statCard('Watch', state.watchEnabled ? 'on' : 'off', state.watchEnabled ? '#a6e3a1' : '#6c7086')}
         </div>
 
@@ -618,6 +1275,21 @@
             <div class="mind-card-title">Surprising bridges (cross-community)</div>
             <div class="mind-list">
               ${(g.surprises || []).slice(0, 8).map(s => surpriseRow(g, s)).join('') || '<div style="color:var(--subtext0);font-size:11px;font-style:italic;padding:6px;">no cross-community bridges yet</div>'}
+            </div>
+          </div>
+
+          <div class="mind-card mind-card-wide">
+            <div class="mind-card-title">Multi-CLI coverage</div>
+            <div id="mindCliCoverageBody" style="font-size:11px;color:var(--text);">Loading…</div>
+          </div>
+
+          <div class="mind-card mind-card-wide">
+            <div class="mind-card-title">Diagnostics</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;">
+              <button class="tab-bar-btn" onclick="MindUI._wakeupOpen()" style="padding:5px 12px;font-size:11px;" title="Preview the context every dispatched worker starts with">Preview worker context</button>
+              <button class="tab-bar-btn" onclick="MindUI._embedAll()" style="padding:5px 12px;font-size:11px;" title="Re-embed all eligible nodes for semantic search">Embed all nodes</button>
+              <button class="tab-bar-btn" onclick="MindUI._healthCheck()" style="padding:5px 12px;font-size:11px;" title="Embedding provider + vector index status">Check health</button>
+              <span id="mindDiagOut" style="color:var(--subtext0);font-family:monospace;font-size:10px;"></span>
             </div>
           </div>
         </div>
@@ -717,6 +1389,60 @@
     $('mindMain').querySelectorAll('[data-cid]').forEach(el => {
       el.addEventListener('click', (ev) => { ev.preventDefault(); showCommunityDetail(el.dataset.cid); });
     });
+    refreshCliCoverage();
+  }
+
+  // Renders the multi-CLI coverage card on the Dashboard. Shows per-CLI:
+  // memory file location (or - if absent), conversation count, drawer count,
+  // history count, skills count. Lets the user verify the brain treats
+  // every CLI symmetrically.
+  async function refreshCliCoverage() {
+    const el = document.getElementById('mindCliCoverageBody');
+    if (!el) return;
+    try {
+      const r = await API('/api/mind/cli-coverage');
+      const counts = r.counts || {};
+      const memByRepo = r.memoryFilesByRepo || {};
+      const klist = r.cliKnown || [];
+      const colorOf = c => ({ claude: '#cba6f7', codex: '#94e2d5', gemini: '#89b4fa', grok: '#f38ba8', qwen: '#fab387', copilot: '#a6e3a1', cursor: '#f5c2e7', windsurf: '#74c7ec' }[c] || 'var(--text)');
+
+      const repoNames = Object.keys(memByRepo);
+      let html = `
+        <div style="margin-bottom:8px;color:var(--subtext0);font-size:11px;line-height:1.5;">
+          Symphonee is multi-CLI. Every supported CLI ingests symmetrically. A "—" below means the convention file is not present in that repo, NOT that the CLI is unsupported.
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="text-align:left;color:var(--subtext0);">
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);">CLI</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);">Memory file (active repo)</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">Conv</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">Drawers</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">History</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">Skills</th>
+              </tr>
+            </thead>
+            <tbody>`;
+      const activeRepoName = repoNames[0];
+      for (const cli of klist) {
+        const c = counts[cli] || {};
+        const memFile = memByRepo[activeRepoName] && memByRepo[activeRepoName][cli];
+        html += `
+          <tr>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colorOf(cli)};margin-right:6px;"></span>${escapeHtml(cli)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);font-family:monospace;color:${memFile ? 'var(--text)' : 'var(--subtext0)'};">${memFile ? escapeHtml(memFile) : '—'}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${c.conversations || 0}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${c.drawers || 0}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${c.history || 0}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${(c.skills || 0) + (c.plugins || 0)}</td>
+          </tr>`;
+      }
+      html += '</tbody></table></div>';
+      el.innerHTML = html;
+    } catch (e) {
+      el.innerHTML = `<span style="color:var(--red);">error: ${escapeHtml(e.message || String(e))}</span>`;
+    }
   }
 
   function statCard(label, value, color, hint) {
@@ -1431,11 +2157,45 @@
   // ── Actions ────────────────────────────────────────────────────────────────
   async function build() {
     setStatus('starting build...');
-    await API('/api/mind/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const r = await fetch('/api/mind/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.status === 409) {
+      const body = await r.json().catch(() => ({}));
+      setStatus(`build already running (pid ${body.holderPid || '?'}, ${Math.round((body.ageMs || 0) / 1000)}s)`);
+      refreshLock();
+      return;
+    }
+    refreshLock();
   }
   async function update() {
     setStatus('starting incremental update...');
-    await API('/api/mind/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const r = await fetch('/api/mind/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.status === 409) {
+      const body = await r.json().catch(() => ({}));
+      setStatus(`update already running (pid ${body.holderPid || '?'})`);
+      refreshLock();
+      return;
+    }
+    refreshLock();
+  }
+  async function refreshLock() {
+    try {
+      const r = await API('/api/mind/lock');
+      const pill = document.getElementById('mindLockPill');
+      if (!pill) return;
+      const active = (r.build && r.build.locked) ? r.build : (r.update && r.update.locked) ? r.update : null;
+      if (!active) { pill.style.display = 'none'; return; }
+      pill.style.display = 'inline-flex';
+      const text = document.getElementById('mindLockText');
+      const ageS = Math.round((active.ageMs || 0) / 1000);
+      if (text) text.textContent = `${active.op} running (pid ${active.holderPid}, ${ageS}s)`;
+      pill.title = `Lock held by pid ${active.holderPid} for ${ageS}s. Right-click to clear if stuck.`;
+      pill.oncontextmenu = (e) => {
+        e.preventDefault();
+        if (!confirm('Force-clear the build lock? This will not stop the running build.')) return;
+        fetch('/api/mind/lock/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: active.op }) })
+          .then(() => refreshLock());
+      };
+    } catch (_) { /* ignore */ }
   }
   async function toggleWatch() {
     const next = !state.watchEnabled;
@@ -1641,18 +2401,43 @@
   function formatTimestamp(iso) {
     try {
       const d = new Date(iso);
-      const now = Date.now();
-      const diff = now - d.getTime();
-      if (diff < 60000) return 'just now';
-      if (diff < 3600000) return Math.round(diff / 60000) + 'm ago';
-      if (diff < 86400000) return Math.round(diff / 3600000) + 'h ago';
-      if (diff < 604800000) return Math.round(diff / 86400000) + 'd ago';
+      const diff = Date.now() - d.getTime();
+      const rel = formatRelativeMs(diff);
+      if (rel) return rel;
       return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     } catch (_) { return iso; }
   }
+  // Smart relative-time formatter: rolls minutes -> hours -> days -> weeks
+  // -> months -> years so we never show "900m ago" again.
+  function formatRelativeMs(ms) {
+    if (!Number.isFinite(ms)) return '';
+    if (ms < 0) ms = 0;
+    if (ms < 60000) return 'just now';
+    if (ms < 3600000) return Math.round(ms / 60000) + 'm ago';
+    if (ms < 86400000) return Math.round(ms / 3600000) + 'h ago';
+    if (ms < 604800000) return Math.round(ms / 86400000) + 'd ago';
+    if (ms < 2592000000) return Math.round(ms / 604800000) + 'w ago';
+    if (ms < 31557600000) return Math.round(ms / 2592000000) + 'mo ago';
+    return Math.round(ms / 31557600000) + 'y ago';
+  }
 
   window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics, clearSearch, toggleSearchOnly,
+    refreshLock, refreshQuality,
     _wakeupRefresh: refreshWakeupOutput,
     _queryRun: runQueryFromUi,
+    _smartRun: runSmart,
+    _embedAll: embedAll,
+    _artifactsCreate: artifactsCreate,
+    _wakeupOpen: () => { state.view = 'dashboard'; renderWakeup(); },
+    _healthCheck: async () => {
+      const el = document.getElementById('mindDiagOut');
+      if (!el) return;
+      el.textContent = 'checking...';
+      try {
+        const h = await API('/api/mind/health');
+        const e = h.embeddings || {}; const v = h.vectors || {};
+        el.textContent = `embed:${e.ok ? 'ok' : 'down'}(${e.provider || '?'},${e.dimensions || '?'}d) · vectors:${v.count || 0}/${v.dim || 0}d`;
+      } catch (err) { el.textContent = 'error: ' + (err.message || err); }
+    },
   };
 })();

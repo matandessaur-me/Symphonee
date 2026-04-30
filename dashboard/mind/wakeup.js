@@ -46,15 +46,16 @@ function readFirstExisting(paths, max = 600) {
   return '';
 }
 
-// Symphonee regenerates six per-CLI instruction files from one template
-// (INSTRUCTIONS.base.md) — CLAUDE.md, AGENTS.md, GEMINI.md, GROK.md, QWEN.md,
-// .github/copilot-instructions.md. Each starts with "# <FILENAME>.md - <repo>"
-// because writePluginHints does {{FILENAME}} substitution. That header is a
-// regen artefact, not content — strip it so the wake-up doesn't claim to be
-// reading any one CLI's file when in reality the body is identical across all
-// six. A user who only runs Codex (no CLAUDE.md installed) gets exactly the
-// same preamble.
-const REGEN_HEADER = /^\s*#\s*(?:CLAUDE|AGENTS|GEMINI|GROK|QWEN|copilot-instructions)\.md\b[^\n]*\n*/i;
+// Symphonee regenerates per-CLI instruction files from one template
+// (INSTRUCTIONS.base.md): CLAUDE.md, AGENTS.md, GEMINI.md, GROK.md, QWEN.md,
+// .github/copilot-instructions.md, .cursorrules, .windsurfrules. Each
+// starts with "# <FILENAME>.md - <repo>" because writePluginHints does
+// {{FILENAME}} substitution. That header is a regen artefact, not content —
+// strip it so the wake-up never claims to be reading any one CLI's file
+// when in reality the body is identical across all of them. A user who
+// only runs Codex (no CLAUDE.md installed) gets exactly the same preamble
+// from AGENTS.md.
+const REGEN_HEADER = /^\s*#\s*(?:CLAUDE|AGENTS|GEMINI|GROK|QWEN|copilot-instructions|cursorrules|windsurfrules)\.md\b[^\n]*\n*/i;
 
 function stripRegenHeader(text) {
   if (!text) return text;
@@ -69,17 +70,24 @@ function renderL0({ activeRepo, activeRepoPath, space }) {
 
   if (activeRepoPath) {
     // Try AI-instruction files in alphabetical order so no single CLI is
-    // implicitly favoured. (When Symphonee has regenerated all six, content
-    // is identical anyway — the body is the same regardless of which file
-    // we end up reading.) Fall through to README.md if none of them exist.
+    // implicitly favoured. INSTRUCTIONS.base.md is the source-of-truth
+    // template - if it exists, prefer it because the others are
+    // regenerated copies of it. When all are present the body is identical
+    // anyway, so the choice is cosmetic. A user who runs only ONE CLI
+    // (just Codex / just Copilot / just Cursor) gets the same preamble
+    // because every supported convention file is a candidate.
     const preamble = readFirstExisting([
+      path.join(activeRepoPath, 'INSTRUCTIONS.base.md'),
       path.join(activeRepoPath, 'AGENTS.md'),
       path.join(activeRepoPath, 'CLAUDE.md'),
       path.join(activeRepoPath, 'GEMINI.md'),
       path.join(activeRepoPath, 'GROK.md'),
       path.join(activeRepoPath, 'QWEN.md'),
       path.join(activeRepoPath, '.github', 'copilot-instructions.md'),
+      path.join(activeRepoPath, 'COPILOT.md'),
       path.join(activeRepoPath, '.cursorrules'),
+      path.join(activeRepoPath, '.windsurfrules'),
+      path.join(activeRepoPath, '.rules'),
       path.join(activeRepoPath, 'README.md'),
     ], 800);
     if (preamble) {

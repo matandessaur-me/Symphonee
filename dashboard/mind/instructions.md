@@ -154,4 +154,83 @@ every N messages. The script body is identical across CLIs; only the
 config wrapper differs. See INSTRUCTIONS.base.md "Per-CLI save-back
 hook" for per-CLI install snippets.
 
+## Code-understanding endpoints (Phase 2-5)
+
+Mind now answers questions about the active repo's code without you reading files first:
+
+```
+POST /api/mind/impact     { target, depth=3 }     -> blast radius (what breaks if I change X)
+POST /api/mind/flow       { entrypoint, depth=5 } -> forward call tree from an entrypoint
+POST /api/mind/symbol     { name, file? }         -> 360-degree view (callers + callees)
+POST /api/mind/symbols    { file?, query?, limit? } -> list / search symbols
+POST /api/mind/entrypoints {}                      -> auto-detected entrypoints
+POST /api/mind/circular   {}                      -> circular dependencies (Tarjan SCC)
+```
+
+Use these BEFORE refactoring or renaming. `target` accepts symbol names or
+relative file paths. Use `codebase_impact` style questions through these
+routes instead of grepping.
+
+## Hybrid semantic search
+
+Beyond BM25, Mind has dense vector embeddings:
+
+```
+POST /api/mind/search-semantic { q, k=10 }    -> dense-only ranked nodes
+POST /api/mind/embed { provider? }            -> embed the whole graph (async)
+GET  /api/mind/health                         -> embeddings + vectors status
+```
+
+`/api/mind/query` now hybrid-fuses BM25 + dense via Reciprocal Rank Fusion
+when vectors are present. Pass `hybrid:false` to opt out.
+
+Default provider is **ollama** at localhost:11434 with `nomic-embed-text`.
+`SYMPHONEE_EMBED_PROVIDER=openai` or `=google` switch backends. Set
+`SYMPHONEE_EMBED_AUTO=1` to embed automatically on every build.
+
+## Context artifacts
+
+A repo can declare non-code knowledge (schemas, OpenAPI specs, ADRs,
+domain glossaries) at `<repoRoot>/.symphonee/context-artifacts.json`:
+
+```
+{ "artifacts": [{ "name": "schema", "path": "./docs/schema.sql",
+   "description": "Postgres schema. Check before writing migrations." }] }
+```
+
+Each artifact node carries its description; semantic search finds it; the
+AI sees it in wake-up context.
+
+```
+POST /api/mind/artifacts/list     {}            -> declared + indexed status
+POST /api/mind/artifacts/search   { q, name? }  -> hybrid search over artifacts
+```
+
+## Visualisation
+
+```
+POST /api/mind/visualize { mode: "mermaid" | "interactive", focus?, layout? }
+```
+
+Mermaid returns text. Interactive writes a self-contained HTML viewer to
+`os.tmpdir()/symphonee-mind-viz/` with Cytoscape + Dagre, file/symbol
+toggle, layout switcher, blast-radius overlay, PNG export.
+
+## Lock + checkpoint
+
+Builds are mutually exclusive across processes. Concurrent build attempts
+get HTTP 409 with `holderPid`. `GET /api/mind/lock` reports current
+holder. `GET /api/mind/checkpoint` shows the last completed phase if a
+build is in progress. Crashed builds resume from the last manifest hash.
+
+## Quality signal
+
+```
+GET /api/mind/quality
+```
+
+Returns `resolvedPct` of import edges (how many resolved into the repo via
+relative paths or tsconfig aliases) plus a sample of unresolved specs. Low
+quality means tsconfig paths are missing or extraExtensions need configuring.
+
 You and every other CLI in this system share this brain. Treat it that way.
