@@ -660,11 +660,12 @@
       100% { opacity: 0; }
     }
 
-    /* ── Background Task Pills (floating, bottom-right) ──────────────── */
+    /* ── Background Task Pills (legacy host; hidden in favor of rich stack) ─ */
     .task-float {
-      position: fixed; bottom: 14px; left: 14px; z-index: 9500;
-      display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+      position: fixed; bottom: 14px; right: 14px; z-index: 9500;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
       pointer-events: none;
+      display: none !important;
     }
     .task-float:empty { display: none; }
     .task-pill {
@@ -8075,7 +8076,6 @@ let _taskPillsTimer = null;
 
 function addBackgroundTask(id, label, icon) {
   _bgTasks.set(id, { label, status: 'running', startTime: Date.now(), icon: icon || 'loader' });
-  renderTaskPills();
   return id;
 }
 
@@ -8084,13 +8084,7 @@ function completeBackgroundTask(id, success) {
   if (task) {
     task.status = success !== false ? 'done' : 'error';
     task.endTime = Date.now();
-    renderTaskPills();
-    // Animate out after 2s, then remove
-    setTimeout(() => {
-      const el = document.querySelector(`.task-pill[data-id="${id}"]`);
-      if (el) el.classList.add('leaving');
-      setTimeout(() => { _bgTasks.delete(id); renderTaskPills(); }, 300);
-    }, 2000);
+    _bgTasks.delete(id);
   }
 }
 
@@ -23531,12 +23525,12 @@ function confirmDialog(message, { confirmText = 'Confirm', cancelText = 'Cancel'
 }
 
 function toast(msg, type = 'info', options) {
+  options = options || {};
   // Audible cue per severity. Skipped when options.silent is truthy.
-  if (!options || !options.silent) playNotifSound(type);
-  // Rich path: when an action or explicit rich flag is supplied, render a
-  // full-width card with an optional action button. Otherwise keep the tiny
-  // task-pill UX for the high-volume background-status case.
-  if (options && (options.action || options.rich)) {
+  if (!options.silent) playNotifSound(type);
+  // Unified toast path: use the rich bottom-right stack for normal UI
+  // feedback so messages stack consistently and share one visual language.
+  if (!options.compact) {
     return richToast(msg, type, options);
   }
   const id = 'toast-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
