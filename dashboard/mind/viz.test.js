@@ -13,9 +13,9 @@ const tinyGraph = {
   edges: [{ source: 'a', target: 'b', relation: 'imports', confidence: 'EXTRACTED' }],
 };
 
-test('mermaidGraph emits the graph TB header + a node + an edge', () => {
+test('mermaidGraph emits a flowchart header + a node + an edge', () => {
   const m = mermaidGraph(tinyGraph);
-  assert.match(m, /^graph TB/);
+  assert.match(m, /flowchart (LR|TB)/);
   assert.match(m, /a\["a\.ts"\]/);
   assert.match(m, /a -->/);
 });

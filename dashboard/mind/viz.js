@@ -17,41 +17,132 @@ const os = require('os');
 
 function safeId(id) { return String(id || '').replace(/[^A-Za-z0-9_]/g, '_').slice(0, 40); }
 
-function mermaidGraph(graph, { focus = null, max = 200 } = {}) {
-  if (!graph || !graph.nodes) return 'graph TB\n  empty["graph empty"]';
+// Selects the "most interesting" sub-graph for a mermaid render: god nodes
+// (highest-degree) plus their 1-hop neighbours. Falls back to top-degree
+// nodes if the graph has no gods. Cap is enforced at the seed level so the
+// final graph never blows past `max` after expansion.
+function selectInterestingNodes(graph, max) {
+  const degree = new Map();
+  for (const e of graph.edges) {
+    degree.set(e.source, (degree.get(e.source) || 0) + 1);
+    degree.set(e.target, (degree.get(e.target) || 0) + 1);
+  }
+  // Start from declared gods if present, else top-degree nodes.
+  const godIds = (graph.gods || []).map(g => g.id || g).filter(Boolean);
+  let seeds = godIds.length
+    ? godIds.slice(0, Math.max(8, Math.floor(max / 6)))
+    : Array.from(degree.entries()).sort((a, b) => b[1] - a[1]).slice(0, Math.max(8, Math.floor(max / 6))).map(e => e[0]);
+
+  const adj = new Map();
+  for (const e of graph.edges) {
+    if (!adj.has(e.source)) adj.set(e.source, []);
+    if (!adj.has(e.target)) adj.set(e.target, []);
+    adj.get(e.source).push(e.target);
+    adj.get(e.target).push(e.source);
+  }
+  const picked = new Set(seeds);
+  // 1-hop expansion, ranked by neighbour degree, until cap.
+  for (const seed of seeds) {
+    if (picked.size >= max) break;
+    const neighbours = (adj.get(seed) || [])
+      .filter(id => !picked.has(id))
+      .sort((a, b) => (degree.get(b) || 0) - (degree.get(a) || 0))
+      .slice(0, 6);
+    for (const n of neighbours) {
+      picked.add(n);
+      if (picked.size >= max) break;
+    }
+  }
+  return picked;
+}
+
+function escapeMermaidLabel(s) {
+  return String(s == null ? '' : s)
+    .replace(/[<>]/g, '')
+    .replace(/"/g, "'")
+    .replace(/\|/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, 38);
+}
+
+function mermaidGraph(graph, { focus = null, max = 60, direction = 'LR' } = {}) {
+  if (!graph || !graph.nodes) return 'flowchart LR\n  empty["graph empty"]';
   let nodes = graph.nodes;
   let edges = graph.edges;
+
   if (focus) {
+    // BFS 2-hop from a focus node.
     const seen = new Set([focus]);
-    const queue = [focus];
-    let depth = 0;
-    while (queue.length && depth < 2) {
+    let frontier = [focus];
+    for (let d = 0; d < 2; d++) {
       const next = [];
-      for (const id of queue) {
+      for (const id of frontier) {
         for (const e of edges) {
-          if (e.source === id) { if (!seen.has(e.target)) { seen.add(e.target); next.push(e.target); } }
-          if (e.target === id) { if (!seen.has(e.source)) { seen.add(e.source); next.push(e.source); } }
+          if (e.source === id && !seen.has(e.target)) { seen.add(e.target); next.push(e.target); }
+          if (e.target === id && !seen.has(e.source)) { seen.add(e.source); next.push(e.source); }
         }
       }
-      queue.length = 0;
-      queue.push(...next);
-      depth++;
+      frontier = next;
+      if (!frontier.length) break;
     }
     nodes = nodes.filter(n => seen.has(n.id));
     edges = edges.filter(e => seen.has(e.source) && seen.has(e.target));
+  } else {
+    // No focus: pick the "interesting" sub-graph instead of slicing the first N.
+    const picked = selectInterestingNodes({ nodes, edges, gods: graph.gods }, max);
+    nodes = nodes.filter(n => picked.has(n.id));
+    edges = edges.filter(e => picked.has(e.source) && picked.has(e.target));
   }
+
   if (nodes.length > max) nodes = nodes.slice(0, max);
   const allowed = new Set(nodes.map(n => n.id));
   edges = edges.filter(e => allowed.has(e.source) && allowed.has(e.target));
 
-  const lines = ['graph TB'];
+  // Group nodes by community so mermaid lays each community in its own
+  // subgraph block - dagre then arranges communities side-by-side instead
+  // of dumping every node onto a single rank.
+  const groups = new Map(); // communityId -> { label, nodes: [] }
+  const ungrouped = [];
   for (const n of nodes) {
-    const label = String(n.label || n.id).replace(/"/g, "'").slice(0, 40);
-    lines.push(`  ${safeId(n.id)}["${label}"]`);
+    const cid = n.communityId != null ? String(n.communityId) : null;
+    if (cid !== null) {
+      if (!groups.has(cid)) {
+        const cmeta = (graph.communities && graph.communities[cid]) || {};
+        groups.set(cid, { label: cmeta.label || `Community ${cid}`, nodes: [] });
+      }
+      groups.get(cid).nodes.push(n);
+    } else {
+      ungrouped.push(n);
+    }
+  }
+
+  const lines = [];
+  // Init directive sets layout direction + spacing so the diagram looks like
+  // a graph instead of a wide ribbon. flowchart syntax (modern mermaid)
+  // honours these; the legacy `graph` keyword does not respect curve/spacing.
+  lines.push('%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 38, "rankSpacing": 56, "diagramPadding": 16, "useMaxWidth": false}}}%%');
+  lines.push(`flowchart ${direction}`);
+
+  // Render each community as a subgraph. The `direction` inside subgraphs
+  // can differ from the outer one; using TB inside makes each community a
+  // tight cluster, while the outer LR keeps clusters side-by-side.
+  let gIdx = 0;
+  for (const [cid, group] of groups) {
+    const safeCid = `cl_${safeId(cid)}_${gIdx++}`;
+    lines.push(`  subgraph ${safeCid} ["${escapeMermaidLabel(group.label)}"]`);
+    lines.push('    direction TB');
+    for (const n of group.nodes) {
+      lines.push(`    ${safeId(n.id)}["${escapeMermaidLabel(n.label || n.id)}"]`);
+    }
+    lines.push('  end');
+  }
+  for (const n of ungrouped) {
+    lines.push(`  ${safeId(n.id)}["${escapeMermaidLabel(n.label || n.id)}"]`);
   }
   for (const e of edges) {
     const arrow = e.confidence === 'EXTRACTED' ? '-->' : e.confidence === 'INFERRED' ? '-.->' : '-.-';
-    lines.push(`  ${safeId(e.source)} ${arrow}|${e.relation || ''}| ${safeId(e.target)}`);
+    const rel = e.relation ? `|${escapeMermaidLabel(e.relation)}|` : '';
+    lines.push(`  ${safeId(e.source)} ${arrow}${rel} ${safeId(e.target)}`);
   }
   return lines.join('\n');
 }

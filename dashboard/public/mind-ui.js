@@ -480,7 +480,7 @@
       </div>`;
     let mermaidText = '';
     try {
-      const r = await fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'mermaid', max: 120 }) });
+      const r = await fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'mermaid', max: 60 }) });
       const d = await r.json();
       mermaidText = d.mermaid || '';
       if (!mermaidText) throw new Error(d.error || 'empty graph');
