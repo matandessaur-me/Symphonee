@@ -15,6 +15,8 @@ const SCHEMA_VERSION = 1;
 const NODE_KINDS = new Set([
   'note', 'code', 'doc', 'paper', 'image', 'workitem',
   'recipe', 'conversation', 'plugin', 'concept', 'tag',
+  // declared non-code context artifacts from .symphonee/context-artifacts.json
+  'artifact',
   // 'drawer' = verbatim user/assistant turn (or any literal content snippet).
   // Verbatim-always: never paraphrase; the node text IS the source of truth.
   'drawer',
@@ -33,6 +35,8 @@ const RELATIONS = new Set([
   'derived_from', 'answers',
   // tags
   'tagged_with',
+  // repo ownership
+  'in_repo',
 ]);
 
 function emptyGraph(scope) {

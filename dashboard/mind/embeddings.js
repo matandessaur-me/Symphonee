@@ -1,14 +1,12 @@
 /**
  * Pluggable embedding provider for Mind's semantic search.
  *
- * Three providers, swappable via env or POST body:
- *   - ollama  (default)  http://localhost:11434/api/embeddings, model: nomic-embed-text (768d)
+ * Providers, swappable via env or POST body:
  *   - openai             https://api.openai.com/v1/embeddings, model: text-embedding-3-small (1536d)
  *   - google             generativelanguage.googleapis.com,    model: text-embedding-004 (768d)
  *
- * Provider is gracefully optional - if Ollama isn't running and no API key is
- * set, semantic search just falls back to BM25-only and the UI shows a
- * disabled badge instead of erroring.
+ * Provider is gracefully optional - if no API key is set, semantic search
+ * falls back to BM25-only and the UI shows a quiet disabled state.
  */
 
 const http = require('http');
@@ -19,9 +17,7 @@ const { URL } = require('url');
 //   1. Explicit SYMPHONEE_EMBED_PROVIDER env var (developer override).
 //   2. Symphonee's config.AiApiKeys - whichever key is set first wins
 //      (openai > google). Set per-process by mind/index.js at boot.
-//   3. Hard fallback to 'ollama' for self-hosted / dev users (will error
-//      cleanly if Ollama isn't running, with a message that points at
-//      the API keys settings).
+//   3. No implicit provider. If no key is configured, dense search stays off.
 const DEFAULT_PROVIDER = process.env.SYMPHONEE_EMBED_PROVIDER || 'auto';
 
 let _availableKeys = null;
@@ -31,7 +27,7 @@ function pickProvider() {
   const k = _availableKeys || {};
   if (k.OPENAI_API_KEY) return 'openai';
   if (k.GOOGLE_API_KEY) return 'google';
-  return 'ollama'; // last resort
+  return null;
 }
 
 // Per-process cache of last-known provider state so the health endpoint
@@ -112,7 +108,9 @@ async function googleEmbed(texts, opts = {}) {
 }
 
 async function embed(texts, opts = {}) {
-  const provider = (opts.provider || pickProvider()).toLowerCase();
+  const picked = opts.provider || pickProvider();
+  if (!picked) throw new Error('No embedding provider configured. Add an OpenAI or Google API key in Settings > AI Providers.');
+  const provider = picked.toLowerCase();
   if (!Array.isArray(texts)) throw new Error('embed expects an array of texts');
   if (texts.length === 0) return [];
   // Inject API keys from Symphonee's config when not explicitly passed.
@@ -140,7 +138,15 @@ async function embedSingle(text, opts = {}) {
 }
 
 async function ping(opts = {}) {
-  const provider = (opts.provider || DEFAULT_PROVIDER || 'ollama').toLowerCase();
+  const picked = opts.provider || pickProvider();
+  if (!picked) {
+    return {
+      ok: false,
+      provider: null,
+      error: 'No embedding provider configured. Add an OpenAI or Google API key in Settings > AI Providers.',
+    };
+  }
+  const provider = picked.toLowerCase();
   const t0 = Date.now();
   try {
     const v = await embedSingle('healthcheck', opts);

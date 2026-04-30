@@ -125,7 +125,16 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
       f.nodes.push({ id: tagId, label: '@' + repoName, kind: 'tag' });
       const newEdges = f.nodes
         .filter(n => n.id !== tagId)
-        .map(n => ({ src: n.id, dst: tagId, kind: 'in_repo', confidence: 'EXTRACTED' }));
+        .map(n => ({
+          source: n.id,
+          target: tagId,
+          relation: 'in_repo',
+          confidence: 'EXTRACTED',
+          confidenceScore: 1,
+          weight: 1,
+          createdBy: 'mind/repo-code',
+          createdAt: new Date().toISOString(),
+        }));
       f.edges.push(...newEdges);
       fragments.push(f);
       totals.scanned += f.scanned;
@@ -267,7 +276,8 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
 // Embeds at most EMBED_MAX nodes; picks them in this priority:
 //   gods -> code/symbol -> doc -> note -> conversation -> rest
 async function refreshEmbeddings({ repoRoot, space, graph, onProgress = () => {}, ctx = {} }) {
-  const provider = (ctx && ctx.embedProvider) || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+  const provider = (ctx && ctx.embedProvider) || process.env.SYMPHONEE_EMBED_PROVIDER || embeddings.pickProvider();
+  if (!provider) throw new Error('No embedding provider configured. Add an OpenAI or Google API key in Settings > AI Providers.');
   const EMBED_MAX = Number(process.env.SYMPHONEE_EMBED_MAX || 4000);
   const BATCH = Number(process.env.SYMPHONEE_EMBED_BATCH || 16);
 

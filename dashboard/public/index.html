@@ -1922,6 +1922,84 @@
     /* Mind map body fills the canvas area; child renderers (graph, map)
        claim the full space via their own internal layouts. */
 
+    /* ── Mind search ────────────────────────────────────────────────────── */
+    .mind-smart {
+      max-width: 1180px; margin: 0 auto; width: 100%;
+      display: flex; flex-direction: column; gap: 12px;
+      box-sizing: border-box;
+    }
+    .mind-smart-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; min-width: 0;
+    }
+    .mind-smart-title { font-size: 14px; font-weight: 600; color: var(--text); }
+    .mind-smart-sub { font-size: 12px; color: var(--subtext0); margin-top: 2px; line-height: 1.45; }
+    .mind-smart-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+      gap: 12px;
+      min-width: 0;
+    }
+    .mind-smart-card {
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px;
+      padding: 12px 14px; min-width: 0; box-sizing: border-box;
+    }
+    .mind-smart-card-title {
+      font: 600 10px var(--font-ui); color: var(--subtext0);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
+    }
+    .mind-smart-card-search { min-height: 116px; }
+    .mind-smart-results { grid-column: 1 / -1; min-height: 220px; }
+    .mind-smart-card-help { display: block; }
+    .mind-smart-form {
+      display: grid; grid-template-columns: minmax(0, 1fr) 64px auto;
+      gap: 8px; align-items: center;
+    }
+    .mind-smart-form input {
+      min-width: 0; background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: 4px; color: var(--text); font: 12px var(--font-ui); padding: 8px 10px;
+    }
+    .mind-smart-form input,
+    .mind-smart-form .mindmap-ribbon-btn {
+      height: 34px;
+      box-sizing: border-box;
+    }
+    .mind-smart-form .mindmap-ribbon-btn {
+      justify-content: center;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+    .mind-smart-form input[type="number"] { font-variant-numeric: tabular-nums; text-align: center; }
+    .mind-smart-health {
+      margin-top: 10px; font-size: 10px; color: var(--subtext0);
+      font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+    }
+    .mind-smart-help-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .mind-smart-help-grid div {
+      background: var(--base); border: 1px solid var(--surface0); border-radius: 6px;
+      padding: 9px 10px; min-width: 0;
+    }
+    .mind-smart-help-grid b { display: block; color: var(--text); font-size: 11px; margin-bottom: 3px; }
+    .mind-smart-help-grid span { display: block; color: var(--subtext0); font-size: 11px; line-height: 1.4; }
+    .mind-smart-out { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text); }
+    .mind-smart-empty {
+      min-height: 140px; display: flex; align-items: center; justify-content: center;
+      color: var(--subtext0); background: var(--base); border: 1px dashed var(--surface0);
+      border-radius: 6px; padding: 18px; text-align: center;
+    }
+    .mind-smart-link {
+      display: block; padding: 9px 10px; background: var(--base);
+      border: 1px solid var(--surface0); border-radius: 6px;
+      text-decoration: none; color: var(--text); min-width: 0;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .mind-smart-link:hover { background: var(--surface0); border-color: var(--surface1); }
+    .mind-smart-link-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; }
+    .mind-smart-link-main { display: flex; align-items: baseline; gap: 7px; min-width: 0; overflow: hidden; }
+    .mind-smart-rank { color: var(--subtext0); font-size: 11px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .mind-smart-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mind-smart-signal { display: flex; gap: 8px; flex-shrink: 0; font-size: 10px; }
+
     /* ── Impact view (list-first) ───────────────────────────────────────── */
     .mind-impact {
       display: flex; flex-direction: column;
@@ -1941,12 +2019,13 @@
     }
     .mind-impact-body {
       flex: 1; min-height: 0;
-      display: grid; grid-template-columns: 320px 1fr; gap: 14px;
+      display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 14px;
+      min-width: 0;
     }
     .mind-impact-rail {
       display: flex; flex-direction: column;
       background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px;
-      min-height: 0; overflow: hidden;
+      min-height: 0; min-width: 0; overflow: hidden;
     }
     .mind-impact-rail-search {
       display: flex; align-items: center; gap: 8px;
@@ -1957,6 +2036,36 @@
       border-radius: 4px; color: var(--text); font: 12px var(--font-ui); padding: 6px 8px;
     }
     .mind-impact-count { font-size: 10px; color: var(--subtext0); font-variant-numeric: tabular-nums; }
+    .mind-impact-cycle-card {
+      margin: 8px 10px 0; background: var(--base);
+      border: 1px solid color-mix(in srgb, var(--red) 30%, var(--surface0));
+      border-radius: 7px; color: var(--text); overflow: hidden; flex-shrink: 0;
+    }
+    .mind-impact-cycle-card summary {
+      cursor: pointer; list-style: none; display: flex; align-items: center;
+      justify-content: space-between; gap: 8px; padding: 8px 10px;
+      font: 600 11px var(--font-ui); color: var(--text);
+    }
+    .mind-impact-cycle-card summary::-webkit-details-marker { display: none; }
+    .mind-impact-cycle-count {
+      color: var(--red); font-variant-numeric: tabular-nums; margin-right: 4px;
+    }
+    .mind-impact-cycle-hint { color: var(--subtext0); font-size: 10px; font-weight: 500; }
+    .mind-impact-cycle-list {
+      border-top: 1px solid var(--surface0); padding: 8px 10px 10px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .mind-impact-cycle-path {
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      color: var(--subtext0); font: 10px var(--font-mono, monospace); line-height: 1.4;
+    }
+    .mind-impact-cycle-path span {
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      background: var(--surface0); border-radius: 3px; padding: 1px 5px; color: var(--text);
+    }
+    .mind-impact-cycle-path b {
+      color: var(--subtext0); font: 10px var(--font-ui); font-weight: 500;
+    }
     .mind-impact-eps { padding: 8px 10px; border-bottom: 1px solid var(--surface0); flex-shrink: 0; }
     .mind-impact-eps:empty { display: none; }
     .mind-impact-eps-title {
@@ -1987,7 +2096,7 @@
       box-shadow: inset 3px 0 0 var(--accent);
     }
     .mind-impact-row-name { font: 600 12px var(--font-ui); color: var(--text); }
-    .mind-impact-row-file { font: 10px monospace; color: var(--subtext0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+    .mind-impact-row-file { font: 10px monospace; color: var(--subtext0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
     .mind-impact-row-meta { font: 10px monospace; color: var(--subtext0); margin-top: 2px; }
     .mind-impact-pip {
       display: inline-block; padding: 1px 6px; border-radius: 3px;
@@ -2002,13 +2111,14 @@
       padding: 4px 8px; cursor: pointer; text-align: left;
       border-radius: 3px;
       font-family: monospace; font-size: 11px; color: var(--text);
+      min-width: 0;
     }
     .mind-impact-link:hover:not(:disabled) { background: var(--surface0); }
     .mind-impact-link:disabled { cursor: default; opacity: 0.7; }
     .mind-impact-link.external { color: var(--subtext0); }
     .mind-impact-detail {
       display: flex; flex-direction: column; gap: 12px;
-      min-height: 0; overflow: auto;
+      min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden;
       padding-right: 4px;
     }
     .mind-impact-empty {
@@ -2018,29 +2128,32 @@
     .mind-impact-detail-head {
       display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
       background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px; padding: 12px 14px;
+      min-width: 0;
     }
     .mind-impact-detail-name { font: 600 14px var(--font-ui); color: var(--text); }
-    .mind-impact-detail-file { font: 11px monospace; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-detail-file { font: 11px monospace; color: var(--subtext0); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
     .mind-impact-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .mind-impact-cards {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+      min-width: 0;
     }
     .mind-impact-card {
       background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px; padding: 12px 14px;
+      min-width: 0;
     }
     .mind-impact-card-wide { grid-column: 1 / -1; }
     .mind-impact-card-title {
       font: 600 10px var(--font-ui); color: var(--subtext0); text-transform: uppercase; letter-spacing: .5px;
       margin-bottom: 8px;
     }
-    .mind-impact-card-body { font-size: 11px; color: var(--text); max-height: 320px; overflow: auto; }
+    .mind-impact-card-body { font-size: 11px; color: var(--text); max-height: 320px; overflow-y: auto; overflow-x: hidden; }
     .mind-impact-call {
       display: flex; gap: 6px; align-items: baseline;
       padding: 3px 0; font-family: monospace; font-size: 11px;
     }
     .mind-impact-call-arrow { color: var(--subtext0); width: 14px; flex-shrink: 0; }
     .mind-impact-call-name { color: var(--text); }
-    .mind-impact-call-file { color: var(--subtext0); font-size: 10px; margin-left: auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mind-impact-call-file { color: var(--subtext0); font-size: 10px; margin-left: auto; max-width: 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mind-impact-hop { margin-bottom: 10px; }
     .mind-impact-hop-title { font-size: 10px; font-weight: 600; margin-bottom: 4px; }
     .mind-impact-hop-file {
@@ -2051,6 +2164,13 @@
 
     /* Narrow screens: rail collapses above the detail. */
     @media (max-width: 900px) {
+      .mind-smart-head { flex-direction: column; }
+      .mind-smart-grid { grid-template-columns: 1fr; }
+      .mind-smart-form { grid-template-columns: minmax(0, 1fr); }
+      .mind-smart-form input[type="number"] { width: 100%; }
+      .mind-smart-help-grid { grid-template-columns: 1fr; }
+      .mind-smart-link-row { align-items: flex-start; flex-direction: column; }
+      .mind-smart-signal { flex-wrap: wrap; }
       .mind-impact-body { grid-template-columns: 1fr; }
       .mind-impact-cards { grid-template-columns: 1fr; }
     }
@@ -6946,7 +7066,11 @@ requestAnimationFrame(fitTerminalNow);
             notify(msg.title || 'Notification', msg.body || '', {
               icon: msg.icon || 'bell',
               source: msg.source || null,
+              severity: msg.level || msg.severity || 'info',
             });
+          }
+          if (typeof toast === 'function') {
+            toast(msg.title || 'Notification', msg.level || msg.severity || 'info', { duration: 5000 });
           }
           break;
         case 'app-state-set':

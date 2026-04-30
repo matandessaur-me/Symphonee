@@ -48,7 +48,8 @@ function readBody(req) {
 async function tryDenseSeeds(repoRoot, space, question, k = 50) {
   const vs = new VectorStore(repoRoot, space);
   if (!vs.load() || vs.count() === 0) return null;
-  const provider = vs.provider || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+  const provider = vs.provider || process.env.SYMPHONEE_EMBED_PROVIDER || embeddings.pickProvider();
+  if (!provider) return null;
   let qv;
   try {
     qv = await embeddings.embedSingle(question, { provider, model: vs.model || undefined });
@@ -266,6 +267,15 @@ function mountMind(addRoute, json, ctx) {
       job.completedAt = Date.now();
       job.result = result;
       if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'build-complete', jobId, result } });
+      if (broadcast && result && result.validationWarningCount) {
+        broadcast({
+          type: 'notification',
+          title: 'Mind build completed with skipped graph data',
+          body: `${result.validationWarningCount} invalid graph item(s) were skipped. The rest of the graph was saved.`,
+          level: 'warning',
+          icon: 'alert-triangle',
+        });
+      }
     }).catch((err) => {
       job.status = 'failed';
       job.completedAt = Date.now();
@@ -295,6 +305,15 @@ function mountMind(addRoute, json, ctx) {
     })).then((result) => {
       job.status = 'completed'; job.completedAt = Date.now(); job.result = result;
       if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'update-complete', jobId, result } });
+      if (broadcast && result && result.validationWarningCount) {
+        broadcast({
+          type: 'notification',
+          title: 'Mind update completed with skipped graph data',
+          body: `${result.validationWarningCount} invalid graph item(s) were skipped. The rest of the graph was saved.`,
+          level: 'warning',
+          icon: 'alert-triangle',
+        });
+      }
     }).catch((err) => {
       job.status = 'failed'; job.completedAt = Date.now(); job.error = err.message;
     });
@@ -870,7 +889,12 @@ function mountMind(addRoute, json, ctx) {
     if (body.provider) candidates.push(body.provider);
     if (keys.OPENAI_API_KEY && !candidates.includes('openai')) candidates.push('openai');
     if (keys.GOOGLE_API_KEY && !candidates.includes('google')) candidates.push('google');
-    if (!candidates.length) candidates.push(embeddings.pickProvider()); // ollama fallback
+    if (!candidates.length) {
+      lock.release(space, 'embed');
+      return json(res, {
+        error: 'No embedding provider configured. Add an OpenAI or Google API key in Settings > AI Providers.',
+      }, 400);
+    }
 
     json(res, { ok: true, started: true, providerChain: candidates });
     let lastErr = null;
@@ -926,7 +950,9 @@ function mountMind(addRoute, json, ctx) {
     refreshEmbedKeys();
     const provider = url.searchParams.get('provider') || embeddings.pickProvider();
     const fresh = url.searchParams.get('fresh') === '1';
-    const h = await embeddings.health({ provider, fresh });
+    const h = provider
+      ? await embeddings.health({ provider, fresh })
+      : await embeddings.health({ fresh });
     return json(res, {
       space,
       embeddings: h,

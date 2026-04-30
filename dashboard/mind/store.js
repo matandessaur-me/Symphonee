@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { emptyGraph, validateGraph } = require('./schema');
+const { emptyGraph, validateGraph, validateNode, validateEdge } = require('./schema');
 
 function namespaceFromSpace(space) {
   if (!space) return '_global';
@@ -61,11 +61,66 @@ function loadGraph(repoRoot, space) {
   }
 }
 
+function repairGraph(graph, validationErrors) {
+  const warnings = [];
+  const out = {
+    ...graph,
+    nodes: [],
+    edges: [],
+    hyperedges: Array.isArray(graph.hyperedges) ? graph.hyperedges : [],
+    communities: graph.communities && typeof graph.communities === 'object' ? graph.communities : {},
+    gods: Array.isArray(graph.gods) ? graph.gods : [],
+    surprises: Array.isArray(graph.surprises) ? graph.surprises : [],
+    suggested: Array.isArray(graph.suggested) ? graph.suggested : [],
+    stats: graph.stats && typeof graph.stats === 'object' ? { ...graph.stats } : {},
+  };
+
+  const ids = new Set();
+  for (const node of Array.isArray(graph.nodes) ? graph.nodes : []) {
+    const err = validateNode(node);
+    if (err) {
+      warnings.push('Dropped node: ' + err);
+      continue;
+    }
+    if (ids.has(node.id)) {
+      warnings.push('Dropped duplicate node id: ' + node.id);
+      continue;
+    }
+    ids.add(node.id);
+    out.nodes.push(node);
+  }
+
+  for (const edge of Array.isArray(graph.edges) ? graph.edges : []) {
+    const err = validateEdge(edge, ids);
+    if (err) {
+      warnings.push('Dropped edge: ' + err);
+      continue;
+    }
+    out.edges.push(edge);
+  }
+
+  const surviving = new Set(out.nodes.map(n => n.id));
+  out.edges = out.edges.filter(edge => {
+    const ok = surviving.has(edge.source) && surviving.has(edge.target);
+    if (!ok) warnings.push(`Dropped dangling edge: ${edge.source || '?'} -> ${edge.target || '?'}`);
+    return ok;
+  });
+
+  out.stats.validationErrors = validationErrors.slice(0, 20);
+  out.stats.validationWarnings = warnings.slice(0, 50);
+  out.stats.validationWarningCount = warnings.length;
+  return out;
+}
+
 function saveGraph(repoRoot, space, graph) {
   ensureDirs(repoRoot, space);
-  const errors = validateGraph(graph);
+  let errors = validateGraph(graph);
   if (errors.length) {
-    throw new Error(`mind/store: refusing to save invalid graph: ${errors.slice(0, 3).join('; ')}`);
+    graph = repairGraph(graph, errors);
+    errors = validateGraph(graph);
+    if (errors.length) {
+      throw new Error(`mind/store: refusing to save invalid graph after repair: ${errors.slice(0, 3).join('; ')}`);
+    }
   }
   graph.generatedAt = new Date().toISOString();
   // Preserve any additional stats fields the engine populated (sources,

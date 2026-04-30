@@ -248,7 +248,8 @@
     if (payload.kind === 'build-start') refreshLock();
     if (payload.kind === 'build-progress') { setStatus(payload.msg || 'building...'); refreshLock(); }
     if (payload.kind === 'build-complete' || payload.kind === 'update-complete') {
-      setStatus('build complete - reloading');
+      const warnings = payload.result && payload.result.validationWarningCount;
+      setStatus(warnings ? `build complete - skipped ${warnings} invalid item(s)` : 'build complete - reloading');
       loadGraph().then(() => { render(); refreshStatus(); refreshLock(); refreshQuality(); });
     }
     if (payload.kind === 'build-failed') { setStatus('build failed: ' + (payload.error || 'unknown')); refreshLock(); }
@@ -352,7 +353,9 @@
     if (main) {
       const fullBleed = (state.view === 'mindmap');
       main.style.padding = fullBleed ? '0' : '14px 18px';
-      main.style.overflow = fullBleed ? 'hidden' : 'auto';
+      main.style.overflow = fullBleed ? 'hidden' : '';
+      main.style.overflowY = fullBleed ? 'hidden' : 'auto';
+      main.style.overflowX = 'hidden';
       main.style.display = fullBleed ? 'flex' : '';
       main.style.flexDirection = fullBleed ? 'column' : '';
     }
@@ -486,21 +489,44 @@
     if (!main) return;
     const last = state.smart || {};
     main.innerHTML = `
-      <div class="mind-card" style="max-width:1100px;margin:0 auto;">
-        <div class="mind-card-title">Smart search</div>
-        <div style="font-size:12px;color:var(--subtext0);margin-bottom:12px;line-height:1.6;">
-          Hybrid BM25 + semantic search. Each result shows why it ranked: <b>BM25</b> = literal-token match, <b>Dense</b> = semantic similarity via embeddings.
-          Need to enable embeddings first? <button onclick="MindUI._embedAll()" style="background:transparent;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:12px;">embed the whole graph</button>.
+      <div class="mind-smart">
+        <header class="mind-smart-head">
+          <div>
+            <div class="mind-smart-title">Search</div>
+            <div class="mind-smart-sub">
+              Hybrid BM25 and semantic lookup across code, notes, docs, and prior AI sessions.
+            </div>
+          </div>
+          <button class="mindmap-ribbon-btn" onclick="MindUI._embedAll()" title="Rebuild semantic vectors for the whole graph">Embed graph</button>
+        </header>
+
+        <div class="mind-smart-grid">
+          <section class="mind-smart-card mind-smart-card-search">
+            <div class="mind-smart-card-title">Ask the brain</div>
+            <div class="mind-smart-form">
+              <input id="mindSmartQ" type="text" placeholder="Ask anything: auth flow, orchestrator mount, tsconfig aliases..." autofocus value="${escapeHtml(last.q || '')}">
+              <input id="mindSmartK" type="number" min="3" max="50" value="${last.k || 12}" title="Result count">
+              <button class="mindmap-ribbon-btn primary" onclick="MindUI._smartRun()">Search</button>
+            </div>
+            <div id="mindSmartHealth" class="mind-smart-health"></div>
+          </section>
+
+          <section class="mind-smart-card mind-smart-card-help">
+            <div class="mind-smart-card-title">Ranking signals</div>
+            <div class="mind-smart-help-grid">
+              <div><b>BM25</b><span>Literal token matches.</span></div>
+              <div><b>Dense</b><span>Semantic similarity from embeddings.</span></div>
+              <div><b>Fusion</b><span>Best overlap rises to the top.</span></div>
+            </div>
+          </section>
+
+          <section class="mind-smart-card mind-smart-results">
+            <div class="mind-smart-card-title">Results</div>
+            <div id="mindSmartOut" class="mind-smart-out">
+              <div class="mind-smart-empty">Run a search to see ranked context cards here.</div>
+            </div>
+          </section>
         </div>
-        <div id="mindSmartHealth" style="font-size:10px;color:var(--subtext0);margin-bottom:10px;font-variant-numeric:tabular-nums;"></div>
-        <div style="display:flex;gap:6px;margin-bottom:10px;">
-          <input id="mindSmartQ" type="text" placeholder="ask anything: 'how does auth work', 'where do we mount the orchestrator', 'tsconfig path aliases'" autofocus
-            style="flex:1;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:13px;" value="${escapeHtml(last.q || '')}">
-          <input id="mindSmartK" type="number" min="3" max="50" value="${last.k || 12}"
-            style="width:60px;padding:8px 6px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
-          <button class="tab-bar-btn" onclick="MindUI._smartRun()" style="padding:8px 16px;font-size:12px;">Search</button>
-        </div>
-        <div id="mindSmartOut" style="font-size:12px;color:var(--text);"></div>
       </div>`;
     const inp = $('mindSmartQ');
     if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSmart(); });
@@ -515,10 +541,10 @@
       const e = r.embeddings || {};
       const v = r.vectors || {};
       const eOk = e.ok ? `<span style="color:var(--green);">${escapeHtml(e.provider || '')} ok (${e.latencyMs || 0}ms, ${e.dimensions || '?'}d)</span>` :
-        `<span style="color:var(--red);">${escapeHtml(e.provider || 'embed')} unavailable: ${escapeHtml((e.error || '').slice(0, 80))}</span>`;
+        `<span style="color:var(--subtext0);">semantic provider not configured</span>`;
       const vOk = v.count > 0 ? `<span style="color:var(--green);">${v.count} vectors indexed (${v.dim}d, ${escapeHtml(v.provider || '')})</span>` :
-        '<span style="color:var(--yellow);">no vectors yet — click "embed the whole graph"</span>';
-      el.innerHTML = `embeddings: ${eOk} · index: ${vOk}`;
+        '<span style="color:var(--yellow);">no vectors yet</span>';
+      el.innerHTML = `${eOk} · ${vOk}`;
     } catch (_) { /* ignore */ }
   }
 
@@ -528,8 +554,8 @@
     state.smart = { q, k };
     const out = $('mindSmartOut');
     if (!out) return;
-    if (!q) { out.innerHTML = '<span style="color:var(--subtext0);">enter a query</span>'; return; }
-    out.innerHTML = '<span style="color:var(--subtext0);">searching...</span>';
+    if (!q) { out.innerHTML = '<div class="mind-smart-empty">Enter a query to search the graph.</div>'; return; }
+    out.innerHTML = '<div class="mind-smart-empty">Searching...</div>';
     try {
       // Run BM25 (via /api/mind/query seedIds extraction) + dense in parallel
       const [bmRes, denseRes] = await Promise.all([
@@ -563,16 +589,16 @@
         const label = node ? escapeHtml(node.label) : escapeHtml(id);
         const kind = node ? `<span style="color:var(--subtext0);font-size:10px;">[${escapeHtml(node.kind || '')}]</span>` : '';
         return `
-          <a href="#" class="mind-smart-link" data-id="${escapeHtml(id)}" style="display:block;padding:8px 10px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;margin-bottom:6px;text-decoration:none;color:var(--text);">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
-                <span style="font-size:11px;color:var(--subtext0);font-variant-numeric:tabular-nums;">#${rank + 1}</span>
-                ${label} ${kind}
+          <a href="#" class="mind-smart-link" data-id="${escapeHtml(id)}">
+            <div class="mind-smart-link-row">
+              <div class="mind-smart-link-main">
+                <span class="mind-smart-rank">#${rank + 1}</span>
+                <span class="mind-smart-label">${label}</span> ${kind}
               </div>
-              <div style="font-size:10px;display:flex;gap:8px;flex-shrink:0;">${both}</div>
+              <div class="mind-smart-signal">${both}</div>
             </div>
           </a>`;
-      }).join('') || '<span style="color:var(--subtext0);">no matches</span>';
+      }).join('') || '<div class="mind-smart-empty">No matches.</div>';
       out.querySelectorAll('.mind-smart-link').forEach(a => {
         a.addEventListener('click', (ev) => { ev.preventDefault(); showNodeDetail(a.dataset.id); });
       });
@@ -619,7 +645,6 @@
               Pick a file to see its imports, dependents, and a one-click blast radius.
             </div>
           </div>
-          <div id="mindCircularBanner"></div>
         </div>
         <div class="mind-impact-body">
           <aside class="mind-impact-rail">
@@ -627,6 +652,7 @@
               <input id="mindImpactFilter" type="text" placeholder="filter files..." autocomplete="off" spellcheck="false">
               <span id="mindImpactCount" class="mind-impact-count">…</span>
             </div>
+            <div id="mindCircularPanel"></div>
             <div id="mindImpactList" class="mind-impact-list">
               <div style="padding:14px;color:var(--subtext0);font-size:11px;">Loading files…</div>
             </div>
@@ -696,15 +722,26 @@
   }
 
   function renderImpactCircular(data) {
-    const banner = $('mindCircularBanner');
-    if (!banner) return;
-    if (!data || !data.count) { banner.innerHTML = ''; return; }
-    const sample = (data.cycles[0] || []).slice(0, 4).join(' → ');
-    banner.innerHTML = `
-      <div class="mind-impact-warn">
-        ⚠ ${data.count} circular dependenc${data.count === 1 ? 'y' : 'ies'}
-        <span style="color:var(--subtext0);font-weight:normal;">${escapeHtml(sample)}${(data.cycles[0] || []).length > 4 ? ' →' : ''}</span>
-      </div>`;
+    const panel = $('mindCircularPanel');
+    if (!panel) return;
+    if (!data || !data.count) { panel.innerHTML = ''; return; }
+    const cycles = (data.cycles || []).slice(0, 3);
+    panel.innerHTML = `
+      <details class="mind-impact-cycle-card">
+        <summary>
+          <span>
+            <span class="mind-impact-cycle-count">${data.count}</span>
+            circular dependenc${data.count === 1 ? 'y' : 'ies'}
+          </span>
+          <span class="mind-impact-cycle-hint">View</span>
+        </summary>
+        <div class="mind-impact-cycle-list">
+          ${cycles.map(cycle => `
+            <div class="mind-impact-cycle-path">
+              ${(cycle || []).map(p => `<span title="${escapeHtml(p)}">${escapeHtml(basenameOf(p))}</span>`).join('<b>to</b>')}
+            </div>`).join('')}
+        </div>
+      </details>`;
   }
 
   async function selectImpactFile(path) {
@@ -2433,7 +2470,8 @@
       try {
         const h = await API('/api/mind/health');
         const e = h.embeddings || {}; const v = h.vectors || {};
-        el.textContent = `embed:${e.ok ? 'ok' : 'down'}(${e.provider || '?'},${e.dimensions || '?'}d) · vectors:${v.count || 0}/${v.dim || 0}d`;
+        const embedText = e.ok ? `embed:ok(${e.provider || '?'},${e.dimensions || '?'}d)` : 'embed:not configured';
+        el.textContent = `${embedText} · vectors:${v.count || 0}/${v.dim || 0}d`;
       } catch (err) { el.textContent = 'error: ' + (err.message || err); }
     },
   };
