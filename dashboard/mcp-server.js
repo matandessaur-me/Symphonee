@@ -462,6 +462,16 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
     handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/mind/quality'), null, 2)),
   },
+  {
+    name: 'mind_patch_file',
+    description: 'Patch one file in Mind without re-walking the whole repo. Drop its manifest entry then run an incremental rebuild scoped to repo-code.',
+    inputSchema: {
+      type: 'object',
+      properties: { file: { type: 'string', description: 'Absolute or repo-relative path.' } },
+      required: ['file'],
+    },
+    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/mind/patch-file', args), null, 2)),
+  },
 ];
 
 function textResult(text) {

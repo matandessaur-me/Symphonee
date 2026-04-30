@@ -384,6 +384,52 @@ function mountMind(addRoute, json, ctx) {
     return json(res, { count: cycles.length, cycles });
   });
 
+  // ── Per-file patch (incremental update for a single saved file) ─────────
+  // Cheaper than /api/mind/update for the common "user just saved one file"
+  // case. Invalidates the manifest entry for that file so the next
+  // incremental build re-extracts it. The actual re-extraction still goes
+  // through engine.runBuild incremental=true so all the plumbing
+  // (sources, dedup, locks, save) stays in one place.
+  addRoute('POST', '/api/mind/patch-file', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const file = body.file;
+    if (!file) return json(res, { error: 'file required' }, 400);
+    const space = getSpace();
+
+    const ui = getUiContext ? getUiContext() : {};
+    const repoPath = ui.activeRepoPath;
+    if (!repoPath) return json(res, { error: 'no active repo' }, 400);
+    const rel = path.isAbsolute(file)
+      ? path.relative(repoPath, file).replace(/\\/g, '/')
+      : file.replace(/\\/g, '/');
+
+    // Drop the file from the manifest so the next incremental build
+    // re-extracts it from disk.
+    try {
+      const m = new Manifest(repoRoot, space);
+      m.delete(rel);
+      m.flushSync();
+    } catch (e) {
+      return json(res, { error: 'manifest update failed: ' + e.message }, 500);
+    }
+
+    const acq = lock.acquire(space, 'patch-file');
+    if (!acq.ok) return json(res, { error: 'patch-file already running', holderPid: acq.holderPid }, 409);
+    const jobId = makeJobId();
+    json(res, { jobId, ok: true, file: rel });
+
+    Promise.resolve().then(() => engine.runBuild({
+      repoRoot, space, sources: ['repo-code'], incremental: true, ctx,
+      onProgress: () => {},
+    })).then((result) => {
+      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'patch-file-complete', jobId, file: rel, result } });
+    }).catch((err) => {
+      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'patch-file-failed', jobId, file: rel, error: err.message } });
+    }).finally(() => {
+      lock.release(space, 'patch-file');
+    });
+  });
+
   // ── Visualisation (mermaid text + interactive HTML viewer) ──────────────
   addRoute('POST', '/api/mind/visualize', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));

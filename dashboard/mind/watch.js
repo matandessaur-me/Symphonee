@@ -10,7 +10,12 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_DEBOUNCE = 3000;
-const WATCH_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.cs', '.md', '.mdx']);
+const WATCH_EXT = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.cs', '.md', '.mdx',
+  '.go', '.java', '.kt', '.kts', '.scala', '.sc', '.rs', '.rb', '.php', '.swift',
+  '.css', '.scss', '.sass', '.less', '.styl', '.svelte', '.vue',
+  '.json', '.yaml', '.yml',
+]);
 const SKIP_SEG = /[\\/](node_modules|\.git|\.next|dist|build|out|\.cache|coverage|\.symphonee|\.ai-workspace|__pycache__)([\\/]|$)/;
 
 function tryRequireChokidar() {
