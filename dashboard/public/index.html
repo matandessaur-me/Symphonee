@@ -1855,6 +1855,86 @@
     }
     .mind-tab:hover { color: var(--text); }
     .mind-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+    /* ── Mind map sub-ribbon (Graph / Map / Mermaid + actions) ──────────── */
+    .mindmap-ribbon {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 12px;
+      background: var(--mantle);
+      border-bottom: 1px solid var(--surface0);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      min-height: 36px;
+    }
+    .mindmap-ribbon-spacer { flex: 1 1 auto; min-width: 0; }
+    .mindmap-ribbon-hint {
+      font-size: 11px; color: var(--subtext0);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex: 0 1 auto;
+    }
+    .mindmap-segctl {
+      display: inline-flex;
+      background: var(--surface0);
+      border: 1px solid var(--surface1);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 0;
+    }
+    .mindmap-seg-btn {
+      background: transparent; border: none;
+      color: var(--subtext0);
+      font: 600 11px var(--font-ui);
+      cursor: pointer;
+      padding: 4px 14px;
+      border-radius: 4px;
+      transition: background 0.12s, color 0.12s;
+      letter-spacing: 0.3px;
+    }
+    .mindmap-seg-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+    .mindmap-seg-btn.active {
+      background: var(--accent);
+      color: var(--base);
+    }
+    .mindmap-ribbon-btn {
+      background: var(--surface0);
+      border: 1px solid var(--surface1);
+      border-radius: 4px;
+      color: var(--text);
+      font: 600 11px var(--font-ui);
+      padding: 5px 12px;
+      cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .mindmap-ribbon-btn:hover { background: var(--surface1); border-color: var(--surface2); }
+    .mindmap-ribbon-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--base);
+    }
+    .mindmap-ribbon-btn.primary:hover { filter: brightness(1.08); }
+    .mindmap-body {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    .mindmap-mermaid-wrap {
+      flex: 1; min-height: 0;
+      overflow: auto;
+      padding: 18px 22px;
+      background: var(--base);
+    }
+    .mindmap-mermaid-stage {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: var(--mantle);
+      border: 1px solid var(--surface0);
+      border-radius: 8px;
+      padding: 18px;
+      min-height: 320px;
+    }
+    .mindmap-mermaid-stage svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
     /* Reusable loader overlay for any Mind view that runs an expensive
        synchronous operation (graph rebuild, large filter swap, etc). The
        caller toggles display:flex to show. */
@@ -27017,6 +27097,7 @@ function showRecipePreviewModal(id, fm, prompt) {
 </script>
 <link rel="stylesheet" href="/vis-network.min.css">
 <script src="/vis-network.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script src="/mind-ui.js"></script>
 </body>
 </html>

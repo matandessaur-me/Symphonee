@@ -347,10 +347,10 @@
 
   function render() {
     teardownNetwork();
-    // Mind map view needs a full-bleed canvas; everything else gets padding.
+    // Mind map view always full-bleed (its own ribbon + body manage padding).
     const main = $('mindMain');
     if (main) {
-      const fullBleed = (state.view === 'mindmap' && state.mindmapMode !== 'mermaid');
+      const fullBleed = (state.view === 'mindmap');
       main.style.padding = fullBleed ? '0' : '14px 18px';
       main.style.overflow = fullBleed ? 'hidden' : 'auto';
       main.style.display = fullBleed ? 'flex' : '';
@@ -378,157 +378,145 @@
   // the user sees why each result ranked.
   async function renderSearch() { return renderSmart(); }
 
-  // ── Unified Mind map view (replaces Graph + Map + Visualize button) ─────
-  // One tab, one dropdown: Graph / Communities (map) / Mermaid / Interactive
-  // popup. All five live here; each maps to the corresponding internal
-  // renderer that already existed.
+  // ── Unified Mind map view ───────────────────────────────────────────────
+  // Persistent sub-ribbon + dedicated body. Body contents swap based on
+  // mode (graph / map / mermaid); the ribbon stays put so switching view
+  // never feels like leaving the tab.
   function renderMindmap() {
     const mode = state.mindmapMode || 'graph';
     const main = $('mindMain');
     if (!main) return;
-    // Header bar with the mode selector. Sits above the canvas; the canvas
-    // mounts into mindmapBody so the existing renderers can keep using
-    // mindMain.appendChild semantics.
     main.innerHTML = `
-      <div id="mindmapHeader" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--mantle);border-bottom:1px solid var(--surface0);flex-shrink:0;">
-        <span style="font-size:11px;color:var(--subtext0);text-transform:uppercase;letter-spacing:.5px;">View</span>
-        <select id="mindmapMode" style="background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:11px;padding:4px 8px;">
-          <option value="graph"${mode === 'graph' ? ' selected' : ''}>Graph (full)</option>
-          <option value="map"${mode === 'map' ? ' selected' : ''}>Communities map</option>
-          <option value="mermaid"${mode === 'mermaid' ? ' selected' : ''}>Mermaid (text)</option>
-        </select>
-        <span style="flex:1;"></span>
-        <button class="tab-bar-btn" onclick="MindUI.openInteractive()" style="padding:4px 10px;font-size:11px;" title="Pop out an interactive Cytoscape viewer with blast-radius overlay">Pop out interactive</button>
+      <div class="mindmap-ribbon">
+        <div class="mindmap-segctl" role="tablist" aria-label="Mind map view">
+          <button class="mindmap-seg-btn${mode === 'graph' ? ' active' : ''}" data-mode="graph">Graph</button>
+          <button class="mindmap-seg-btn${mode === 'map' ? ' active' : ''}" data-mode="map">Map</button>
+          <button class="mindmap-seg-btn${mode === 'mermaid' ? ' active' : ''}" data-mode="mermaid">Mermaid</button>
+        </div>
+        <span class="mindmap-ribbon-spacer"></span>
+        <span class="mindmap-ribbon-hint" id="mindmapHint">${mindmapHint(mode)}</span>
+        <span class="mindmap-ribbon-spacer"></span>
+        <button class="mindmap-ribbon-btn" id="mindmapCopyBtn" style="display:${mode === 'mermaid' ? 'inline-flex' : 'none'};" title="Copy mermaid source">Copy</button>
+        <button class="mindmap-ribbon-btn primary" onclick="MindUI.openInteractive()" title="Pop out an interactive Cytoscape viewer with blast-radius overlay">Pop out</button>
       </div>
-      <div id="mindmapBody" style="flex:1;min-height:0;display:flex;flex-direction:column;"></div>`;
-    const sel = document.getElementById('mindmapMode');
-    if (sel) sel.addEventListener('change', (e) => {
-      state.mindmapMode = e.target.value;
-      // Re-run render() so full-bleed padding adjusts for mermaid mode.
-      render();
-    });
-    if (mode === 'mermaid') {
-      renderMermaidInto(document.getElementById('mindmapBody'));
-    } else {
-      // Hand the body to the existing renderer. The existing renderGraph /
-      // renderMap implementations append into #mindMain by id; rebind that.
-      const body = document.getElementById('mindmapBody');
-      // Existing renderers do `$('mindMain').innerHTML = ...` and mount
-      // Cytoscape into their own divs. We clear mindMain's body slot, render
-      // into it, and let the existing flexbox do its thing.
-      // Strategy: temporarily proxy mindMain to mindmapBody by moving children.
-      const stash = main.removeChild(body);
-      main.id = 'mindMain'; // unchanged
-      // Replace mindMain's children with the body's outer scaffold
-      main.appendChild(stash);
-      if (mode === 'graph') renderGraphInto(body);
-      else if (mode === 'map') renderMapInto(body);
-    }
-  }
-
-  function renderMermaidInto(container) {
-    container.innerHTML = `
-      <div style="padding:14px 18px;max-width:900px;margin:0 auto;width:100%;box-sizing:border-box;">
-        <div style="font-size:12px;color:var(--subtext0);margin-bottom:10px;line-height:1.6;">
-          Mermaid diagram of the current sub-graph. Paste into a markdown viewer or share in chat.
-        </div>
-        <pre id="mindMermaidOut" style="background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);max-height:60vh;overflow:auto;white-space:pre;">loading...</pre>
-        <div style="margin-top:8px;display:flex;gap:8px;">
-          <button class="tab-bar-btn" onclick="MindUI._copyMermaid()" style="padding:5px 12px;font-size:11px;">Copy</button>
-        </div>
-      </div>`;
-    fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'mermaid', max: 200 }) })
-      .then(r => r.json())
-      .then(d => {
-        const el = document.getElementById('mindMermaidOut');
-        if (el) el.textContent = d.mermaid || d.error || '(empty)';
-      })
-      .catch(e => {
-        const el = document.getElementById('mindMermaidOut');
-        if (el) el.textContent = 'error: ' + (e.message || e);
-      });
-  }
-
-  function copyMermaid() {
-    const el = document.getElementById('mindMermaidOut');
-    if (!el) return;
-    try { navigator.clipboard.writeText(el.textContent || ''); setStatus('mermaid copied'); } catch (_) {}
-  }
-
-  // Graph + Map renderers wrap the existing implementations. The existing
-  // ones write to $('mindMain'); we redirect by giving the container the
-  // mindMain semantics for the duration of the render.
-  function renderGraphInto(container) {
-    // Existing renderGraph reads/writes $('mindMain') directly. We clone
-    // mindMain's role by mounting the graph canvas into our container.
-    container.style.flex = '1';
-    container.style.minHeight = '0';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    // Hand off: temporarily alias mindMain to container by moving children
-    // onto container, calling render, then we've already prepared the slot.
-    const oldId = container.id;
-    container.id = '__mindGraphHost';
-    // Minimal inline graph: copy the existing renderGraph body's container
-    // creation, but root it here. Easiest: trigger renderGraph and have it
-    // write into mindMain (its parent), which is fine because mindMain is
-    // already shaped as the column we wrapped.
-    container.id = oldId;
-    // Simpler reuse: blank the body and call renderGraph - it owns mindMain.
-    // We've already cleared mindMain except for the header + body wrapper;
-    // strip the wrapper so renderGraph gets a clean mindMain.
-    const main = document.getElementById('mindMain');
-    if (main) {
-      // Re-render the header above an empty mindMain that renderGraph will
-      // fully take over. We accept losing the header inside graph mode -
-      // the user can switch back via the selector that's still in the DOM
-      // until renderGraph's overwrite. To preserve the selector, push the
-      // call to renderGraph but inject the header back after render().
-      const headerHtml = main.innerHTML.match(/<div id="mindmapHeader"[\s\S]*?<\/div>\s*<div id="mindmapBody"/);
-      // Defer to avoid layout flash; renderGraph clears and remounts.
-      requestAnimationFrame(() => {
-        renderGraph();
-        // Re-attach header on top of whatever renderGraph produced.
-        const h = document.createElement('div');
-        h.innerHTML = headerHtml ? headerHtml[0].replace('<div id="mindmapBody"', '') : '';
-        // Skip - renderGraph already overwrote mindMain. Add a tiny floating
-        // selector instead.
-        injectFloatingModeSwitch();
-      });
-    }
-  }
-  function renderMapInto(container) {
-    requestAnimationFrame(() => {
-      renderMap();
-      injectFloatingModeSwitch();
-    });
-  }
-
-  // When graph/map fully owns the canvas (no header), drop a floating
-  // mode-switch chip in the corner so the user can switch view without
-  // leaving the tab.
-  function injectFloatingModeSwitch() {
-    const main = document.getElementById('mindMain');
-    if (!main || document.getElementById('mindmapFloat')) return;
-    const float = document.createElement('div');
-    float.id = 'mindmapFloat';
-    float.style.cssText = 'position:absolute;top:8px;right:8px;z-index:50;display:flex;gap:4px;background:var(--mantle);padding:4px 6px;border:1px solid var(--surface0);border-radius:6px;align-items:center;font-size:11px;';
-    float.innerHTML = `
-      <span style="color:var(--subtext0);">View:</span>
-      <button class="mindmap-float-btn" data-mode="graph" style="background:transparent;border:none;color:var(--text);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:3px;">Graph</button>
-      <button class="mindmap-float-btn" data-mode="map" style="background:transparent;border:none;color:var(--text);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:3px;">Map</button>
-      <button class="mindmap-float-btn" data-mode="mermaid" style="background:transparent;border:none;color:var(--text);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:3px;">Mermaid</button>
-      <button onclick="MindUI.openInteractive()" style="background:var(--surface0);border:none;color:var(--text);cursor:pointer;font-size:11px;padding:2px 8px;border-radius:3px;">Pop out</button>`;
-    main.style.position = 'relative';
-    main.appendChild(float);
-    float.querySelectorAll('.mindmap-float-btn').forEach(b => {
-      const isActive = b.dataset.mode === (state.mindmapMode || 'graph');
-      if (isActive) { b.style.background = 'var(--surface0)'; b.style.fontWeight = '600'; }
-      b.addEventListener('click', () => {
-        state.mindmapMode = b.dataset.mode;
+      <div id="mindmapBody" class="mindmap-body"></div>`;
+    main.querySelectorAll('.mindmap-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.mindmapMode = btn.dataset.mode;
         render();
       });
     });
+    const copyBtn = main.querySelector('#mindmapCopyBtn');
+    if (copyBtn) copyBtn.addEventListener('click', copyMermaid);
+    if (mode === 'mermaid') {
+      renderMermaidVisual(document.getElementById('mindmapBody'));
+    } else {
+      renderInBody(mode);
+    }
+  }
+
+  function mindmapHint(mode) {
+    if (mode === 'mermaid') return 'Visual mermaid diagram - copy the source for chat / docs / PRs';
+    if (mode === 'map') return 'Each circle is a community. Edges show cross-community bridges.';
+    return 'Full graph - drag, zoom, click any node to inspect.';
+  }
+
+  // Graph + Map: existing renderers fully overwrite #mindMain. To keep the
+  // ribbon, we let them render, then the next render() call will rebuild
+  // the ribbon on top. To avoid that ping-pong here, we wrap the existing
+  // renderer in a temporary id swap: rename mindMain -> mindmap-host,
+  // rename mindmapBody -> mindMain, run the renderer (it writes into the
+  // body), then restore IDs.
+  function renderInBody(mode) {
+    const main = document.getElementById('mindMain');
+    const body = document.getElementById('mindmapBody');
+    if (!main || !body) return;
+    main.id = '__mindmap_host';
+    body.id = 'mindMain';
+    try {
+      if (mode === 'graph') renderGraph();
+      else if (mode === 'map') renderMap();
+    } finally {
+      // Restore IDs so subsequent calls to $('mindMain') hit the real one.
+      body.id = 'mindmapBody';
+      main.id = 'mindMain';
+    }
+  }
+
+  // Visual mermaid rendering via mermaid.js. Loaded from CDN in index.html.
+  let _mermaidInited = false;
+  function ensureMermaid() {
+    if (!window.mermaid) return false;
+    if (!_mermaidInited) {
+      try {
+        window.mermaid.initialize({
+          startOnLoad: false,
+          theme: 'dark',
+          securityLevel: 'loose',
+          fontFamily: 'inherit',
+          flowchart: { htmlLabels: true, curve: 'basis' },
+        });
+      } catch (_) {}
+      _mermaidInited = true;
+    }
+    return true;
+  }
+
+  async function renderMermaidVisual(container) {
+    container.innerHTML = `
+      <div class="mindmap-mermaid-wrap">
+        <div id="mindMermaidStage" class="mindmap-mermaid-stage">
+          <div style="color:var(--subtext0);">Rendering mermaid diagram...</div>
+        </div>
+      </div>`;
+    let mermaidText = '';
+    try {
+      const r = await fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'mermaid', max: 120 }) });
+      const d = await r.json();
+      mermaidText = d.mermaid || '';
+      if (!mermaidText) throw new Error(d.error || 'empty graph');
+    } catch (e) {
+      const stage = document.getElementById('mindMermaidStage');
+      if (stage) stage.innerHTML = `<div style="color:var(--red);padding:20px;">${escapeHtml(e.message || String(e))}</div>`;
+      return;
+    }
+    state.lastMermaid = mermaidText;
+    const stage = document.getElementById('mindMermaidStage');
+    if (!stage) return;
+    if (!ensureMermaid()) {
+      stage.innerHTML = `
+        <div style="color:var(--yellow);padding:14px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;">
+          mermaid library failed to load (offline?). Showing source:
+        </div>
+        <pre style="margin-top:10px;background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
+      return;
+    }
+    try {
+      const id = 'mind-mer-' + Date.now();
+      const { svg } = await window.mermaid.render(id, mermaidText);
+      stage.innerHTML = svg;
+      const svgEl = stage.querySelector('svg');
+      if (svgEl) {
+        svgEl.style.width = '100%';
+        svgEl.style.height = 'auto';
+        svgEl.style.maxWidth = '100%';
+      }
+    } catch (e) {
+      stage.innerHTML = `
+        <div style="color:var(--red);padding:14px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;">
+          mermaid render failed: ${escapeHtml(e.message || String(e))}
+        </div>
+        <pre style="margin-top:10px;background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
+    }
+  }
+
+  function copyMermaid() {
+    const txt = state.lastMermaid || '';
+    if (!txt) { setStatus('no mermaid source to copy yet'); return; }
+    try {
+      navigator.clipboard.writeText(txt);
+      setStatus('mermaid source copied');
+    } catch (_) { setStatus('clipboard unavailable'); }
   }
 
   // ── Smart search (hybrid BM25 + dense via RRF) ──────────────────────────
