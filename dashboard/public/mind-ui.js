@@ -1223,7 +1223,7 @@
       kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1;
       const cb = n.createdBy || 'unknown';
       cliCounts[cb] = (cliCounts[cb] || 0) + 1;
-      if (n.kind === 'conversation') recent.push(n);
+      if (n.kind === 'conversation' || (n.kind === 'drawer' && n.role === 'user')) recent.push(n);
     }
     for (const e of g.edges) confCounts[e.confidence] = (confCounts[e.confidence] || 0) + 1;
     recent.sort((a, b) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0));
@@ -1299,9 +1299,9 @@
           </div>
 
           <div class="mind-card mind-card-wide">
-            <div class="mind-card-title">Recent CLI conversations</div>
+            <div class="mind-card-title">Recent AI conversations</div>
             ${recent.length === 0
-              ? '<div style="color:var(--subtext0);font-size:11px;font-style:italic;padding:6px;">no conversations yet - dispatch a worker via the orchestrator and Mind will save it here automatically</div>'
+              ? '<div style="color:var(--subtext0);font-size:11px;font-style:italic;padding:6px;">no conversations yet - direct CLI sessions appear here after a Mind rebuild; orchestrator dispatches save automatically</div>'
               : '<div class="mind-feed">' + recent.slice(0, 12).map(convRow).join('') + '</div>'}
           </div>
 
@@ -1393,6 +1393,9 @@
         .mind-feed-row:hover { background:var(--surface0); }
         .mind-feed-row .mind-feed-meta { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--subtext0); margin-bottom:3px; }
         .mind-feed-row .mind-cli-badge { padding:1px 6px; border-radius:8px; font-size:9px; font-weight:600; text-transform:uppercase; }
+        .mind-feed-row .mind-type-badge { padding:1px 5px; border-radius:4px; font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; }
+        .mind-feed-row .mind-type-cli { background:var(--surface1); color:var(--subtext1); }
+        .mind-feed-row .mind-type-agent { background:color-mix(in srgb, var(--accent) 20%, transparent); color:var(--accent); }
         .mind-feed-row .mind-feed-text { font-size:11px; color:var(--text); overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
         .mind-surprise-row {
           display:grid;
@@ -1537,9 +1540,12 @@
     const cli = (n.createdBy || 'unknown').split('-')[0]; // strip "claude-code" -> "claude"
     const color = cliColor(cli);
     const date = n.createdAt ? new Date(n.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    const tags = (n.tags || []).filter(t => !['cli-session', 'conversation', cli].includes(t)).slice(0, 3).map(t => `<span style="font-size:9px;color:var(--subtext0);">#${escapeHtml(t)}</span>`).join(' ');
+    const tags = (n.tags || []).filter(t => !['cli-session', 'conversation', 'drawer', 'verbatim', 'user', 'assistant', cli].includes(t)).slice(0, 3).map(t => `<span style="font-size:9px;color:var(--subtext0);">#${escapeHtml(t)}</span>`).join(' ');
+    const typeBadge = n.kind === 'drawer'
+      ? `<span class="mind-type-badge mind-type-cli">CLI</span>`
+      : `<span class="mind-type-badge mind-type-agent">Agent</span>`;
     return `<div class="mind-feed-row" data-id="${escapeHtml(n.id)}">
-      <div class="mind-feed-meta"><span class="mind-cli-badge" style="background:${color};color:#1e1e2e;">${escapeHtml(cli)}</span><span>${escapeHtml(date)}</span>${tags}</div>
+      <div class="mind-feed-meta"><span class="mind-cli-badge" style="background:${color};color:#1e1e2e;">${escapeHtml(cli)}</span>${typeBadge}<span>${escapeHtml(date)}</span>${tags}</div>
       <div class="mind-feed-text">${escapeHtml(n.preview || n.label)}</div>
     </div>`;
   }

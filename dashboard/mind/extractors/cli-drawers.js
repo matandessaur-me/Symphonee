@@ -79,7 +79,15 @@ function extractMsgText(record) {
   if (record.payload?.assistant_message?.content) return { role: 'assistant', text: String(record.payload.assistant_message.content) };
   // Flat history shapes
   if (record.role && record.text) return { role: record.role, text: record.text };
-  // Copilot
+  // Copilot events.jsonl (type: "user.message" / "assistant.message")
+  if (record.type === 'user.message' && record.data?.content) return { role: 'user', text: record.data.content };
+  if (record.type === 'assistant.message' && record.data?.content) return { role: 'assistant', text: typeof record.data.content === 'string' ? record.data.content : JSON.stringify(record.data.content) };
+  // Gemini chats (type: "user" | "assistant", content is an array of {text})
+  if ((record.type === 'user' || record.type === 'assistant') && Array.isArray(record.content)) {
+    const text = record.content.map(p => p?.text || '').filter(Boolean).join('\n');
+    if (text) return { role: record.type, text };
+  }
+  // Legacy Copilot flat shapes
   if (record.data?.prompt) return { role: 'user', text: record.data.prompt };
   if (record.data?.message?.content) return { role: record.data.message.role || 'assistant', text: record.data.message.content };
   return null;
@@ -156,6 +164,16 @@ function collectAll() {
     for (const sid of safeReaddir(copilotRoot)) {
       const events = path.join(copilotRoot, sid, 'events.jsonl');
       if (fs.existsSync(events)) sessions.push({ cli: 'copilot', file: events, sessionId: sid });
+    }
+  }
+  const geminiRoot = path.join(home, '.gemini', 'tmp');
+  if (fs.existsSync(geminiRoot)) {
+    for (const proj of safeReaddir(geminiRoot)) {
+      const chats = path.join(geminiRoot, proj, 'chats');
+      if (!fs.existsSync(chats)) continue;
+      for (const f of safeReaddir(chats)) {
+        if (f.endsWith('.jsonl')) sessions.push({ cli: 'gemini', file: path.join(chats, f) });
+      }
     }
   }
   return sessions;
