@@ -23,8 +23,12 @@ const { extractMarkdown } = require('./markdown');
 const { hashContent } = require('../manifest');
 const { loadPathAliases } = require('../aliases');
 const { resolveImport: resolveImportSmart } = require('../resolve-import');
+const { extractMultiLang, langOf: multiLangOf, supportedExts: multiLangExts } = require('./code-langs');
 
-const CODE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.cs']);
+const CODE_EXT = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.cs',
+  ...multiLangExts(),
+]);
 const DOC_EXT = new Set(['.md', '.mdx']);
 const SKIP_DIRS = new Set([
   'node_modules', '.git', '.next', 'dist', 'build', 'out',
@@ -149,13 +153,14 @@ function resolveImport(spec, fromRel) {
 }
 
 function resolveOne(spec, fromRel, aliases, fileSet) {
+  return resolveOneInner(spec, fromRel, aliases, fileSet, null);
+}
+
+function resolveOneInner(spec, fromRel, aliases, fileSet, kindHint) {
   if (fileSet) {
+    const kind = kindHint || (spec.match(/\.(css|scss|sass|less|styl)$/) ? 'css' : 'js');
     const real = resolveImportSmart({
-      spec,
-      fromFile: fromRel,
-      fileSet,
-      aliases,
-      kind: spec.match(/\.(css|scss|sass|less|styl)$/) ? 'css' : 'js',
+      spec, fromFile: fromRel, fileSet, aliases, kind,
     });
     if (real) return { target: makeIdFromLabel(real, 'code'), unresolved: false };
   }
@@ -164,7 +169,6 @@ function resolveOne(spec, fromRel, aliases, fileSet) {
     const cleaned = path.posix.normalize(`${dir}/${spec}`).replace(/^\.\//, '');
     return { target: makeIdFromLabel(cleaned, 'code'), unresolved: false };
   }
-  // External - keep an ext_ marker so the quality calculator can identify it.
   return { target: `ext_${normalizeId(spec)}`, unresolved: true };
 }
 
@@ -300,6 +304,15 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
       frag = extractPyOrCs({ relPath: rel, fullPath: full, body, createdBy, kindLabel: 'py' });
     } else if (ext === '.cs') {
       frag = extractPyOrCs({ relPath: rel, fullPath: full, body, createdBy, kindLabel: 'cs' });
+    } else if (multiLangOf(ext)) {
+      frag = extractMultiLang({
+        relPath: rel, fullPath: full, body,
+        lang: multiLangOf(ext),
+        createdBy, aliases, fileSet,
+        resolveOne: (spec, fromRel, a, fset, kind) => resolveOneInner(spec, fromRel, a, fset, kind),
+      });
+      if (frag) frag.rawCalls = null;
+      else frag = { nodes: [], edges: [], rawCalls: null };
     } else {
       frag = extractJsTs({ relPath: rel, fullPath: full, body, repoRoot: activeRepoPath, createdBy, aliases, fileSet });
     }
