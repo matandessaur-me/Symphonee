@@ -253,6 +253,12 @@
     }
     if (payload.kind === 'build-failed') { setStatus('build failed: ' + (payload.error || 'unknown')); refreshLock(); }
     if (payload.kind === 'watch-trigger') setStatus('change: ' + (payload.file || ''));
+    if (payload.kind === 'embed-progress') setStatus(payload.msg || 'embedding...');
+    if (payload.kind === 'embed-complete') {
+      setStatus(`embedded ${(payload.result && payload.result.embedded) || 0} nodes`);
+      refreshSmartHealth && refreshSmartHealth();
+    }
+    if (payload.kind === 'embed-failed') setStatus('embed failed: ' + (payload.error || 'unknown'));
   }
   async function refreshQuality() {
     try {
@@ -353,10 +359,121 @@
     else if (state.view === 'query') renderQuery();
     else if (state.view === 'communities') renderCommunities();
     else if (state.view === 'hotspots') renderHotspots();
+    else if (state.view === 'smart') renderSmart();
     else if (state.view === 'impact') renderImpact();
     else if (state.view === 'knowledge') renderKnowledge();
     else if (state.view === 'map') renderMap();
     else if (state.view === 'graph') renderGraph();
+  }
+
+  // ── Smart search (hybrid BM25 + dense via RRF) ──────────────────────────
+  async function renderSmart() {
+    const main = $('mindMain');
+    if (!main) return;
+    const last = state.smart || {};
+    main.innerHTML = `
+      <div class="mind-card" style="max-width:1100px;margin:0 auto;">
+        <div class="mind-card-title">Smart search</div>
+        <div style="font-size:12px;color:var(--subtext0);margin-bottom:12px;line-height:1.6;">
+          Hybrid BM25 + semantic search. Each result shows why it ranked: <b>BM25</b> = literal-token match, <b>Dense</b> = semantic similarity via embeddings.
+          Need to enable embeddings first? <button onclick="MindUI._embedAll()" style="background:transparent;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:12px;">embed the whole graph</button>.
+        </div>
+        <div id="mindSmartHealth" style="font-size:10px;color:var(--subtext0);margin-bottom:10px;font-variant-numeric:tabular-nums;"></div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
+          <input id="mindSmartQ" type="text" placeholder="ask anything: 'how does auth work', 'where do we mount the orchestrator', 'tsconfig path aliases'" autofocus
+            style="flex:1;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:13px;" value="${escapeHtml(last.q || '')}">
+          <input id="mindSmartK" type="number" min="3" max="50" value="${last.k || 12}"
+            style="width:60px;padding:8px 6px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+          <button class="tab-bar-btn" onclick="MindUI._smartRun()" style="padding:8px 16px;font-size:12px;">Search</button>
+        </div>
+        <div id="mindSmartOut" style="font-size:12px;color:var(--text);"></div>
+      </div>`;
+    const inp = $('mindSmartQ');
+    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSmart(); });
+    refreshSmartHealth();
+  }
+
+  async function refreshSmartHealth() {
+    try {
+      const r = await API('/api/mind/health');
+      const el = $('mindSmartHealth');
+      if (!el) return;
+      const e = r.embeddings || {};
+      const v = r.vectors || {};
+      const eOk = e.ok ? `<span style="color:var(--green);">${escapeHtml(e.provider || '')} ok (${e.latencyMs || 0}ms, ${e.dimensions || '?'}d)</span>` :
+        `<span style="color:var(--red);">${escapeHtml(e.provider || 'embed')} unavailable: ${escapeHtml((e.error || '').slice(0, 80))}</span>`;
+      const vOk = v.count > 0 ? `<span style="color:var(--green);">${v.count} vectors indexed (${v.dim}d, ${escapeHtml(v.provider || '')})</span>` :
+        '<span style="color:var(--yellow);">no vectors yet — click "embed the whole graph"</span>';
+      el.innerHTML = `embeddings: ${eOk} · index: ${vOk}`;
+    } catch (_) { /* ignore */ }
+  }
+
+  async function runSmart() {
+    const q = ($('mindSmartQ') && $('mindSmartQ').value || '').trim();
+    const k = parseInt(($('mindSmartK') && $('mindSmartK').value) || '12', 10);
+    state.smart = { q, k };
+    const out = $('mindSmartOut');
+    if (!out) return;
+    if (!q) { out.innerHTML = '<span style="color:var(--subtext0);">enter a query</span>'; return; }
+    out.innerHTML = '<span style="color:var(--subtext0);">searching...</span>';
+    try {
+      // Run BM25 (via /api/mind/query seedIds extraction) + dense in parallel
+      const [bmRes, denseRes] = await Promise.all([
+        fetch('/api/mind/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, budget: 800, hybrid: false }) }).then(r => r.json()),
+        fetch('/api/mind/search-semantic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q, k }) }).then(r => r.json()),
+      ]);
+      const bmIds = (bmRes.seedIds || []).slice(0, k);
+      const bmRank = new Map(bmIds.map((id, i) => [id, i]));
+      const denseRank = new Map();
+      const denseScore = new Map();
+      (denseRes.results || []).forEach((r, i) => { denseRank.set(r.id, i); denseScore.set(r.id, r.score); });
+      // RRF locally
+      const k_rrf = 60;
+      const fused = new Map();
+      const allIds = new Set([...bmRank.keys(), ...denseRank.keys()]);
+      for (const id of allIds) {
+        let s = 0;
+        if (bmRank.has(id)) s += 1 / (k_rrf + bmRank.get(id));
+        if (denseRank.has(id)) s += 1 / (k_rrf + denseRank.get(id));
+        fused.set(id, s);
+      }
+      const ranked = Array.from(fused.entries()).sort((a, b) => b[1] - a[1]).slice(0, k);
+      const nodeMap = new Map();
+      for (const n of (bmRes.nodes || [])) nodeMap.set(n.id, n);
+      for (const r of (denseRes.results || [])) if (r.node) nodeMap.set(r.id, r.node);
+      out.innerHTML = ranked.map(([id, score], rank) => {
+        const node = nodeMap.get(id);
+        const bm = bmRank.has(id) ? `<span style="color:var(--green);">BM25 #${bmRank.get(id) + 1}</span>` : '';
+        const dn = denseRank.has(id) ? `<span style="color:var(--accent);">Dense #${denseRank.get(id) + 1} (${(denseScore.get(id) || 0).toFixed(2)})</span>` : '';
+        const both = [bm, dn].filter(Boolean).join(' · ');
+        const label = node ? escapeHtml(node.label) : escapeHtml(id);
+        const kind = node ? `<span style="color:var(--subtext0);font-size:10px;">[${escapeHtml(node.kind || '')}]</span>` : '';
+        return `
+          <a href="#" class="mind-smart-link" data-id="${escapeHtml(id)}" style="display:block;padding:8px 10px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;margin-bottom:6px;text-decoration:none;color:var(--text);">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+                <span style="font-size:11px;color:var(--subtext0);font-variant-numeric:tabular-nums;">#${rank + 1}</span>
+                ${label} ${kind}
+              </div>
+              <div style="font-size:10px;display:flex;gap:8px;flex-shrink:0;">${both}</div>
+            </div>
+          </a>`;
+      }).join('') || '<span style="color:var(--subtext0);">no matches</span>';
+      out.querySelectorAll('.mind-smart-link').forEach(a => {
+        a.addEventListener('click', (ev) => { ev.preventDefault(); showNodeDetail(a.dataset.id); });
+      });
+    } catch (e) {
+      out.innerHTML = `<span style="color:var(--red);">error: ${escapeHtml(e.message || String(e))}</span>`;
+    }
+  }
+
+  async function embedAll() {
+    if (!confirm('Embed the whole graph? This will call your embedding provider for ~hundreds of nodes.')) return;
+    setStatus('starting embedding...');
+    try {
+      await fetch('/api/mind/embed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      refreshSmartHealth();
+    } catch (_) { /* ignore */ }
   }
 
   // ── Impact view (symbols + blast-radius + call-flow + entrypoints) ──────
@@ -1925,5 +2042,7 @@
     _impactRun: runImpact,
     _flowRun: runFlow,
     _symbolRun: runSymbol,
+    _smartRun: runSmart,
+    _embedAll: embedAll,
   };
 })();

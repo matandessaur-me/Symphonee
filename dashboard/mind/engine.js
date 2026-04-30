@@ -17,6 +17,8 @@ const { cluster } = require('./cluster');
 const { analyze } = require('./analyze');
 const lock = require('./lock');
 const checkpoint = require('./checkpoint');
+const embeddings = require('./embeddings');
+const { VectorStore } = require('./vectors');
 
 const { extractNotes } = require('./extractors/notes');
 const { extractLearnings } = require('./extractors/learnings');
@@ -222,8 +224,114 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     fs.writeFileSync(path.join(store.reportsDir(repoRoot, space), `report-${Date.now()}.md`), report, 'utf8');
   } catch (_) { /* non-fatal */ }
 
+  // Best-effort embedding refresh. Gated behind SYMPHONEE_EMBED_AUTO=1 so we
+  // don't surprise users with a network/model request on every build until
+  // they opt in via Mind > settings.
+  if (process.env.SYMPHONEE_EMBED_AUTO === '1') {
+    try {
+      cp('embedding');
+      onProgress('Embedding nodes for semantic search...');
+      await refreshEmbeddings({ repoRoot, space, graph: out, onProgress, ctx });
+    } catch (err) {
+      onProgress(`Embedding skipped: ${err.message}`);
+    }
+  }
+
   checkpoint.clear(repoRoot, space);
   return { stats, summary, buildMs: out.stats.buildMs };
+}
+
+// Builds (or refreshes) the vector store for the current graph.
+// Embeds at most EMBED_MAX nodes; picks them in this priority:
+//   gods -> code/symbol -> doc -> note -> conversation -> rest
+async function refreshEmbeddings({ repoRoot, space, graph, onProgress = () => {}, ctx = {} }) {
+  const provider = (ctx && ctx.embedProvider) || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+  const EMBED_MAX = Number(process.env.SYMPHONEE_EMBED_MAX || 4000);
+  const BATCH = Number(process.env.SYMPHONEE_EMBED_BATCH || 16);
+
+  const candidates = pickEmbedCandidates(graph, EMBED_MAX);
+  if (!candidates.length) return { embedded: 0, dim: 0, provider };
+
+  const store_ = new VectorStore(repoRoot, space);
+  store_.load();
+
+  // Pull a quick health probe before we start so we fail fast if Ollama is
+  // off rather than mid-batch.
+  const health = await embeddings.health({ provider, fresh: true });
+  if (!health.ok) throw new Error(`embed provider ${provider} unavailable: ${health.error}`);
+
+  if (store_.dim && store_.dim !== health.dimensions) {
+    onProgress(`Embedding dim changed (${store_.dim} -> ${health.dimensions}); rebuilding index`);
+    store_.drop();
+  }
+  if (!store_.dim) store_.init({ dim: health.dimensions, provider, model: process.env.SYMPHONEE_EMBED_MODEL || null });
+
+  let processed = 0;
+  for (let i = 0; i < candidates.length; i += BATCH) {
+    const slice = candidates.slice(i, i + BATCH);
+    const texts = slice.map(c => c.text);
+    let vectors;
+    try {
+      vectors = await embeddings.embed(texts, { provider });
+    } catch (err) {
+      onProgress(`Embed batch ${i}/${candidates.length} failed: ${err.message}`);
+      break;
+    }
+    for (let j = 0; j < slice.length; j++) {
+      if (!vectors[j]) continue;
+      store_.upsert(slice[j].id, vectors[j]);
+    }
+    processed += slice.length;
+    if (processed % 64 === 0) {
+      store_.save();
+      onProgress(`Embedded ${processed}/${candidates.length}`);
+    }
+  }
+  store_.save();
+  return { embedded: processed, dim: store_.dim, provider };
+}
+
+function pickEmbedCandidates(graph, max) {
+  const out = [];
+  const seen = new Set();
+  const godIds = new Set((graph.gods || []).map(g => g.id || g));
+
+  function pushNode(n) {
+    if (!n || !n.id || seen.has(n.id)) return;
+    const text = embedText(n);
+    if (!text) return;
+    seen.add(n.id);
+    out.push({ id: n.id, text });
+  }
+
+  // Priority 1: gods.
+  for (const n of graph.nodes) if (godIds.has(n.id)) pushNode(n);
+  // Priority 2: code/symbol/doc/note/conversation/artifact in that order.
+  for (const order of ['code', 'doc', 'note', 'concept', 'recipe', 'plugin', 'workitem', 'conversation']) {
+    if (out.length >= max) break;
+    for (const n of graph.nodes) {
+      if (out.length >= max) break;
+      if (n.kind === order) pushNode(n);
+    }
+  }
+  // Anything else.
+  for (const n of graph.nodes) {
+    if (out.length >= max) break;
+    pushNode(n);
+  }
+  return out;
+}
+
+function embedText(node) {
+  const parts = [node.label || ''];
+  if (Array.isArray(node.tags) && node.tags.length) parts.push(node.tags.join(' '));
+  if (node.description) parts.push(node.description);
+  if (node.summary) parts.push(node.summary);
+  if (node.answer) parts.push(node.answer);
+  if (node.source && node.source.ref) parts.push(node.source.ref);
+  const t = parts.join(' \n ').trim();
+  if (!t) return null;
+  return t.slice(0, 4000);
 }
 
 function renderReport(graph) {
@@ -246,4 +354,4 @@ function renderReport(graph) {
   return lines.join('\n');
 }
 
-module.exports = { runBuild };
+module.exports = { runBuild, refreshEmbeddings };

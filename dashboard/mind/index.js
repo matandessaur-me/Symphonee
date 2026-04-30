@@ -24,6 +24,8 @@ const { MindWatcher } = require('./watch');
 const lock = require('./lock');
 const checkpoint = require('./checkpoint');
 const impact = require('./impact');
+const embeddings = require('./embeddings');
+const { VectorStore } = require('./vectors');
 
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
@@ -40,6 +42,20 @@ function readBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+async function tryDenseSeeds(repoRoot, space, question, k = 50) {
+  const vs = new VectorStore(repoRoot, space);
+  if (!vs.load() || vs.count() === 0) return null;
+  const provider = vs.provider || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+  let qv;
+  try {
+    qv = await embeddings.embedSingle(question, { provider, model: vs.model || undefined });
+  } catch (_) {
+    return null;
+  }
+  if (!qv) return null;
+  return vs.query(qv, k);
 }
 
 function mountMind(addRoute, json, ctx) {
@@ -401,14 +417,93 @@ function mountMind(addRoute, json, ctx) {
     const space = getSpace();
     const g = store.loadGraph(repoRoot, space);
     if (!g) return json(res, { error: 'graph empty - run /api/mind/build first', empty: true }, 200);
+
+    // If hybrid:false explicitly passed, skip dense entirely.
+    let denseSeeds = null;
+    if (body.hybrid !== false && body.question) {
+      denseSeeds = await tryDenseSeeds(repoRoot, space, body.question, 50).catch(() => null);
+    }
+
     const result = query.runQuery(g, {
       question: body.question || '',
       mode: body.mode || 'bfs',
       budget: body.budget || 2000,
-      seedIds: body.seedIds || null,
+      seedIds: body.seedIds || (denseSeeds && denseSeeds.length ? query.bestSeedsHybrid(g, body.question, 5, { dense: denseSeeds }) : null),
       asOf: body.asOf || null,
     });
+    if (denseSeeds) result.denseSeedCount = denseSeeds.length;
     return json(res, result);
+  });
+
+  // Dense-only semantic search (debug + UI smart-search). Returns ranked nodes
+  // by cosine similarity. The graph has to have been embedded first via
+  // /api/mind/embed (or SYMPHONEE_EMBED_AUTO=1 during build).
+  addRoute('POST', '/api/mind/search-semantic', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const q = body.q || body.query;
+    if (!q) return json(res, { error: 'q required' }, 400);
+    const k = Math.min(50, Math.max(1, body.k || 10));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    const dense = await tryDenseSeeds(repoRoot, space, q, k);
+    if (!dense) return json(res, { error: 'embeddings unavailable - run /api/mind/embed first', q, results: [] }, 200);
+    const nodeMap = new Map(g.nodes.map(n => [n.id, n]));
+    return json(res, {
+      q,
+      k,
+      results: dense.map(r => ({
+        id: r.id,
+        score: r.score,
+        node: nodeMap.get(r.id) || null,
+      })),
+    });
+  });
+
+  addRoute('POST', '/api/mind/embed', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    const acq = lock.acquire(space, 'embed');
+    if (!acq.ok) return json(res, { error: 'embedding already running', holderPid: acq.holderPid }, 409);
+    json(res, { ok: true, started: true, provider: body.provider || 'ollama' });
+    try {
+      const r = await engine.refreshEmbeddings({
+        repoRoot, space, graph: g,
+        ctx: { embedProvider: body.provider || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama' },
+        onProgress: (msg) => {
+          if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-progress', msg } });
+        },
+      });
+      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-complete', result: r } });
+    } catch (err) {
+      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-failed', error: err.message } });
+    } finally {
+      lock.release(space, 'embed');
+    }
+  });
+
+  // ── Health (embeddings + vectors store status) ───────────────────────────
+  addRoute('GET', '/api/mind/health', async (req, res) => {
+    const space = getSpace();
+    const vs = new VectorStore(repoRoot, space);
+    vs.load();
+    const url = new URL(req.url, 'http://x');
+    const provider = url.searchParams.get('provider') || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+    const fresh = url.searchParams.get('fresh') === '1';
+    const h = await embeddings.health({ provider, fresh });
+    return json(res, {
+      space,
+      embeddings: h,
+      vectors: {
+        count: vs.count(),
+        dim: vs.dim,
+        provider: vs.provider,
+        model: vs.model,
+        ok: vs.count() > 0,
+      },
+    });
   });
 
   // ── Q&A feedback loop: save an answer back into the graph ────────────────
@@ -578,11 +673,28 @@ function mountMind(addRoute, json, ctx) {
           });
         } catch (_) { /* graph corrupt - skip wake-up, bootstrap still ships */ }
       }
+      // Vector store presence: cheap (one filesystem stat) but skipped if
+      // the graph is empty since vectors require a graph.
+      let vectorsField = null;
+      if (stats) {
+        try {
+          const vs = new VectorStore(repoRoot, space);
+          vs.load();
+          vectorsField = {
+            enabled: vs.count() > 0,
+            count: vs.count(),
+            dim: vs.dim,
+            provider: vs.provider,
+            model: vs.model,
+          };
+        } catch (_) { /* ignore */ }
+      }
       return {
         enabled: !!stats,
         scope: { space, isGlobal: false },
         graphStats: stats || null,
         wakeup,
+        vectors: vectorsField,
         instructionsUrl: '/api/mind/instructions',
         queryUrl: '/api/mind/query',
         wakeupUrl: '/api/mind/wakeup',

@@ -19,6 +19,7 @@
 const { normLabel } = require('./ids');
 const { bm25Scores } = require('./bm25');
 const { isEdgeValidAt } = require('./schema');
+const { fuse: rrfFuse } = require('./rrf');
 
 const APPROX_TOKENS_PER_NODE = 30;
 const APPROX_TOKENS_PER_EDGE = 8;
@@ -162,4 +163,42 @@ function scaffoldAnswer(question, nodes, edges) {
   };
 }
 
-module.exports = { runQuery, bestSeeds, nodeSearchableText };
+// ── Hybrid seed selection (BM25 + dense via RRF) ───────────────────────────
+//
+// Same surface as bestSeeds but accepts an optional { vectors, queryVector }
+// pair. When dense hits are available, we fuse them with BM25 via RRF and
+// return the fused top-K. When dense isn't available, falls through to
+// existing bestSeeds.
+function bestSeedsHybrid(graph, question, max = 3, opts = {}) {
+  const bm25 = bestSeedsRanked(graph, question, max * 5);
+  const denseHits = opts.dense || null; // [{ id, score }, ...]
+  if (!denseHits || !denseHits.length) {
+    return bm25.slice(0, max).map(r => r.id);
+  }
+  const bmList = bm25.map(r => ({ id: r.id, score: r.score }));
+  bmList._label = 'bm25';
+  const dnList = denseHits.slice();
+  dnList._label = 'dense';
+  const fused = rrfFuse([bmList, dnList], { k: 60, limit: max });
+  return fused.map(r => r.id);
+}
+
+function bestSeedsRanked(graph, question, max = 5) {
+  if (!question) return [];
+  const q = normLabel(question);
+  if (!q) return [];
+  const docs = graph.nodes.map(nodeSearchableText);
+  const raw = bm25Scores(q, docs);
+  const maxBm = Math.max(...raw, 0);
+  if (maxBm <= 0) return [];
+  const godSet = new Set((graph.gods || []).map(g => (typeof g === 'string' ? g : g && g.id)).filter(Boolean));
+  const scored = graph.nodes.map((n, i) => {
+    const base = raw[i] / maxBm;
+    const godBoost = (base > 0 && godSet.has(n.id)) ? 0.15 : 0;
+    return { id: n.id, score: base + godBoost, raw: raw[i] };
+  }).filter(r => r.score > 0);
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, max);
+}
+
+module.exports = { runQuery, bestSeeds, bestSeedsHybrid, bestSeedsRanked, nodeSearchableText };
