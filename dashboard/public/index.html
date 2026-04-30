@@ -662,8 +662,8 @@
 
     /* ── Background Task Pills (floating, bottom-right) ──────────────── */
     .task-float {
-      position: fixed; bottom: 14px; right: 14px; z-index: 2147483647;
-      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+      position: fixed; bottom: 14px; left: 14px; z-index: 9500;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
       pointer-events: none;
     }
     .task-float:empty { display: none; }
@@ -4458,7 +4458,11 @@
     .notif-item-del svg { width: 12px; height: 12px; }
     .notif-item-body {
       font: 11px var(--font-ui); color: var(--subtext1); line-height: 1.45;
-      max-height: 3.6em; overflow: hidden; position: relative;
+      overflow: hidden; position: relative;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow-wrap: anywhere;
     }
     .notif-item-actions {
       display: flex; gap: 6px; margin-top: 8px;
@@ -4480,7 +4484,7 @@
       border-color: var(--accent);
     }
     .notif-item.expanded .notif-item-body {
-      max-height: none; white-space: pre-wrap; word-break: break-word;
+      display: block; max-height: none; white-space: pre-wrap; word-break: break-word;
     }
 
     /* ── Toast notifications ──────────────────────────────────────────────── */
@@ -7252,6 +7256,43 @@ let _notifs = [];
 // Tracks tasks dispatched from the palette / quick-ask so the orchestrator
 // WebSocket handler knows to surface their completion in the notif center.
 const _paletteNotifyTasks = new Set();
+const _paletteDispatchToasts = new Map();
+
+function _showPaletteDispatchToast(taskId, cli, message) {
+  if (!taskId) return;
+  const existing = _paletteDispatchToasts.get(taskId);
+  if (existing && existing.timer) clearTimeout(existing.timer);
+  if (existing && existing.toast && existing.toast.close) existing.toast.close();
+
+  const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli || 'AI';
+  const orchBtn = document.getElementById('orchestratorTabBtn');
+  const canShow = orchBtn && orchBtn.style.display !== 'none';
+  const toastRef = toast(message || ('Sent to ' + cliLabel + ' - you will be notified when it answers'), 'success', {
+    rich: true,
+    duration: 7000,
+    action: canShow ? { label: 'View', onClick: () => switchTab('orchestrator') } : undefined,
+  });
+  _paletteDispatchToasts.set(taskId, { cli, toast: toastRef });
+}
+
+function _schedulePaletteDispatchToast(taskId, cli) {
+  if (!taskId) return;
+  const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli || 'AI';
+  const timer = setTimeout(() => {
+    const current = _paletteDispatchToasts.get(taskId);
+    if (!current || current.timer !== timer) return;
+    _showPaletteDispatchToast(taskId, cli, 'Sent to ' + cliLabel + ' - you will be notified when it answers');
+  }, 900);
+  _paletteDispatchToasts.set(taskId, { cli, timer });
+}
+
+function _clearPaletteDispatchToast(taskId) {
+  const existing = taskId && _paletteDispatchToasts.get(taskId);
+  if (!existing) return;
+  if (existing.timer) clearTimeout(existing.timer);
+  if (existing.toast && existing.toast.close) existing.toast.close();
+  _paletteDispatchToasts.delete(taskId);
+}
 function _loadNotifs() {
   try { _notifs = JSON.parse(localStorage.getItem(NOTIF_KEY) || '[]'); }
   catch (_) { _notifs = []; }
@@ -11670,7 +11711,16 @@ function handleOrchestratorEvent(msg) {
         severity: 'warning',
       });
     }
-    toast(`${fromLabel}: ${reason} - falling back to ${toLabel}`, 'warning', { duration: 5500 });
+    if (msg.taskId) {
+      _clearPaletteDispatchToast(msg.taskId);
+      _showPaletteDispatchToast(
+        msg.taskId,
+        msg.to,
+        `${fromLabel} skipped: ${reason}. Sent to ${toLabel}.`
+      );
+    } else {
+      toast(`${fromLabel}: ${reason} - falling back to ${toLabel}`, 'warning', { rich: true, duration: 6500 });
+    }
     return;
   }
   if (msg.event === 'provider-exhausted') {
@@ -11687,7 +11737,8 @@ function handleOrchestratorEvent(msg) {
         }
       );
     }
-    toast(`All AI providers exhausted (last: ${lastLabel} — ${msg.reason || 'failed'}). Add credits or another API key in Settings.`, 'error', { duration: 8000 });
+    if (msg.taskId) _clearPaletteDispatchToast(msg.taskId);
+    toast(`All AI providers exhausted (last: ${lastLabel} - ${msg.reason || 'failed'}). Add credits or another API key in Settings.`, 'error', { rich: true, duration: 8000 });
     return;
   }
   if (msg.event === 'task-update') {
@@ -11717,6 +11768,7 @@ function handleOrchestratorEvent(msg) {
       const fromTag = task.from === 'palette' || task.from === 'quick-ask';
       if (tracked || fromTag) {
         _paletteNotifyTasks.delete(task.id);
+        _clearPaletteDispatchToast(task.id);
         const cli = task.cli || 'AI';
         const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli;
         const promptSnippet = (task.prompt || '')
@@ -11730,6 +11782,7 @@ function handleOrchestratorEvent(msg) {
         );
       } else if (task.state === 'failed' && (_paletteNotifyTasks.has(task.id))) {
         _paletteNotifyTasks.delete(task.id);
+        _clearPaletteDispatchToast(task.id);
         notify('AI task failed', (task.error || 'Unknown error').toString(), { icon: 'alert-circle' });
       }
     }
@@ -24138,11 +24191,11 @@ async function askAIFromPalette(query, opts) {
     try { body = await res.clone().json(); } catch (_) {}
     const taskId = body && (body.taskId || body.id);
     if (taskId) _paletteNotifyTasks.add(taskId);
-    const orchBtn = document.getElementById('orchestratorTabBtn');
-    const canShow = orchBtn && orchBtn.style.display !== 'none';
-    toast('Sent to ' + cliLabel + ' - you will be notified when it answers', 'success', {
-      action: canShow ? { label: 'View', onClick: () => switchTab('orchestrator') } : undefined,
-    });
+    if (taskId) {
+      _schedulePaletteDispatchToast(taskId, cli);
+    } else {
+      toast('Sent to ' + cliLabel + ' - you will be notified when it answers', 'success', { rich: true });
+    }
     try { orchRefreshTasks(); } catch (_) {}
   } catch (err) {
     toast('Failed to dispatch: ' + (err.message || err), 'error');
