@@ -240,7 +240,7 @@ function mountMind(addRoute, json, ctx) {
 
     // Concurrency guard - if a build is already running, return 409 instead of
     // racing two builds against the same graph.json.
-    const existing = lock.status(space, 'build');
+    const existing = lock.status(space, 'graph');
     if (existing.locked) {
       return json(res, {
         error: 'build already running',
@@ -280,7 +280,7 @@ function mountMind(addRoute, json, ctx) {
     const space = getSpace();
     const sources = body.sources || DEFAULT_BUILD_SOURCES;
 
-    const existing = lock.status(space, 'update');
+    const existing = lock.status(space, 'graph');
     if (existing.locked) {
       return json(res, { error: 'update already running', holderPid: existing.holderPid, ageMs: existing.ageMs }, 409);
     }
@@ -307,6 +307,7 @@ function mountMind(addRoute, json, ctx) {
       space,
       build: lock.status(space, 'build'),
       update: lock.status(space, 'update'),
+      graph: lock.status(space, 'graph'),
       watch: lock.status(space, 'watch'),
       all: lock.listAll(),
     });
@@ -315,7 +316,7 @@ function mountMind(addRoute, json, ctx) {
   addRoute('POST', '/api/mind/lock/clear', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
     const space = getSpace();
-    const op = body.op || 'build';
+    const op = body.op || 'graph';
     const r = lock.terminateHolder(space, op);
     return json(res, { space, op, ...r });
   });
@@ -543,24 +544,27 @@ function mountMind(addRoute, json, ctx) {
     }
 
     const g = store.loadGraph(repoRoot, space);
-    const indexedByName = new Map();
+    const indexedByKey = new Map();
     if (g) {
       for (const n of g.nodes) {
         if (n.kind !== 'artifact') continue;
         if (!n.source || n.source.type !== 'artifact') continue;
-        indexedByName.set(n.label, n);
+        indexedByKey.set(`${n.source.root || ''}::${n.label}`, n);
       }
     }
 
     const groups = repos.map(r => {
       const cfg = readArtifactsConfig(r.path, repoRoot);
-      const enriched = (cfg.artifacts || []).map(a => ({
-        name: a.name,
-        path: a.path,
-        description: a.description || '',
-        indexed: indexedByName.has(a.name),
-        fileCount: indexedByName.get(a.name)?.fileCount || 0,
-      }));
+      const enriched = (cfg.artifacts || []).map(a => {
+        const indexed = indexedByKey.get(`${r.path || ''}::${a.name}`);
+        return {
+          name: a.name,
+          path: a.path,
+          description: a.description || '',
+          indexed: !!indexed,
+          fileCount: indexed?.fileCount || 0,
+        };
+      });
       return {
         repo: r.name,
         repoPath: r.path,

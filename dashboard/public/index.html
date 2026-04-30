@@ -1856,7 +1856,7 @@
     .mind-tab:hover { color: var(--text); }
     .mind-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-    /* ── Mind map sub-ribbon (Graph / Map / Mermaid + actions) ──────────── */
+    /* ── Mind map sub-ribbon (Graph / Map + actions) ────────────────────── */
     .mindmap-ribbon {
       display: flex; align-items: center; gap: 10px;
       padding: 7px 12px;
@@ -5184,7 +5184,7 @@
           <button class="mind-tab mind-view-btn" data-view="search" onclick="MindUI.setView('search')" title="Hybrid semantic + BM25 search with sub-graph + temporal filtering">Search</button>
           <button class="mind-tab mind-view-btn" data-view="impact" onclick="MindUI.setView('impact')" title="Symbol-level call graph - what breaks if I change X?">Impact</button>
           <button class="mind-tab mind-view-btn" data-view="knowledge" onclick="MindUI.setView('knowledge')" title="Project schemas, specs, ADRs declared via .symphonee/context-artifacts.json">Knowledge</button>
-          <button class="mind-tab mind-view-btn" data-view="mindmap" onclick="MindUI.setView('mindmap')" title="The graph itself - switch between graph, community map, and mermaid">Mind map</button>
+          <button class="mind-tab mind-view-btn" data-view="mindmap" onclick="MindUI.setView('mindmap')" title="The graph itself - switch between graph and community map">Mind map</button>
         </div>
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>

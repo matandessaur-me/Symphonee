@@ -380,11 +380,11 @@
 
   // ── Unified Mind map view ───────────────────────────────────────────────
   // Persistent sub-ribbon + dedicated body. Body contents swap based on
-  // mode (graph / map / mermaid); the ribbon stays put so switching view
+  // mode (graph / map); the ribbon stays put so switching view
   // never feels like leaving the tab.
   function renderMindmap() {
-    // Mermaid removed from the segmented control - kept as a one-click "Copy
-    // mermaid source" action for pasting into chat / docs context.
+    // Mermaid output remains available through /api/mind/visualize for AI and
+    // integration use, but is no longer exposed as a user-facing view action.
     let mode = state.mindmapMode || 'graph';
     if (mode === 'mermaid') mode = state.mindmapMode = 'graph';
     const main = $('mindMain');
@@ -398,7 +398,6 @@
         <span class="mindmap-ribbon-spacer"></span>
         <span class="mindmap-ribbon-hint" id="mindmapHint">${mindmapHint(mode)}</span>
         <span class="mindmap-ribbon-spacer"></span>
-        <button class="mindmap-ribbon-btn" id="mindmapCopyMermaid" title="Copy a mermaid source representation for pasting into chat / docs">Copy mermaid</button>
       </div>
       <div id="mindmapBody" class="mindmap-body"></div>`;
     main.querySelectorAll('.mindmap-seg-btn').forEach(btn => {
@@ -407,8 +406,6 @@
         render();
       });
     });
-    const copyBtn = main.querySelector('#mindmapCopyMermaid');
-    if (copyBtn) copyBtn.addEventListener('click', copyMermaidSource);
     renderInBody(mode);
   }
 

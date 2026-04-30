@@ -35,17 +35,18 @@ const adapterRegistry = require('./extractors/base');
 
 async function runBuild({ repoRoot, space, sources = [], incremental = false, ctx = {}, onProgress = () => {} }) {
   const opName = incremental ? 'update' : 'build';
-  const acq = lock.acquire(space, opName);
+  const acq = lock.acquire(space, 'graph');
   if (!acq.ok) {
-    const err = new Error(`mind ${opName} already running (pid ${acq.holderPid || 'unknown'})`);
+    const err = new Error(`mind graph operation already running (pid ${acq.holderPid || 'unknown'})`);
     err.code = 'MIND_LOCKED';
     err.holderPid = acq.holderPid || null;
+    err.opName = opName;
     throw err;
   }
   try {
     return await _runBuildInner({ repoRoot, space, sources, incremental, ctx, onProgress });
   } finally {
-    lock.release(space, opName);
+    lock.release(space, 'graph');
   }
 }
 
@@ -118,8 +119,9 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     for (const [repoName, repoPath] of entries) {
       if (!repoPath) continue;
       onProgress(`Extracting repo code from ${repoName} (${repoPath})...`);
-      const f = extractRepoCode({ activeRepoPath: repoPath, manifest });
-      const tagId = `cwd_${String(repoName).replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase()}`;
+      const repoSlug = String(repoName).replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase();
+      const f = extractRepoCode({ activeRepoPath: repoPath, manifest, idPrefix: `repo_${repoSlug}` });
+      const tagId = `cwd_${repoSlug}`;
       f.nodes.push({ id: tagId, label: '@' + repoName, kind: 'tag' });
       const newEdges = f.nodes
         .filter(n => n.id !== tagId)
@@ -152,9 +154,20 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
   if (sources.includes('context-artifacts')) {
     cp('extract:context-artifacts');
     onProgress('Extracting context artifacts (.symphonee/context-artifacts.json)...');
-    const f = extractContextArtifacts({ repoRoot, activeRepoPath, manifest, incremental });
-    fragments.push(f);
-    summary.contextArtifacts = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length, configPath: f.configPath, error: f.error };
+    const repoMap = typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {};
+    const entries = Object.entries(repoMap).filter(([, p]) => typeof p === 'string' && p.length);
+    if (!entries.length && activeRepoPath) entries.push(['__active__', activeRepoPath]);
+    const totals = { scanned: 0, skippedUnchanged: 0, nodes: 0, edges: 0, perRepo: {} };
+    for (const [repoName, repoPath] of entries) {
+      const f = extractContextArtifacts({ repoRoot, activeRepoPath: repoPath, manifest, incremental, repoName });
+      fragments.push(f);
+      totals.scanned += f.scanned || 0;
+      totals.skippedUnchanged += f.skippedUnchanged || 0;
+      totals.nodes += f.nodes.length;
+      totals.edges += f.edges.length;
+      totals.perRepo[repoName] = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length, configPath: f.configPath, error: f.error };
+    }
+    summary.contextArtifacts = totals;
   }
 
   // Third-party source adapters registered via dashboard/mind/extractors/base.js.

@@ -245,7 +245,7 @@ function resolveCalls(allRawCalls, allNodes, createdBy) {
 
 // ── Driver ───────────────────────────────────────────────────────────────────
 
-function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code', limit = MAX_FILES }) {
+function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code', limit = MAX_FILES, idPrefix = null }) {
   if (!activeRepoPath || !fs.existsSync(activeRepoPath)) {
     return { nodes: [], edges: [], scanned: 0, skippedCache: 0 };
   }
@@ -278,7 +278,8 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
     const sha = hashContent(buf);
 
     // Skip unchanged files when an incremental run is happening (manifest hit).
-    const prev = manifest && manifest.get(rel);
+    const manifestKey = idPrefix ? `${idPrefix}:${rel}` : rel;
+    const prev = manifest && manifest.get(manifestKey);
     if (prev && prev.sha256 === sha && prev.cachedFragment) {
       try {
         const cached = JSON.parse(prev.cachedFragment);
@@ -322,7 +323,7 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
     if (frag.rawCalls) allRawCalls.push(frag.rawCalls);
 
     if (manifest) {
-      manifest.set(rel, {
+      manifest.set(manifestKey, {
         sha256: sha, lastExtractedAt: Date.now(),
         contributors: [createdBy],
         cachedFragment: JSON.stringify({ nodes: frag.nodes, edges: frag.edges, rawCalls: frag.rawCalls }),
@@ -335,7 +336,29 @@ function extractRepoCode({ activeRepoPath, manifest, createdBy = 'mind/repo-code
   const callEdges = resolveCalls(allRawCalls, allNodes, createdBy);
   allEdges.push(...callEdges);
 
-  return { nodes: allNodes, edges: allEdges, scanned, skippedCache, aliasesUsed: aliases.aliases.length };
+  const out = { nodes: allNodes, edges: allEdges, scanned, skippedCache, aliasesUsed: aliases.aliases.length };
+  return idPrefix ? namespaceFragmentIds(out, idPrefix) : out;
+}
+
+function namespaceFragmentIds(fragment, idPrefix) {
+  const prefix = String(idPrefix).replace(/[^a-zA-Z0-9_]+/g, '_');
+  if (!prefix) return fragment;
+  const nodeIds = new Set(fragment.nodes.map(n => n.id));
+  const mapId = (id) => nodeIds.has(id) ? `${prefix}__${id}` : id;
+
+  fragment.nodes = fragment.nodes.map(n => ({ ...n, id: mapId(n.id) }));
+  fragment.edges = fragment.edges.map(e => ({
+    ...e,
+    source: mapId(e.source),
+    target: mapId(e.target),
+  }));
+  if (Array.isArray(fragment.rawCalls)) {
+    fragment.rawCalls = fragment.rawCalls.map(call => ({
+      ...call,
+      from: mapId(call.from),
+    }));
+  }
+  return fragment;
 }
 
 module.exports = { extractRepoCode, walk };
