@@ -6492,9 +6492,11 @@ requestAnimationFrame(fitTerminalNow);
           const tid = msg.termId || 'main';
           const inst = termInstances.get(tid);
           if (inst) inst.cwd = msg.cwd || inst.cwd || '';
-          if (tid === activeTermId && msg.repo && msg.repo !== activeRepo) {
-            selectRepo(msg.repo);
-          }
+          // INTENTIONALLY do NOT auto-switch activeRepo when the terminal
+          // cwd lands in a known repo. The user picks the repo from the
+          // sidebar; cd-ing inside the terminal must not hijack that
+          // selection. Symphonee's tools (scripts/, Mind, intelligence)
+          // assume the terminal stays at Symphonee's own path.
           break;
         }
         case 'term-spawned': {
