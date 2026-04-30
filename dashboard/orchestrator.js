@@ -583,6 +583,7 @@ class Orchestrator extends EventEmitter {
   spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, space, _retryAttempt = 0 }) {
     const cfg = HEADLESS_FLAGS[cli];
     if (!cfg) throw new Error(`Unknown CLI: "${cli}". Use: ${Object.keys(HEADLESS_FLAGS).join(', ')}`);
+    const originalPrompt = prompt;
 
     // Mind hint: prepend the metadata stamp + L0+L1 wake-up. Pass the
     // worker's own prompt to the hint so L1 becomes the BFS sub-graph
@@ -625,6 +626,7 @@ class Orchestrator extends EventEmitter {
       space: space || null,
       timeout: 0,  // Never timeout — AI runs as long as it needs
     });
+    task._originalPrompt = originalPrompt;
 
     // Build final args based on how this CLI expects the prompt
     const finalArgs = [...cfg.args];
@@ -819,7 +821,7 @@ class Orchestrator extends EventEmitter {
             task._escalationChain = ESCALATION_ORDER
               .filter(c => c !== cli && this.circuitBreaker.isAvailable(c));
           }
-          task._escalationPrompt = task._escalationPrompt || prompt;
+          task._escalationPrompt = task._escalationPrompt || originalPrompt;
           task._escalationCwd = task._escalationCwd || cwd;
         }
 
@@ -1792,8 +1794,11 @@ class Orchestrator extends EventEmitter {
     this.broadcast({ type: 'orchestrator-event', event: 'task-escalate', taskId: task.id, from: task.cli, to: nextCli, timestamp: Date.now() });
 
     try {
+      const classified = task.errorClassification || {};
       const checkpoint = this.checkpoints.get(task.id);
-      const enhancedPrompt = checkpoint
+      const enhancedPrompt = classified.failover
+        ? task._escalationPrompt
+        : checkpoint
         ? `[Previous attempt by ${task.cli} produced partial results]:\n${checkpoint.partial.substring(0, 1000)}\n\n[Retry with ${nextCli}]:\n${task._escalationPrompt}`
         : task._escalationPrompt;
 
@@ -1802,7 +1807,6 @@ class Orchestrator extends EventEmitter {
       newTask._escalationChain = task._escalationChain;
       newTask._escalationPrompt = task._escalationPrompt;
       newTask._escalationCwd = task._escalationCwd;
-      const classified = task.errorClassification || {};
       this.broadcast({
         type: 'orchestrator-event',
         event: 'provider-failover',
