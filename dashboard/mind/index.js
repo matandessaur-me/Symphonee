@@ -441,7 +441,12 @@ function mountMind(addRoute, json, ctx) {
       return json(res, { mode, mermaid: viz.mermaidGraph(g, { focus: body.focus || null, max: body.max || 200 }) });
     }
     if (mode === 'interactive') {
-      const out = viz.writeInteractive(g, { focus: body.focus || null, layout: body.layout || 'cose', title: `Mind: ${space}` });
+      const opts = { focus: body.focus || null, layout: body.layout || 'cose', title: `Mind: ${space}` };
+      if (body.inline) {
+        const html = viz.interactiveHtml(g, opts);
+        return json(res, { mode, html, openIn: 'inline' });
+      }
+      const out = viz.writeInteractive(g, opts);
       return json(res, { mode, ...out, openIn: 'webview' });
     }
     return json(res, { error: 'mode must be mermaid or interactive' }, 400);

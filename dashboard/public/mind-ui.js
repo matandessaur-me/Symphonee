@@ -506,18 +506,29 @@
       stage.innerHTML = svg;
       const svgEl = stage.querySelector('svg');
       if (svgEl) {
-        // Strip any size constraints so the SVG renders at its natural size,
-        // then we control sizing via CSS transforms in the pan/zoom layer.
-        svgEl.removeAttribute('width');
-        svgEl.removeAttribute('height');
-        svgEl.style.width = 'auto';
-        svgEl.style.height = 'auto';
+        // Force the SVG to render at its viewBox's intrinsic size so the
+        // pan/zoom transform has a real layout box to work with. mermaid v10
+        // emits style="max-width: 100%" which scales the SVG to its parent's
+        // width and breaks our zoom math; strip that and lock the explicit
+        // pixel size from the viewBox.
+        svgEl.removeAttribute('style');
+        const vb = svgEl.getAttribute('viewBox');
+        if (vb) {
+          const parts = vb.split(/\s+/).map(Number);
+          if (parts.length === 4) {
+            svgEl.setAttribute('width', parts[2]);
+            svgEl.setAttribute('height', parts[3]);
+          }
+        }
+        svgEl.style.display = 'block';
         svgEl.style.maxWidth = 'none';
         svgEl.style.maxHeight = 'none';
-        svgEl.style.display = 'block';
       }
       attachPanZoom();
-      // Auto-fit on first paint after the SVG has measurements.
+      // Auto-fit twice: once now (rough), once on next frame after the
+      // browser has measured the SVG (precise). Fixes the "diagram appears
+      // far off-screen at 10%" first-paint glitch.
+      fitMermaid();
       requestAnimationFrame(() => fitMermaid());
     } catch (e) {
       stage.innerHTML = `
@@ -756,17 +767,56 @@
   async function openInteractive() {
     setStatus('generating interactive graph...');
     try {
-      const r = await fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'interactive', layout: 'cose' }) });
+      const r = await fetch('/api/mind/visualize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'interactive', layout: 'cose', inline: true }),
+      });
       const data = await r.json();
       if (data.error) { setStatus('viz error: ' + data.error); return; }
-      if (data.path) {
-        const url = 'file:///' + data.path.replace(/\\/g, '/');
-        window.open(url, 'symphonee-mind-viz', 'width=1400,height=900,resizable=yes,scrollbars=yes');
-        setStatus('interactive graph opened (' + Math.round((data.bytes || 0) / 1024) + 'KB)');
-      }
+      if (!data.html) { setStatus('viz: server returned no html'); return; }
+      showInteractiveModal(data.html);
+      setStatus('interactive graph opened');
     } catch (e) {
       setStatus('viz error: ' + (e.message || e));
     }
+  }
+
+  function showInteractiveModal(html) {
+    const existing = document.getElementById('mindInteractiveModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'mindInteractiveModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;backdrop-filter:blur(4px);';
+    modal.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--mantle);border-bottom:1px solid var(--surface0);">
+        <span style="font:600 12px var(--font-ui);color:var(--text);">Interactive Mind graph</span>
+        <span style="font:11px var(--font-ui);color:var(--subtext0);">drag to pan · wheel to zoom · click a node · right-click for blast radius</span>
+        <span style="flex:1;"></span>
+        <button id="mindInteractivePopout" class="mindmap-ribbon-btn" title="Open in a separate window">Detach</button>
+        <button id="mindInteractiveClose" class="mindmap-ribbon-btn primary" title="Close (Esc)">Close</button>
+      </div>
+      <iframe id="mindInteractiveFrame" sandbox="allow-scripts allow-same-origin" style="flex:1;width:100%;border:none;background:#1e1e2e;"></iframe>`;
+    document.body.appendChild(modal);
+    const frame = document.getElementById('mindInteractiveFrame');
+    if (frame) frame.srcdoc = html;
+    const close = () => { modal.remove(); document.removeEventListener('keydown', onEsc); };
+    function onEsc(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onEsc);
+    document.getElementById('mindInteractiveClose').onclick = close;
+    document.getElementById('mindInteractivePopout').onclick = async () => {
+      // Detach: write the html to a blob URL and open in a new tab. Works
+      // in regular browsers; if Electron blocks, the user keeps the modal.
+      try {
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');
+        if (!w) setStatus('Detach blocked - keeping inline view');
+        else close();
+      } catch (e) {
+        setStatus('Detach failed: ' + (e.message || e));
+      }
+    };
   }
 
   async function embedAll() {
