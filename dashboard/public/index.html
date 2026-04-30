@@ -11697,6 +11697,16 @@ function handleOrchestratorEvent(msg) {
       : '';
     const reason = msg.reason || 'provider error';
     const body = `${fromLabel} was skipped: ${reason}. Falling back to ${toLabel}.${chain ? ' Remaining chain: ' + chain + '.' : ''}`;
+    if (msg.taskId) {
+      _orchTaskOutput.delete(msg.taskId);
+      const outputEl = document.querySelector(`.orch-task-output[data-output-id="${msg.taskId}"]`);
+      if (outputEl) outputEl.textContent = '';
+      const stepEl = document.querySelector(`.orch-task-step[data-step-id="${msg.taskId}"]`);
+      if (stepEl) {
+        stepEl.textContent = 'Working...';
+        stepEl.removeAttribute('title');
+      }
+    }
     if (typeof notify === 'function') {
       notify('AI provider skipped', body, {
         icon: 'alert-triangle',
