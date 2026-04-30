@@ -23,6 +23,7 @@ const { sanitizeLabel, validateUrl } = require('./security');
 const { MindWatcher } = require('./watch');
 const lock = require('./lock');
 const checkpoint = require('./checkpoint');
+const impact = require('./impact');
 
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
@@ -298,6 +299,72 @@ function mountMind(addRoute, json, ctx) {
     const space = getSpace();
     const cp = checkpoint.read(repoRoot, space);
     return json(res, { space, checkpoint: cp });
+  });
+
+  // ── Impact / call-flow / symbols / entrypoints / circular ───────────────
+  // The "Mind got smarter" surface. Every endpoint reads the persisted graph
+  // and computes on demand - no extra storage. Cheap because the graph is
+  // already in memory after the first read.
+  addRoute('POST', '/api/mind/impact', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const target = body.target || body.symbol || body.file;
+    const depth = Number.isFinite(body.depth) ? body.depth : 3;
+    if (!target) return json(res, { error: 'target required' }, 400);
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    return json(res, impact.getImpact(g, String(target), depth));
+  });
+
+  addRoute('POST', '/api/mind/flow', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const entry = body.entrypoint || body.target;
+    const depth = Number.isFinite(body.depth) ? body.depth : 5;
+    if (!entry) return json(res, { error: 'entrypoint required' }, 400);
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    const flow = impact.getCallFlow(g, String(entry), depth);
+    if (!flow) return json(res, { error: 'entrypoint not found' }, 404);
+    return json(res, { entrypoint: String(entry), depth, flow });
+  });
+
+  addRoute('POST', '/api/mind/symbol', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.name) return json(res, { error: 'name required' }, 400);
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    return json(res, { name: body.name, results: impact.getSymbolContext(g, body.name, body.file) });
+  });
+
+  addRoute('POST', '/api/mind/symbols', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    return json(res, {
+      results: impact.listSymbols(g, {
+        file: body.file,
+        query: body.query,
+        limit: Number.isFinite(body.limit) ? body.limit : 200,
+      }),
+    });
+  });
+
+  addRoute('POST', '/api/mind/entrypoints', async (req, res) => {
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    return json(res, { entrypoints: impact.detectEntrypoints(g) });
+  });
+
+  addRoute('POST', '/api/mind/circular', async (req, res) => {
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    const cycles = impact.detectCircular(g);
+    return json(res, { count: cycles.length, cycles });
   });
 
   // ── Quality (resolved-import ratio + unresolved examples) ────────────────

@@ -353,8 +353,223 @@
     else if (state.view === 'query') renderQuery();
     else if (state.view === 'communities') renderCommunities();
     else if (state.view === 'hotspots') renderHotspots();
+    else if (state.view === 'impact') renderImpact();
+    else if (state.view === 'knowledge') renderKnowledge();
     else if (state.view === 'map') renderMap();
     else if (state.view === 'graph') renderGraph();
+  }
+
+  // ── Impact view (symbols + blast-radius + call-flow + entrypoints) ──────
+  async function renderImpact() {
+    const main = $('mindMain');
+    if (!main) return;
+    main.innerHTML = `
+      <div class="mind-card" style="max-width:1200px;margin:0 auto;">
+        <div class="mind-card-title">Impact analysis</div>
+        <div style="font-size:12px;color:var(--subtext0);margin-bottom:14px;line-height:1.6;">
+          Symbol-level call graph. <b>What breaks if I rename X?</b> · <b>What does this entrypoint actually do?</b> · <b>Who calls Y and what does Y call?</b>
+        </div>
+        <div id="mindCircularBanner" style="display:none;margin-bottom:12px;"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Blast radius</div>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <input id="mindImpactTarget" type="text" placeholder="symbol name or relative file path" style="flex:1;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+              <input id="mindImpactDepth" type="number" value="3" min="1" max="8" style="width:54px;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+              <button class="tab-bar-btn" onclick="MindUI._impactRun()" style="padding:6px 10px;font-size:11px;">Run</button>
+            </div>
+            <div id="mindImpactOut" style="font-size:11px;color:var(--text);max-height:320px;overflow:auto;"></div>
+          </div>
+          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Call flow (forward)</div>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <input id="mindFlowTarget" type="text" placeholder="entrypoint symbol or file" style="flex:1;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+              <input id="mindFlowDepth" type="number" value="5" min="1" max="10" style="width:54px;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+              <button class="tab-bar-btn" onclick="MindUI._flowRun()" style="padding:6px 10px;font-size:11px;">Trace</button>
+            </div>
+            <div id="mindFlowOut" style="font-size:11px;color:var(--text);max-height:320px;overflow:auto;"></div>
+          </div>
+          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Symbol 360°</div>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <input id="mindSymTarget" type="text" placeholder="symbol name" style="flex:1;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
+              <button class="tab-bar-btn" onclick="MindUI._symbolRun()" style="padding:6px 10px;font-size:11px;">Look up</button>
+            </div>
+            <div id="mindSymOut" style="font-size:11px;color:var(--text);max-height:320px;overflow:auto;"></div>
+          </div>
+          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Entrypoints</div>
+            <div id="mindEntrypointsOut" style="font-size:11px;color:var(--text);max-height:380px;overflow:auto;">Loading...</div>
+          </div>
+        </div>
+      </div>`;
+
+    // Auto-load entrypoints + circular detection
+    try {
+      const r = await fetch('/api/mind/entrypoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await r.json();
+      const out = $('mindEntrypointsOut');
+      if (out) {
+        if (!data.entrypoints || data.entrypoints.length === 0) {
+          out.innerHTML = '<span style="color:var(--subtext0);">No entrypoints detected.</span>';
+        } else {
+          out.innerHTML = data.entrypoints.slice(0, 60).map(e => `
+            <div style="padding:6px 8px;border-bottom:1px solid var(--surface0);display:flex;justify-content:space-between;gap:8px;">
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+                <a href="#" class="mind-ep-link" data-ep="${escapeHtml(e.label || e.id)}" style="color:var(--accent);text-decoration:none;">${escapeHtml(e.label)}</a>
+                <span style="color:var(--subtext0);font-size:10px;"> ${escapeHtml(e.file || '')}${e.line ? ':' + e.line : ''}</span>
+              </div>
+              <span style="color:var(--subtext0);font-size:10px;">${escapeHtml((e.reasons || []).join(','))}</span>
+            </div>`).join('');
+          out.querySelectorAll('.mind-ep-link').forEach(a => {
+            a.addEventListener('click', (ev) => {
+              ev.preventDefault();
+              const t = $('mindFlowTarget');
+              if (t) { t.value = a.dataset.ep; runFlow(); }
+            });
+          });
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    try {
+      const r = await fetch('/api/mind/circular', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await r.json();
+      const banner = $('mindCircularBanner');
+      if (banner && data.count > 0) {
+        banner.style.display = 'block';
+        banner.innerHTML = `
+          <div style="background:#3b1818;border:1px solid var(--red);color:var(--red);padding:8px 12px;border-radius:4px;font-size:11px;">
+            ⚠ ${data.count} circular dependenc${data.count === 1 ? 'y' : 'ies'} detected. ${(data.cycles[0] || []).slice(0, 3).join(' → ')}${(data.cycles[0] || []).length > 3 ? ' →' : ''}
+          </div>`;
+      } else if (banner) {
+        banner.style.display = 'none';
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  async function runImpact() {
+    const target = ($('mindImpactTarget') && $('mindImpactTarget').value || '').trim();
+    const depth = parseInt(($('mindImpactDepth') && $('mindImpactDepth').value) || '3', 10);
+    const out = $('mindImpactOut');
+    if (!out) return;
+    if (!target) { out.innerHTML = '<span style="color:var(--subtext0);">enter a symbol name or file path</span>'; return; }
+    out.innerHTML = '<span style="color:var(--subtext0);">computing...</span>';
+    try {
+      const r = await fetch('/api/mind/impact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, depth }) });
+      const data = await r.json();
+      if (data.error) { out.textContent = data.error; return; }
+      const colors = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d5', '#74c7ec'];
+      const hopBlocks = Object.keys(data.filesByDepth || {}).map(hop => {
+        const c = colors[(parseInt(hop, 10) - 1) % colors.length];
+        const files = data.filesByDepth[hop] || [];
+        return `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;color:${c};font-weight:600;margin-bottom:3px;">Hop ${hop} (${files.length} file${files.length === 1 ? '' : 's'})</div>
+            ${files.map(f => `<div style="padding:2px 6px;border-left:2px solid ${c};margin:1px 0;font-family:monospace;">${escapeHtml(f)}</div>`).join('')}
+          </div>`;
+      }).join('');
+      out.innerHTML = `
+        <div style="margin-bottom:6px;color:var(--subtext0);">
+          ${escapeHtml(data.targetKind)} <b style="color:var(--text);">${escapeHtml(data.target)}</b> · ${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'} affected${data.truncated ? ' (truncated)' : ''}
+        </div>
+        ${hopBlocks || '<span style="color:var(--subtext0);">no callers found</span>'}`;
+    } catch (e) { out.textContent = 'error: ' + (e.message || e); }
+  }
+
+  async function runFlow() {
+    const target = ($('mindFlowTarget') && $('mindFlowTarget').value || '').trim();
+    const depth = parseInt(($('mindFlowDepth') && $('mindFlowDepth').value) || '5', 10);
+    const out = $('mindFlowOut');
+    if (!out) return;
+    if (!target) { out.innerHTML = '<span style="color:var(--subtext0);">pick an entrypoint</span>'; return; }
+    out.innerHTML = '<span style="color:var(--subtext0);">tracing...</span>';
+    try {
+      const r = await fetch('/api/mind/flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entrypoint: target, depth }) });
+      const data = await r.json();
+      if (data.error) { out.textContent = data.error; return; }
+      function render(node, indent) {
+        const pre = '  '.repeat(indent);
+        const tail = node.truncated ? ` <span style="color:var(--yellow);">[${node.truncated}]</span>` : '';
+        const fileTag = node.file ? `<span style="color:var(--subtext0);font-size:10px;"> ${escapeHtml(node.file)}${node.line ? ':' + node.line : ''}</span>` : '';
+        let html = `<div style="font-family:monospace;white-space:pre;">${pre}└ <span style="color:var(--text);">${escapeHtml(node.label)}</span>${fileTag}${tail}</div>`;
+        for (const c of node.children || []) html += render(c, indent + 1);
+        return html;
+      }
+      out.innerHTML = render(data.flow, 0);
+    } catch (e) { out.textContent = 'error: ' + (e.message || e); }
+  }
+
+  async function runSymbol() {
+    const name = ($('mindSymTarget') && $('mindSymTarget').value || '').trim();
+    const out = $('mindSymOut');
+    if (!out) return;
+    if (!name) { out.innerHTML = '<span style="color:var(--subtext0);">enter a symbol name</span>'; return; }
+    out.innerHTML = '<span style="color:var(--subtext0);">looking up...</span>';
+    try {
+      const r = await fetch('/api/mind/symbol', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+      const data = await r.json();
+      if (!data.results || data.results.length === 0) {
+        out.innerHTML = '<span style="color:var(--subtext0);">no matches</span>';
+        return;
+      }
+      out.innerHTML = data.results.map(s => `
+        <div style="margin-bottom:10px;padding:8px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;">
+          <div style="font-weight:600;color:var(--text);font-size:12px;">${escapeHtml(s.name)} <span style="color:var(--subtext0);font-weight:normal;font-size:10px;">${escapeHtml(s.file || '')}${s.line ? ':' + s.line : ''}</span></div>
+          <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <div style="color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Callers (${s.callers.length})</div>
+              ${s.callers.slice(0, 12).map(c => `<div style="font-family:monospace;font-size:11px;">← ${escapeHtml(c.name || c.id)} <span style="color:var(--subtext0);font-size:10px;">${escapeHtml(c.file || '')}</span></div>`).join('') || '<span style="color:var(--subtext0);font-size:10px;">none</span>'}
+            </div>
+            <div>
+              <div style="color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Callees (${s.callees.length})</div>
+              ${s.callees.slice(0, 12).map(c => `<div style="font-family:monospace;font-size:11px;">→ ${escapeHtml(c.name || c.id)} <span style="color:var(--subtext0);font-size:10px;">${escapeHtml(c.file || '')}</span></div>`).join('') || '<span style="color:var(--subtext0);font-size:10px;">none</span>'}
+            </div>
+          </div>
+        </div>`).join('');
+    } catch (e) { out.textContent = 'error: ' + (e.message || e); }
+  }
+
+  // ── Knowledge view (Phase 4 placeholder; populated when artifacts ship) ─
+  async function renderKnowledge() {
+    const main = $('mindMain');
+    if (!main) return;
+    main.innerHTML = `
+      <div class="mind-card" style="max-width:1100px;margin:0 auto;">
+        <div class="mind-card-title">Project knowledge</div>
+        <div style="font-size:12px;color:var(--subtext0);margin-bottom:12px;line-height:1.6;">
+          Schemas, OpenAPI specs, ADRs, glossaries declared in <code>.symphonee/context-artifacts.json</code>. The AI consults these before answering.
+        </div>
+        <div id="mindKnowledgeList" style="font-size:12px;color:var(--text);">Loading...</div>
+      </div>`;
+    try {
+      const r = await fetch('/api/mind/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await r.json();
+      const list = $('mindKnowledgeList');
+      if (!list) return;
+      if (!data.artifacts || data.artifacts.length === 0) {
+        list.innerHTML = `
+          <div style="padding:14px;background:var(--base);border:1px dashed var(--surface1);border-radius:6px;color:var(--subtext0);">
+            No artifacts declared. Create <code>.symphonee/context-artifacts.json</code> in the active repo with entries like:
+            <pre style="background:var(--mantle);padding:10px;margin-top:8px;border-radius:4px;font-size:11px;color:var(--text);overflow:auto;">{
+  "artifacts": [
+    { "name": "schema", "path": "./docs/schema.sql",
+      "description": "Postgres schema. Check before writing migrations." }
+  ]
+}</pre>
+          </div>`;
+        return;
+      }
+      list.innerHTML = data.artifacts.map(a => `
+        <div style="padding:10px 12px;background:var(--base);border:1px solid var(--surface0);border-radius:6px;margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <div style="font-weight:600;font-size:13px;color:var(--text);">${escapeHtml(a.name)}</div>
+            <div style="font-size:10px;color:${a.indexed ? 'var(--green)' : 'var(--subtext0)'};">${a.indexed ? 'indexed' : 'not indexed'} · ${a.fileCount || 0} file${(a.fileCount || 0) === 1 ? '' : 's'}</div>
+          </div>
+          <div style="font-size:11px;color:var(--subtext0);margin:4px 0;">${escapeHtml(a.path || '')}</div>
+          <div style="font-size:11px;color:var(--text);line-height:1.5;">${escapeHtml(a.description || '')}</div>
+        </div>`).join('');
+    } catch (_) { /* ignore */ }
   }
 
   // ── Wake-up view ──────────────────────────────────────────────────────────
@@ -1707,5 +1922,8 @@
     refreshLock, refreshQuality,
     _wakeupRefresh: refreshWakeupOutput,
     _queryRun: runQueryFromUi,
+    _impactRun: runImpact,
+    _flowRun: runFlow,
+    _symbolRun: runSymbol,
   };
 })();
