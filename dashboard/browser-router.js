@@ -244,6 +244,35 @@ function _stagehandFallbackReason(r, fallback) {
   return 'Stagehand unavailable';
 }
 
+function _stringifyResultForSignals(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value); } catch (_) { return String(value); }
+}
+
+function _shouldFallbackFromInAppAgent(r) {
+  if (!r || typeof r.status !== 'number') return false;
+  if (r.status === 408 || r.status === 504) return true;
+  const body = r.body || {};
+  if (body.ok !== false) return false;
+  const text = _stringifyResultForSignals(body).toLowerCase();
+
+  // Retry when the in-app webview can load the site shell but the agent
+  // reports that the real work surface is hidden, virtualized, canvas-backed,
+  // or otherwise not interactable through its normal browser tools.
+  return /(?:can't|cannot|unable to|not able to|could not|couldn't)\s+(?:see|view|read|inspect|access|interact|click|edit|find|locate|detect)/.test(text)
+    || /(?:not visible|not accessible|inaccessible|not interactable|can't interact|cannot interact|unable to interact)/.test(text)
+    || /(?:canvas|iframe|embedded|virtualized|shadow dom|webview|spreadsheet|worksheet|cell|grid).{0,120}(?:can't|cannot|unable|not visible|not accessible|not interactable|inaccessible)/.test(text)
+    || /(?:can't|cannot|unable|not able).{0,120}(?:canvas|iframe|embedded|virtualized|spreadsheet|worksheet|cell|grid)/.test(text);
+}
+
+function _stagehandBodyForInAppFallback(body) {
+  const next = { ...(body || {}) };
+  if (!next.mode && !next.schema) next.mode = 'agent';
+  if (next.mode === 'agent' && !Number.isFinite(next.maxSteps)) next.maxSteps = 12;
+  return next;
+}
+
 function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port } = {}) {
   const settingsFor = () => {
     try {
@@ -320,6 +349,35 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
         : driver === 'stagehand'
           ? await _dispatchStagehand(_port, body)
           : await _dispatchBrowserUse(_port, body);
+
+      if (driver === 'in-app-agent' && _shouldFallbackFromInAppAgent(r) && await _stagehandReachable(_port)) {
+        fallbacks.push({
+          from: 'in-app-agent',
+          to: 'stagehand',
+          reason: 'in-app agent reported an inaccessible or non-interactable page surface',
+        });
+        if (typeof broadcast === 'function') {
+          try { broadcast({ type: 'browser-router-dispatch', phase: 'start', driver: 'stagehand', decision, fallbacks, at: Date.now() }); } catch (_) {}
+        }
+        const stagehandBody = _stagehandBodyForInAppFallback(body);
+        const r2 = await _dispatchStagehand(_port, stagehandBody);
+        if (!_shouldFallbackFromStagehand(r2)) {
+          if (typeof broadcast === 'function') { try { broadcast({ type: 'browser-router-dispatch', phase: 'end', driver: 'stagehand', decision, fallbacks, at: Date.now() }); } catch (_) {} }
+          return json(res, {
+            ok: r2.status >= 200 && r2.status < 300 && r2.body && r2.body.ok !== false,
+            driver: 'stagehand', decision, fallbacks, result: r2.body,
+            initialResult: r.body,
+          }, r2.status || 200);
+        }
+        fallbacks.push({ from: 'stagehand', reason: _stagehandFallbackReason(r2) });
+        const r3 = await _dispatchBrowserUse(_port, body);
+        if (typeof broadcast === 'function') { try { broadcast({ type: 'browser-router-dispatch', phase: 'end', driver: 'browser-use', decision, fallbacks, at: Date.now() }); } catch (_) {} }
+        return json(res, {
+          ok: r3.status >= 200 && r3.status < 300 && r3.body && r3.body.ok !== false,
+          driver: 'browser-use', decision, fallbacks, result: r3.body,
+          initialResult: r.body,
+        }, r3.status || 200);
+      }
 
       if (driver === 'stagehand' && _shouldFallbackFromStagehand(r)) {
         fallbacks.push({ from: 'stagehand', reason: _stagehandFallbackReason(r) });

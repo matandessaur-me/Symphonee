@@ -64,6 +64,7 @@ All under `/api/browser/router/*`:
 ## Fallback
 
 - `in-app-agent` unreachable -> tries `stagehand` -> falls back to `browser-use`.
+- `in-app-agent` returns a page-surface failure -> retries the same free-text goal through `stagehand`. This covers cases where the live internal browser can open the site shell but the agent cannot see or interact with the actual work surface, such as embedded spreadsheets, virtualized grids, canvas-heavy apps, or cross-origin frames.
 - `stagehand` not ready, missing its package, missing an API key, or returning 501 -> falls back to `browser-use`.
 
 Each downgrade is recorded in `result.fallbacks[]`.
