@@ -210,6 +210,56 @@ Mind always ingests every repo Symphonee knows about (each `cfg.Repos` entry), t
 - `GET /api/mind/wakeup?budget=600&question=...` — layered L0+L1 wake-up text. With `question`, L1 is the BFS sub-graph for that task (task-aware). Without, L1 is god nodes + recent conversations (generic).
 - `POST /api/mind/suggest-cli {"question":"..."}` — advisory CLI ranking for a task, based on which CLI has previously completed similar work successfully. Multi-CLI by design: every supported CLI (claude, codex, gemini, grok, qwen, copilot) can appear. If a CLI has no prior similar work, it's absent from the ranking — that's not a vote against it. Use as a tie-breaker, not a hard router; the model-router script remains authoritative for intent-based picks.
 
+### Code-understanding endpoints (Phase 2-5 - SocratiCode-inspired)
+
+Mind now answers code questions without raw file reading. Use these BEFORE refactoring, renaming, or deleting:
+
+- `POST /api/mind/impact   { target, depth=3 }`     — blast radius (what files break if I change X).
+- `POST /api/mind/flow     { entrypoint, depth=5 }` — forward call tree from an entrypoint.
+- `POST /api/mind/symbol   { name, file? }`         — 360-degree view (callers + callees).
+- `POST /api/mind/symbols  { file?, query?, limit? }` — list / search symbols.
+- `POST /api/mind/entrypoints {}`                   — auto-detected entrypoints (orphans, well-known names, framework patterns).
+- `POST /api/mind/circular {}`                      — circular file dependencies (Tarjan SCC).
+
+`target` accepts symbol names ("validateUser") or relative file paths ("src/auth.ts").
+
+### Hybrid semantic search
+
+- `POST /api/mind/search-semantic { q, k=10 }` — dense-only ranked nodes via cosine similarity.
+- `POST /api/mind/embed { provider? }`         — embed the whole graph (async; broadcasts embed-progress / -complete / -failed events).
+- `GET  /api/mind/health`                      — embeddings + vectors store status.
+
+Default provider: **ollama** at `localhost:11434` with `nomic-embed-text` (no API key). Override with `SYMPHONEE_EMBED_PROVIDER=openai|google` and the matching API key. `SYMPHONEE_EMBED_AUTO=1` re-embeds on every build.
+
+`/api/mind/query` automatically fuses BM25 + dense via Reciprocal Rank Fusion when vectors are loaded. Pass `hybrid:false` to opt out for that single call.
+
+### Context artifacts (declared knowledge)
+
+Repos can declare non-code knowledge at `<repoRoot>/.symphonee/context-artifacts.json`:
+```
+{ "artifacts": [
+  { "name": "schema", "path": "./docs/schema.sql",
+    "description": "Postgres schema. Check before writing migrations." } ] }
+```
+
+The `description` is **prescriptive** — write "check this before X" so the AI consults the artefact at the right moment.
+
+- `POST /api/mind/artifacts/list   {}`           — declared artefacts + indexed status.
+- `POST /api/mind/artifacts/search { q, name? }` — hybrid search restricted to artefact nodes.
+
+### Visualisation
+
+- `POST /api/mind/visualize { mode: "mermaid" | "interactive", focus?, layout? }` — mermaid returns text; interactive writes a Cytoscape HTML viewer (file/symbol toggle, blast-radius overlay, layout switcher, PNG export) to OS temp dir and returns the path.
+
+### Lock + quality + checkpoint
+
+- `GET /api/mind/lock`            — current lock state (build / update / watch / embed) per space.
+- `POST /api/mind/lock/clear`     — force-clear a stuck lock (terminates orphan PID on Windows / sends SIGTERM elsewhere).
+- `GET /api/mind/checkpoint`      — last completed phase if a build is in progress.
+- `GET /api/mind/quality`         — `resolvedPct` of import edges + sample of unresolved specs (low % means tsconfig path aliases are missing).
+
+`/api/mind/build` and `/api/mind/update` return **HTTP 409** with `holderPid` when an operation is already running. Don't retry — wait for the in-flight job's `mind-update` WebSocket completion event.
+
 ### Hint injection
 
 Every prompt the orchestrator dispatches to a worker is automatically prefixed with `[mind: <space> nodes=<n> edges=<n> communities=<n> staleness=<m>m] Query before answering: ...` followed by an L0+L1 wake-up block (active repo identity + the repo's CLAUDE.md preamble + god nodes + recent cross-CLI conversations, ~400-700 tokens). So a dispatched worker starts with both the metadata stamp AND the essential-story context — no extra round trip needed for "where am I, what's been going on lately?". For specific questions, the worker still calls `/api/mind/query`. Callers that want only the short stamp pass `orchestratorHint({ minimal: true })`.

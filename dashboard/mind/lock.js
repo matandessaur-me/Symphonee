@@ -46,7 +46,8 @@ function readLockFile(filePath) {
 }
 
 function isAlive(pid) {
-  if (!pid || pid <= 0 || pid === process.pid) return false;
+  if (!pid || pid <= 0) return false;
+  if (pid === process.pid) return true;
   try { process.kill(pid, 0); return true; } catch (_) { return false; }
 }
 
@@ -153,8 +154,13 @@ function terminateHolder(space, op) {
   if (!fs.existsSync(file)) return { terminated: false, reason: 'no-lock' };
   const rec = readLockFile(file);
   if (!rec) return { terminated: false, reason: 'unreadable' };
-  if (rec.pid === process.pid) return { terminated: false, reason: 'self' };
-  if (!isAlive(rec.pid)) {
+  if (rec.pid === process.pid) {
+    release(rec.space || space, rec.op || op);
+    return { terminated: true, reason: 'self-released', pid: rec.pid };
+  }
+  let alive = false;
+  try { process.kill(rec.pid, 0); alive = true; } catch (_) { alive = false; }
+  if (!alive) {
     try { fs.unlinkSync(file); } catch (_) { /* ignore */ }
     return { terminated: true, reason: 'orphan-cleared', pid: rec.pid };
   }
