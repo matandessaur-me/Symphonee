@@ -30,7 +30,7 @@ const { VectorStore } = require('./vectors');
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
 const jobs = new Map();
-const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers'];
+const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts'];
 function makeJobId() { return 'mj_' + Math.random().toString(36).slice(2, 10); }
 
 function readBody(req) {
@@ -381,6 +381,63 @@ function mountMind(addRoute, json, ctx) {
     if (!g) return json(res, { error: 'graph empty' }, 404);
     const cycles = impact.detectCircular(g);
     return json(res, { count: cycles.length, cycles });
+  });
+
+  // ── Context artifacts (declared in .symphonee/context-artifacts.json) ──
+  addRoute('POST', '/api/mind/artifacts/list', async (req, res) => {
+    const space = getSpace();
+    const ui = getUiContext ? getUiContext() : {};
+    const { readArtifactsConfig } = require('./extractors/context-artifacts');
+    const cfg = readArtifactsConfig(ui.activeRepoPath, repoRoot);
+    const g = store.loadGraph(repoRoot, space);
+    const indexedByName = new Map();
+    if (g) {
+      for (const n of g.nodes) {
+        if (n.kind !== 'artifact') continue;
+        if (!n.source || n.source.type !== 'artifact') continue;
+        indexedByName.set(n.label, n);
+      }
+    }
+    const enriched = (cfg.artifacts || []).map(a => ({
+      name: a.name,
+      path: a.path,
+      description: a.description || '',
+      indexed: indexedByName.has(a.name),
+      fileCount: indexedByName.get(a.name)?.fileCount || 0,
+    }));
+    return json(res, {
+      space,
+      configPath: cfg.configPath,
+      configExists: !!cfg.configPath && require('fs').existsSync(cfg.configPath),
+      error: cfg.error || null,
+      artifacts: enriched,
+    });
+  });
+
+  addRoute('POST', '/api/mind/artifacts/search', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    const q = String(body.q || body.query || '').trim();
+    const name = body.name || null;
+    let pool = g.nodes.filter(n => n.kind === 'artifact');
+    if (name) pool = pool.filter(n => Array.isArray(n.tags) && n.tags.includes(`artifact:${name}`));
+    if (!pool.length) return json(res, { q, name, results: [] });
+    if (!q) {
+      return json(res, { q, name, results: pool.slice(0, 30).map(n => ({ id: n.id, label: n.label, file: n.sourceLocation?.file || null, description: n.description || '' })) });
+    }
+    const dense = await tryDenseSeeds(repoRoot, space, q, 50);
+    const denseSet = new Map((dense || []).map(r => [r.id, r.score]));
+    const ql = q.toLowerCase();
+    const scored = pool.map(n => {
+      const text = ((n.label || '') + ' ' + (n.description || '') + ' ' + (n.summary || '')).toLowerCase();
+      let s = 0;
+      for (const tok of ql.split(/\s+/)) if (tok && text.includes(tok)) s += 1;
+      if (denseSet.has(n.id)) s += 2 * denseSet.get(n.id);
+      return { id: n.id, label: n.label, file: n.sourceLocation?.file || null, description: n.description || '', score: s };
+    }).filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, 30);
+    return json(res, { q, name, results: scored });
   });
 
   // ── Quality (resolved-import ratio + unresolved examples) ────────────────

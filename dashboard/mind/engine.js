@@ -30,6 +30,7 @@ const { extractInstructions } = require('./extractors/instructions');
 const { extractRepoCode } = require('./extractors/repo-code');
 const { extractCliHistory } = require('./extractors/cli-history');
 const { extractCliDrawers } = require('./extractors/cli-drawers');
+const { extractContextArtifacts } = require('./extractors/context-artifacts');
 const adapterRegistry = require('./extractors/base');
 
 async function runBuild({ repoRoot, space, sources = [], incremental = false, ctx = {}, onProgress = () => {} }) {
@@ -146,6 +147,14 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     const f = extractCliDrawers({ activeRepoPath, allRepos: !!ctx.cliHistoryAllRepos, manifest, incremental });
     fragments.push(f);
     summary.cliDrawers = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, skippedOtherRepo: f.skippedOtherRepo, drawers: f.drawersEmitted, nodes: f.nodes.length, edges: f.edges.length };
+  }
+
+  if (sources.includes('context-artifacts')) {
+    cp('extract:context-artifacts');
+    onProgress('Extracting context artifacts (.symphonee/context-artifacts.json)...');
+    const f = extractContextArtifacts({ repoRoot, activeRepoPath, manifest, incremental });
+    fragments.push(f);
+    summary.contextArtifacts = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length, configPath: f.configPath, error: f.error };
   }
 
   // Third-party source adapters registered via dashboard/mind/extractors/base.js.
