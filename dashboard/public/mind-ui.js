@@ -467,6 +467,22 @@
     }
   }
 
+  async function openInteractive() {
+    setStatus('generating interactive graph...');
+    try {
+      const r = await fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'interactive', layout: 'cose' }) });
+      const data = await r.json();
+      if (data.error) { setStatus('viz error: ' + data.error); return; }
+      if (data.path) {
+        const url = 'file:///' + data.path.replace(/\\/g, '/');
+        window.open(url, 'symphonee-mind-viz', 'width=1400,height=900,resizable=yes,scrollbars=yes');
+        setStatus('interactive graph opened (' + Math.round((data.bytes || 0) / 1024) + 'KB)');
+      }
+    } catch (e) {
+      setStatus('viz error: ' + (e.message || e));
+    }
+  }
+
   async function embedAll() {
     if (!confirm('Embed the whole graph? This will call your embedding provider for ~hundreds of nodes.')) return;
     setStatus('starting embedding...');
@@ -2044,5 +2060,6 @@
     _symbolRun: runSymbol,
     _smartRun: runSmart,
     _embedAll: embedAll,
+    openInteractive: openInteractive,
   };
 })();

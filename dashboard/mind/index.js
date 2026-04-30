@@ -26,6 +26,7 @@ const checkpoint = require('./checkpoint');
 const impact = require('./impact');
 const embeddings = require('./embeddings');
 const { VectorStore } = require('./vectors');
+const viz = require('./viz');
 
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
@@ -381,6 +382,23 @@ function mountMind(addRoute, json, ctx) {
     if (!g) return json(res, { error: 'graph empty' }, 404);
     const cycles = impact.detectCircular(g);
     return json(res, { count: cycles.length, cycles });
+  });
+
+  // ── Visualisation (mermaid text + interactive HTML viewer) ──────────────
+  addRoute('POST', '/api/mind/visualize', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+    const mode = (body.mode || 'mermaid').toLowerCase();
+    if (mode === 'mermaid') {
+      return json(res, { mode, mermaid: viz.mermaidGraph(g, { focus: body.focus || null, max: body.max || 200 }) });
+    }
+    if (mode === 'interactive') {
+      const out = viz.writeInteractive(g, { focus: body.focus || null, layout: body.layout || 'cose', title: `Mind: ${space}` });
+      return json(res, { mode, ...out, openIn: 'webview' });
+    }
+    return json(res, { error: 'mode must be mermaid or interactive' }, 400);
   });
 
   // ── Context artifacts (declared in .symphonee/context-artifacts.json) ──
