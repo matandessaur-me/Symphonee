@@ -1279,6 +1279,11 @@
           </div>
 
           <div class="mind-card mind-card-wide">
+            <div class="mind-card-title">Multi-CLI coverage</div>
+            <div id="mindCliCoverageBody" style="font-size:11px;color:var(--text);">Loading…</div>
+          </div>
+
+          <div class="mind-card mind-card-wide">
             <div class="mind-card-title">Diagnostics</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;">
               <button class="tab-bar-btn" onclick="MindUI._wakeupOpen()" style="padding:5px 12px;font-size:11px;" title="Preview the context every dispatched worker starts with">Preview worker context</button>
@@ -1384,6 +1389,60 @@
     $('mindMain').querySelectorAll('[data-cid]').forEach(el => {
       el.addEventListener('click', (ev) => { ev.preventDefault(); showCommunityDetail(el.dataset.cid); });
     });
+    refreshCliCoverage();
+  }
+
+  // Renders the multi-CLI coverage card on the Dashboard. Shows per-CLI:
+  // memory file location (or - if absent), conversation count, drawer count,
+  // history count, skills count. Lets the user verify the brain treats
+  // every CLI symmetrically.
+  async function refreshCliCoverage() {
+    const el = document.getElementById('mindCliCoverageBody');
+    if (!el) return;
+    try {
+      const r = await API('/api/mind/cli-coverage');
+      const counts = r.counts || {};
+      const memByRepo = r.memoryFilesByRepo || {};
+      const klist = r.cliKnown || [];
+      const colorOf = c => ({ claude: '#cba6f7', codex: '#94e2d5', gemini: '#89b4fa', grok: '#f38ba8', qwen: '#fab387', copilot: '#a6e3a1', cursor: '#f5c2e7', windsurf: '#74c7ec' }[c] || 'var(--text)');
+
+      const repoNames = Object.keys(memByRepo);
+      let html = `
+        <div style="margin-bottom:8px;color:var(--subtext0);font-size:11px;line-height:1.5;">
+          Symphonee is multi-CLI. Every supported CLI ingests symmetrically. A "—" below means the convention file is not present in that repo, NOT that the CLI is unsupported.
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="text-align:left;color:var(--subtext0);">
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);">CLI</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);">Memory file (active repo)</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">Conv</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">Drawers</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">History</th>
+                <th style="padding:6px 8px;border-bottom:1px solid var(--surface0);text-align:right;">Skills</th>
+              </tr>
+            </thead>
+            <tbody>`;
+      const activeRepoName = repoNames[0];
+      for (const cli of klist) {
+        const c = counts[cli] || {};
+        const memFile = memByRepo[activeRepoName] && memByRepo[activeRepoName][cli];
+        html += `
+          <tr>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colorOf(cli)};margin-right:6px;"></span>${escapeHtml(cli)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);font-family:monospace;color:${memFile ? 'var(--text)' : 'var(--subtext0)'};">${memFile ? escapeHtml(memFile) : '—'}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${c.conversations || 0}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${c.drawers || 0}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${c.history || 0}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--surface0) 50%,transparent);text-align:right;font-variant-numeric:tabular-nums;">${(c.skills || 0) + (c.plugins || 0)}</td>
+          </tr>`;
+      }
+      html += '</tbody></table></div>';
+      el.innerHTML = html;
+    } catch (e) {
+      el.innerHTML = `<span style="color:var(--red);">error: ${escapeHtml(e.message || String(e))}</span>`;
+    }
   }
 
   function statCard(label, value, color, hint) {
