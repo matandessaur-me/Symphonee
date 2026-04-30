@@ -15,6 +15,8 @@ const { Manifest } = require('./manifest');
 const { build, buildMerge } = require('./build');
 const { cluster } = require('./cluster');
 const { analyze } = require('./analyze');
+const lock = require('./lock');
+const checkpoint = require('./checkpoint');
 
 const { extractNotes } = require('./extractors/notes');
 const { extractLearnings } = require('./extractors/learnings');
@@ -29,9 +31,27 @@ const { extractCliDrawers } = require('./extractors/cli-drawers');
 const adapterRegistry = require('./extractors/base');
 
 async function runBuild({ repoRoot, space, sources = [], incremental = false, ctx = {}, onProgress = () => {} }) {
+  const opName = incremental ? 'update' : 'build';
+  const acq = lock.acquire(space, opName);
+  if (!acq.ok) {
+    const err = new Error(`mind ${opName} already running (pid ${acq.holderPid || 'unknown'})`);
+    err.code = 'MIND_LOCKED';
+    err.holderPid = acq.holderPid || null;
+    throw err;
+  }
+  try {
+    return await _runBuildInner({ repoRoot, space, sources, incremental, ctx, onProgress });
+  } finally {
+    lock.release(space, opName);
+  }
+}
+
+async function _runBuildInner({ repoRoot, space, sources = [], incremental = false, ctx = {}, onProgress = () => {} }) {
   const t0 = Date.now();
   const fragments = [];
   const summary = {};
+  const cp = (phase, extra = {}) => checkpoint.write(repoRoot, space, { phase, sources, incremental, ...extra });
+  cp('starting');
 
   const ui = ctx.getUiContext ? ctx.getUiContext() : {};
   const notesNamespace = ui.notesNamespace || space;
@@ -40,6 +60,7 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
   const manifest = new Manifest(repoRoot, space);
 
   if (sources.includes('notes')) {
+    cp('extract:notes');
     onProgress('Extracting notes...');
     const f = extractNotes({ repoRoot, notesNamespace, notesRoot, manifest, incremental });
     fragments.push(f); summary.notes = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length };
@@ -153,6 +174,7 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
     }
   }
 
+  cp('merging');
   manifest.flushSync();
 
   onProgress('Merging fragments...');
@@ -190,6 +212,7 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
     },
   };
 
+  cp('saving');
   onProgress(`Saving graph (${out.nodes.length} nodes, ${out.edges.length} edges)...`);
   const stats = store.saveGraph(repoRoot, space, out);
 
@@ -199,6 +222,7 @@ async function runBuild({ repoRoot, space, sources = [], incremental = false, ct
     fs.writeFileSync(path.join(store.reportsDir(repoRoot, space), `report-${Date.now()}.md`), report, 'utf8');
   } catch (_) { /* non-fatal */ }
 
+  checkpoint.clear(repoRoot, space);
   return { stats, summary, buildMs: out.stats.buildMs };
 }
 

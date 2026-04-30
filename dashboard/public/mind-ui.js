@@ -57,6 +57,8 @@
     if (!state.ws) connectWS();
     bindSearchInput();
     updateSearchOnlyBtn();
+    refreshLock();
+    refreshQuality();
   }
 
   // ── Search: one input, every view honours state.search ─────────────────────
@@ -243,13 +245,29 @@
 
   function onMindUpdate(payload) {
     if (!payload) return;
-    if (payload.kind === 'build-progress') setStatus(payload.msg || 'building...');
+    if (payload.kind === 'build-start') refreshLock();
+    if (payload.kind === 'build-progress') { setStatus(payload.msg || 'building...'); refreshLock(); }
     if (payload.kind === 'build-complete' || payload.kind === 'update-complete') {
       setStatus('build complete - reloading');
-      loadGraph().then(() => { render(); refreshStatus(); });
+      loadGraph().then(() => { render(); refreshStatus(); refreshLock(); refreshQuality(); });
     }
-    if (payload.kind === 'build-failed') setStatus('build failed: ' + (payload.error || 'unknown'));
+    if (payload.kind === 'build-failed') { setStatus('build failed: ' + (payload.error || 'unknown')); refreshLock(); }
     if (payload.kind === 'watch-trigger') setStatus('change: ' + (payload.file || ''));
+  }
+  async function refreshQuality() {
+    try {
+      const r = await API('/api/mind/quality');
+      const pill = document.getElementById('mindQualityPill');
+      const txt = document.getElementById('mindQualityText');
+      if (!pill || !txt) return;
+      if (!r || typeof r.resolvedPct !== 'number' || r.totalImportEdges === 0) {
+        pill.style.display = 'none';
+        return;
+      }
+      pill.style.display = 'inline-flex';
+      txt.textContent = `quality ${r.resolvedPct}%`;
+      pill.title = `Resolved ${r.resolvedPct}% of ${r.totalImportEdges} import edges. ${r.unresolvedExamples?.length || 0} unresolved examples.`;
+    } catch (_) { /* ignore */ }
   }
 
   // ── Data ───────────────────────────────────────────────────────────────────
@@ -1431,11 +1449,45 @@
   // ── Actions ────────────────────────────────────────────────────────────────
   async function build() {
     setStatus('starting build...');
-    await API('/api/mind/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const r = await fetch('/api/mind/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.status === 409) {
+      const body = await r.json().catch(() => ({}));
+      setStatus(`build already running (pid ${body.holderPid || '?'}, ${Math.round((body.ageMs || 0) / 1000)}s)`);
+      refreshLock();
+      return;
+    }
+    refreshLock();
   }
   async function update() {
     setStatus('starting incremental update...');
-    await API('/api/mind/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const r = await fetch('/api/mind/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.status === 409) {
+      const body = await r.json().catch(() => ({}));
+      setStatus(`update already running (pid ${body.holderPid || '?'})`);
+      refreshLock();
+      return;
+    }
+    refreshLock();
+  }
+  async function refreshLock() {
+    try {
+      const r = await API('/api/mind/lock');
+      const pill = document.getElementById('mindLockPill');
+      if (!pill) return;
+      const active = (r.build && r.build.locked) ? r.build : (r.update && r.update.locked) ? r.update : null;
+      if (!active) { pill.style.display = 'none'; return; }
+      pill.style.display = 'inline-flex';
+      const text = document.getElementById('mindLockText');
+      const ageS = Math.round((active.ageMs || 0) / 1000);
+      if (text) text.textContent = `${active.op} running (pid ${active.holderPid}, ${ageS}s)`;
+      pill.title = `Lock held by pid ${active.holderPid} for ${ageS}s. Right-click to clear if stuck.`;
+      pill.oncontextmenu = (e) => {
+        e.preventDefault();
+        if (!confirm('Force-clear the build lock? This will not stop the running build.')) return;
+        fetch('/api/mind/lock/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: active.op }) })
+          .then(() => refreshLock());
+      };
+    } catch (_) { /* ignore */ }
   }
   async function toggleWatch() {
     const next = !state.watchEnabled;
@@ -1652,6 +1704,7 @@
   }
 
   window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics, clearSearch, toggleSearchOnly,
+    refreshLock, refreshQuality,
     _wakeupRefresh: refreshWakeupOutput,
     _queryRun: runQueryFromUi,
   };

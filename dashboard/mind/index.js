@@ -21,6 +21,8 @@ const { analyze } = require('./analyze');
 const { composeWakeUp, DEFAULT_BUDGET_TOKENS } = require('./wakeup');
 const { sanitizeLabel, validateUrl } = require('./security');
 const { MindWatcher } = require('./watch');
+const lock = require('./lock');
+const checkpoint = require('./checkpoint');
 
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
@@ -209,6 +211,18 @@ function mountMind(addRoute, json, ctx) {
     const body = await readBody(req).catch(() => ({}));
     const space = getSpace();
     const sources = body.sources || DEFAULT_BUILD_SOURCES;
+
+    // Concurrency guard - if a build is already running, return 409 instead of
+    // racing two builds against the same graph.json.
+    const existing = lock.status(space, 'build');
+    if (existing.locked) {
+      return json(res, {
+        error: 'build already running',
+        holderPid: existing.holderPid,
+        ageMs: existing.ageMs,
+      }, 409);
+    }
+
     const jobId = makeJobId();
     const job = { id: jobId, kind: 'build', space, sources, status: 'running', startedAt: Date.now(), progress: [] };
     jobs.set(jobId, job);
@@ -239,6 +253,12 @@ function mountMind(addRoute, json, ctx) {
     const body = await readBody(req).catch(() => ({}));
     const space = getSpace();
     const sources = body.sources || DEFAULT_BUILD_SOURCES;
+
+    const existing = lock.status(space, 'update');
+    if (existing.locked) {
+      return json(res, { error: 'update already running', holderPid: existing.holderPid, ageMs: existing.ageMs }, 409);
+    }
+
     const jobId = makeJobId();
     const job = { id: jobId, kind: 'update', space, sources, status: 'running', startedAt: Date.now(), progress: [] };
     jobs.set(jobId, job);
@@ -251,6 +271,60 @@ function mountMind(addRoute, json, ctx) {
       if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'update-complete', jobId, result } });
     }).catch((err) => {
       job.status = 'failed'; job.completedAt = Date.now(); job.error = err.message;
+    });
+  });
+
+  // ── Lock + checkpoint introspection ──────────────────────────────────────
+  addRoute('GET', '/api/mind/lock', (req, res) => {
+    const space = getSpace();
+    return json(res, {
+      space,
+      build: lock.status(space, 'build'),
+      update: lock.status(space, 'update'),
+      watch: lock.status(space, 'watch'),
+      all: lock.listAll(),
+    });
+  });
+
+  addRoute('POST', '/api/mind/lock/clear', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const op = body.op || 'build';
+    const r = lock.terminateHolder(space, op);
+    return json(res, { space, op, ...r });
+  });
+
+  addRoute('GET', '/api/mind/checkpoint', (req, res) => {
+    const space = getSpace();
+    const cp = checkpoint.read(repoRoot, space);
+    return json(res, { space, checkpoint: cp });
+  });
+
+  // ── Quality (resolved-import ratio + unresolved examples) ────────────────
+  // Surfaced even before Phase 1 ships ast-grep so the UI pill has something
+  // to render. Returns { totalImportEdges, resolvedPct, unresolvedExamples }.
+  addRoute('GET', '/api/mind/quality', (req, res) => {
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { space, totalImportEdges: 0, resolvedPct: null, unresolvedExamples: [] });
+    let total = 0, resolved = 0;
+    const unresolved = [];
+    const nodeIds = new Set(g.nodes.map(n => n.id));
+    for (const e of g.edges) {
+      if (e.relation !== 'imports') continue;
+      total += 1;
+      const targetExists = nodeIds.has(e.target);
+      const targetMarkedExternal = e.unresolved === true || (typeof e.target === 'string' && e.target.startsWith('ext_'));
+      if (targetExists && !targetMarkedExternal) resolved += 1;
+      else if (unresolved.length < 25) unresolved.push({ from: e.source, spec: e.target });
+    }
+    return json(res, {
+      space,
+      totalImportEdges: total,
+      resolvedPct: total ? Math.round((resolved / total) * 1000) / 10 : null,
+      resolvedCount: resolved,
+      unresolvedExamples: unresolved,
+      lastBuildAt: g.generatedAt,
     });
   });
 
