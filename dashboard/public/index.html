@@ -1919,71 +1919,8 @@
       position: relative;
       overflow: hidden;
     }
-    /* Canvas-style mermaid view: full-bleed pannable / zoomable surface
-       with a floating zoom control. SVG renders at intrinsic size; the
-       transform on .mindmap-mermaid-pan handles all scaling and panning. */
-    .mindmap-mermaid-canvas {
-      flex: 1; min-height: 0; min-width: 0;
-      position: relative;
-      overflow: hidden;
-      background:
-        radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 40%),
-        radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 40%),
-        var(--base);
-      background-image:
-        linear-gradient(color-mix(in srgb, var(--surface1) 30%, transparent) 1px, transparent 1px),
-        linear-gradient(90deg, color-mix(in srgb, var(--surface1) 30%, transparent) 1px, transparent 1px);
-      background-size: 24px 24px;
-      cursor: grab;
-      user-select: none;
-    }
-    .mindmap-mermaid-pan {
-      position: absolute;
-      top: 0; left: 0;
-      transform-origin: 0 0;
-      will-change: transform;
-    }
-    .mindmap-mermaid-stage {
-      display: inline-block;
-      padding: 0;
-      background: transparent;
-    }
-    .mindmap-mermaid-stage svg {
-      display: block;
-      shape-rendering: geometricPrecision;
-    }
-    .mindmap-zoom-ctl {
-      position: absolute;
-      bottom: 14px; right: 14px;
-      display: flex; align-items: center; gap: 4px;
-      background: var(--mantle);
-      border: 1px solid var(--surface1);
-      border-radius: 8px;
-      padding: 4px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-      z-index: 10;
-    }
-    .mindmap-zoom-ctl button {
-      background: transparent;
-      border: none;
-      color: var(--text);
-      font: 600 13px var(--font-ui);
-      cursor: pointer;
-      width: 30px; height: 28px;
-      border-radius: 4px;
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 0;
-    }
-    .mindmap-zoom-ctl button:hover { background: var(--surface0); }
-    .mindmap-zoom-ctl span {
-      padding: 0 8px;
-      font: 600 11px var(--font-ui);
-      color: var(--subtext0);
-      font-variant-numeric: tabular-nums;
-      min-width: 42px;
-      text-align: center;
-      border-left: 1px solid var(--surface1);
-    }
+    /* Mind map body fills the canvas area; child renderers (graph, map)
+       claim the full space via their own internal layouts. */
     /* Reusable loader overlay for any Mind view that runs an expensive
        synchronous operation (graph rebuild, large filter swap, etc). The
        caller toggles display:flex to show. */
@@ -27146,7 +27083,6 @@ function showRecipePreviewModal(id, fm, prompt) {
 </script>
 <link rel="stylesheet" href="/vis-network.min.css">
 <script src="/vis-network.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script src="/mind-ui.js"></script>
 </body>
 </html>

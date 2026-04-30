@@ -383,7 +383,10 @@
   // mode (graph / map / mermaid); the ribbon stays put so switching view
   // never feels like leaving the tab.
   function renderMindmap() {
-    const mode = state.mindmapMode || 'graph';
+    // Mermaid removed from the segmented control - kept as a one-click "Copy
+    // mermaid source" action for pasting into chat / docs context.
+    let mode = state.mindmapMode || 'graph';
+    if (mode === 'mermaid') mode = state.mindmapMode = 'graph';
     const main = $('mindMain');
     if (!main) return;
     main.innerHTML = `
@@ -391,13 +394,11 @@
         <div class="mindmap-segctl" role="tablist" aria-label="Mind map view">
           <button class="mindmap-seg-btn${mode === 'graph' ? ' active' : ''}" data-mode="graph">Graph</button>
           <button class="mindmap-seg-btn${mode === 'map' ? ' active' : ''}" data-mode="map">Map</button>
-          <button class="mindmap-seg-btn${mode === 'mermaid' ? ' active' : ''}" data-mode="mermaid">Mermaid</button>
         </div>
         <span class="mindmap-ribbon-spacer"></span>
         <span class="mindmap-ribbon-hint" id="mindmapHint">${mindmapHint(mode)}</span>
         <span class="mindmap-ribbon-spacer"></span>
-        <button class="mindmap-ribbon-btn" id="mindmapCopyBtn" style="display:${mode === 'mermaid' ? 'inline-flex' : 'none'};" title="Copy mermaid source">Copy</button>
-        <button class="mindmap-ribbon-btn primary" onclick="MindUI.openInteractive()" title="Pop out an interactive Cytoscape viewer with blast-radius overlay">Pop out</button>
+        <button class="mindmap-ribbon-btn" id="mindmapCopyMermaid" title="Copy a mermaid source representation for pasting into chat / docs">Copy mermaid</button>
       </div>
       <div id="mindmapBody" class="mindmap-body"></div>`;
     main.querySelectorAll('.mindmap-seg-btn').forEach(btn => {
@@ -406,19 +407,34 @@
         render();
       });
     });
-    const copyBtn = main.querySelector('#mindmapCopyBtn');
-    if (copyBtn) copyBtn.addEventListener('click', copyMermaid);
-    if (mode === 'mermaid') {
-      renderMermaidVisual(document.getElementById('mindmapBody'));
-    } else {
-      renderInBody(mode);
-    }
+    const copyBtn = main.querySelector('#mindmapCopyMermaid');
+    if (copyBtn) copyBtn.addEventListener('click', copyMermaidSource);
+    renderInBody(mode);
   }
 
   function mindmapHint(mode) {
-    if (mode === 'mermaid') return 'Visual mermaid diagram - copy the source for chat / docs / PRs';
     if (mode === 'map') return 'Each circle is a community. Edges show cross-community bridges.';
     return 'Full graph - drag, zoom, click any node to inspect.';
+  }
+
+  // Copy mermaid source on demand. Fetches /api/mind/visualize {mode:mermaid}
+  // and writes the text to the clipboard. Useful for pasting Mind context
+  // into chat or documentation.
+  async function copyMermaidSource() {
+    setStatus('generating mermaid source...');
+    try {
+      const r = await fetch('/api/mind/visualize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'mermaid', max: 80 }),
+      });
+      const d = await r.json();
+      if (!d.mermaid) { setStatus(d.error || 'no mermaid output'); return; }
+      try { await navigator.clipboard.writeText(d.mermaid); setStatus('mermaid source copied'); }
+      catch (_) { setStatus('clipboard unavailable'); }
+    } catch (e) {
+      setStatus('mermaid error: ' + (e.message || e));
+    }
   }
 
   // Graph + Map: existing renderers fully overwrite #mindMain. To keep the
@@ -441,226 +457,6 @@
       body.id = 'mindmapBody';
       main.id = 'mindMain';
     }
-  }
-
-  // Visual mermaid rendering via mermaid.js. Loaded from CDN in index.html.
-  let _mermaidInited = false;
-  function ensureMermaid() {
-    if (!window.mermaid) return false;
-    if (!_mermaidInited) {
-      try {
-        window.mermaid.initialize({
-          startOnLoad: false,
-          theme: 'dark',
-          securityLevel: 'loose',
-          fontFamily: 'inherit',
-          flowchart: { htmlLabels: true, curve: 'basis' },
-        });
-      } catch (_) {}
-      _mermaidInited = true;
-    }
-    return true;
-  }
-
-  async function renderMermaidVisual(container) {
-    container.innerHTML = `
-      <div id="mindMermaidCanvas" class="mindmap-mermaid-canvas">
-        <div id="mindMermaidPan" class="mindmap-mermaid-pan">
-          <div id="mindMermaidStage" class="mindmap-mermaid-stage">
-            <div style="color:var(--subtext0);padding:40px;">Rendering mermaid diagram...</div>
-          </div>
-        </div>
-        <div class="mindmap-zoom-ctl">
-          <button id="mindMmZoomIn" title="Zoom in (+)">+</button>
-          <button id="mindMmZoomOut" title="Zoom out (-)">−</button>
-          <button id="mindMmFit" title="Fit to view (0)">⤧</button>
-          <button id="mindMmReset" title="Reset (100%)">1:1</button>
-          <span id="mindMmZoomLabel">100%</span>
-        </div>
-      </div>`;
-    let mermaidText = '';
-    try {
-      const r = await fetch('/api/mind/visualize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'mermaid', max: 60 }) });
-      const d = await r.json();
-      mermaidText = d.mermaid || '';
-      if (!mermaidText) throw new Error(d.error || 'empty graph');
-    } catch (e) {
-      const stage = document.getElementById('mindMermaidStage');
-      if (stage) stage.innerHTML = `<div style="color:var(--red);padding:20px;">${escapeHtml(e.message || String(e))}</div>`;
-      return;
-    }
-    state.lastMermaid = mermaidText;
-    const stage = document.getElementById('mindMermaidStage');
-    if (!stage) return;
-    if (!ensureMermaid()) {
-      stage.innerHTML = `
-        <div style="color:var(--yellow);padding:14px;">
-          mermaid library failed to load (offline?). Showing source:
-        </div>
-        <pre style="background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
-      return;
-    }
-    try {
-      const id = 'mind-mer-' + Date.now();
-      const { svg } = await window.mermaid.render(id, mermaidText);
-      stage.innerHTML = svg;
-      const svgEl = stage.querySelector('svg');
-      if (svgEl) {
-        // Force the SVG to render at its viewBox's intrinsic size so the
-        // pan/zoom transform has a real layout box to work with. mermaid v10
-        // emits style="max-width: 100%" which scales the SVG to its parent's
-        // width and breaks our zoom math; strip that and lock the explicit
-        // pixel size from the viewBox.
-        svgEl.removeAttribute('style');
-        const vb = svgEl.getAttribute('viewBox');
-        if (vb) {
-          const parts = vb.split(/\s+/).map(Number);
-          if (parts.length === 4) {
-            svgEl.setAttribute('width', parts[2]);
-            svgEl.setAttribute('height', parts[3]);
-          }
-        }
-        svgEl.style.display = 'block';
-        svgEl.style.maxWidth = 'none';
-        svgEl.style.maxHeight = 'none';
-      }
-      attachPanZoom();
-      // Auto-fit twice: once now (rough), once on next frame after the
-      // browser has measured the SVG (precise). Fixes the "diagram appears
-      // far off-screen at 10%" first-paint glitch.
-      fitMermaid();
-      requestAnimationFrame(() => fitMermaid());
-    } catch (e) {
-      stage.innerHTML = `
-        <div style="color:var(--red);padding:14px;">
-          mermaid render failed: ${escapeHtml(e.message || String(e))}
-        </div>
-        <pre style="background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
-    }
-  }
-
-  // Canvas-style pan + zoom on the mermaid SVG. Drag to pan, wheel to zoom
-  // (cursor-anchored), buttons for zoom in/out/fit/100%, keyboard +/-/0.
-  let _mmPan = null;
-  function attachPanZoom() {
-    const canvas = document.getElementById('mindMermaidCanvas');
-    const pan = document.getElementById('mindMermaidPan');
-    if (!canvas || !pan) return;
-    if (_mmPan && _mmPan.cleanup) _mmPan.cleanup();
-    const state = { scale: 1, tx: 0, ty: 0, dragging: false, lastX: 0, lastY: 0 };
-    function apply() {
-      pan.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
-      const lab = document.getElementById('mindMmZoomLabel');
-      if (lab) lab.textContent = Math.round(state.scale * 100) + '%';
-    }
-    function zoomAt(clientX, clientY, factor) {
-      const rect = canvas.getBoundingClientRect();
-      const cx = clientX - rect.left;
-      const cy = clientY - rect.top;
-      const newScale = Math.max(0.1, Math.min(8, state.scale * factor));
-      const k = newScale / state.scale;
-      state.tx = cx - (cx - state.tx) * k;
-      state.ty = cy - (cy - state.ty) * k;
-      state.scale = newScale;
-      apply();
-    }
-    function onWheel(e) {
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      zoomAt(e.clientX, e.clientY, factor);
-    }
-    function onDown(e) {
-      if (e.button !== 0) return;
-      state.dragging = true; state.lastX = e.clientX; state.lastY = e.clientY;
-      canvas.style.cursor = 'grabbing';
-      e.preventDefault();
-    }
-    function onMove(e) {
-      if (!state.dragging) return;
-      state.tx += e.clientX - state.lastX;
-      state.ty += e.clientY - state.lastY;
-      state.lastX = e.clientX; state.lastY = e.clientY;
-      apply();
-    }
-    function onUp() {
-      state.dragging = false;
-      canvas.style.cursor = 'grab';
-    }
-    function onKey(e) {
-      if (!document.getElementById('mindMermaidCanvas')) return;
-      if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
-      if (e.key === '+' || e.key === '=') { zoomAtCenter(1.15); e.preventDefault(); }
-      else if (e.key === '-' || e.key === '_') { zoomAtCenter(1 / 1.15); e.preventDefault(); }
-      else if (e.key === '0') { fitMermaid(); e.preventDefault(); }
-      else if (e.key === '1') { resetMermaid(); e.preventDefault(); }
-    }
-    function zoomAtCenter(factor) {
-      const rect = canvas.getBoundingClientRect();
-      zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
-    }
-    canvas.addEventListener('wheel', onWheel, { passive: false });
-    canvas.addEventListener('mousedown', onDown);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('keydown', onKey);
-    canvas.style.cursor = 'grab';
-    document.getElementById('mindMmZoomIn').onclick = () => zoomAtCenter(1.2);
-    document.getElementById('mindMmZoomOut').onclick = () => zoomAtCenter(1 / 1.2);
-    document.getElementById('mindMmFit').onclick = () => fitMermaid();
-    document.getElementById('mindMmReset').onclick = () => resetMermaid();
-    _mmPan = {
-      state, apply,
-      cleanup: () => {
-        canvas.removeEventListener('wheel', onWheel);
-        canvas.removeEventListener('mousedown', onDown);
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-        window.removeEventListener('keydown', onKey);
-      },
-    };
-    apply();
-  }
-
-  function fitMermaid() {
-    const canvas = document.getElementById('mindMermaidCanvas');
-    const stage = document.getElementById('mindMermaidStage');
-    const svg = stage && stage.querySelector('svg');
-    if (!canvas || !stage || !svg || !_mmPan) return;
-    // Read intrinsic size from the svg's viewBox first; fall back to bbox.
-    let w = 0, h = 0;
-    const vb = svg.getAttribute('viewBox');
-    if (vb) {
-      const parts = vb.split(/\s+/).map(Number);
-      if (parts.length === 4) { w = parts[2]; h = parts[3]; }
-    }
-    if (!w || !h) {
-      const r = svg.getBBox ? svg.getBBox() : null;
-      if (r) { w = r.width; h = r.height; }
-    }
-    if (!w || !h) return;
-    const cw = canvas.clientWidth, ch = canvas.clientHeight;
-    const padding = 40;
-    const scale = Math.min((cw - padding * 2) / w, (ch - padding * 2) / h);
-    _mmPan.state.scale = Math.max(0.1, Math.min(4, scale));
-    _mmPan.state.tx = (cw - w * _mmPan.state.scale) / 2;
-    _mmPan.state.ty = (ch - h * _mmPan.state.scale) / 2;
-    _mmPan.apply();
-  }
-  function resetMermaid() {
-    if (!_mmPan) return;
-    _mmPan.state.scale = 1;
-    _mmPan.state.tx = 0;
-    _mmPan.state.ty = 0;
-    _mmPan.apply();
-  }
-
-  function copyMermaid() {
-    const txt = state.lastMermaid || '';
-    if (!txt) { setStatus('no mermaid source to copy yet'); return; }
-    try {
-      navigator.clipboard.writeText(txt);
-      setStatus('mermaid source copied');
-    } catch (_) { setStatus('clipboard unavailable'); }
   }
 
   // ── Smart search (hybrid BM25 + dense via RRF) ──────────────────────────
@@ -762,61 +558,6 @@
     } catch (e) {
       out.innerHTML = `<span style="color:var(--red);">error: ${escapeHtml(e.message || String(e))}</span>`;
     }
-  }
-
-  async function openInteractive() {
-    setStatus('generating interactive graph...');
-    try {
-      const r = await fetch('/api/mind/visualize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'interactive', layout: 'cose', inline: true }),
-      });
-      const data = await r.json();
-      if (data.error) { setStatus('viz error: ' + data.error); return; }
-      if (!data.html) { setStatus('viz: server returned no html'); return; }
-      showInteractiveModal(data.html);
-      setStatus('interactive graph opened');
-    } catch (e) {
-      setStatus('viz error: ' + (e.message || e));
-    }
-  }
-
-  function showInteractiveModal(html) {
-    const existing = document.getElementById('mindInteractiveModal');
-    if (existing) existing.remove();
-    const modal = document.createElement('div');
-    modal.id = 'mindInteractiveModal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;backdrop-filter:blur(4px);';
-    modal.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--mantle);border-bottom:1px solid var(--surface0);">
-        <span style="font:600 12px var(--font-ui);color:var(--text);">Interactive Mind graph</span>
-        <span style="font:11px var(--font-ui);color:var(--subtext0);">drag to pan · wheel to zoom · click a node · right-click for blast radius</span>
-        <span style="flex:1;"></span>
-        <button id="mindInteractivePopout" class="mindmap-ribbon-btn" title="Open in a separate window">Detach</button>
-        <button id="mindInteractiveClose" class="mindmap-ribbon-btn primary" title="Close (Esc)">Close</button>
-      </div>
-      <iframe id="mindInteractiveFrame" sandbox="allow-scripts allow-same-origin" style="flex:1;width:100%;border:none;background:#1e1e2e;"></iframe>`;
-    document.body.appendChild(modal);
-    const frame = document.getElementById('mindInteractiveFrame');
-    if (frame) frame.srcdoc = html;
-    const close = () => { modal.remove(); document.removeEventListener('keydown', onEsc); };
-    function onEsc(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', onEsc);
-    document.getElementById('mindInteractiveClose').onclick = close;
-    document.getElementById('mindInteractivePopout').onclick = async () => {
-      // Detach: write the html to a blob URL and open in a new tab. Works
-      // in regular browsers; if Electron blocks, the user keeps the modal.
-      try {
-        const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank');
-        if (!w) setStatus('Detach blocked - keeping inline view');
-        else close();
-      } catch (e) {
-        setStatus('Detach failed: ' + (e.message || e));
-      }
-    };
   }
 
   async function embedAll() {
@@ -2406,8 +2147,6 @@
     _symbolRun: runSymbol,
     _smartRun: runSmart,
     _embedAll: embedAll,
-    openInteractive: openInteractive,
-    _copyMermaid: copyMermaid,
     _wakeupOpen: () => { state.view = 'dashboard'; renderWakeup(); },
     _healthCheck: async () => {
       const el = document.getElementById('mindDiagOut');
