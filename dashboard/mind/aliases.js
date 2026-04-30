@@ -121,11 +121,17 @@ function loadPathAliases(repoRoot) {
         prefix: compiledPat.prefix,
         suffix: compiledPat.suffix,
         exact: compiledPat.exact,
-        targets: compiledTargets.map(t => ({
-          prefix: path.relative(repoRoot, path.resolve(baseUrl, t.prefix)).replace(/\\/g, '/'),
-          suffix: t.suffix,
-          exact: t.exact,
-        })),
+        targets: compiledTargets.map(t => {
+          // Preserve trailing slash on wildcard prefixes - path.resolve strips
+          // it, but the wildcard substitution depends on it.
+          const trailing = (t.prefix.endsWith('/') || t.prefix.endsWith('\\')) ? '/' : '';
+          const resolved = path.relative(repoRoot, path.resolve(baseUrl, t.prefix)).replace(/\\/g, '/');
+          return {
+            prefix: t.exact ? resolved : (resolved + (resolved && !resolved.endsWith('/') ? trailing : '')),
+            suffix: t.suffix,
+            exact: t.exact,
+          };
+        }),
       });
     }
     if (aliases.length) return { aliases, baseUrl, configFile: file };
