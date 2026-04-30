@@ -464,9 +464,18 @@
 
   async function renderMermaidVisual(container) {
     container.innerHTML = `
-      <div class="mindmap-mermaid-wrap">
-        <div id="mindMermaidStage" class="mindmap-mermaid-stage">
-          <div style="color:var(--subtext0);">Rendering mermaid diagram...</div>
+      <div id="mindMermaidCanvas" class="mindmap-mermaid-canvas">
+        <div id="mindMermaidPan" class="mindmap-mermaid-pan">
+          <div id="mindMermaidStage" class="mindmap-mermaid-stage">
+            <div style="color:var(--subtext0);padding:40px;">Rendering mermaid diagram...</div>
+          </div>
+        </div>
+        <div class="mindmap-zoom-ctl">
+          <button id="mindMmZoomIn" title="Zoom in (+)">+</button>
+          <button id="mindMmZoomOut" title="Zoom out (-)">−</button>
+          <button id="mindMmFit" title="Fit to view (0)">⤧</button>
+          <button id="mindMmReset" title="Reset (100%)">1:1</button>
+          <span id="mindMmZoomLabel">100%</span>
         </div>
       </div>`;
     let mermaidText = '';
@@ -485,10 +494,10 @@
     if (!stage) return;
     if (!ensureMermaid()) {
       stage.innerHTML = `
-        <div style="color:var(--yellow);padding:14px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;">
+        <div style="color:var(--yellow);padding:14px;">
           mermaid library failed to load (offline?). Showing source:
         </div>
-        <pre style="margin-top:10px;background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
+        <pre style="background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
       return;
     }
     try {
@@ -497,17 +506,141 @@
       stage.innerHTML = svg;
       const svgEl = stage.querySelector('svg');
       if (svgEl) {
-        svgEl.style.width = '100%';
+        // Strip any size constraints so the SVG renders at its natural size,
+        // then we control sizing via CSS transforms in the pan/zoom layer.
+        svgEl.removeAttribute('width');
+        svgEl.removeAttribute('height');
+        svgEl.style.width = 'auto';
         svgEl.style.height = 'auto';
-        svgEl.style.maxWidth = '100%';
+        svgEl.style.maxWidth = 'none';
+        svgEl.style.maxHeight = 'none';
+        svgEl.style.display = 'block';
       }
+      attachPanZoom();
+      // Auto-fit on first paint after the SVG has measurements.
+      requestAnimationFrame(() => fitMermaid());
     } catch (e) {
       stage.innerHTML = `
-        <div style="color:var(--red);padding:14px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;">
+        <div style="color:var(--red);padding:14px;">
           mermaid render failed: ${escapeHtml(e.message || String(e))}
         </div>
-        <pre style="margin-top:10px;background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
+        <pre style="background:var(--mantle);padding:12px;border:1px solid var(--surface0);border-radius:4px;font-size:11px;color:var(--text);overflow:auto;white-space:pre;">${escapeHtml(mermaidText)}</pre>`;
     }
+  }
+
+  // Canvas-style pan + zoom on the mermaid SVG. Drag to pan, wheel to zoom
+  // (cursor-anchored), buttons for zoom in/out/fit/100%, keyboard +/-/0.
+  let _mmPan = null;
+  function attachPanZoom() {
+    const canvas = document.getElementById('mindMermaidCanvas');
+    const pan = document.getElementById('mindMermaidPan');
+    if (!canvas || !pan) return;
+    if (_mmPan && _mmPan.cleanup) _mmPan.cleanup();
+    const state = { scale: 1, tx: 0, ty: 0, dragging: false, lastX: 0, lastY: 0 };
+    function apply() {
+      pan.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+      const lab = document.getElementById('mindMmZoomLabel');
+      if (lab) lab.textContent = Math.round(state.scale * 100) + '%';
+    }
+    function zoomAt(clientX, clientY, factor) {
+      const rect = canvas.getBoundingClientRect();
+      const cx = clientX - rect.left;
+      const cy = clientY - rect.top;
+      const newScale = Math.max(0.1, Math.min(8, state.scale * factor));
+      const k = newScale / state.scale;
+      state.tx = cx - (cx - state.tx) * k;
+      state.ty = cy - (cy - state.ty) * k;
+      state.scale = newScale;
+      apply();
+    }
+    function onWheel(e) {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      zoomAt(e.clientX, e.clientY, factor);
+    }
+    function onDown(e) {
+      if (e.button !== 0) return;
+      state.dragging = true; state.lastX = e.clientX; state.lastY = e.clientY;
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+    function onMove(e) {
+      if (!state.dragging) return;
+      state.tx += e.clientX - state.lastX;
+      state.ty += e.clientY - state.lastY;
+      state.lastX = e.clientX; state.lastY = e.clientY;
+      apply();
+    }
+    function onUp() {
+      state.dragging = false;
+      canvas.style.cursor = 'grab';
+    }
+    function onKey(e) {
+      if (!document.getElementById('mindMermaidCanvas')) return;
+      if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
+      if (e.key === '+' || e.key === '=') { zoomAtCenter(1.15); e.preventDefault(); }
+      else if (e.key === '-' || e.key === '_') { zoomAtCenter(1 / 1.15); e.preventDefault(); }
+      else if (e.key === '0') { fitMermaid(); e.preventDefault(); }
+      else if (e.key === '1') { resetMermaid(); e.preventDefault(); }
+    }
+    function zoomAtCenter(factor) {
+      const rect = canvas.getBoundingClientRect();
+      zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('keydown', onKey);
+    canvas.style.cursor = 'grab';
+    document.getElementById('mindMmZoomIn').onclick = () => zoomAtCenter(1.2);
+    document.getElementById('mindMmZoomOut').onclick = () => zoomAtCenter(1 / 1.2);
+    document.getElementById('mindMmFit').onclick = () => fitMermaid();
+    document.getElementById('mindMmReset').onclick = () => resetMermaid();
+    _mmPan = {
+      state, apply,
+      cleanup: () => {
+        canvas.removeEventListener('wheel', onWheel);
+        canvas.removeEventListener('mousedown', onDown);
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('keydown', onKey);
+      },
+    };
+    apply();
+  }
+
+  function fitMermaid() {
+    const canvas = document.getElementById('mindMermaidCanvas');
+    const stage = document.getElementById('mindMermaidStage');
+    const svg = stage && stage.querySelector('svg');
+    if (!canvas || !stage || !svg || !_mmPan) return;
+    // Read intrinsic size from the svg's viewBox first; fall back to bbox.
+    let w = 0, h = 0;
+    const vb = svg.getAttribute('viewBox');
+    if (vb) {
+      const parts = vb.split(/\s+/).map(Number);
+      if (parts.length === 4) { w = parts[2]; h = parts[3]; }
+    }
+    if (!w || !h) {
+      const r = svg.getBBox ? svg.getBBox() : null;
+      if (r) { w = r.width; h = r.height; }
+    }
+    if (!w || !h) return;
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    const padding = 40;
+    const scale = Math.min((cw - padding * 2) / w, (ch - padding * 2) / h);
+    _mmPan.state.scale = Math.max(0.1, Math.min(4, scale));
+    _mmPan.state.tx = (cw - w * _mmPan.state.scale) / 2;
+    _mmPan.state.ty = (ch - h * _mmPan.state.scale) / 2;
+    _mmPan.apply();
+  }
+  function resetMermaid() {
+    if (!_mmPan) return;
+    _mmPan.state.scale = 1;
+    _mmPan.state.tx = 0;
+    _mmPan.state.ty = 0;
+    _mmPan.apply();
   }
 
   function copyMermaid() {

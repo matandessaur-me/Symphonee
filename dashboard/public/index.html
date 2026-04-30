@@ -1919,22 +1919,71 @@
       position: relative;
       overflow: hidden;
     }
-    .mindmap-mermaid-wrap {
-      flex: 1; min-height: 0;
-      overflow: auto;
-      padding: 18px 22px;
-      background: var(--base);
+    /* Canvas-style mermaid view: full-bleed pannable / zoomable surface
+       with a floating zoom control. SVG renders at intrinsic size; the
+       transform on .mindmap-mermaid-pan handles all scaling and panning. */
+    .mindmap-mermaid-canvas {
+      flex: 1; min-height: 0; min-width: 0;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 40%),
+        radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 40%),
+        var(--base);
+      background-image:
+        linear-gradient(color-mix(in srgb, var(--surface1) 30%, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--surface1) 30%, transparent) 1px, transparent 1px);
+      background-size: 24px 24px;
+      cursor: grab;
+      user-select: none;
+    }
+    .mindmap-mermaid-pan {
+      position: absolute;
+      top: 0; left: 0;
+      transform-origin: 0 0;
+      will-change: transform;
     }
     .mindmap-mermaid-stage {
-      max-width: 1400px;
-      margin: 0 auto;
-      background: var(--mantle);
-      border: 1px solid var(--surface0);
-      border-radius: 8px;
-      padding: 18px;
-      min-height: 320px;
+      display: inline-block;
+      padding: 0;
+      background: transparent;
     }
-    .mindmap-mermaid-stage svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+    .mindmap-mermaid-stage svg {
+      display: block;
+      shape-rendering: geometricPrecision;
+    }
+    .mindmap-zoom-ctl {
+      position: absolute;
+      bottom: 14px; right: 14px;
+      display: flex; align-items: center; gap: 4px;
+      background: var(--mantle);
+      border: 1px solid var(--surface1);
+      border-radius: 8px;
+      padding: 4px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      z-index: 10;
+    }
+    .mindmap-zoom-ctl button {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font: 600 13px var(--font-ui);
+      cursor: pointer;
+      width: 30px; height: 28px;
+      border-radius: 4px;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    .mindmap-zoom-ctl button:hover { background: var(--surface0); }
+    .mindmap-zoom-ctl span {
+      padding: 0 8px;
+      font: 600 11px var(--font-ui);
+      color: var(--subtext0);
+      font-variant-numeric: tabular-nums;
+      min-width: 42px;
+      text-align: center;
+      border-left: 1px solid var(--surface1);
+    }
     /* Reusable loader overlay for any Mind view that runs an expensive
        synchronous operation (graph rebuild, large filter swap, etc). The
        caller toggles display:flex to show. */
