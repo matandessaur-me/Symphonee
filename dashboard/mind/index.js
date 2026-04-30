@@ -60,7 +60,15 @@ async function tryDenseSeeds(repoRoot, space, question, k = 50) {
 }
 
 function mountMind(addRoute, json, ctx) {
-  const { repoRoot, getUiContext, getLearnings, getPlugins, getNotesDir, broadcast } = ctx;
+  const { repoRoot, getUiContext, getLearnings, getPlugins, getNotesDir, broadcast, getAiApiKeys } = ctx;
+  // Make the user's configured API keys available to the embedding layer so
+  // it can pick a provider automatically (OpenAI > Google) instead of
+  // defaulting to Ollama. Refreshes on every request so config edits take
+  // effect without a restart.
+  function refreshEmbedKeys() {
+    try { embeddings.setAvailableApiKeys(getAiApiKeys ? getAiApiKeys() : {}); } catch (_) {}
+  }
+  refreshEmbedKeys();
 
   const getSpace = () => {
     const c = getUiContext ? getUiContext() : {};
@@ -588,16 +596,18 @@ function mountMind(addRoute, json, ctx) {
 
   addRoute('POST', '/api/mind/embed', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
+    refreshEmbedKeys();
+    const provider = body.provider || embeddings.pickProvider();
     const space = getSpace();
     const g = store.loadGraph(repoRoot, space);
     if (!g) return json(res, { error: 'graph empty' }, 404);
     const acq = lock.acquire(space, 'embed');
     if (!acq.ok) return json(res, { error: 'embedding already running', holderPid: acq.holderPid }, 409);
-    json(res, { ok: true, started: true, provider: body.provider || 'ollama' });
+    json(res, { ok: true, started: true, provider });
     try {
       const r = await engine.refreshEmbeddings({
         repoRoot, space, graph: g,
-        ctx: { embedProvider: body.provider || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama' },
+        ctx: { embedProvider: provider },
         onProgress: (msg) => {
           if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-progress', msg } });
         },
@@ -616,7 +626,8 @@ function mountMind(addRoute, json, ctx) {
     const vs = new VectorStore(repoRoot, space);
     vs.load();
     const url = new URL(req.url, 'http://x');
-    const provider = url.searchParams.get('provider') || process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+    refreshEmbedKeys();
+    const provider = url.searchParams.get('provider') || embeddings.pickProvider();
     const fresh = url.searchParams.get('fresh') === '1';
     const h = await embeddings.health({ provider, fresh });
     return json(res, {
@@ -741,21 +752,50 @@ function mountMind(addRoute, json, ctx) {
     }
   };
 
-  addRoute('POST', '/api/mind/watch', async (req, res) => {
-    const body = await readBody(req).catch(() => ({}));
-    const enabled = body.enabled !== false;
-    if (!enabled) {
-      if (watcher) { watcher.stop(); watcher = null; }
-      return json(res, { enabled: false });
-    }
+  function startWatcher(debounceMs) {
     if (watcher) watcher.stop();
     watcher = new MindWatcher({
       repoRoot, getUiContext: ctx.getUiContext, broadcast,
-      debounceMs: typeof body.debounceMs === 'number' ? body.debounceMs : 3000,
+      debounceMs: typeof debounceMs === 'number' ? debounceMs : 3000,
       onTrigger: triggerIncrementalUpdate,
     });
     watcher.start();
+    persistWatchPreference(true);
+  }
+  function stopWatcher() {
+    if (watcher) { watcher.stop(); watcher = null; }
+    persistWatchPreference(false);
+  }
+  function persistWatchPreference(enabled) {
+    try {
+      const file = path.join(repoRoot, '.symphonee', 'mind', 'watch.json');
+      require('fs').mkdirSync(path.dirname(file), { recursive: true });
+      require('fs').writeFileSync(file, JSON.stringify({ enabled, savedAt: Date.now() }), 'utf8');
+    } catch (_) { /* best-effort */ }
+  }
+  function readWatchPreference() {
+    try {
+      const file = path.join(repoRoot, '.symphonee', 'mind', 'watch.json');
+      if (!require('fs').existsSync(file)) return null;
+      return JSON.parse(require('fs').readFileSync(file, 'utf8'));
+    } catch (_) { return null; }
+  }
+
+  addRoute('POST', '/api/mind/watch', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const enabled = body.enabled !== false;
+    if (!enabled) { stopWatcher(); return json(res, { enabled: false }); }
+    startWatcher(body.debounceMs);
     return json(res, { enabled: true, debounceMs: watcher.debounceMs });
+  });
+
+  // Auto-resume the watcher on server boot if the user had it on previously.
+  // Defer one tick so the rest of the server (routes, broadcast) is wired.
+  setImmediate(() => {
+    try {
+      const saved = readWatchPreference();
+      if (saved && saved.enabled) startWatcher();
+    } catch (_) { /* ignore */ }
   });
 
   addRoute('GET', '/api/mind/watch', (req, res) => {

@@ -1921,6 +1921,121 @@
     }
     /* Mind map body fills the canvas area; child renderers (graph, map)
        claim the full space via their own internal layouts. */
+
+    /* ── Impact view (list-first) ───────────────────────────────────────── */
+    .mind-impact {
+      display: flex; flex-direction: column;
+      height: 100%; min-height: 0;
+      max-width: 1400px; margin: 0 auto; width: 100%;
+      gap: 12px; padding: 14px 18px; box-sizing: border-box;
+    }
+    .mind-impact-head {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-shrink: 0;
+    }
+    .mind-impact-title { font-size: 14px; font-weight: 600; color: var(--text); }
+    .mind-impact-sub  { font-size: 12px; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-warn {
+      font-size: 11px; color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--mantle));
+      border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+      padding: 6px 10px; border-radius: 4px; font-weight: 600;
+    }
+    .mind-impact-body {
+      flex: 1; min-height: 0;
+      display: grid; grid-template-columns: 320px 1fr; gap: 14px;
+    }
+    .mind-impact-rail {
+      display: flex; flex-direction: column;
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px;
+      min-height: 0; overflow: hidden;
+    }
+    .mind-impact-rail-search {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border-bottom: 1px solid var(--surface0); flex-shrink: 0;
+    }
+    .mind-impact-rail-search input {
+      flex: 1; background: var(--surface0); border: 1px solid var(--surface1);
+      border-radius: 4px; color: var(--text); font: 12px var(--font-ui); padding: 6px 8px;
+    }
+    .mind-impact-count { font-size: 10px; color: var(--subtext0); font-variant-numeric: tabular-nums; }
+    .mind-impact-eps { padding: 8px 10px; border-bottom: 1px solid var(--surface0); flex-shrink: 0; }
+    .mind-impact-eps:empty { display: none; }
+    .mind-impact-eps-title {
+      font-size: 10px; color: var(--subtext0); text-transform: uppercase; letter-spacing: .4px;
+      margin-bottom: 6px;
+    }
+    .mind-impact-ep-chip {
+      display: inline-block;
+      background: var(--surface0); border: 1px solid var(--surface1); color: var(--accent);
+      font: 600 11px var(--font-ui); padding: 3px 8px; border-radius: 999px;
+      cursor: pointer; margin: 2px 4px 2px 0;
+      transition: background 0.12s;
+    }
+    .mind-impact-ep-chip:hover { background: var(--surface1); }
+    .mind-impact-list {
+      flex: 1; min-height: 0; overflow: auto;
+    }
+    .mind-impact-row {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+      width: 100%; background: transparent; border: none;
+      padding: 7px 12px; cursor: pointer;
+      border-bottom: 1px solid color-mix(in srgb, var(--surface0) 40%, transparent);
+      text-align: left; transition: background 0.1s;
+    }
+    .mind-impact-row:hover { background: var(--surface0); }
+    .mind-impact-row.active {
+      background: color-mix(in srgb, var(--accent) 16%, var(--mantle));
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .mind-impact-row-name { font: 600 12px var(--font-ui); color: var(--text); }
+    .mind-impact-row-file { font: 10px monospace; color: var(--subtext0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+    .mind-impact-detail {
+      display: flex; flex-direction: column; gap: 12px;
+      min-height: 0; overflow: auto;
+      padding-right: 4px;
+    }
+    .mind-impact-empty {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: var(--subtext0); padding: 40px;
+    }
+    .mind-impact-detail-head {
+      display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px; padding: 12px 14px;
+    }
+    .mind-impact-detail-name { font: 600 14px var(--font-ui); color: var(--text); }
+    .mind-impact-detail-file { font: 11px monospace; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .mind-impact-cards {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .mind-impact-card {
+      background: var(--mantle); border: 1px solid var(--surface0); border-radius: 8px; padding: 12px 14px;
+    }
+    .mind-impact-card-wide { grid-column: 1 / -1; }
+    .mind-impact-card-title {
+      font: 600 10px var(--font-ui); color: var(--subtext0); text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: 8px;
+    }
+    .mind-impact-card-body { font-size: 11px; color: var(--text); max-height: 320px; overflow: auto; }
+    .mind-impact-call {
+      display: flex; gap: 6px; align-items: baseline;
+      padding: 3px 0; font-family: monospace; font-size: 11px;
+    }
+    .mind-impact-call-arrow { color: var(--subtext0); width: 14px; flex-shrink: 0; }
+    .mind-impact-call-name { color: var(--text); }
+    .mind-impact-call-file { color: var(--subtext0); font-size: 10px; margin-left: auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mind-impact-hop { margin-bottom: 10px; }
+    .mind-impact-hop-title { font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+    .mind-impact-hop-file {
+      padding: 2px 8px; margin: 2px 0; font: 11px monospace; color: var(--text);
+      border-left: 2px solid; background: color-mix(in srgb, var(--base) 60%, transparent);
+    }
+    .mind-impact-flow-row { font: 11px monospace; white-space: pre; padding: 1px 0; }
+
+    /* Narrow screens: rail collapses above the detail. */
+    @media (max-width: 900px) {
+      .mind-impact-body { grid-template-columns: 1fr; }
+      .mind-impact-cards { grid-template-columns: 1fr; }
+    }
     /* Reusable loader overlay for any Mind view that runs an expensive
        synchronous operation (graph rebuild, large filter swap, etc). The
        caller toggles display:flex to show. */

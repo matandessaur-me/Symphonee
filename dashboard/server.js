@@ -3145,6 +3145,7 @@ const mind = mountMind(addRoute, json, {
   // or /api/mind/update, the engine pulls every repo Symphonee manages
   // (cfg.Repos) instead of just the active one.
   getAllRepos: () => (getConfig().Repos || {}),
+  getAiApiKeys: () => (getConfig().AiApiKeys || {}),
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed

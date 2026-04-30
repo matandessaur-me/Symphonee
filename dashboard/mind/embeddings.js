@@ -15,7 +15,24 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 
-const DEFAULT_PROVIDER = process.env.SYMPHONEE_EMBED_PROVIDER || 'ollama';
+// Provider resolution order:
+//   1. Explicit SYMPHONEE_EMBED_PROVIDER env var (developer override).
+//   2. Symphonee's config.AiApiKeys - whichever key is set first wins
+//      (openai > google). Set per-process by mind/index.js at boot.
+//   3. Hard fallback to 'ollama' for self-hosted / dev users (will error
+//      cleanly if Ollama isn't running, with a message that points at
+//      the API keys settings).
+const DEFAULT_PROVIDER = process.env.SYMPHONEE_EMBED_PROVIDER || 'auto';
+
+let _availableKeys = null;
+function setAvailableApiKeys(keys) { _availableKeys = keys || null; }
+function pickProvider() {
+  if (DEFAULT_PROVIDER && DEFAULT_PROVIDER !== 'auto') return DEFAULT_PROVIDER;
+  const k = _availableKeys || {};
+  if (k.OPENAI_API_KEY) return 'openai';
+  if (k.GOOGLE_API_KEY) return 'google';
+  return 'ollama'; // last resort
+}
 
 // Per-process cache of last-known provider state so the health endpoint
 // doesn't ping the network on every paint.
@@ -95,14 +112,25 @@ async function googleEmbed(texts, opts = {}) {
 }
 
 async function embed(texts, opts = {}) {
-  const provider = (opts.provider || DEFAULT_PROVIDER || 'ollama').toLowerCase();
+  const provider = (opts.provider || pickProvider()).toLowerCase();
   if (!Array.isArray(texts)) throw new Error('embed expects an array of texts');
   if (texts.length === 0) return [];
-  switch (provider) {
-    case 'openai': return openaiEmbed(texts, opts);
-    case 'google': return googleEmbed(texts, opts);
-    case 'ollama':
-    default: return ollamaEmbed(texts, opts);
+  // Inject API keys from Symphonee's config when not explicitly passed.
+  const k = _availableKeys || {};
+  const enriched = { ...opts, apiKey: opts.apiKey || (provider === 'openai' ? k.OPENAI_API_KEY : provider === 'google' ? k.GOOGLE_API_KEY : null) };
+  try {
+    switch (provider) {
+      case 'openai': return await openaiEmbed(texts, enriched);
+      case 'google': return await googleEmbed(texts, enriched);
+      case 'ollama':
+      default: return await ollamaEmbed(texts, enriched);
+    }
+  } catch (err) {
+    // Wrap with a clearer message when no key is set
+    if (provider !== 'ollama' && /api[_ ]?key/i.test(err.message || '')) {
+      throw new Error(`${provider} embedding needs an API key in Settings > AI Providers (key '${provider === 'openai' ? 'OPENAI_API_KEY' : 'GOOGLE_API_KEY'}' missing)`);
+    }
+    throw err;
   }
 }
 
@@ -137,5 +165,7 @@ module.exports = {
   embedSingle,
   ping,
   health,
+  pickProvider,
+  setAvailableApiKeys,
   defaultProvider: () => DEFAULT_PROVIDER,
 };

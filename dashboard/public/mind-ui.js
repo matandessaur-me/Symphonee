@@ -289,8 +289,8 @@
       setStatus(`${s.space || 'space'}: empty`);
       return;
     }
-    const ageMin = Math.round((Date.now() - new Date(s.stats.lastBuildAt).getTime()) / 60000);
-    setStatus(`${s.space}: ${s.stats.nodes} nodes, ${s.stats.edges} edges, ${s.stats.communities} communities, ${ageMin}m ago`);
+    const age = formatRelativeMs(Date.now() - new Date(s.stats.lastBuildAt).getTime());
+    setStatus(`${s.space}: ${s.stats.nodes} nodes, ${s.stats.edges} edges, ${s.stats.communities} communities, ${age}`);
     const w = await API('/api/mind/watch');
     setWatch(!!w.enabled);
   }
@@ -570,174 +570,229 @@
   }
 
   // ── Impact view (symbols + blast-radius + call-flow + entrypoints) ──────
+  // ── Impact view (list-first) ────────────────────────────────────────────
+  // Two columns: searchable Symbols rail on the left, selected-symbol detail
+  // panel on the right. No more "type the exact symbol name" inputs - the
+  // user sees the full list, filters with a search box, clicks to inspect.
+  // Entrypoints are exposed as quick chips at the top of the rail. The raw
+  // /api/mind/impact, /flow, /symbol, /symbols, /entrypoints, /circular
+  // endpoints are unchanged - the AI surface keeps everything, we just
+  // strip the manual-input UI from the human surface.
+  let _impactSymbols = [];
+  let _impactSelected = null;
+
   async function renderImpact() {
     const main = $('mindMain');
     if (!main) return;
     main.innerHTML = `
-      <div class="mind-card" style="max-width:1200px;margin:0 auto;">
-        <div class="mind-card-title">Impact analysis</div>
-        <div style="font-size:12px;color:var(--subtext0);margin-bottom:14px;line-height:1.6;">
-          Symbol-level call graph. <b>What breaks if I rename X?</b> · <b>What does this entrypoint actually do?</b> · <b>Who calls Y and what does Y call?</b>
+      <div class="mind-impact">
+        <div class="mind-impact-head">
+          <div>
+            <div class="mind-impact-title">Impact</div>
+            <div class="mind-impact-sub">Pick a symbol to see what calls it, what it calls, and its blast radius.</div>
+          </div>
+          <div id="mindCircularBanner"></div>
         </div>
-        <div id="mindCircularBanner" style="display:none;margin-bottom:12px;"></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
-          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
-            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Blast radius</div>
-            <div style="display:flex;gap:6px;margin-bottom:8px;">
-              <input id="mindImpactTarget" type="text" placeholder="symbol name or relative file path" style="flex:1;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
-              <input id="mindImpactDepth" type="number" value="3" min="1" max="8" style="width:54px;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
-              <button class="tab-bar-btn" onclick="MindUI._impactRun()" style="padding:6px 10px;font-size:11px;">Run</button>
+        <div class="mind-impact-body">
+          <aside class="mind-impact-rail">
+            <div class="mind-impact-rail-search">
+              <input id="mindImpactFilter" type="text" placeholder="filter symbols..." autocomplete="off" spellcheck="false">
+              <span id="mindImpactCount" class="mind-impact-count">…</span>
             </div>
-            <div id="mindImpactOut" style="font-size:11px;color:var(--text);max-height:320px;overflow:auto;"></div>
-          </div>
-          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
-            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Call flow (forward)</div>
-            <div style="display:flex;gap:6px;margin-bottom:8px;">
-              <input id="mindFlowTarget" type="text" placeholder="entrypoint symbol or file" style="flex:1;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
-              <input id="mindFlowDepth" type="number" value="5" min="1" max="10" style="width:54px;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
-              <button class="tab-bar-btn" onclick="MindUI._flowRun()" style="padding:6px 10px;font-size:11px;">Trace</button>
+            <div id="mindImpactEntrypoints" class="mind-impact-eps"></div>
+            <div id="mindImpactList" class="mind-impact-list">
+              <div style="padding:14px;color:var(--subtext0);font-size:11px;">Loading symbols…</div>
             </div>
-            <div id="mindFlowOut" style="font-size:11px;color:var(--text);max-height:320px;overflow:auto;"></div>
-          </div>
-          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
-            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Symbol 360°</div>
-            <div style="display:flex;gap:6px;margin-bottom:8px;">
-              <input id="mindSymTarget" type="text" placeholder="symbol name" style="flex:1;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--text);font-size:12px;">
-              <button class="tab-bar-btn" onclick="MindUI._symbolRun()" style="padding:6px 10px;font-size:11px;">Look up</button>
+          </aside>
+          <section class="mind-impact-detail" id="mindImpactDetail">
+            <div class="mind-impact-empty">
+              <div style="font-size:13px;color:var(--text);margin-bottom:6px;">No symbol selected</div>
+              <div style="font-size:11px;color:var(--subtext0);">Pick one from the list, or click an entrypoint chip to trace forward.</div>
             </div>
-            <div id="mindSymOut" style="font-size:11px;color:var(--text);max-height:320px;overflow:auto;"></div>
-          </div>
-          <div style="background:var(--base);border:1px solid var(--surface0);border-radius:6px;padding:12px;">
-            <div style="font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--subtext0);text-transform:uppercase;margin-bottom:8px;">Entrypoints</div>
-            <div id="mindEntrypointsOut" style="font-size:11px;color:var(--text);max-height:380px;overflow:auto;">Loading...</div>
-          </div>
+          </section>
         </div>
       </div>`;
 
-    // Auto-load entrypoints + circular detection
-    try {
-      const r = await fetch('/api/mind/entrypoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const data = await r.json();
-      const out = $('mindEntrypointsOut');
-      if (out) {
-        if (!data.entrypoints || data.entrypoints.length === 0) {
-          out.innerHTML = '<span style="color:var(--subtext0);">No entrypoints detected.</span>';
-        } else {
-          out.innerHTML = data.entrypoints.slice(0, 60).map(e => `
-            <div style="padding:6px 8px;border-bottom:1px solid var(--surface0);display:flex;justify-content:space-between;gap:8px;">
-              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
-                <a href="#" class="mind-ep-link" data-ep="${escapeHtml(e.label || e.id)}" style="color:var(--accent);text-decoration:none;">${escapeHtml(e.label)}</a>
-                <span style="color:var(--subtext0);font-size:10px;"> ${escapeHtml(e.file || '')}${e.line ? ':' + e.line : ''}</span>
-              </div>
-              <span style="color:var(--subtext0);font-size:10px;">${escapeHtml((e.reasons || []).join(','))}</span>
-            </div>`).join('');
-          out.querySelectorAll('.mind-ep-link').forEach(a => {
-            a.addEventListener('click', (ev) => {
-              ev.preventDefault();
-              const t = $('mindFlowTarget');
-              if (t) { t.value = a.dataset.ep; runFlow(); }
-            });
-          });
-        }
-      }
-    } catch (_) { /* ignore */ }
+    // Symbol list + entrypoints + circular run in parallel.
+    Promise.all([
+      fetch('/api/mind/symbols', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1500 }) }).then(r => r.json()).catch(() => ({ results: [] })),
+      fetch('/api/mind/entrypoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ entrypoints: [] })),
+      fetch('/api/mind/circular', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ cycles: [] })),
+    ]).then(([symData, epData, cycData]) => {
+      _impactSymbols = (symData.results || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      renderImpactList(_impactSymbols);
+      renderImpactEntrypoints(epData.entrypoints || []);
+      renderImpactCircular(cycData);
+    });
 
-    try {
-      const r = await fetch('/api/mind/circular', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const data = await r.json();
-      const banner = $('mindCircularBanner');
-      if (banner && data.count > 0) {
-        banner.style.display = 'block';
-        banner.innerHTML = `
-          <div style="background:#3b1818;border:1px solid var(--red);color:var(--red);padding:8px 12px;border-radius:4px;font-size:11px;">
-            ⚠ ${data.count} circular dependenc${data.count === 1 ? 'y' : 'ies'} detected. ${(data.cycles[0] || []).slice(0, 3).join(' → ')}${(data.cycles[0] || []).length > 3 ? ' →' : ''}
-          </div>`;
-      } else if (banner) {
-        banner.style.display = 'none';
-      }
-    } catch (_) { /* ignore */ }
+    const filter = $('mindImpactFilter');
+    if (filter) {
+      filter.addEventListener('input', () => {
+        const q = filter.value.trim().toLowerCase();
+        const filtered = q
+          ? _impactSymbols.filter(s => (s.name || '').toLowerCase().includes(q) || (s.file || '').toLowerCase().includes(q))
+          : _impactSymbols;
+        renderImpactList(filtered);
+      });
+    }
   }
 
-  async function runImpact() {
-    const target = ($('mindImpactTarget') && $('mindImpactTarget').value || '').trim();
-    const depth = parseInt(($('mindImpactDepth') && $('mindImpactDepth').value) || '3', 10);
-    const out = $('mindImpactOut');
-    if (!out) return;
-    if (!target) { out.innerHTML = '<span style="color:var(--subtext0);">enter a symbol name or file path</span>'; return; }
-    out.innerHTML = '<span style="color:var(--subtext0);">computing...</span>';
+  function renderImpactList(symbols) {
+    const list = $('mindImpactList');
+    const count = $('mindImpactCount');
+    if (count) count.textContent = symbols.length + (symbols.length === _impactSymbols.length ? '' : '/' + _impactSymbols.length);
+    if (!list) return;
+    if (!symbols.length) {
+      list.innerHTML = '<div style="padding:14px;color:var(--subtext0);font-size:11px;">No matches.</div>';
+      return;
+    }
+    list.innerHTML = symbols.slice(0, 600).map(s => `
+      <button class="mind-impact-row${_impactSelected === s.id ? ' active' : ''}" data-id="${escapeHtml(s.id)}">
+        <span class="mind-impact-row-name">${escapeHtml(s.name || s.id)}</span>
+        <span class="mind-impact-row-file">${escapeHtml(s.file || '')}${s.line ? ':' + s.line : ''}</span>
+      </button>`).join('');
+    list.querySelectorAll('.mind-impact-row').forEach(btn => {
+      btn.addEventListener('click', () => selectImpactSymbol(btn.dataset.id));
+    });
+  }
+
+  function renderImpactEntrypoints(eps) {
+    const el = $('mindImpactEntrypoints');
+    if (!el) return;
+    if (!eps.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="mind-impact-eps-title">Entrypoints</div>' + eps.slice(0, 12).map(e => `
+      <button class="mind-impact-ep-chip" data-ep="${escapeHtml(e.label || e.id)}" title="${escapeHtml((e.file || '') + ' · ' + (e.reasons || []).join(', '))}">
+        ${escapeHtml(e.label || e.id)}
+      </button>`).join('');
+    el.querySelectorAll('.mind-impact-ep-chip').forEach(b => {
+      b.addEventListener('click', () => runImpactFlow(b.dataset.ep));
+    });
+  }
+
+  function renderImpactCircular(data) {
+    const banner = $('mindCircularBanner');
+    if (!banner) return;
+    if (!data || !data.count) { banner.innerHTML = ''; return; }
+    const sample = (data.cycles[0] || []).slice(0, 4).join(' → ');
+    banner.innerHTML = `
+      <div class="mind-impact-warn">
+        ⚠ ${data.count} circular dependenc${data.count === 1 ? 'y' : 'ies'}
+        <span style="color:var(--subtext0);font-weight:normal;">${escapeHtml(sample)}${(data.cycles[0] || []).length > 4 ? ' →' : ''}</span>
+      </div>`;
+  }
+
+  async function selectImpactSymbol(id) {
+    _impactSelected = id;
+    document.querySelectorAll('.mind-impact-row').forEach(r => r.classList.toggle('active', r.dataset.id === id));
+    const detail = $('mindImpactDetail');
+    if (!detail) return;
+    const sym = _impactSymbols.find(s => s.id === id);
+    if (!sym) return;
+    detail.innerHTML = `
+      <div class="mind-impact-detail-head">
+        <div>
+          <div class="mind-impact-detail-name">${escapeHtml(sym.name || sym.id)}</div>
+          <div class="mind-impact-detail-file">${escapeHtml(sym.file || '')}${sym.line ? ':' + sym.line : ''}</div>
+        </div>
+        <div class="mind-impact-actions">
+          <button class="mindmap-ribbon-btn primary" id="mindImpactRunBlast">Blast radius</button>
+          <button class="mindmap-ribbon-btn" id="mindImpactRunFlow">Trace forward</button>
+        </div>
+      </div>
+      <div class="mind-impact-cards">
+        <div class="mind-impact-card" id="mindImpactCallers">
+          <div class="mind-impact-card-title">Callers</div>
+          <div class="mind-impact-card-body">Loading…</div>
+        </div>
+        <div class="mind-impact-card" id="mindImpactCallees">
+          <div class="mind-impact-card-title">Callees</div>
+          <div class="mind-impact-card-body">Loading…</div>
+        </div>
+      </div>
+      <div class="mind-impact-card mind-impact-card-wide" id="mindImpactBlast" style="display:none;">
+        <div class="mind-impact-card-title">Blast radius</div>
+        <div class="mind-impact-card-body"></div>
+      </div>
+      <div class="mind-impact-card mind-impact-card-wide" id="mindImpactFlow" style="display:none;">
+        <div class="mind-impact-card-title">Forward call flow</div>
+        <div class="mind-impact-card-body"></div>
+      </div>`;
+    document.getElementById('mindImpactRunBlast').onclick = () => runImpactBlast(sym);
+    document.getElementById('mindImpactRunFlow').onclick = () => runImpactFlow(sym.name);
+    fetchSymbolContext(sym);
+  }
+
+  async function fetchSymbolContext(sym) {
     try {
-      const r = await fetch('/api/mind/impact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, depth }) });
+      const r = await fetch('/api/mind/symbol', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: sym.name, file: sym.file }) });
       const data = await r.json();
-      if (data.error) { out.textContent = data.error; return; }
+      const ctx = (data.results || []).find(x => x.id === sym.id) || (data.results || [])[0];
+      const callersBody = document.querySelector('#mindImpactCallers .mind-impact-card-body');
+      const calleesBody = document.querySelector('#mindImpactCallees .mind-impact-card-body');
+      if (callersBody) callersBody.innerHTML = renderCallList(ctx && ctx.callers, '←') || '<span style="color:var(--subtext0);font-size:11px;">none</span>';
+      if (calleesBody) calleesBody.innerHTML = renderCallList(ctx && ctx.callees, '→') || '<span style="color:var(--subtext0);font-size:11px;">none</span>';
+    } catch (_) {
+      const callersBody = document.querySelector('#mindImpactCallers .mind-impact-card-body');
+      if (callersBody) callersBody.innerHTML = '<span style="color:var(--red);font-size:11px;">error loading callers</span>';
+    }
+  }
+
+  function renderCallList(list, arrow) {
+    if (!list || !list.length) return '';
+    return list.slice(0, 30).map(c => `
+      <div class="mind-impact-call">
+        <span class="mind-impact-call-arrow">${arrow}</span>
+        <span class="mind-impact-call-name">${escapeHtml(c.name || c.id)}</span>
+        <span class="mind-impact-call-file">${escapeHtml(c.file || '')}</span>
+      </div>`).join('');
+  }
+
+  async function runImpactBlast(sym) {
+    const card = document.getElementById('mindImpactBlast');
+    if (!card) return;
+    card.style.display = 'block';
+    const body = card.querySelector('.mind-impact-card-body');
+    if (body) body.innerHTML = '<span style="color:var(--subtext0);font-size:11px;">computing…</span>';
+    try {
+      const r = await fetch('/api/mind/impact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: sym.name, depth: 3 }) });
+      const data = await r.json();
+      if (data.error) { body.textContent = data.error; return; }
       const colors = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d5', '#74c7ec'];
-      const hopBlocks = Object.keys(data.filesByDepth || {}).map(hop => {
+      const hops = Object.keys(data.filesByDepth || {}).map(hop => {
         const c = colors[(parseInt(hop, 10) - 1) % colors.length];
         const files = data.filesByDepth[hop] || [];
         return `
-          <div style="margin-bottom:8px;">
-            <div style="font-size:10px;color:${c};font-weight:600;margin-bottom:3px;">Hop ${hop} (${files.length} file${files.length === 1 ? '' : 's'})</div>
-            ${files.map(f => `<div style="padding:2px 6px;border-left:2px solid ${c};margin:1px 0;font-family:monospace;">${escapeHtml(f)}</div>`).join('')}
+          <div class="mind-impact-hop">
+            <div class="mind-impact-hop-title" style="color:${c};">Hop ${hop} · ${files.length} file${files.length === 1 ? '' : 's'}</div>
+            ${files.map(f => `<div class="mind-impact-hop-file" style="border-left-color:${c};">${escapeHtml(f)}</div>`).join('')}
           </div>`;
       }).join('');
-      out.innerHTML = `
-        <div style="margin-bottom:6px;color:var(--subtext0);">
-          ${escapeHtml(data.targetKind)} <b style="color:var(--text);">${escapeHtml(data.target)}</b> · ${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'} affected${data.truncated ? ' (truncated)' : ''}
-        </div>
-        ${hopBlocks || '<span style="color:var(--subtext0);">no callers found</span>'}`;
-    } catch (e) { out.textContent = 'error: ' + (e.message || e); }
+      body.innerHTML = `
+        <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'} affected${data.truncated ? ' (truncated)' : ''}</div>
+        ${hops || '<span style="color:var(--subtext0);font-size:11px;">no callers found</span>'}`;
+    } catch (e) { body.textContent = 'error: ' + (e.message || e); }
   }
 
-  async function runFlow() {
-    const target = ($('mindFlowTarget') && $('mindFlowTarget').value || '').trim();
-    const depth = parseInt(($('mindFlowDepth') && $('mindFlowDepth').value) || '5', 10);
-    const out = $('mindFlowOut');
-    if (!out) return;
-    if (!target) { out.innerHTML = '<span style="color:var(--subtext0);">pick an entrypoint</span>'; return; }
-    out.innerHTML = '<span style="color:var(--subtext0);">tracing...</span>';
+  async function runImpactFlow(target) {
+    const card = document.getElementById('mindImpactFlow');
+    if (!card) return;
+    card.style.display = 'block';
+    const body = card.querySelector('.mind-impact-card-body');
+    if (body) body.innerHTML = '<span style="color:var(--subtext0);font-size:11px;">tracing…</span>';
     try {
-      const r = await fetch('/api/mind/flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entrypoint: target, depth }) });
+      const r = await fetch('/api/mind/flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entrypoint: target, depth: 5 }) });
       const data = await r.json();
-      if (data.error) { out.textContent = data.error; return; }
+      if (data.error) { body.textContent = data.error; return; }
       function render(node, indent) {
         const pre = '  '.repeat(indent);
         const tail = node.truncated ? ` <span style="color:var(--yellow);">[${node.truncated}]</span>` : '';
-        const fileTag = node.file ? `<span style="color:var(--subtext0);font-size:10px;"> ${escapeHtml(node.file)}${node.line ? ':' + node.line : ''}</span>` : '';
-        let html = `<div style="font-family:monospace;white-space:pre;">${pre}└ <span style="color:var(--text);">${escapeHtml(node.label)}</span>${fileTag}${tail}</div>`;
+        const fileTag = node.file ? `<span class="mind-impact-call-file">${escapeHtml(node.file)}${node.line ? ':' + node.line : ''}</span>` : '';
+        let html = `<div class="mind-impact-flow-row">${pre}└ <span style="color:var(--text);">${escapeHtml(node.label)}</span>${fileTag}${tail}</div>`;
         for (const c of node.children || []) html += render(c, indent + 1);
         return html;
       }
-      out.innerHTML = render(data.flow, 0);
-    } catch (e) { out.textContent = 'error: ' + (e.message || e); }
-  }
-
-  async function runSymbol() {
-    const name = ($('mindSymTarget') && $('mindSymTarget').value || '').trim();
-    const out = $('mindSymOut');
-    if (!out) return;
-    if (!name) { out.innerHTML = '<span style="color:var(--subtext0);">enter a symbol name</span>'; return; }
-    out.innerHTML = '<span style="color:var(--subtext0);">looking up...</span>';
-    try {
-      const r = await fetch('/api/mind/symbol', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-      const data = await r.json();
-      if (!data.results || data.results.length === 0) {
-        out.innerHTML = '<span style="color:var(--subtext0);">no matches</span>';
-        return;
-      }
-      out.innerHTML = data.results.map(s => `
-        <div style="margin-bottom:10px;padding:8px;background:var(--mantle);border:1px solid var(--surface0);border-radius:4px;">
-          <div style="font-weight:600;color:var(--text);font-size:12px;">${escapeHtml(s.name)} <span style="color:var(--subtext0);font-weight:normal;font-size:10px;">${escapeHtml(s.file || '')}${s.line ? ':' + s.line : ''}</span></div>
-          <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div>
-              <div style="color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Callers (${s.callers.length})</div>
-              ${s.callers.slice(0, 12).map(c => `<div style="font-family:monospace;font-size:11px;">← ${escapeHtml(c.name || c.id)} <span style="color:var(--subtext0);font-size:10px;">${escapeHtml(c.file || '')}</span></div>`).join('') || '<span style="color:var(--subtext0);font-size:10px;">none</span>'}
-            </div>
-            <div>
-              <div style="color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Callees (${s.callees.length})</div>
-              ${s.callees.slice(0, 12).map(c => `<div style="font-family:monospace;font-size:11px;">→ ${escapeHtml(c.name || c.id)} <span style="color:var(--subtext0);font-size:10px;">${escapeHtml(c.file || '')}</span></div>`).join('') || '<span style="color:var(--subtext0);font-size:10px;">none</span>'}
-            </div>
-          </div>
-        </div>`).join('');
-    } catch (e) { out.textContent = 'error: ' + (e.message || e); }
+      body.innerHTML = render(data.flow, 0);
+    } catch (e) { body.textContent = 'error: ' + (e.message || e); }
   }
 
   // ── Knowledge view (Phase 4 placeholder; populated when artifacts ship) ─
@@ -982,7 +1037,7 @@
 
     const totalEdges = g.edges.length || 1;
     const lastBuildAt = stats.buildMs ? `${(stats.buildMs / 1000).toFixed(1)}s build` : '';
-    const ageMin = g.generatedAt ? Math.round((Date.now() - new Date(g.generatedAt).getTime()) / 60000) : 0;
+    const ageRel = g.generatedAt ? formatRelativeMs(Date.now() - new Date(g.generatedAt).getTime()) : '-';
     const maxCommunitySize = Math.max(1, ...Object.values(g.communities || {}).map(c => c.size || 0));
     const maxGodDegree = g.gods[0]?.degree || 1;
     const topContributors = Object.entries(cliCounts).sort((a, b) => b[1] - a[1]).slice(0, 12);
@@ -998,7 +1053,7 @@
           ${statCard('Sources', Object.keys(sources).length || '-', '#cba6f7')}
           ${statCard('God nodes', (g.gods || []).length, '#f9e2af')}
           ${statCard('Bridges', (g.surprises || []).length, '#f38ba8')}
-          ${statCard('Last build', `${ageMin}m ago`, '#94e2d5', lastBuildAt)}
+          ${statCard('Last build', ageRel, '#94e2d5', lastBuildAt)}
           ${statCard('Watch', state.watchEnabled ? 'on' : 'off', state.watchEnabled ? '#a6e3a1' : '#6c7086')}
         </div>
 
@@ -2128,23 +2183,30 @@
   function formatTimestamp(iso) {
     try {
       const d = new Date(iso);
-      const now = Date.now();
-      const diff = now - d.getTime();
-      if (diff < 60000) return 'just now';
-      if (diff < 3600000) return Math.round(diff / 60000) + 'm ago';
-      if (diff < 86400000) return Math.round(diff / 3600000) + 'h ago';
-      if (diff < 604800000) return Math.round(diff / 86400000) + 'd ago';
+      const diff = Date.now() - d.getTime();
+      const rel = formatRelativeMs(diff);
+      if (rel) return rel;
       return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     } catch (_) { return iso; }
+  }
+  // Smart relative-time formatter: rolls minutes -> hours -> days -> weeks
+  // -> months -> years so we never show "900m ago" again.
+  function formatRelativeMs(ms) {
+    if (!Number.isFinite(ms)) return '';
+    if (ms < 0) ms = 0;
+    if (ms < 60000) return 'just now';
+    if (ms < 3600000) return Math.round(ms / 60000) + 'm ago';
+    if (ms < 86400000) return Math.round(ms / 3600000) + 'h ago';
+    if (ms < 604800000) return Math.round(ms / 86400000) + 'd ago';
+    if (ms < 2592000000) return Math.round(ms / 604800000) + 'w ago';
+    if (ms < 31557600000) return Math.round(ms / 2592000000) + 'mo ago';
+    return Math.round(ms / 31557600000) + 'y ago';
   }
 
   window.MindUI = { onActivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, togglePhysics, clearSearch, toggleSearchOnly,
     refreshLock, refreshQuality,
     _wakeupRefresh: refreshWakeupOutput,
     _queryRun: runQueryFromUi,
-    _impactRun: runImpact,
-    _flowRun: runFlow,
-    _symbolRun: runSymbol,
     _smartRun: runSmart,
     _embedAll: embedAll,
     _wakeupOpen: () => { state.view = 'dashboard'; renderWakeup(); },
