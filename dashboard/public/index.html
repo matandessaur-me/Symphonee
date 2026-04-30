@@ -11656,11 +11656,37 @@ async function orchDoDispatch() {
 function handleOrchestratorEvent(msg) {
   if (msg.event === 'provider-failover') {
     const fromLabel = (CLI_CONFIG[msg.from] && CLI_CONFIG[msg.from].label) || msg.from;
-    toast(`${fromLabel}: ${msg.reason || 'provider error'} — falling back to next available AI`, 'warning', { duration: 4500 });
+    const toLabel = msg.to ? ((CLI_CONFIG[msg.to] && CLI_CONFIG[msg.to].label) || msg.to) : 'next available AI';
+    const chain = Array.isArray(msg.chain)
+      ? msg.chain.map(c => (CLI_CONFIG[c] && CLI_CONFIG[c].label) || c).join(' -> ')
+      : '';
+    const reason = msg.reason || 'provider error';
+    const body = `${fromLabel} was skipped: ${reason}. Falling back to ${toLabel}.${chain ? ' Remaining chain: ' + chain + '.' : ''}`;
+    if (typeof notify === 'function') {
+      notify('AI provider skipped', body, {
+        icon: 'alert-triangle',
+        source: 'orchestrator',
+        taskId: msg.taskId || null,
+        severity: 'warning',
+      });
+    }
+    toast(`${fromLabel}: ${reason} - falling back to ${toLabel}`, 'warning', { duration: 5500 });
     return;
   }
   if (msg.event === 'provider-exhausted') {
     const lastLabel = (CLI_CONFIG[msg.lastCli] && CLI_CONFIG[msg.lastCli].label) || msg.lastCli;
+    if (typeof notify === 'function') {
+      notify(
+        'All AI providers failed',
+        `The waterfall stopped after ${lastLabel}: ${msg.reason || 'failed'}. Add credits, log in, or configure another provider in Settings.`,
+        {
+          icon: 'alert-circle',
+          source: 'orchestrator',
+          taskId: msg.taskId || null,
+          severity: 'error',
+        }
+      );
+    }
     toast(`All AI providers exhausted (last: ${lastLabel} — ${msg.reason || 'failed'}). Add credits or another API key in Settings.`, 'error', { duration: 8000 });
     return;
   }

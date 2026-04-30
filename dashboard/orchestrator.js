@@ -811,23 +811,30 @@ class Orchestrator extends EventEmitter {
         // Auto-failover: if this is a credit / quota / auth / model failure,
         // attach a default escalation chain (cheapest -> most capable) on the
         // fly so the user does not have to opt in to spawnWithEscalation.
-        // The orchestrator broadcasts a `provider-failover` event so the UI
-        // can show a top-right toast.
-        if (classified.failover && (!task._escalationChain || !task._escalationChain.length)) {
-          task._escalationChain = ESCALATION_ORDER
-            .filter(c => c !== cli && this.circuitBreaker.isAvailable(c));
+        // Broadcast every provider-level skip, including later hops in an
+        // existing chain, so the notification center records each skipped AI.
+        if (classified.failover) {
+          if (!task._escalationChain || !task._escalationChain.length) {
+            task._escalationChain = ESCALATION_ORDER
+              .filter(c => c !== cli && this.circuitBreaker.isAvailable(c));
+          }
           task._escalationPrompt = task._escalationPrompt || prompt;
           task._escalationCwd = task._escalationCwd || cwd;
-          this.broadcast({
-            type: 'orchestrator-event',
-            event: 'provider-failover',
-            taskId: task.id,
-            from: cli,
-            reason: classified.failoverReason || 'provider error',
-            errorSnippet: (classified.message || '').slice(0, 160),
-            chainRemaining: task._escalationChain.length,
-            timestamp: Date.now(),
-          });
+          const chain = (task._escalationChain || []).slice();
+          if (chain.length) {
+            this.broadcast({
+              type: 'orchestrator-event',
+              event: 'provider-failover',
+              taskId: task.id,
+              from: cli,
+              to: chain[0],
+              reason: classified.failoverReason || 'provider error',
+              errorSnippet: (classified.message || '').slice(0, 160),
+              chainRemaining: chain.length,
+              chain,
+              timestamp: Date.now(),
+            });
+          }
         }
 
         // Try cross-model escalation before giving up
