@@ -430,11 +430,35 @@
       });
       const d = await r.json();
       if (!d.mermaid) { setStatus(d.error || 'no mermaid output'); return; }
-      try { await navigator.clipboard.writeText(d.mermaid); setStatus('mermaid source copied'); }
-      catch (_) { setStatus('clipboard unavailable'); }
+      const ok = await copyToClipboard(d.mermaid);
+      setStatus(ok ? 'mermaid source copied' : 'copy failed - try selecting and copying manually');
     } catch (e) {
       setStatus('mermaid error: ' + (e.message || e));
     }
+  }
+
+  // Reliable copy with fallback for Electron contexts where the async
+  // clipboard API is blocked. Returns true on success.
+  async function copyToClipboard(text) {
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) { /* fall through to legacy path */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (_) { return false; }
   }
 
   // Graph + Map: existing renderers fully overwrite #mindMain. To keep the
@@ -578,8 +602,12 @@
   // /api/mind/impact, /flow, /symbol, /symbols, /entrypoints, /circular
   // endpoints are unchanged - the AI surface keeps everything, we just
   // strip the manual-input UI from the human surface.
-  let _impactSymbols = [];
-  let _impactSelected = null;
+  // File-first Impact view. The symbol-level call graph is approximate
+  // (regex-based) so we show files first - the file-import graph is
+  // comprehensive and reliable. Symbols appear as a sub-list when a file
+  // is selected, with a clear notice when the call graph is sparse.
+  let _impactFiles = [];
+  let _impactSelectedPath = null;
 
   async function renderImpact() {
     const main = $('mindMain');
@@ -589,39 +617,38 @@
         <div class="mind-impact-head">
           <div>
             <div class="mind-impact-title">Impact</div>
-            <div class="mind-impact-sub">Pick a symbol to see what calls it, what it calls, and its blast radius.</div>
+            <div class="mind-impact-sub">
+              <b>What breaks if I delete or rename this file?</b>
+              Pick a file to see its imports, dependents, and a one-click blast radius.
+            </div>
           </div>
           <div id="mindCircularBanner"></div>
         </div>
         <div class="mind-impact-body">
           <aside class="mind-impact-rail">
             <div class="mind-impact-rail-search">
-              <input id="mindImpactFilter" type="text" placeholder="filter symbols..." autocomplete="off" spellcheck="false">
+              <input id="mindImpactFilter" type="text" placeholder="filter files..." autocomplete="off" spellcheck="false">
               <span id="mindImpactCount" class="mind-impact-count">…</span>
             </div>
-            <div id="mindImpactEntrypoints" class="mind-impact-eps"></div>
             <div id="mindImpactList" class="mind-impact-list">
-              <div style="padding:14px;color:var(--subtext0);font-size:11px;">Loading symbols…</div>
+              <div style="padding:14px;color:var(--subtext0);font-size:11px;">Loading files…</div>
             </div>
           </aside>
           <section class="mind-impact-detail" id="mindImpactDetail">
             <div class="mind-impact-empty">
-              <div style="font-size:13px;color:var(--text);margin-bottom:6px;">No symbol selected</div>
-              <div style="font-size:11px;color:var(--subtext0);">Pick one from the list, or click an entrypoint chip to trace forward.</div>
+              <div style="font-size:13px;color:var(--text);margin-bottom:6px;">No file selected</div>
+              <div style="font-size:11px;color:var(--subtext0);">Pick a file on the left. Files are sorted by how many other files reference them - the most "load-bearing" ones at the top.</div>
             </div>
           </section>
         </div>
       </div>`;
 
-    // Symbol list + entrypoints + circular run in parallel.
     Promise.all([
-      fetch('/api/mind/symbols', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1500 }) }).then(r => r.json()).catch(() => ({ results: [] })),
-      fetch('/api/mind/entrypoints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ entrypoints: [] })),
+      fetch('/api/mind/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ files: [] })),
       fetch('/api/mind/circular', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ cycles: [] })),
-    ]).then(([symData, epData, cycData]) => {
-      _impactSymbols = (symData.results || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      renderImpactList(_impactSymbols);
-      renderImpactEntrypoints(epData.entrypoints || []);
+    ]).then(([fileData, cycData]) => {
+      _impactFiles = (fileData.files || []);
+      renderImpactList(_impactFiles);
       renderImpactCircular(cycData);
     });
 
@@ -630,43 +657,45 @@
       filter.addEventListener('input', () => {
         const q = filter.value.trim().toLowerCase();
         const filtered = q
-          ? _impactSymbols.filter(s => (s.name || '').toLowerCase().includes(q) || (s.file || '').toLowerCase().includes(q))
-          : _impactSymbols;
+          ? _impactFiles.filter(f => (f.path || '').toLowerCase().includes(q))
+          : _impactFiles;
         renderImpactList(filtered);
       });
     }
   }
 
-  function renderImpactList(symbols) {
+  function renderImpactList(files) {
     const list = $('mindImpactList');
     const count = $('mindImpactCount');
-    if (count) count.textContent = symbols.length + (symbols.length === _impactSymbols.length ? '' : '/' + _impactSymbols.length);
+    if (count) count.textContent = files.length + (files.length === _impactFiles.length ? '' : '/' + _impactFiles.length);
     if (!list) return;
-    if (!symbols.length) {
+    if (!files.length) {
       list.innerHTML = '<div style="padding:14px;color:var(--subtext0);font-size:11px;">No matches.</div>';
       return;
     }
-    list.innerHTML = symbols.slice(0, 600).map(s => `
-      <button class="mind-impact-row${_impactSelected === s.id ? ' active' : ''}" data-id="${escapeHtml(s.id)}">
-        <span class="mind-impact-row-name">${escapeHtml(s.name || s.id)}</span>
-        <span class="mind-impact-row-file">${escapeHtml(s.file || '')}${s.line ? ':' + s.line : ''}</span>
-      </button>`).join('');
+    list.innerHTML = files.slice(0, 800).map(f => {
+      const total = f.dependentsCount + f.importsCount;
+      const heat = total > 50 ? 'hot' : total > 10 ? 'warm' : '';
+      return `
+        <button class="mind-impact-row${_impactSelectedPath === f.path ? ' active' : ''}" data-path="${escapeHtml(f.path)}">
+          <span class="mind-impact-row-name">${escapeHtml(basenameOf(f.path))}</span>
+          <span class="mind-impact-row-file">${escapeHtml(f.path)}</span>
+          <span class="mind-impact-row-meta">
+            <span class="mind-impact-pip ${heat}" title="${f.dependentsCount} files import this · ${f.importsCount} imports">
+              ←${f.dependentsCount} →${f.importsCount}
+            </span>
+          </span>
+        </button>`;
+    }).join('');
     list.querySelectorAll('.mind-impact-row').forEach(btn => {
-      btn.addEventListener('click', () => selectImpactSymbol(btn.dataset.id));
+      btn.addEventListener('click', () => selectImpactFile(btn.dataset.path));
     });
   }
 
-  function renderImpactEntrypoints(eps) {
-    const el = $('mindImpactEntrypoints');
-    if (!el) return;
-    if (!eps.length) { el.innerHTML = ''; return; }
-    el.innerHTML = '<div class="mind-impact-eps-title">Entrypoints</div>' + eps.slice(0, 12).map(e => `
-      <button class="mind-impact-ep-chip" data-ep="${escapeHtml(e.label || e.id)}" title="${escapeHtml((e.file || '') + ' · ' + (e.reasons || []).join(', '))}">
-        ${escapeHtml(e.label || e.id)}
-      </button>`).join('');
-    el.querySelectorAll('.mind-impact-ep-chip').forEach(b => {
-      b.addEventListener('click', () => runImpactFlow(b.dataset.ep));
-    });
+  function basenameOf(p) {
+    if (!p) return '';
+    const parts = String(p).replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || p;
   }
 
   function renderImpactCircular(data) {
@@ -681,80 +710,106 @@
       </div>`;
   }
 
-  async function selectImpactSymbol(id) {
-    _impactSelected = id;
-    document.querySelectorAll('.mind-impact-row').forEach(r => r.classList.toggle('active', r.dataset.id === id));
+  async function selectImpactFile(path) {
+    _impactSelectedPath = path;
+    document.querySelectorAll('.mind-impact-row').forEach(r => r.classList.toggle('active', r.dataset.path === path));
     const detail = $('mindImpactDetail');
     if (!detail) return;
-    const sym = _impactSymbols.find(s => s.id === id);
-    if (!sym) return;
     detail.innerHTML = `
       <div class="mind-impact-detail-head">
         <div>
-          <div class="mind-impact-detail-name">${escapeHtml(sym.name || sym.id)}</div>
-          <div class="mind-impact-detail-file">${escapeHtml(sym.file || '')}${sym.line ? ':' + sym.line : ''}</div>
+          <div class="mind-impact-detail-name">${escapeHtml(basenameOf(path))}</div>
+          <div class="mind-impact-detail-file">${escapeHtml(path)}</div>
         </div>
         <div class="mind-impact-actions">
-          <button class="mindmap-ribbon-btn primary" id="mindImpactRunBlast">Blast radius</button>
-          <button class="mindmap-ribbon-btn" id="mindImpactRunFlow">Trace forward</button>
+          <button class="mindmap-ribbon-btn primary" id="mindImpactBlastBtn">Blast radius</button>
         </div>
       </div>
       <div class="mind-impact-cards">
-        <div class="mind-impact-card" id="mindImpactCallers">
-          <div class="mind-impact-card-title">Callers</div>
-          <div class="mind-impact-card-body">Loading…</div>
+        <div class="mind-impact-card" id="mindImpactDeps">
+          <div class="mind-impact-card-title">Imported by <span id="mindImpactDepsCount" style="color:var(--text);font-weight:normal;"></span></div>
+          <div class="mind-impact-card-body" id="mindImpactDepsBody">Loading…</div>
         </div>
-        <div class="mind-impact-card" id="mindImpactCallees">
-          <div class="mind-impact-card-title">Callees</div>
-          <div class="mind-impact-card-body">Loading…</div>
+        <div class="mind-impact-card" id="mindImpactImports">
+          <div class="mind-impact-card-title">Imports <span id="mindImpactImpCount" style="color:var(--text);font-weight:normal;"></span></div>
+          <div class="mind-impact-card-body" id="mindImpactImpBody">Loading…</div>
         </div>
+      </div>
+      <div class="mind-impact-card" id="mindImpactSyms">
+        <div class="mind-impact-card-title">Symbols in this file <span id="mindImpactSymsCount" style="color:var(--text);font-weight:normal;"></span></div>
+        <div class="mind-impact-card-body" id="mindImpactSymsBody">Loading…</div>
       </div>
       <div class="mind-impact-card mind-impact-card-wide" id="mindImpactBlast" style="display:none;">
-        <div class="mind-impact-card-title">Blast radius</div>
-        <div class="mind-impact-card-body"></div>
-      </div>
-      <div class="mind-impact-card mind-impact-card-wide" id="mindImpactFlow" style="display:none;">
-        <div class="mind-impact-card-title">Forward call flow</div>
+        <div class="mind-impact-card-title">Blast radius (transitive dependents)</div>
         <div class="mind-impact-card-body"></div>
       </div>`;
-    document.getElementById('mindImpactRunBlast').onclick = () => runImpactBlast(sym);
-    document.getElementById('mindImpactRunFlow').onclick = () => runImpactFlow(sym.name);
-    fetchSymbolContext(sym);
-  }
 
-  async function fetchSymbolContext(sym) {
     try {
-      const r = await fetch('/api/mind/symbol', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: sym.name, file: sym.file }) });
+      const r = await fetch('/api/mind/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
       const data = await r.json();
-      const ctx = (data.results || []).find(x => x.id === sym.id) || (data.results || [])[0];
-      const callersBody = document.querySelector('#mindImpactCallers .mind-impact-card-body');
-      const calleesBody = document.querySelector('#mindImpactCallees .mind-impact-card-body');
-      if (callersBody) callersBody.innerHTML = renderCallList(ctx && ctx.callers, '←') || '<span style="color:var(--subtext0);font-size:11px;">none</span>';
-      if (calleesBody) calleesBody.innerHTML = renderCallList(ctx && ctx.callees, '→') || '<span style="color:var(--subtext0);font-size:11px;">none</span>';
-    } catch (_) {
-      const callersBody = document.querySelector('#mindImpactCallers .mind-impact-card-body');
-      if (callersBody) callersBody.innerHTML = '<span style="color:var(--red);font-size:11px;">error loading callers</span>';
+      if (data.error) { document.getElementById('mindImpactDepsBody').textContent = data.error; return; }
+
+      const depsBody = document.getElementById('mindImpactDepsBody');
+      const depsCount = document.getElementById('mindImpactDepsCount');
+      if (depsCount) depsCount.textContent = '· ' + (data.dependents || []).length;
+      depsBody.innerHTML = (data.dependents && data.dependents.length)
+        ? data.dependents.map(d => `
+          <button class="mind-impact-link" data-path="${escapeHtml(d.path)}">
+            ← <span class="mind-impact-call-name">${escapeHtml(basenameOf(d.path))}</span>
+            <span class="mind-impact-call-file">${escapeHtml(d.path)}</span>
+          </button>`).join('')
+        : '<span style="color:var(--subtext0);font-size:11px;">Nothing imports this file. It may be an entrypoint, an orphan, or a leaf.</span>';
+
+      const impBody = document.getElementById('mindImpactImpBody');
+      const impCount = document.getElementById('mindImpactImpCount');
+      if (impCount) impCount.textContent = '· ' + (data.imports || []).length;
+      impBody.innerHTML = (data.imports && data.imports.length)
+        ? data.imports.map(d => `
+          <button class="mind-impact-link${d.external ? ' external' : ''}" data-path="${escapeHtml(d.path)}" ${d.external ? 'disabled' : ''}>
+            → <span class="mind-impact-call-name">${escapeHtml(d.external ? d.path.replace(/^ext_/, '') : basenameOf(d.path))}</span>
+            <span class="mind-impact-call-file">${escapeHtml(d.external ? '(external)' : d.path)}</span>
+          </button>`).join('')
+        : '<span style="color:var(--subtext0);font-size:11px;">No imports detected in this file.</span>';
+
+      const symsBody = document.getElementById('mindImpactSymsBody');
+      const symsCount = document.getElementById('mindImpactSymsCount');
+      if (symsCount) symsCount.textContent = '· ' + (data.symbols || []).length;
+      symsBody.innerHTML = (data.symbols && data.symbols.length)
+        ? data.symbols.slice(0, 50).map(s => `
+          <div class="mind-impact-call">
+            <span class="mind-impact-call-arrow">·</span>
+            <span class="mind-impact-call-name">${escapeHtml(s.name)}</span>
+            <span class="mind-impact-call-file">${s.line ? 'line ' + s.line : ''}</span>
+          </div>`).join('')
+        : '<span style="color:var(--subtext0);font-size:11px;">No symbols extracted from this file. Symphonee\'s extractor recognizes top-level functions, classes and methods - declaration patterns inside functions are not picked up.</span>';
+
+      // Wire click-to-navigate for imports and dependents links.
+      detail.querySelectorAll('.mind-impact-link').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.disabled) return;
+          const target = btn.dataset.path;
+          // Find in our cached list and select.
+          if (_impactFiles.find(f => f.path === target)) selectImpactFile(target);
+        });
+      });
+
+      const blastBtn = document.getElementById('mindImpactBlastBtn');
+      if (blastBtn) blastBtn.onclick = () => runImpactFileBlast(path);
+    } catch (e) {
+      document.getElementById('mindImpactDepsBody').textContent = 'error: ' + (e.message || e);
     }
   }
 
-  function renderCallList(list, arrow) {
-    if (!list || !list.length) return '';
-    return list.slice(0, 30).map(c => `
-      <div class="mind-impact-call">
-        <span class="mind-impact-call-arrow">${arrow}</span>
-        <span class="mind-impact-call-name">${escapeHtml(c.name || c.id)}</span>
-        <span class="mind-impact-call-file">${escapeHtml(c.file || '')}</span>
-      </div>`).join('');
-  }
-
-  async function runImpactBlast(sym) {
+  // File-level blast radius via the existing /api/mind/impact - it accepts
+  // file paths as the target and walks reverse 'imports' edges.
+  async function runImpactFileBlast(path) {
     const card = document.getElementById('mindImpactBlast');
     if (!card) return;
     card.style.display = 'block';
     const body = card.querySelector('.mind-impact-card-body');
     if (body) body.innerHTML = '<span style="color:var(--subtext0);font-size:11px;">computing…</span>';
     try {
-      const r = await fetch('/api/mind/impact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: sym.name, depth: 3 }) });
+      const r = await fetch('/api/mind/impact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: path, depth: 4 }) });
       const data = await r.json();
       if (data.error) { body.textContent = data.error; return; }
       const colors = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d5', '#74c7ec'];
@@ -768,30 +823,8 @@
           </div>`;
       }).join('');
       body.innerHTML = `
-        <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'} affected${data.truncated ? ' (truncated)' : ''}</div>
-        ${hops || '<span style="color:var(--subtext0);font-size:11px;">no callers found</span>'}`;
-    } catch (e) { body.textContent = 'error: ' + (e.message || e); }
-  }
-
-  async function runImpactFlow(target) {
-    const card = document.getElementById('mindImpactFlow');
-    if (!card) return;
-    card.style.display = 'block';
-    const body = card.querySelector('.mind-impact-card-body');
-    if (body) body.innerHTML = '<span style="color:var(--subtext0);font-size:11px;">tracing…</span>';
-    try {
-      const r = await fetch('/api/mind/flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entrypoint: target, depth: 5 }) });
-      const data = await r.json();
-      if (data.error) { body.textContent = data.error; return; }
-      function render(node, indent) {
-        const pre = '  '.repeat(indent);
-        const tail = node.truncated ? ` <span style="color:var(--yellow);">[${node.truncated}]</span>` : '';
-        const fileTag = node.file ? `<span class="mind-impact-call-file">${escapeHtml(node.file)}${node.line ? ':' + node.line : ''}</span>` : '';
-        let html = `<div class="mind-impact-flow-row">${pre}└ <span style="color:var(--text);">${escapeHtml(node.label)}</span>${fileTag}${tail}</div>`;
-        for (const c of node.children || []) html += render(c, indent + 1);
-        return html;
-      }
-      body.innerHTML = render(data.flow, 0);
+        <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'} would break if you delete or rename <b style="color:var(--text);">${escapeHtml(basenameOf(path))}</b>${data.truncated ? ' (truncated)' : ''}</div>
+        ${hops || '<span style="color:var(--green);font-size:11px;">No files depend on this. Safe to delete or rename.</span>'}`;
     } catch (e) { body.textContent = 'error: ' + (e.message || e); }
   }
 
@@ -802,39 +835,95 @@
     main.innerHTML = `
       <div class="mind-card" style="max-width:1100px;margin:0 auto;">
         <div class="mind-card-title">Project knowledge</div>
-        <div style="font-size:12px;color:var(--subtext0);margin-bottom:12px;line-height:1.6;">
-          Schemas, OpenAPI specs, ADRs, glossaries declared in <code>.symphonee/context-artifacts.json</code>. The AI consults these before answering.
+        <div style="font-size:12px;color:var(--subtext0);margin-bottom:14px;line-height:1.65;">
+          <b style="color:var(--text);">What this is:</b> a curated list of important non-code files (database schemas, OpenAPI specs, ADRs, domain glossaries) that you want the AI to consult <i>before</i> answering questions about migrations, endpoints, conventions, etc. Mind indexes them so the AI can search them by description.
+          <br><br>
+          <b style="color:var(--text);">Where it lives:</b> <code>.symphonee/context-artifacts.json</code> in the active repo. You write it once - Symphonee re-reads it on every Mind build.
         </div>
         <div id="mindKnowledgeList" style="font-size:12px;color:var(--text);">Loading...</div>
       </div>`;
     try {
-      const r = await fetch('/api/mind/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const data = await r.json();
+      const [listRes, suggestRes] = await Promise.all([
+        fetch('/api/mind/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ artifacts: [] })),
+        fetch('/api/mind/artifacts/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ suggestions: [] })),
+      ]);
       const list = $('mindKnowledgeList');
       if (!list) return;
-      if (!data.artifacts || data.artifacts.length === 0) {
-        list.innerHTML = `
-          <div style="padding:14px;background:var(--base);border:1px dashed var(--surface1);border-radius:6px;color:var(--subtext0);">
-            No artifacts declared. Create <code>.symphonee/context-artifacts.json</code> in the active repo with entries like:
-            <pre style="background:var(--mantle);padding:10px;margin-top:8px;border-radius:4px;font-size:11px;color:var(--text);overflow:auto;">{
+      const declared = listRes.artifacts || [];
+      const suggestions = suggestRes.suggestions || [];
+
+      if (declared.length === 0) {
+        const sugBlock = suggestions.length ? `
+          <div style="margin-top:14px;padding:12px;background:var(--mantle);border:1px solid var(--surface0);border-radius:6px;">
+            <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:8px;">We found ${suggestions.length} likely artifact${suggestions.length === 1 ? '' : 's'} in this repo:</div>
+            <div id="mindArtifactSuggestions">
+              ${suggestions.map((s, i) => `
+                <label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--surface0);">
+                  <input type="checkbox" data-idx="${i}" checked style="margin-top:3px;">
+                  <div style="flex:1;">
+                    <div style="font-weight:600;font-size:12px;color:var(--text);">${escapeHtml(s.name)} <span style="color:var(--subtext0);font-weight:normal;font-size:10px;font-family:monospace;">${escapeHtml(s.path)}</span></div>
+                    <div style="font-size:11px;color:var(--subtext0);margin-top:2px;">${escapeHtml(s.description)}</div>
+                  </div>
+                </label>`).join('')}
+            </div>
+            <button class="mindmap-ribbon-btn primary" style="margin-top:10px;" onclick="MindUI._artifactsCreate()">Create context-artifacts.json with checked items</button>
+          </div>` : '';
+
+        const noSugBlock = !suggestions.length ? `
+          <div style="margin-top:14px;padding:12px;background:var(--mantle);border:1px solid var(--surface0);border-radius:6px;color:var(--subtext0);font-size:12px;">
+            No conventional artifact locations were found in this repo. You can create the file manually:
+            <pre style="background:var(--base);padding:10px;margin-top:8px;border-radius:4px;font-size:11px;color:var(--text);overflow:auto;">{
   "artifacts": [
     { "name": "schema", "path": "./docs/schema.sql",
       "description": "Postgres schema. Check before writing migrations." }
   ]
 }</pre>
-          </div>`;
+          </div>` : '';
+
+        list.innerHTML = `
+          <div style="padding:14px;background:var(--base);border:1px dashed var(--surface1);border-radius:6px;color:var(--subtext0);font-size:12px;line-height:1.6;">
+            <b style="color:var(--text);">No artifacts declared yet.</b>
+            Mind doesn't auto-detect schemas / specs / docs - you tell it what matters.
+          </div>
+          ${sugBlock}
+          ${noSugBlock}`;
         return;
       }
-      list.innerHTML = data.artifacts.map(a => `
+
+      list.innerHTML = declared.map(a => `
         <div style="padding:10px 12px;background:var(--base);border:1px solid var(--surface0);border-radius:6px;margin-bottom:8px;">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
             <div style="font-weight:600;font-size:13px;color:var(--text);">${escapeHtml(a.name)}</div>
             <div style="font-size:10px;color:${a.indexed ? 'var(--green)' : 'var(--subtext0)'};">${a.indexed ? 'indexed' : 'not indexed'} · ${a.fileCount || 0} file${(a.fileCount || 0) === 1 ? '' : 's'}</div>
           </div>
-          <div style="font-size:11px;color:var(--subtext0);margin:4px 0;">${escapeHtml(a.path || '')}</div>
+          <div style="font-size:11px;color:var(--subtext0);margin:4px 0;font-family:monospace;">${escapeHtml(a.path || '')}</div>
           <div style="font-size:11px;color:var(--text);line-height:1.5;">${escapeHtml(a.description || '')}</div>
         </div>`).join('');
     } catch (_) { /* ignore */ }
+  }
+
+  async function artifactsCreate() {
+    const block = document.getElementById('mindArtifactSuggestions');
+    if (!block) return;
+    const sugRes = await fetch('/api/mind/artifacts/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json()).catch(() => ({ suggestions: [] }));
+    const checks = block.querySelectorAll('input[type=checkbox]');
+    const picked = [];
+    checks.forEach(cb => {
+      const idx = parseInt(cb.dataset.idx, 10);
+      if (cb.checked && sugRes.suggestions[idx]) picked.push(sugRes.suggestions[idx]);
+    });
+    if (!picked.length) { setStatus('select at least one artifact'); return; }
+    try {
+      const r = await fetch('/api/mind/artifacts/init', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifacts: picked }),
+      });
+      const data = await r.json();
+      if (data.error) { setStatus('init: ' + data.error); return; }
+      setStatus(`Created ${data.path} with ${data.count} artifact(s). Run a build to index them.`);
+      // Re-render the Knowledge view so the user sees the populated list.
+      renderKnowledge();
+    } catch (e) { setStatus('init failed: ' + (e.message || e)); }
   }
 
   // ── Wake-up view ──────────────────────────────────────────────────────────
@@ -2209,6 +2298,7 @@
     _queryRun: runQueryFromUi,
     _smartRun: runSmart,
     _embedAll: embedAll,
+    _artifactsCreate: artifactsCreate,
     _wakeupOpen: () => { state.view = 'dashboard'; renderWakeup(); },
     _healthCheck: async () => {
       const el = document.getElementById('mindDiagOut');

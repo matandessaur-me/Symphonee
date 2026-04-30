@@ -1988,6 +1988,24 @@
     }
     .mind-impact-row-name { font: 600 12px var(--font-ui); color: var(--text); }
     .mind-impact-row-file { font: 10px monospace; color: var(--subtext0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+    .mind-impact-row-meta { font: 10px monospace; color: var(--subtext0); margin-top: 2px; }
+    .mind-impact-pip {
+      display: inline-block; padding: 1px 6px; border-radius: 3px;
+      background: var(--surface0); color: var(--subtext0);
+      font-variant-numeric: tabular-nums;
+    }
+    .mind-impact-pip.warm { background: color-mix(in srgb, var(--yellow) 22%, var(--surface0)); color: var(--yellow); }
+    .mind-impact-pip.hot  { background: color-mix(in srgb, var(--red) 24%, var(--surface0)); color: var(--red); }
+    .mind-impact-link {
+      display: flex; gap: 6px; align-items: baseline;
+      width: 100%; background: transparent; border: none;
+      padding: 4px 8px; cursor: pointer; text-align: left;
+      border-radius: 3px;
+      font-family: monospace; font-size: 11px; color: var(--text);
+    }
+    .mind-impact-link:hover:not(:disabled) { background: var(--surface0); }
+    .mind-impact-link:disabled { cursor: default; opacity: 0.7; }
+    .mind-impact-link.external { color: var(--subtext0); }
     .mind-impact-detail {
       display: flex; flex-direction: column; gap: 12px;
       min-height: 0; overflow: auto;

@@ -392,6 +392,65 @@ function mountMind(addRoute, json, ctx) {
     return json(res, { count: cycles.length, cycles });
   });
 
+  // ── File-level browsing for the Impact UI ───────────────────────────────
+  // The symbol-level call graph is approximate (regex-based) so its results
+  // are noisy. The file-import graph is comprehensive and reliable. This
+  // endpoint exposes it: a list of every code file with its imports +
+  // dependents counts so the UI can build a file-first browser.
+  addRoute('POST', '/api/mind/files', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { error: 'graph empty' }, 404);
+
+    // Build adjacency for 'imports' edges only.
+    const incoming = new Map();
+    const outgoing = new Map();
+    for (const e of g.edges) {
+      if (e.relation !== 'imports') continue;
+      if (!outgoing.has(e.source)) outgoing.set(e.source, []);
+      if (!incoming.has(e.target)) incoming.set(e.target, []);
+      outgoing.get(e.source).push(e.target);
+      incoming.get(e.target).push(e.source);
+    }
+
+    const files = [];
+    for (const n of g.nodes) {
+      if (n.kind !== 'code') continue;
+      if (!n.source || n.source.type !== 'file') continue;
+      const rel = n.source.ref || (n.sourceLocation && n.sourceLocation.file) || n.label;
+      files.push({
+        id: n.id,
+        path: rel,
+        label: n.label,
+        importsCount: (outgoing.get(n.id) || []).length,
+        dependentsCount: (incoming.get(n.id) || []).length,
+        unresolvedImports: (outgoing.get(n.id) || []).filter(t => String(t).startsWith('ext_')).length,
+      });
+    }
+    files.sort((a, b) => (b.dependentsCount + b.importsCount) - (a.dependentsCount + a.importsCount));
+
+    if (body.path) {
+      const target = files.find(f => f.path === body.path || f.id === body.path);
+      if (!target) return json(res, { error: 'file not found', total: files.length });
+      const idToFile = new Map(files.map(f => [f.id, f]));
+      const importsList = (outgoing.get(target.id) || []).map(id => idToFile.get(id) || { id, path: id, external: String(id).startsWith('ext_') });
+      const dependentsList = (incoming.get(target.id) || []).map(id => idToFile.get(id) || { id, path: id });
+      // Symbols inside this file (best-effort)
+      const symbols = g.nodes.filter(n => n.kind === 'code' && n.source && n.source.type === 'symbol' && (n.source.file === target.path || (n.sourceLocation && n.sourceLocation.file === target.path)));
+      return json(res, {
+        file: target,
+        imports: importsList.slice(0, 200),
+        dependents: dependentsList.slice(0, 200),
+        symbols: symbols.map(s => ({ id: s.id, name: s.label, line: s.sourceLocation && s.sourceLocation.line || null })),
+      });
+    }
+    return json(res, {
+      total: files.length,
+      files: files.slice(0, body.limit || 2000),
+    });
+  });
+
   // ── Per-file patch (incremental update for a single saved file) ─────────
   // Cheaper than /api/mind/update for the common "user just saved one file"
   // case. Invalidates the manifest entry for that file so the next
@@ -489,6 +548,76 @@ function mountMind(addRoute, json, ctx) {
       error: cfg.error || null,
       artifacts: enriched,
     });
+  });
+
+  // Auto-detect likely artifacts in the active repo. Looks for
+  // schema.{sql,prisma}, openapi.{yaml,yml,json}, swagger.*, docs/, adr/,
+  // glossary.md, and similar conventional locations. Returns a list of
+  // suggestions the UI can show as one-click "add this artifact" buttons.
+  addRoute('POST', '/api/mind/artifacts/suggest', async (req, res) => {
+    const ui = getUiContext ? getUiContext() : {};
+    const root = ui.activeRepoPath;
+    if (!root) return json(res, { error: 'no active repo', suggestions: [] });
+    const fs = require('fs');
+    const path = require('path');
+    const out = [];
+
+    function exists(rel) {
+      try { return fs.existsSync(path.join(root, rel)); } catch (_) { return false; }
+    }
+    function isDir(rel) {
+      try { return fs.statSync(path.join(root, rel)).isDirectory(); } catch (_) { return false; }
+    }
+
+    const patterns = [
+      { name: 'database-schema', candidates: ['schema.sql', 'docs/schema.sql', 'db/schema.sql', 'prisma/schema.prisma', 'db/schema.rb'], description: 'Database schema. Check before writing migrations to match column conventions, FK rules, and trigger patterns.' },
+      { name: 'api-spec',        candidates: ['openapi.yaml', 'openapi.yml', 'openapi.json', 'docs/openapi.yaml', 'api/openapi.yaml', 'swagger.yaml', 'swagger.json'], description: 'OpenAPI / Swagger spec. Check before adding or modifying endpoints to match auth, pagination, and response-envelope conventions.' },
+      { name: 'graphql-schema',  candidates: ['schema.graphql', 'docs/schema.graphql', 'graphql/schema.graphql'], description: 'GraphQL schema. Check before adding queries / mutations to keep types consistent.' },
+      { name: 'adrs',            candidates: ['docs/adr', 'docs/adr/', 'adr/', '.adr/', 'docs/decisions/'], description: 'Architecture Decision Records. Check before introducing a new pattern - we may have rejected this approach already.' },
+      { name: 'docs',            candidates: ['docs/', 'documentation/'], description: 'Project documentation. Check for design notes, conventions, and onboarding info.' },
+      { name: 'ubiquitous-language', candidates: ['docs/ubiquitous-language.md', 'docs/glossary.md', 'GLOSSARY.md'], description: 'Domain glossary. Always check before naming entities, events, or commands so we use the correct domain terms.' },
+    ];
+
+    for (const p of patterns) {
+      const found = p.candidates.find(c => exists(c) && (c.endsWith('/') ? isDir(c) : true));
+      if (found) {
+        out.push({
+          name: p.name,
+          path: './' + found.replace(/\/$/, ''),
+          description: p.description,
+          alreadyExists: true,
+        });
+      }
+    }
+    return json(res, { suggestions: out, root });
+  });
+
+  // Write a starter .symphonee/context-artifacts.json into the active repo.
+  // Uses the suggestions provided in the request body, or auto-detected ones
+  // if none specified. Won't overwrite an existing file.
+  addRoute('POST', '/api/mind/artifacts/init', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const ui = getUiContext ? getUiContext() : {};
+    const root = ui.activeRepoPath;
+    if (!root) return json(res, { error: 'no active repo' }, 400);
+    const fs = require('fs');
+    const path = require('path');
+    const target = path.join(root, '.symphonee', 'context-artifacts.json');
+    if (fs.existsSync(target) && !body.overwrite) {
+      return json(res, { error: 'context-artifacts.json already exists', path: target }, 409);
+    }
+    const artifacts = Array.isArray(body.artifacts) ? body.artifacts : [];
+    if (!artifacts.length) {
+      return json(res, { error: 'no artifacts provided' }, 400);
+    }
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      const cleaned = artifacts.map(a => ({ name: a.name, path: a.path, description: a.description || '' }));
+      fs.writeFileSync(target, JSON.stringify({ artifacts: cleaned }, null, 2), 'utf8');
+      return json(res, { ok: true, path: target, count: cleaned.length });
+    } catch (e) {
+      return json(res, { error: 'write failed: ' + e.message }, 500);
+    }
   });
 
   addRoute('POST', '/api/mind/artifacts/search', async (req, res) => {
