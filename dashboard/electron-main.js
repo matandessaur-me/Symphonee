@@ -1402,7 +1402,16 @@ if (!gotLock) {
     } catch (_) {}
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    // Wipe the renderer's HTTP cache on every launch. Electron's session
+    // cache survives across app restarts and was serving stale index.html /
+    // mind-ui.js even after the server had updated them, which broke the
+    // dashboard repeatedly during development. Localhost-only assets so
+    // the cache buys us nothing.
+    try {
+      const { session } = require('electron');
+      await session.defaultSession.clearCache();
+    } catch (e) { console.log('  cache clear skipped:', e.message); }
     console.log('Electron ready, loading server...');
     let server, startServer, addRoute;
     try {

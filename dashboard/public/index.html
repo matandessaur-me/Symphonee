@@ -5292,9 +5292,11 @@
           <span class="mind-toolbar-spacer"></span>
           <div class="mind-search-wrap">
             <span style="font-size:10px;color:var(--subtext0);">Search</span>
-            <input id="mindSearchInput" type="text" placeholder="search the mind" autocomplete="off" spellcheck="false"
+            <input id="mindSearchInput" type="text" placeholder="search the mind (Enter to run)" autocomplete="off" spellcheck="false"
               style="background:transparent;border:none;outline:none;color:var(--text);font-size:11px;padding:3px 0;" />
             <span id="mindSearchCount" style="font-size:10px;color:var(--subtext0);font-variant-numeric:tabular-nums;min-width:32px;text-align:right;"></span>
+            <button id="mindSearchGo" type="button" title="Search (Enter)" onclick="MindUI.runSearch()"
+              style="background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--subtext0);cursor:pointer;font-size:11px;line-height:1;padding:3px 8px;flex-shrink:0;">Go</button>
             <button id="mindSearchClear" type="button" title="Clear (Esc)" onclick="MindUI.clearSearch()"
               style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;display:none;">×</button>
           </div>
@@ -12474,6 +12476,15 @@ function switchTab(tab, preserveSearch) {
       }
     }
   });
+  // Notify Mind when it's leaving so it can freeze physics. Without this the
+  // vis-network animation keeps drawing onto its (now-hidden) canvas and the
+  // app stays laggy after you've moved on to Terminal/Orchestrator/etc.
+  try {
+    if (tab !== 'mind' && window.__lastTab === 'mind' && window.MindUI && window.MindUI.onDeactivate) {
+      window.MindUI.onDeactivate();
+    }
+  } catch (_) {}
+  window.__lastTab = tab;
   document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.id === `panel-${panelTab}`));
   // Scroll active tab into view if overflowed
   var activeBtn = document.querySelector('.tab-btn[data-tab="' + tab + '"]');
@@ -27740,8 +27751,18 @@ function showRecipePreviewModal(id, fm, prompt) {
 }
 
 </script>
-<link rel="stylesheet" href="/vis-network.min.css">
-<script src="/vis-network.min.js"></script>
+<script src="/3d-force-graph.min.js"></script>
+<script src="/force-graph.min.js"></script>
+<script>
+  // Surface a clear error early if the WebGL graph lib didn't expose its
+  // global. Almost always means a stale renderer cache - the cache-clear
+  // in electron-main.js fixes it on next launch.
+  if (typeof window.ForceGraph3D === 'undefined') {
+    console.error('[mind] window.ForceGraph3D is undefined after script load. Stale cache? Try DevTools > Application > Clear storage, or quit + relaunch Symphonee.');
+  } else {
+    console.log('[mind] ForceGraph3D loaded:', typeof window.ForceGraph3D);
+  }
+</script>
 <script src="/mind-ui.js"></script>
 </body>
 </html>
