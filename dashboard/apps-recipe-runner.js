@@ -82,6 +82,25 @@ async function refreshRunRect(session, driver) {
 function parseJsonTarget(s) {
   if (!s || typeof s !== 'string') return null;
   const trimmed = s.trim();
+  // Compact "uia:" string form emitted by the auto-recipe pipeline:
+  //   uia:name=Foo|type=Button|id=btnFoo|class=Win32
+  // Same fields as the JSON form so resolveUia handles it identically.
+  if (trimmed.toLowerCase().startsWith('uia:')) {
+    const parts = trimmed.slice(4).split('|').filter(Boolean);
+    const sel = {};
+    for (const p of parts) {
+      const eq = p.indexOf('=');
+      if (eq <= 0) continue;
+      const k = p.slice(0, eq).trim().toLowerCase();
+      const v = p.slice(eq + 1);
+      if (k === 'name')  sel.name = v;
+      else if (k === 'type')  sel.type = v;
+      else if (k === 'id')    sel.id = v;
+      else if (k === 'class') sel.class = v;
+    }
+    if (Object.keys(sel).length) return { uia: sel };
+    return null;
+  }
   if (trimmed[0] !== '{') return null;
   try {
     const obj = JSON.parse(trimmed);

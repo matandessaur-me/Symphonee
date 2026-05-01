@@ -481,19 +481,40 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
       }
     } catch (_) { /* Mind unavailable — proceed without hints */ }
 
-    // Verified recipe hit? Tell the caller and let them choose to run it
-    // standalone via /api/apps/macros/run instead of paying LLM tokens.
+    // Verified recipe hit? Load it from disk and dispatch through the
+    // deterministic recipe runner — no LLM tokens spent on planning.
+    // The runner handles the agent handoff afterwards if the user wants
+    // to ask follow-up questions.
     const verifiedHit = priorRecipes.find(p => p.status === 'verified');
+    let resolvedRecipe = null;
     if (verifiedHit && body.skipMindMatch !== true) {
-      // Fire and forget — emit a 'mind_match' event the UI can react to.
       try {
-        if (typeof broadcast === 'function') broadcast({
+        // Mind nodes carry { source: { file } } pointing at the per-app
+        // recipes JSON. Re-load and find the recipe by id-fragment of the
+        // node id so we always replay current disk state, not the stale
+        // copy that lived in Mind at index time.
+        const fs = require('fs');
+        if (verifiedHit.file && fs.existsSync(verifiedHit.file)) {
+          const data = JSON.parse(fs.readFileSync(verifiedHit.file, 'utf8'));
+          // Match by id suffix from the Mind node label (label is
+          // "<app>: <recipe.name>"); fall back to the first verified
+          // recipe in the file.
+          const nameFromLabel = String(verifiedHit.label || '').split(':').slice(1).join(':').trim();
+          resolvedRecipe = (Array.isArray(data.recipes) ? data.recipes : [])
+            .find(r => r.name === nameFromLabel || r.id === verifiedHit.id || r.status === 'verified')
+            || null;
+        }
+      } catch (_) { /* leave resolvedRecipe null and fall back to agent */ }
+      if (typeof broadcast === 'function') {
+        try { broadcast({
           type: 'apps-agent-step', sessionId: session.id, kind: 'mind_match',
-          recipe: { id: verifiedHit.id, label: verifiedHit.label, file: verifiedHit.file },
-          message: `Found verified automation "${verifiedHit.label}" for this goal. Pass skipMindMatch:true to bypass.`,
+          recipe: { id: verifiedHit.id, label: verifiedHit.label, file: verifiedHit.file, willRun: !!resolvedRecipe },
+          message: resolvedRecipe
+            ? `Replaying verified recipe "${verifiedHit.label}" — no LLM tokens.`
+            : `Verified recipe matched but couldn't load from disk; falling back to agent.`,
           at: Date.now(),
-        });
-      } catch (_) {}
+        }); } catch (_) {}
+      }
     }
 
     const taskLines = [
@@ -518,7 +539,13 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     const task = taskLines.join('\n');
 
     session._providerRegistry = registry;
-    const runPromise = runSessionWithFallback({ attempts, session, task, driver, broadcast, notify });
+    const runPromise = runSessionWithFallback({
+      attempts, session, task, driver, broadcast, notify,
+      // When a verified recipe was resolved, hand it to runSessionForEntry
+      // which routes through recipeRunner.runRecipe — deterministic playback
+      // with vision-locator fallback only on UIA misses.
+      recipe: resolvedRecipe || undefined,
+    });
 
     if (waitMs === 0) {
       json(res, {
