@@ -1819,24 +1819,63 @@
     /* Toolbar wraps so it survives narrow windows; status truncates with
        ellipsis instead of pushing other controls off-screen. */
     .mind-toolbar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; border-bottom: 1px solid var(--surface0);
-      background: var(--mantle); flex-shrink: 0; flex-wrap: wrap;
+      display: flex; align-items: stretch; gap: 0;
+      padding: 0 12px; border-bottom: 1px solid var(--surface0);
+      background: var(--mantle); flex-shrink: 0; flex-wrap: nowrap;
+      height: 38px;
     }
-    .mind-toolbar-title { font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+    .mind-toolbar > * { align-self: center; }
+    .mind-toolbar-title { font-size: 13px; font-weight: 600; color: var(--text); flex-shrink: 0; padding-right: 10px; }
     .mind-toolbar-status {
       font-size: 11px; color: var(--subtext0);
       min-width: 0; max-width: 320px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding-right: 8px;
     }
-    .mind-toolbar-spacer { flex: 1 1 auto; min-width: 0; }
+    .mind-toolbar-spacer { flex: 1 1 auto; min-width: 0; align-self: stretch; }
+    /* Right cluster: search wrap + Search-only + Build + Watch all
+       share full toolbar height, no rounded corners, vertical dividers
+       so the row reads as one segmented bar - same feel as the top
+       primary tabs (Terminal / Mind / Orchestrator). */
     .mind-search-wrap {
-      display: flex; align-items: center; gap: 4px;
-      background: var(--surface0); border: 1px solid var(--surface1);
-      border-radius: 4px; padding: 1px 6px;
-      flex: 0 1 220px; min-width: 120px;
+      display: flex; align-items: center; gap: 6px;
+      background: transparent; border: none; border-left: 1px solid var(--surface0);
+      border-radius: 0; padding: 0 12px;
+      flex: 0 1 280px; min-width: 180px;
+      align-self: stretch;
     }
-    .mind-search-wrap input { flex: 1 1 0; min-width: 0; }
+    .mind-search-wrap input { flex: 1 1 0; min-width: 0; font-size: 12px !important; }
+    .mind-toolbar .tab-bar-btn,
+    .mind-toolbar > button {
+      align-self: stretch !important;
+      height: 100% !important;
+      border-radius: 0 !important;
+      border: none !important;
+      border-left: 1px solid var(--surface0) !important;
+      padding: 0 16px !important;
+      font-size: 12px !important;
+      font-weight: 500;
+      color: var(--subtext1);
+      background: transparent !important;
+    }
+    .mind-toolbar .tab-bar-btn:hover,
+    .mind-toolbar > button:hover { background: var(--surface0) !important; color: var(--text); }
+    /* The Go / × micro-buttons inside the search wrap stay compact. */
+    .mind-search-wrap > button {
+      align-self: center !important;
+      height: auto !important;
+      border-left: none !important;
+      border: 1px solid var(--surface1) !important;
+      border-radius: 4px !important;
+      padding: 4px 10px !important;
+      font-size: 11px !important;
+      background: var(--surface0) !important;
+    }
+    .mind-search-wrap > button:hover { background: var(--surface1) !important; }
+    .mind-search-wrap #mindSearchClear {
+      border: none !important; background: transparent !important; padding: 0 4px !important;
+      font-size: 16px !important;
+    }
     /* Square sub-tab strip on its own row, styled like .intel-tab.
        No pill container, no individual button borders - just text with
        an underline on the active tab. */
