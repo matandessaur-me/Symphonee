@@ -455,12 +455,36 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
       }, 400);
     }
 
-    // Pre-session Mind query: see if a previously-recorded recipe matches
-    // this goal for this app. If a verified recipe exists, the user can
-    // re-run it directly (no LLM tokens). Draft recipes ride along as a
-    // system-prompt hint so the agent has a starting point.
+    // Pre-session lookup: check the per-app recipe file directly for a
+    // verified recipe whose name/description matches the goal. This is
+    // the fast path — it bypasses Mind index staleness entirely (a
+    // recipe edited to verified on disk works immediately, without
+    // waiting for an extractor pass). Mind is still consulted below
+    // for memory context and cross-app concept hints.
     let priorRecipes = [];
     let priorMemory = null;
+    let directVerifiedRecipe = null;
+    try {
+      const recipesMod = require('./apps-recipes');
+      const rawList = recipesMod.listRecipes(session.app);
+      const list = Array.isArray(rawList && rawList.recipes) ? rawList.recipes : [];
+      const goalLc = String(goal || '').toLowerCase();
+      // Score each verified recipe by token overlap with the goal so
+      // "Search for Rock Music" matches a recipe named "Search for Rock
+      // Music in the search bar..." but not an unrelated "Open Settings"
+      // recipe stored in the same file.
+      function score(r) {
+        const hay = ((r.name || '') + ' ' + (r.description || '')).toLowerCase();
+        const tokens = goalLc.split(/\s+/).filter(t => t.length >= 3);
+        if (!tokens.length) return 0;
+        let hits = 0;
+        for (const t of tokens) if (hay.includes(t)) hits++;
+        return hits / tokens.length;
+      }
+      const ranked = list.filter(r => r.status === 'verified').map(r => ({ r, s: score(r) })).sort((a, b) => b.s - a.s);
+      if (ranked.length && ranked[0].s >= 0.5) directVerifiedRecipe = ranked[0].r;
+    } catch (_) { /* file missing / parse fail — fall through to Mind */ }
+
     try {
       const mindStore = require('./mind/store');
       const mindQuery = require('./mind/query');
@@ -481,37 +505,33 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
       }
     } catch (_) { /* Mind unavailable — proceed without hints */ }
 
-    // Verified recipe hit? Load it from disk and dispatch through the
-    // deterministic recipe runner — no LLM tokens spent on planning.
-    // The runner handles the agent handoff afterwards if the user wants
-    // to ask follow-up questions.
-    const verifiedHit = priorRecipes.find(p => p.status === 'verified');
+    // Verified recipe hit? Direct disk lookup (above) wins over Mind
+    // because it survives index staleness. Either way, dispatch through
+    // the deterministic recipe runner — no LLM tokens spent on planning.
     let resolvedRecipe = null;
-    if (verifiedHit && body.skipMindMatch !== true) {
-      try {
-        // Mind nodes carry { source: { file } } pointing at the per-app
-        // recipes JSON. Re-load and find the recipe by id-fragment of the
-        // node id so we always replay current disk state, not the stale
-        // copy that lived in Mind at index time.
-        const fs = require('fs');
-        if (verifiedHit.file && fs.existsSync(verifiedHit.file)) {
-          const data = JSON.parse(fs.readFileSync(verifiedHit.file, 'utf8'));
-          // Match by id suffix from the Mind node label (label is
-          // "<app>: <recipe.name>"); fall back to the first verified
-          // recipe in the file.
-          const nameFromLabel = String(verifiedHit.label || '').split(':').slice(1).join(':').trim();
-          resolvedRecipe = (Array.isArray(data.recipes) ? data.recipes : [])
-            .find(r => r.name === nameFromLabel || r.id === verifiedHit.id || r.status === 'verified')
-            || null;
+    if (body.skipMindMatch !== true) {
+      if (directVerifiedRecipe) {
+        resolvedRecipe = directVerifiedRecipe;
+      } else {
+        const verifiedHit = priorRecipes.find(p => p.status === 'verified');
+        if (verifiedHit) {
+          try {
+            const fs = require('fs');
+            if (verifiedHit.file && fs.existsSync(verifiedHit.file)) {
+              const data = JSON.parse(fs.readFileSync(verifiedHit.file, 'utf8'));
+              const nameFromLabel = String(verifiedHit.label || '').split(':').slice(1).join(':').trim();
+              resolvedRecipe = (Array.isArray(data.recipes) ? data.recipes : [])
+                .find(r => r.name === nameFromLabel || r.id === verifiedHit.id || r.status === 'verified')
+                || null;
+            }
+          } catch (_) { /* leave resolvedRecipe null and fall back to agent */ }
         }
-      } catch (_) { /* leave resolvedRecipe null and fall back to agent */ }
-      if (typeof broadcast === 'function') {
+      }
+      if (resolvedRecipe && typeof broadcast === 'function') {
         try { broadcast({
           type: 'apps-agent-step', sessionId: session.id, kind: 'mind_match',
-          recipe: { id: verifiedHit.id, label: verifiedHit.label, file: verifiedHit.file, willRun: !!resolvedRecipe },
-          message: resolvedRecipe
-            ? `Replaying verified recipe "${verifiedHit.label}" — no LLM tokens.`
-            : `Verified recipe matched but couldn't load from disk; falling back to agent.`,
+          recipe: { id: resolvedRecipe.id, name: resolvedRecipe.name, willRun: true, source: directVerifiedRecipe ? 'disk' : 'mind' },
+          message: `Replaying verified recipe "${resolvedRecipe.name}" — no LLM tokens.`,
           at: Date.now(),
         }); } catch (_) {}
       }
