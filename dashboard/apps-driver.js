@@ -797,10 +797,8 @@ const INSTALLED_CACHE_MS = 60000;
 
 // Install roots where user-installed apps actually live. Anything outside
 // these is almost certainly a system tool we don't want in the launcher.
-// We DO accept WindowsApps now (Microsoft Store installs like Spotify land
-// there), and filter system/Microsoft-published packages by name + publisher
-// in _isSystemShortcut instead of by path. SystemApps stays rejected — those
-// are Windows shell components only.
+// UWP / WindowsApps installs are intentionally rejected — only .exe and
+// .lnk shortcuts are surfaced.
 function _isUserInstalledPath(p) {
   if (!p) return false;
   const s = String(p).toLowerCase().replace(/\//g, '\\');
@@ -809,19 +807,15 @@ function _isUserInstalledPath(p) {
   const local = (process.env['LOCALAPPDATA']      || '').toLowerCase();
   const roaming = (process.env['APPDATA']         || '').toLowerCase();
   const sysroot = (process.env['SystemRoot']      || 'C:\\Windows').toLowerCase();
-  // Reject only the deepest-system locations; allow WindowsApps so Store
-  // apps appear (Spotify, Netflix, Notion Store, etc).
+  // Reject Windows + WindowsApps (UWP store installs) outright.
+  if (s.startsWith(sysroot + '\\')) return false;
+  if (s.includes('\\windowsapps\\')) return false;
   if (s.includes('\\systemapps\\')) return false;
-  // System32, SysWOW64, WinSxS, Drivers — these are never user apps.
-  if (s.startsWith(sysroot + '\\system32\\')) return false;
-  if (s.startsWith(sysroot + '\\syswow64\\')) return false;
-  if (s.startsWith(sysroot + '\\winsxs\\')) return false;
   return (pf && s.startsWith(pf + '\\'))
     || (pf86 && s.startsWith(pf86 + '\\'))
     || (local && s.startsWith(local + '\\'))
     || (roaming && s.startsWith(roaming + '\\'))
-    || /^[a-z]:\\(games|tools|apps)\\/i.test(s)
-    || s.includes('\\windowsapps\\');
+    || /^[a-z]:\\(games|tools|apps)\\/i.test(s);
 }
 
 // Shortcut-name and folder filters so we don't list "Notepad", "Calculator",
@@ -853,104 +847,17 @@ function _isSystemShortcut(name, lnkPath) {
   return false;
 }
 
-// Publisher prefixes that mark a UWP package as "system" — the Microsoft
-// shell, OS components, OEM bloat. Anything in this list is filtered out
-// even though it shows up in Get-StartApps.
-const SYSTEM_PUBLISHER_PREFIXES = [
-  'microsoft.windows.',
-  'microsoft.win32',
-  'microsoft.xboxgameoverlay',
-  'microsoft.xboxgamingoverlay',
-  'microsoft.xbox.tcui',
-  'microsoft.xboxidentityprovider',
-  'microsoft.xboxspeechtotextoverlay',
-  'microsoft.gethelp',
-  'microsoft.getstarted',
-  'microsoft.bingweather',
-  'microsoft.bingnews',
-  'microsoft.windowsalarms',
-  'microsoft.windowscamera',
-  'microsoft.windowscalculator',
-  'microsoft.windowsfeedbackhub',
-  'microsoft.windowsmaps',
-  'microsoft.windowssoundrecorder',
-  'microsoft.windowsstore',
-  'microsoft.zunemusic',
-  'microsoft.zunevideo',
-  'microsoft.yourphone',
-  'microsoft.people',
-  'microsoft.microsoftsolitairecollection',
-  'microsoft.mixedreality.portal',
-  'microsoft.mspaint',
-  'microsoft.screensketch',
-  'microsoft.stickynotes',
-  'microsoft.outlookforwindows',
-  'microsoft.todos',
-  'microsoftcorporationii.',
-  'windows.',
-  'windowsterminal',
-];
-
-function _isSystemPackage(packageFamilyName, publisher) {
-  const pfn = String(packageFamilyName || '').toLowerCase();
-  const pub = String(publisher || '').toLowerCase();
-  for (const prefix of SYSTEM_PUBLISHER_PREFIXES) {
-    if (pfn.startsWith(prefix)) return true;
-  }
-  // Treat Microsoft-signed packages as system unless they have an explicit
-  // app-style name we recognize (Office, Edge Dev, To Do — but those start
-  // with their own prefixes above already).
-  if (pub.includes('cn=microsoft corporation')) {
-    // Allow Office/Teams/Edge/etc that ship under a non-system prefix.
-    const allowedMS = [
-      'microsoft.office.', 'microsoft.teams', 'microsoft.skydrive',
-      'microsoftedge.', 'microsoft.visualstudio',
-    ];
-    if (!allowedMS.some(p => pfn.startsWith(p))) return true;
-  }
-  return false;
-}
-
 async function listInstalledApps({ force = false } = {}) {
   const now = Date.now();
   if (!force && _installedCache && (now - _installedCacheAt) < INSTALLED_CACHE_MS) {
     return _installedCache;
   }
-  // Three sources merged:
-  //   (1) Get-StartApps           — every Start-menu-visible app, including
-  //                                 UWP / Microsoft Store installs (Spotify
-  //                                 Store install lives here — that's why
-  //                                 the old .lnk-only path missed it).
-  //   (2) .lnk shortcuts          — Win32 apps with discoverable target exe.
-  //   (3) Get-AppxPackage         — publisher metadata so we can filter out
-  //                                 Microsoft / system UWP apps by signer.
-  // Each result has { source, name, path, appUserModelId?, packageFamilyName?,
-  // publisher? }. We dedupe by appUserModelId then by exe path.
+  // Start Menu is recursed (shortcuts live under publisher subfolders).
+  // Desktop is NOT recursed: on some locales (e.g. French "Bureau") users
+  // keep their entire dev tree on the Desktop, and -Recurse walks
+  // node_modules/.git/etc. which can take > 20s and blow the PS timeout.
   const script = `
 $ErrorActionPreference = 'SilentlyContinue'
-$ProgressPreference = 'SilentlyContinue'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-$out = New-Object System.Collections.ArrayList
-
-# (1) Get-StartApps — UWP + Win32, every app the Start menu can launch.
-try {
-  Get-StartApps | ForEach-Object {
-    $item = [PSCustomObject]@{
-      Source = 'startapps'
-      Name = $_.Name
-      AppUserModelId = $_.AppID
-      Path = $null
-      Arguments = $null
-      Lnk = $null
-      PackageFamilyName = $null
-      Publisher = $null
-    }
-    [void]$out.Add($item)
-  }
-} catch {}
-
-# (2) Win32 .lnk shortcuts — fallback for apps without a Start tile, plus
-#     gives us a real exe path for launching when AppID lookup fails.
 $recurse = @(
   [Environment]::GetFolderPath('CommonStartMenu'),
   [Environment]::GetFolderPath('StartMenu')
@@ -960,173 +867,54 @@ $flat = @(
   [Environment]::GetFolderPath('CommonDesktopDirectory')
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 $shell = New-Object -ComObject WScript.Shell
-$processLnk = {
+$lnks = @()
+$process = {
   param($file)
   try {
     $sc = $shell.CreateShortcut($file.FullName)
     $t = $sc.TargetPath
     if ($t -and ($t -like '*.exe') -and (Test-Path $t)) {
       [PSCustomObject]@{
-        Source = 'lnk'
         Name = [IO.Path]::GetFileNameWithoutExtension($file.Name)
-        AppUserModelId = $null
         Path = $t
         Arguments = $sc.Arguments
         Lnk = $file.FullName
-        PackageFamilyName = $null
-        Publisher = $null
       }
     }
   } catch {}
 }
 foreach ($p in $recurse) {
   Get-ChildItem -LiteralPath $p -Recurse -Filter *.lnk -Force -ErrorAction SilentlyContinue |
-    ForEach-Object { $r = & $processLnk $_; if ($r) { [void]$out.Add($r) } }
+    ForEach-Object { $r = & $process $_; if ($r) { $lnks += $r } }
 }
 foreach ($p in $flat) {
   Get-ChildItem -LiteralPath $p -Filter *.lnk -Force -ErrorAction SilentlyContinue |
-    ForEach-Object { $r = & $processLnk $_; if ($r) { [void]$out.Add($r) } }
+    ForEach-Object { $r = & $process $_; if ($r) { $lnks += $r } }
 }
-
-# (3) Get-AppxPackage — publisher info for UWP packages so we can filter
-#     Microsoft / system signers without keeping a static name list.
-try {
-  Get-AppxPackage | ForEach-Object {
-    $pkg = $_
-    if (-not $pkg.PackageFamilyName) { return }
-    [void]$out.Add([PSCustomObject]@{
-      Source = 'appx'
-      Name = $pkg.Name
-      AppUserModelId = $null
-      Path = $pkg.InstallLocation
-      Arguments = $null
-      Lnk = $null
-      PackageFamilyName = $pkg.PackageFamilyName
-      Publisher = $pkg.Publisher
-    })
-  }
-} catch {}
-
-ConvertTo-Json -InputObject $out -Depth 3 -Compress
+$lnks | ConvertTo-Json -Depth 3 -Compress
 `;
-  const raw = await runPs(script, { timeoutMs: 30000 });
-  let entries = [];
-  try { const p = JSON.parse((raw || '').trim()); entries = Array.isArray(p) ? p : p ? [p] : []; } catch (_) {}
-
-  // Index Appx publishers by both PackageFamilyName and the leading prefix
-  // (the part before '_'). UWP apps surfaced by Get-StartApps carry an AppID
-  // like "Spotify.Spotify_zpdnekdrzrea0!Spotify" — split on '_' to match.
-  const appxByPfn = new Map();
-  for (const e of entries) {
-    if (e && e.Source === 'appx' && e.PackageFamilyName) {
-      appxByPfn.set(String(e.PackageFamilyName).toLowerCase(), e);
-    }
-  }
-
-  function appxLookup(appUserModelId) {
-    if (!appUserModelId) return null;
-    const id = String(appUserModelId).toLowerCase();
-    // AppUserModelId for UWP: "<PackageFamilyName>!<AppId>". Strip after '!'.
-    const pfn = id.includes('!') ? id.split('!')[0] : id;
-    return appxByPfn.get(pfn) || null;
-  }
+  const raw = await runPs(script, { timeoutMs: 20000 });
+  let lnks = [];
+  try { const p = JSON.parse((raw || '').trim()); lnks = Array.isArray(p) ? p : p ? [p] : []; } catch (_) {}
 
   const byKey = new Map();
-
-  // Pass A: Start-menu apps (UWP + Win32). These give us AppUserModelId.
-  for (const e of entries) {
-    if (!e || e.Source !== 'startapps' || !e.Name) continue;
-    if (_isSystemShortcut(e.Name, '')) continue;
-    const appx = appxLookup(e.AppUserModelId);
-    const isUwp = !!(e.AppUserModelId && (e.AppUserModelId.includes('!') || appx));
-    if (isUwp) {
-      const pfn = appx ? appx.PackageFamilyName : (e.AppUserModelId || '').split('!')[0];
-      if (_isSystemPackage(pfn, appx ? appx.Publisher : '')) continue;
-      const dedupe = 'aumid:' + e.AppUserModelId.toLowerCase();
-      if (byKey.has(dedupe)) continue;
-      byKey.set(dedupe, {
-        id: e.AppUserModelId,
-        name: e.Name,
-        path: appx && appx.Path ? appx.Path : null,
-        appUserModelId: e.AppUserModelId,
-        packageFamilyName: pfn,
-        publisher: appx ? appx.Publisher : null,
-        args: null,
-        lnk: null,
-        kind: 'uwp',
-      });
-    } else {
-      // Win32 entry from Get-StartApps — has AppID but no path. The .lnk
-      // pass below will fill in the exe path; if it doesn't, we still keep
-      // the entry so launchApp can fall back to shell:AppsFolder\<id>.
-      const dedupe = 'aumid:' + (e.AppUserModelId || e.Name).toLowerCase();
-      if (byKey.has(dedupe)) continue;
-      byKey.set(dedupe, {
-        id: e.AppUserModelId || e.Name,
-        name: e.Name,
-        path: null,
-        appUserModelId: e.AppUserModelId || null,
-        args: null,
-        lnk: null,
-        kind: 'win32',
-      });
-    }
-  }
-
-  // Pass B: .lnk shortcuts. Add unseen apps and back-fill exe paths for
-  // Win32 entries surfaced by Get-StartApps that didn't have one.
-  for (const e of entries) {
-    if (!e || e.Source !== 'lnk' || !e.Name || !e.Path) continue;
-    if (_isSystemShortcut(e.Name, e.Lnk)) continue;
-    if (!_isUserInstalledPath(e.Path)) continue;
-    // Try to back-fill an existing entry by name match first.
-    let backfilled = false;
-    for (const v of byKey.values()) {
-      if (v.kind === 'win32' && !v.path && v.name.toLowerCase() === e.Name.toLowerCase()) {
-        v.path = e.Path;
-        v.lnk = e.Lnk;
-        v.args = e.Arguments || null;
-        backfilled = true;
-        break;
-      }
-    }
-    if (backfilled) continue;
-    const dedupe = 'exe:' + e.Path.toLowerCase();
+  for (const l of lnks) {
+    if (!l || !l.Name || !l.Path) continue;
+    if (_isSystemShortcut(l.Name, l.Lnk)) continue;
+    if (!_isUserInstalledPath(l.Path)) continue;
+    // De-dupe by target exe so "Firefox" from Start Menu and Desktop don't both show.
+    const dedupe = 'exe:' + l.Path.toLowerCase();
     if (byKey.has(dedupe)) continue;
     byKey.set(dedupe, {
-      id: e.Path,
-      name: e.Name,
-      path: e.Path,
-      args: e.Arguments || null,
-      lnk: e.Lnk || null,
+      id: l.Path,
+      name: l.Name,
+      path: l.Path,
+      args: l.Arguments || null,
+      lnk: l.Lnk || null,
       kind: 'win32',
     });
   }
-
-  // Pass C: pure Appx packages with no Start-menu surface (rare, but covers
-  // background apps and subordinate package entries you can still launch).
-  for (const e of entries) {
-    if (!e || e.Source !== 'appx' || !e.PackageFamilyName) continue;
-    if (_isSystemPackage(e.PackageFamilyName, e.Publisher)) continue;
-    const dedupe = 'pkg:' + e.PackageFamilyName.toLowerCase();
-    // Already covered by a UWP Start-menu entry?
-    if ([...byKey.values()].some(v => v.packageFamilyName === e.PackageFamilyName)) continue;
-    if (byKey.has(dedupe)) continue;
-    byKey.set(dedupe, {
-      id: e.PackageFamilyName,
-      name: e.Name || e.PackageFamilyName,
-      path: e.Path || null,
-      packageFamilyName: e.PackageFamilyName,
-      publisher: e.Publisher || null,
-      args: null,
-      lnk: null,
-      kind: 'uwp',
-    });
-  }
-
-  const out = Array.from(byKey.values())
-    .filter(a => a.name && a.name.length >= 2)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const out = Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
   _installedCache = out;
   _installedCacheAt = now;
   return out;
