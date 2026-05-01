@@ -162,7 +162,7 @@ const CLI_MODELS = {
     defaultModel: 'gpt-5.4',
     modelFlag: '-m',
     effortFlag: null,
-    permissionFlag: '--full-auto',
+    permissionFlag: '--dangerously-bypass-approvals-and-sandbox',
     autoPermission: true,
     outputFormatFlag: '--json',
     systemPromptFlag: null,
@@ -659,7 +659,7 @@ class Orchestrator extends EventEmitter {
       const shouldYolo = autoPermit || modeYolo;
       if (shouldYolo && cliMeta.permissionFlag) {
         if (typeof cliMeta.autoPermission === 'boolean') {
-          finalArgs.unshift(cliMeta.permissionFlag); // boolean flag like --full-auto, --yolo
+          finalArgs.unshift(cliMeta.permissionFlag); // boolean flag like --yolo or Codex bypass
         } else {
           finalArgs.unshift(cliMeta.permissionFlag, cliMeta.autoPermission);
         }
@@ -699,7 +699,7 @@ class Orchestrator extends EventEmitter {
     }
 
     // Pre-trust the working folder so first-time dispatches don't abort with
-    // "this folder isn't trusted". This is independent of YOLO/full-auto.
+    // "this folder isn't trusted". This is independent of full bypass mode.
     try { pretrustFolderForCli(cli, cwd || process.cwd()); } catch (_) {}
 
     const proc = spawn(cfg.cmd, finalArgs, {
