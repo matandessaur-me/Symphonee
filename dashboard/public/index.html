@@ -16249,6 +16249,83 @@ function _appsBuilderVerbChanged(i, newVerb) {
   _appsSyncBuilderToText();
 }
 
+// Custom verb-picker popup. Replaces the native <select> because Chromium's
+// popup ignores --bg/--text on Windows and renders unreadable on dark UIs.
+let _appsVerbPickEl = null;
+function _appsVerbPickClose() {
+  if (_appsVerbPickEl && _appsVerbPickEl.parentNode) _appsVerbPickEl.parentNode.removeChild(_appsVerbPickEl);
+  _appsVerbPickEl = null;
+  document.removeEventListener('mousedown', _appsVerbPickOutside, true);
+}
+function _appsVerbPickOutside(e) {
+  if (!_appsVerbPickEl) return;
+  if (_appsVerbPickEl.contains(e.target)) return;
+  if (e.target && e.target.classList && e.target.classList.contains('apps-verb-pick')) return;
+  _appsVerbPickClose();
+}
+function _appsVerbPickToggle(event, i) {
+  event.stopPropagation();
+  if (_appsVerbPickEl) { _appsVerbPickClose(); return; }
+  const btn = event.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  const current = btn.getAttribute('data-verb') || '';
+  const groups = [
+    ['Mouse',     ['CLICK', 'DOUBLE_CLICK', 'RIGHT_CLICK', 'MIDDLE_CLICK', 'DRAG', 'SCROLL']],
+    ['Keyboard',  ['TYPE', 'PRESS']],
+    ['Timing',    ['WAIT', 'WAIT_UNTIL']],
+    ['Locate',    ['FIND', 'VERIFY', 'EXTRACT']],
+    ['Control',   ['IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT']],
+  ];
+  const pop = document.createElement('div');
+  pop.style.cssText = [
+    'position:fixed',
+    `top:${rect.bottom + 4}px`,
+    `left:${rect.left}px`,
+    'min-width:170px',
+    'max-height:340px',
+    'overflow:auto',
+    'background:var(--surface0)',
+    'color:var(--text)',
+    'border:1px solid var(--surface2)',
+    'border-radius:6px',
+    'box-shadow:0 6px 24px rgba(0,0,0,0.45)',
+    'padding:4px',
+    'z-index:9999',
+    'font:11px var(--font-ui)',
+  ].join(';');
+  for (const [label, verbs] of groups) {
+    const head = document.createElement('div');
+    head.textContent = label;
+    head.style.cssText = 'padding:5px 9px 3px 9px;color:var(--overlay1);font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;';
+    pop.appendChild(head);
+    for (const v of verbs) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = v;
+      const isActive = v === current;
+      item.style.cssText = [
+        'display:block',
+        'width:100%',
+        'text-align:left',
+        'background:' + (isActive ? 'var(--blue)' : 'transparent'),
+        'color:' + (isActive ? 'var(--bg)' : 'var(--text)'),
+        'border:none',
+        'border-radius:4px',
+        'padding:5px 10px',
+        'font:11px var(--font-mono)',
+        'cursor:pointer',
+      ].join(';');
+      item.onmouseenter = () => { if (!isActive) item.style.background = 'var(--surface1)'; };
+      item.onmouseleave = () => { if (!isActive) item.style.background = 'transparent'; };
+      item.onclick = (e) => { e.stopPropagation(); _appsVerbPickClose(); _appsBuilderVerbChanged(i, v); };
+      pop.appendChild(item);
+    }
+  }
+  document.body.appendChild(pop);
+  _appsVerbPickEl = pop;
+  setTimeout(() => document.addEventListener('mousedown', _appsVerbPickOutside, true), 0);
+}
+
 function _appsSyncBuilderToText() {
   const stepsEl = document.getElementById('appsAutomationsSteps');
   if (stepsEl) stepsEl.value = _appsStepsToText(_appsBuilderSteps);
@@ -16266,11 +16343,10 @@ function _appsRenderBuilderRows() {
     const showTarget = !_APPS_VERBS_BARE.has(verb);
     const showText = _APPS_VERBS_WITH_TEXT.has(verb);
     const indent = (verb === 'ELSE' || verb === 'ENDIF' || verb === 'ENDREPEAT') ? '' : '';
-    const options = _APPS_VERBS.map(v => `<option value="${v}"${v === verb ? ' selected' : ''}>${v}</option>`).join('');
     return `<div class="apps-builder-row" draggable="true" data-idx="${i}" ondragstart="_appsBuilderDragStart(event,${i})" ondragover="_appsBuilderDragOver(event,${i})" ondragleave="_appsBuilderDragLeave(event)" ondrop="_appsBuilderDrop(event,${i})" ondragend="_appsBuilderDragEnd(event)" style="display:flex;align-items:center;gap:6px;padding:5px 6px;background:var(--surface0);border:1px solid var(--surface1);border-radius:5px;">
       <span style="cursor:grab;color:var(--overlay1);padding:0 3px;" title="Drag to reorder">::</span>
       <span style="color:var(--overlay1);font:10px var(--font-mono);min-width:22px;text-align:right;">${i + 1}</span>
-      <select onchange="_appsBuilderVerbChanged(${i}, this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-ui);min-width:108px;color-scheme:dark;">${options}</select>
+      <button type="button" class="apps-verb-pick" data-idx="${i}" data-verb="${verb}" onclick="_appsVerbPickToggle(event,${i})" style="background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 22px 4px 8px;font:11px var(--font-ui);min-width:118px;text-align:left;cursor:pointer;position:relative;">${verb}<span style="position:absolute;right:7px;top:50%;transform:translateY(-50%);color:var(--overlay1);font-size:9px;">&#9660;</span></button>
       ${showTarget ? _appsBuilderTargetControl(i, s, verb) : '<span style="flex:1;color:var(--overlay1);font:11px var(--font-ui);font-style:italic;">(block marker)</span>'}
       ${showText ? `<span style="color:var(--overlay1);">→</span><input type="text" placeholder="text to type" value="${_appsEscape(s.text || '')}" oninput="_appsBuilderUpdate(${i},'text',this.value)" style="flex:1;min-width:100px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">` : ''}
       <button type="button" onclick="appsAutomationsTestStep(${i})" title="Test just this step against the target window" style="background:transparent;border:1px solid var(--surface2);color:var(--subtext1);cursor:pointer;padding:2px 7px;font:10px var(--font-ui);border-radius:3px;">Test</button>
