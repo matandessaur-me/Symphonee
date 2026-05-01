@@ -2139,7 +2139,12 @@
           if (fg2.d3AlphaTarget) fg2.d3AlphaTarget(0);
           if (fg2.d3AlphaMin) fg2.d3AlphaMin(1);
           if (typeof fg2.d3VelocityDecay === 'function') fg2.d3VelocityDecay(1);
-          fg2.pauseAnimation();
+          // Do NOT pauseAnimation() in 2D - that stops the render loop too,
+          // and force-graph's d3-zoom updates the transform but cannot repaint
+          // until the next rAF. With forces removed and every node pinned
+          // via fx/fy the simulation tick is a no-op anyway, so leaving the
+          // render loop running is essentially free and keeps wheel zoom +
+          // drag-pan responsive.
         } catch (_) {}
         setTimeout(() => { if (typeof onReady === 'function') onReady(); }, 480);
       });
@@ -2151,6 +2156,8 @@
         fg2.nodeColor(fg2.nodeColor()).linkColor(fg2.linkColor()).nodeVisibility(fg2.nodeVisibility()).linkVisibility(fg2.linkVisibility());
         const d = $('mindDeselectBtn'); const s = $('mindShowConnBtn'); const overlay = $('mindCanvasDeselect');
         if (d) d.style.display = 'none'; if (s) s.style.display = 'none'; if (overlay) overlay.style.display = 'none';
+        // Close the right-side detail panel - selection is being cleared.
+        const dp = $('mindDetail'); if (dp) dp.style.display = 'none';
       };
       state.fgShowConnected = () => {
         if (highlightNodes.size === 0) return;
@@ -2358,6 +2365,9 @@
       state.selectedNode = null;
       repaintAccessors();
       toggleSelectionButtons(false);
+      // Close the right-side detail panel so deselect feels like a true
+      // "back to overview" - sidebar context belongs to the prior selection.
+      try { const dp = $('mindDetail'); if (dp) dp.style.display = 'none'; } catch (_) {}
       // Restore the orbit pivot to the graph centre so deselecting feels
       // like "back to overview" and rotation again spans the whole map.
       // Also re-enable pan, which we disable while a node is selected.
@@ -2415,8 +2425,11 @@
       const ctrls = fg.controls && fg.controls();
       if (ctrls) {
         ctrls.rotateSpeed = 0.4;
+        // Pan was too snappy at 0.5 - hard to drift across the graph.
+        // 0.2 lands closer to "scrub" feel.
+        ctrls.dynamicDampingFactor = ctrls.dynamicDampingFactor || 0.18;
         ctrls.zoomSpeed = 0.6;
-        ctrls.panSpeed = 0.5;
+        ctrls.panSpeed = 0.08;
         if ('enableDamping' in ctrls) {
           ctrls.enableDamping = true;
           ctrls.dampingFactor = 0.12;
@@ -2619,7 +2632,7 @@
           const cy = (minY + maxY) / 2;
           const cz = (minZ + maxZ) / 2;
           const halfDiag = Math.hypot(maxX - cx, maxY - cy, maxZ - cz) || 200;
-          const dist = halfDiag * 2.4;
+          const dist = halfDiag * 1.9;
           fg.cameraPosition(
             { x: cx, y: cy, z: cz + dist },
             { x: cx, y: cy, z: cz },
@@ -2629,16 +2642,23 @@
           fg.zoomToFit(0, 240);
         }
       } catch (_) {}
+      try {
+        // Compile shaders and draw the first WebGL frame while the loader
+        // still covers the canvas. Without this, shader/material upload can
+        // happen after opacity flips to 1, leaving a visible blank canvas.
+        forceGraphRenderFrame(fg, host);
+      } catch (_) {}
       try { host.style.transition = 'opacity 400ms ease-out'; host.style.opacity = '1'; } catch (_) {}
-      // Hold the loader up through the 400ms fade-in so the user never
-      // sees a blank canvas between the loader hiding and the graph
-      // becoming visible. The +80ms cushion covers Three.js's first
-      // post-fade frame.
-      setTimeout(() => { if (typeof onReady === 'function') onReady(); }, 480);
+      waitForGraphPaint(fg, host).then(() => {
+        try { fg.pauseAnimation(); } catch (_) {}
+        // Hold the loader up through the 400ms fade-in so the user never
+        // sees a blank canvas between the loader hiding and the graph
+        // becoming visible. The +80ms cushion covers the compositor frame.
+        setTimeout(() => { if (typeof onReady === 'function') onReady(); }, 480);
+      });
     };
     fg.onEngineStop(() => {
       state.graphSettled = true;
-      try { fg.pauseAnimation(); } catch (_) {}
       // Settle buffer: even after the engine reports stop, Three.js often
       // needs another second to finish its last few draw calls and settle
       // material caches. Holding the loader for ~1.2s extra eliminates
@@ -2693,6 +2713,37 @@
       if (typeof fg.height === 'function' && fg.height() !== size.height) fg.height(size.height);
     } catch (_) {}
     return size;
+  }
+
+  function forceGraphRenderFrame(fg, host) {
+    if (!fg) return;
+    try { if (host) syncGraphSize(fg, host); } catch (_) {}
+    try { fg.resumeAnimation(); } catch (_) {}
+    try { if (typeof fg.tickFrame === 'function') fg.tickFrame(); } catch (_) {}
+    try {
+      const renderer = fg.renderer && fg.renderer();
+      const scene = fg.scene && fg.scene();
+      const camera = fg.camera && fg.camera();
+      if (!renderer || !scene || !camera) return;
+      if (typeof renderer.compile === 'function') renderer.compile(scene, camera);
+      if (typeof renderer.render === 'function') renderer.render(scene, camera);
+    } catch (_) {}
+  }
+
+  function waitForGraphPaint(fg, host) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      const timeout = setTimeout(finish, 1200);
+      requestAnimationFrame(() => {
+        forceGraphRenderFrame(fg, host);
+        requestAnimationFrame(() => {
+          forceGraphRenderFrame(fg, host);
+          clearTimeout(timeout);
+          finish();
+        });
+      });
+    });
   }
 
   // The right sidebar (mindDetail) covers ~25% of the canvas. zoomToFit
