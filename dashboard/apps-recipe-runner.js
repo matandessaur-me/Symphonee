@@ -414,6 +414,16 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
       await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd });
       return;
     }
+    case 'DOUBLE_CLICK': {
+      if (!target) throw new Error('DOUBLE_CLICK requires a target (a description or "x,y" coordinates).');
+      // Skip the UIA Invoke shortcut — apps that need a double-click
+      // (Spotify song rows, file explorer items) don't expose a single
+      // Invoke pattern that maps to "open"; the actual double-click is
+      // what triggers their action.
+      const coord = await resolveCoord(session, driver, target, { invoke: false });
+      await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd, double: true });
+      return;
+    }
     case 'RIGHT_CLICK': {
       if (!target) throw new Error('RIGHT_CLICK requires a target (a description or "x,y" coordinates).');
       const coord = await resolveCoord(session, driver, target);

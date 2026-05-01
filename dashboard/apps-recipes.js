@@ -52,7 +52,7 @@ function _write(app, data) {
 }
 
 const ALLOWED_VERBS = new Set([
-  'CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
+  'CLICK', 'DOUBLE_CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
   'SCROLL', 'DRAG',
   // Control flow (Phase E):
   'IF', 'ELSE', 'ENDIF',
@@ -387,7 +387,7 @@ function actionsToSteps(actions) {
     const name = a.name;
     const args = a.args || {};
     if (name === 'click' && Number.isFinite(args.x) && Number.isFinite(args.y)) {
-      out.push({ verb: 'CLICK', target: `${args.x},${args.y}` });
+      out.push({ verb: args.double ? 'DOUBLE_CLICK' : 'CLICK', target: `${args.x},${args.y}` });
     } else if (name === 'type_text' && typeof args.text === 'string') {
       out.push({ verb: 'TYPE', text: args.text });
     } else if (name === 'key' && typeof args.combo === 'string') {
