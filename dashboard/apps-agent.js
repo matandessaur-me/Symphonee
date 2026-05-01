@@ -97,6 +97,53 @@ function isProviderExhaustionError(message) {
   return /insufficient_quota|quota exceeded|quota has been exceeded|credit balance is too low|out of credits|out of credit|rate limit|rate-limit|429|resource exhausted|billing|purchase credits/.test(text);
 }
 
+// Build a continuation prompt for the next provider so the new agent
+// doesn't start cold after a credit/quota handoff. Includes:
+//   - Original goal
+//   - Concise summary of recorded actions (UIA + pixel) so the agent
+//     knows what was already attempted
+//   - Last failure note (so the new agent doesn't repeat the same step)
+//   - Directive to resume from current screen, not restart
+// Hard-capped to ~4 KB so we don't shovel a megabyte of action log into
+// the next provider's first turn.
+function buildContinuationPrompt({ originalGoal, session, fromProvider, toProvider, exhaustReason }) {
+  const lines = [];
+  lines.push(`Goal: ${originalGoal || ''}`);
+  lines.push('');
+  lines.push(`## Provider handoff: ${fromProvider} -> ${toProvider}`);
+  lines.push(`The previous AI provider was unable to continue (${exhaustReason || 'quota/credit exhausted'}).`);
+  lines.push('You are picking up an in-progress automation. Do NOT restart from scratch.');
+  lines.push('');
+  if (Array.isArray(session && session._recordedActions) && session._recordedActions.length) {
+    lines.push('## What was already done');
+    const recent = session._recordedActions.slice(-30);
+    for (const a of recent) {
+      const args = a.args || {};
+      let summary = a.name;
+      if (a.name === 'click_element' && args.selector) summary = `click_element ${JSON.stringify(args.selector).slice(0, 100)}`;
+      else if (a.name === 'type_into_element' && args.selector) summary = `type_into_element ${JSON.stringify(args.selector).slice(0, 80)} <- "${String(args.text || '').slice(0, 60)}"`;
+      else if (a.name === 'click') summary = `click x=${args.x} y=${args.y}`;
+      else if (a.name === 'type_text') summary = `type_text "${String(args.text || '').slice(0, 60)}"`;
+      else if (a.name === 'key') summary = `key ${args.combo || ''}`;
+      else if (a.name === 'navigate') summary = `navigate ${args.url || ''}`;
+      else summary = `${a.name} ${JSON.stringify(args).slice(0, 80)}`;
+      lines.push(`- ${summary}`);
+    }
+    lines.push('');
+  }
+  if (session && session.app)   lines.push(`Target app: ${session.app}`);
+  if (session && session.title) lines.push(`Target window title: "${session.title}"`);
+  if (session && session.hwnd != null) lines.push(`Window hwnd: ${session.hwnd} (already focused)`);
+  lines.push('');
+  lines.push('## What to do next');
+  lines.push('1. Call describe_window (preferred) or screenshot to see the CURRENT state.');
+  lines.push('2. Compare against the goal and the action history above.');
+  lines.push('3. Continue from where the previous provider left off — do NOT click "Search" again if it was already clicked, do NOT type the query again if it was already typed, etc.');
+  lines.push('4. When the goal is met, call finish.');
+  const text = lines.join('\n');
+  return text.length > 4096 ? text.slice(0, 4096) + '\n... (truncated)' : text;
+}
+
 function headerValue(req, name) {
   if (!req || !req.headers) return null;
   const raw = req.headers[name];
@@ -147,6 +194,8 @@ async function runSessionWithFallback({
   notify,
 }) {
   let last = null;
+  const originalGoal = task;
+  let currentTask = task;
   for (let i = 0; i < attempts.length; i++) {
     const attempt = attempts[i];
     if (typeof broadcast === 'function') {
@@ -162,10 +211,14 @@ async function runSessionWithFallback({
         at: Date.now(),
       });
     }
+    // Force a fresh message thread on every provider switch so the new
+    // adapter sees the continuation prompt, not stale messages built for
+    // the previous provider's tool-use shape.
+    if (i > 0) session.providerKind = null;
     const result = await runSessionForEntry({
       entry: attempt.entry,
       session,
-      task,
+      task: currentTask,
       driver,
       model: attempt.model,
       broadcast,
@@ -181,6 +234,17 @@ async function runSessionWithFallback({
     if (!shouldRetry) break;
 
     const next = attempts[i + 1];
+    // Build a continuation prompt so the next provider picks up where the
+    // previous one left off, with full context of what was already done.
+    // Without this, the new agent restarts from scratch and re-clicks /
+    // re-types things that already happened on screen.
+    currentTask = buildContinuationPrompt({
+      originalGoal,
+      session,
+      fromProvider: attempt.entry.adapter.label,
+      toProvider: next.entry.adapter.label,
+      exhaustReason: message,
+    });
     if (typeof broadcast === 'function') {
       broadcast({
         type: 'apps-agent-step',
@@ -189,13 +253,14 @@ async function runSessionWithFallback({
         from: attempt.key,
         to: next.key,
         message,
+        continuationBytes: Buffer.byteLength(currentTask, 'utf8'),
         at: Date.now(),
       });
     }
     if (typeof notify === 'function') {
       notify(
         'Apps provider exhausted',
-        `${attempt.entry.adapter.label} ran out of credits/quota or was rate-limited. Retrying with ${next.entry.adapter.label}.`
+        `${attempt.entry.adapter.label} ran out of credits/quota or was rate-limited. Continuing with ${next.entry.adapter.label} from where we left off.`
       );
     }
     session.stopped = false;

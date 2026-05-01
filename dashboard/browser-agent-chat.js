@@ -706,6 +706,75 @@ function pickProvider(registry, preferred) {
   return null;
 }
 
+// Detect provider exhaustion across all the major API responses. Same shape
+// as apps-agent.js so the failover behavior is consistent across automation
+// surfaces.
+function isBrowserProviderExhaustionError(message) {
+  const text = String(message || '').toLowerCase();
+  if (!text) return false;
+  return /insufficient_quota|quota exceeded|quota has been exceeded|credit balance is too low|out of credits|out of credit|rate limit|rate-limit|429|resource exhausted|billing|purchase credits/.test(text);
+}
+
+// Ranked provider attempts, mirroring apps-agent. Preferred provider goes
+// first; everything else available follows in canonical priority order.
+function rankProviderAttempts(registry, preferred) {
+  const order = ['anthropic', 'openai', 'gemini', 'grok', 'qwen'];
+  const seen = new Set();
+  const out = [];
+  if (preferred && registry[preferred]) {
+    out.push({ key: preferred, entry: registry[preferred] });
+    seen.add(preferred);
+  }
+  for (const k of order) {
+    if (registry[k] && !seen.has(k)) {
+      out.push({ key: k, entry: registry[k] });
+      seen.add(k);
+    }
+  }
+  return out;
+}
+
+// Build a continuation prompt for the next browser provider so the new
+// agent picks up where the previous one stopped — same idea as the apps
+// path. Includes original goal, action log, current host/url, and a
+// directive to inspect the live DOM before doing anything.
+function buildBrowserContinuationPrompt({ originalGoal, thread, fromProvider, toProvider, exhaustReason }) {
+  const lines = [];
+  lines.push(`Goal: ${originalGoal || ''}`);
+  lines.push('');
+  lines.push(`## Provider handoff: ${fromProvider} -> ${toProvider}`);
+  lines.push(`The previous AI provider was unable to continue (${exhaustReason || 'quota/credit exhausted'}).`);
+  lines.push('You are picking up an in-progress browser automation. Do NOT restart from scratch.');
+  lines.push('');
+  if (Array.isArray(thread && thread._recordedActions) && thread._recordedActions.length) {
+    lines.push('## What was already done');
+    const recent = thread._recordedActions.slice(-30);
+    for (const a of recent) {
+      const args = a.args || {};
+      let summary = a.name;
+      if (a.name === 'navigate' && args.url) summary = `navigate ${args.url}`;
+      else if (a.name === 'click' && args.selector) summary = `click ${args.selector}`;
+      else if (a.name === 'click_text' && args.text) summary = `click_text "${String(args.text).slice(0, 60)}"`;
+      else if (a.name === 'fill' && args.selector) summary = `fill ${args.selector} <- "${String(args.value || '').slice(0, 60)}"`;
+      else if (a.name === 'fill_by_label' && args.label) summary = `fill_by_label "${args.label}" <- "${String(args.value || '').slice(0, 60)}"`;
+      else if (a.name === 'press_key' && args.key) summary = `press_key ${args.key}`;
+      else summary = `${a.name} ${JSON.stringify(args).slice(0, 80)}`;
+      lines.push(`- ${summary}`);
+    }
+    lines.push('');
+  }
+  if (thread && thread.host) lines.push(`Current site: ${thread.host}`);
+  if (thread && thread.lastUrl) lines.push(`Last URL: ${thread.lastUrl}`);
+  lines.push('');
+  lines.push('## What to do next');
+  lines.push('1. Call inspect_dom to see the CURRENT page.');
+  lines.push('2. Compare against the goal and the action history above.');
+  lines.push('3. Continue from where the previous provider left off — do NOT re-navigate or re-fill fields that already happened.');
+  lines.push('4. When the goal is met, call finish.');
+  const text = lines.join('\n');
+  return text.length > 4096 ? text.slice(0, 4096) + '\n... (truncated)' : text;
+}
+
 // ── Tool dispatch against BrowserAgent ─────────────────────────────────────
 async function executeTool(agent, name, args, credentials) {
   args = args || {};
@@ -1469,8 +1538,44 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
     const model = body.model || entry.adapter.defaultModel;
 
     const credentials = getConfig().BrowserCredentials || {};
-    json(res, { ok: true, threadId, provider: entry.adapter.kind, label: entry.adapter.label, model });
-    runThread({ thread, task, agent, providerEntry: entry, model, broadcast, credentials }).catch(() => {});
+    // Build the full provider attempt list so an exhausted first provider
+    // hands off to the next one mid-run with full context, rather than
+    // failing the user's task on a 429.
+    const attempts = rankProviderAttempts(registry, body.provider);
+    json(res, { ok: true, threadId, provider: entry.adapter.kind, label: entry.adapter.label, model, attempts: attempts.map(a => a.key) });
+    (async () => {
+      let currentTask = task;
+      const originalGoal = task;
+      for (let i = 0; i < attempts.length; i++) {
+        const a = attempts[i];
+        if (i > 0) {
+          // Force fresh thread state on provider switch so the new
+          // adapter's tool-call shape isn't conflated with the previous
+          // adapter's message history.
+          thread.providerKind = null;
+          thread.messages = [];
+        }
+        if (typeof broadcast === 'function') {
+          try { broadcast({ type: 'browser-agent-step', threadId: thread.id, kind: 'provider_attempt', provider: a.key, label: a.entry.adapter.label, attempt: i + 1, total: attempts.length, at: Date.now() }); } catch (_) {}
+        }
+        const m = (i === 0 ? model : a.entry.adapter.defaultModel);
+        const result = await runThread({ thread, task: currentTask, agent, providerEntry: a.entry, model: m, broadcast, credentials }).catch(e => ({ ok: false, error: e && e.message || String(e) }));
+        if (result && result.ok) return;
+        const reason = (result && (result.error || result.message)) || 'unknown';
+        if (!isBrowserProviderExhaustionError(reason) || i + 1 >= attempts.length) return;
+        const next = attempts[i + 1];
+        currentTask = buildBrowserContinuationPrompt({
+          originalGoal, thread,
+          fromProvider: a.entry.adapter.label,
+          toProvider: next.entry.adapter.label,
+          exhaustReason: reason,
+        });
+        if (typeof broadcast === 'function') {
+          try { broadcast({ type: 'browser-agent-step', threadId: thread.id, kind: 'provider_fallback', from: a.key, to: next.key, message: reason, continuationBytes: Buffer.byteLength(currentTask, 'utf8'), at: Date.now() }); } catch (_) {}
+        }
+        thread.stopped = false;
+      }
+    })().catch(() => {});
   });
 
   addRoute('POST', '/api/browser/agent/stop', async (req, res) => {
