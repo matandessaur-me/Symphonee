@@ -11777,6 +11777,23 @@ function handleOrchestratorEvent(msg) {
       }
     }
 
+    // Generic completion toast + success chime for ANY orchestrator task
+    // (so the user gets feedback even when a worker finishes off-screen).
+    // Skipped if the task surfaces through the richer palette/quick-ask
+    // notification path below (which already plays the success sound via
+    // notify()) so we don't double-notify.
+    if (task && task.state === 'completed' && !_paletteNotifyTasks.has(task.id)
+        && task.from !== 'palette' && task.from !== 'quick-ask') {
+      if (typeof toast === 'function') {
+        const cli = task.cli || 'AI';
+        const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli;
+        const promptSnippet = String(task.prompt || '')
+          .replace(/\[ORCHESTRATOR TASK [^\]]*\]/g, '').trim()
+          .split(/[.\n]/)[0].slice(0, 80);
+        toast(`${cliLabel} task done${promptSnippet ? ': ' + promptSnippet : ''}`, 'success', { duration: 5000 });
+      }
+    }
+
     // Palette / quick-ask tasks: push the final answer to the notification
     // center when they complete. Matches by taskId captured at spawn time,
     // or falls back to the task's `from` tag for cases where the spawn
@@ -17580,6 +17597,13 @@ function handleAppsAgentStep(msg) {
     // will route to /api/apps/session/continue instead of starting fresh.
     _appsUpdateRunningChrome(false);
     _appsUpdateStartButtonForFollowUp(true);
+    // Bottom-right toast + success chime so the user knows the run is over
+    // even if the Apps tab isn't focused.
+    if (typeof toast === 'function') {
+      const app = (_appsState.app || msg.app || '').trim();
+      const summary = String(msg.summary || 'Automation completed.').replace(/\s+/g, ' ').slice(0, 200);
+      toast(`Apps${app ? ': ' + app : ''} - ${summary}`, 'success', { duration: 5000 });
+    }
     return;
   }
   if (kind === 'stopped') {
@@ -17987,6 +18011,10 @@ function handleBrowserAgentStep(msg) {
         if (row && Array.isArray(msg.reports) && msg.reports.length) _appendBrowserActionReports(row, msg.reports);
       }
       _setBrowserAgentRunning(false);
+      if (typeof toast === 'function') {
+        const summary = String(msg.summary || 'Browser automation completed.').replace(/\s+/g, ' ').slice(0, 200);
+        toast('Browser - ' + summary, 'success', { duration: 5000 });
+      }
       break;
     case 'stopped':
       _appendAgentLog('message', 'Stopped by user.');
