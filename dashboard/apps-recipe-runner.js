@@ -441,6 +441,49 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
       await locateTarget({ session, driver, description: target });
       return;
     }
+    case 'EXTRACT': {
+      // EXTRACT reads a UIA value from the live window at runtime and binds
+      // it to a recipe variable. This is what makes "play the first song"
+      // genuinely dynamic — the recipe doesn't know the song name, it asks
+      // UIA at replay time and substitutes into the next step's selector.
+      //
+      // Step shape:
+      //   { verb: "EXTRACT", target: "uia:type=DataItem|minDepth=10",
+      //     text: "first_song_name" }
+      //
+      // The target is parsed for type / class / minDepth / nameRegex
+      // filters; the FIRST matching node's `name` is bound to variables[text].
+      if (!target) throw new Error('EXTRACT requires a UIA selector target like "uia:type=DataItem|minDepth=10".');
+      if (!text) throw new Error('EXTRACT requires a variable name in the text field (e.g. "first_song_name").');
+      const filter = {};
+      const lower = String(target).toLowerCase();
+      if (lower.startsWith('uia:')) {
+        for (const p of target.slice(4).split('|').filter(Boolean)) {
+          const eq = p.indexOf('=');
+          if (eq <= 0) continue;
+          const k = p.slice(0, eq).trim().toLowerCase();
+          const v = p.slice(eq + 1);
+          if (k === 'type')      filter.type = v;
+          else if (k === 'class') filter.class = v;
+          else if (k === 'mindepth') filter.minDepth = parseInt(v, 10) || 0;
+          else if (k === 'nameregex') filter.nameRegex = v;
+        }
+      }
+      if (typeof driver.findFirstUIA !== 'function') throw new Error('driver.findFirstUIA is unavailable; cannot EXTRACT.');
+      const hit = await driver.findFirstUIA(session.hwnd, filter);
+      if (!hit) {
+        const err = new Error('EXTRACT found no UIA element matching ' + JSON.stringify(filter));
+        err.code = 'extract_miss';
+        throw err;
+      }
+      // Mutate the variables bag in place so subsequent steps see the bind.
+      // The runner already passes the same object through every runStep call.
+      if (variables && typeof variables === 'object') {
+        variables[text] = hit.name;
+      }
+      emit({ kind: 'step_info', message: `EXTRACT ${text} = "${hit.name}" (${hit.type || 'unknown type'} at depth ${hit.depth})` });
+      return;
+    }
     default:
       throw new Error('unknown verb: ' + verb);
   }

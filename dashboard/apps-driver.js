@@ -406,6 +406,26 @@ $sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')
   return parsed;
 }
 
+// Find the FIRST UIA node matching a soft selector (type / class / minDepth /
+// nameRegex), returning { name, type, automationId, class, depth } or null.
+// Used by recipe EXTRACT steps to resolve a value at runtime ("the first
+// DataItem in the search results"), so the recipe doesn't bake a specific
+// song name in. The match walks document order, so depth/ancestor
+// constraints can be added by the caller once Spotify exposes them.
+async function findFirstUIA(hwnd, { type = null, class: cls = null, minDepth = 0, nameRegex = null } = {}) {
+  const tree = await uiaTree(hwnd, { maxNodes: 800 });
+  const re = nameRegex ? new RegExp(nameRegex) : null;
+  for (const n of tree.nodes || []) {
+    if (!n.name) continue;
+    if (n.depth < minDepth) continue;
+    if (type && n.type !== type) continue;
+    if (cls && !String(n.class || '').includes(cls)) continue;
+    if (re && !re.test(n.name)) continue;
+    return n;
+  }
+  return null;
+}
+
 // Wait until a UIA selector resolves (or timeout). Polls the tree at 250ms
 // cadence. Returns { hit, element } once found, or { hit: false } on timeout.
 async function waitForUIAElement(hwnd, selector, { timeoutMs = 5000, pollMs = 250 } = {}) {
@@ -1046,6 +1066,7 @@ module.exports = {
   maximizeWindow,
   findUIAElement,
   findUIAElementAt,
+  findFirstUIA,
   readUIAElement,
   waitForUIAElement,
   invokeUIAElement,

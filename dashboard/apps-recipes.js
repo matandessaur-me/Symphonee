@@ -54,6 +54,9 @@ function _write(app, data) {
 const ALLOWED_VERBS = new Set([
   'CLICK', 'DOUBLE_CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
   'SCROLL', 'DRAG',
+  // Reads a live UIA element value into a variable for subsequent steps.
+  // Makes recipes dynamic ("play the first result, whatever it is").
+  'EXTRACT',
   // Control flow (Phase E):
   'IF', 'ELSE', 'ENDIF',
   'REPEAT', 'ENDREPEAT',
