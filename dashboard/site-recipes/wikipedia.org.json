@@ -1,0 +1,48 @@
+{
+  "host": "wikipedia.org",
+  "recipes": [
+    {
+      "id": "r_guw0ltts",
+      "name": "Search Wikipedia for the term  Symphonee  using the search b (auto 2026-05-01 14:12)",
+      "description": "Auto-recorded from browser session router-1777644731603-k6gull. Goal: Search Wikipedia for the term \"Symphonee\" using the search box, then open the first matching article (or the search results page if there is no exact match).",
+      "host": "wikipedia.org",
+      "steps": [
+        {
+          "id": "s_9ytyfwgw",
+          "verb": "GOTO",
+          "target": "https://www.wikipedia.org"
+        },
+        {
+          "id": "s_68y1sezn",
+          "verb": "TYPE",
+          "target": "handle:{\"framePath\":[],\"cssPath\":\"#searchInput\"}",
+          "text": "Symphonee"
+        },
+        {
+          "id": "s_h00r80u8",
+          "verb": "CLICK",
+          "target": "handle:{\"framePath\":[],\"cssPath\":\"#search-form > fieldset > button\"}"
+        },
+        {
+          "id": "s_o7hbv2wt",
+          "verb": "WAIT_FOR_DOM",
+          "target": "body"
+        },
+        {
+          "id": "s_n97wocrm",
+          "verb": "CLICK",
+          "target": "text=Más y Menos"
+        }
+      ],
+      "status": "draft",
+      "conceptTags": [
+        "search",
+        "browse"
+      ],
+      "sourceSessionId": "router-1777644731603-k6gull",
+      "successCount": 0,
+      "createdAt": "2026-05-01T14:12:34.502Z",
+      "updatedAt": "2026-05-01T14:12:34.502Z"
+    }
+  ]
+}
