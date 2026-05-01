@@ -94,7 +94,14 @@ function mapCliToProvider(cli) {
 function isProviderExhaustionError(message) {
   const text = String(message || '').toLowerCase();
   if (!text) return false;
-  return /insufficient_quota|quota exceeded|quota has been exceeded|credit balance is too low|out of credits|out of credit|rate limit|rate-limit|429|resource exhausted|billing|purchase credits/.test(text);
+  // Quota / credit exhaustion (the original cases).
+  if (/insufficient_quota|quota exceeded|quota has been exceeded|credit balance is too low|out of credits|out of credit|rate limit|rate-limit|429|resource exhausted|billing|purchase credits/.test(text)) return true;
+  // Transient upstream / gateway failures. We treat these as fail-over
+  // signals too: if Anthropic's edge returned 503 we'd rather hand off
+  // to OpenAI / Gemini and resume than abort the user's automation. The
+  // continuation prompt makes the handoff seamless.
+  if (/\b50[234]\b|upstream connect error|connection timeout|connection reset|econnreset|enotfound|service unavailable|bad gateway|gateway timeout|overloaded|temporarily unavailable/.test(text)) return true;
+  return false;
 }
 
 // Build a continuation prompt for the next provider so the new agent

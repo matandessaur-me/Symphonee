@@ -712,7 +712,10 @@ function pickProvider(registry, preferred) {
 function isBrowserProviderExhaustionError(message) {
   const text = String(message || '').toLowerCase();
   if (!text) return false;
-  return /insufficient_quota|quota exceeded|quota has been exceeded|credit balance is too low|out of credits|out of credit|rate limit|rate-limit|429|resource exhausted|billing|purchase credits/.test(text);
+  if (/insufficient_quota|quota exceeded|quota has been exceeded|credit balance is too low|out of credits|out of credit|rate limit|rate-limit|429|resource exhausted|billing|purchase credits/.test(text)) return true;
+  // Transient upstream failures — fail over rather than abort.
+  if (/\b50[234]\b|upstream connect error|connection timeout|connection reset|econnreset|enotfound|service unavailable|bad gateway|gateway timeout|overloaded|temporarily unavailable/.test(text)) return true;
+  return false;
 }
 
 // Ranked provider attempts, mirroring apps-agent. Preferred provider goes
