@@ -180,7 +180,7 @@ You are watching the target window over a cloud connection: expect 1-4 seconds o
 
 1. Start every new goal with describe_window. Read the element list. If your target is in the tree, use click_element / type_into_element — never reach for screenshot+click(x,y) when a UIA selector exists. UIA actions are deterministic; pixel actions are not.
 2. ONLY call screenshot when (a) describe_window returned no useful element for what you need, or (b) you need to read pixel content (image, chart, custom canvas). In that case, all coordinates are WINDOW-RELATIVE: (0,0) is the top-left.
-3. After any action that could change the screen (click_element, click, type_text, key, scroll, drag), call describe_window OR screenshot again before the next step. Do not chain inputs blindly.
+3. After any UI-mutating action (click_element, click, type_text, type_into_element, key, scroll, drag), the tool result automatically includes a "_postUiaDelta" field with the freshly-refreshed UI elements (added/removed counts + a list of interactables). READ THAT field before your next action — do not call describe_window again unless you need the full tree, and do not click on stale elements that no longer exist. The delta is your live view of what changed on screen.
 4. wait_for_element is preferred over wait_ms when waiting for a dialog / button / list. It returns the moment the element exists; wait_ms is a guess.
 5. read_element lets you verify state cheaply (input contents, status bar, button label) without spending a screenshot.
 6. Use key for named keys (Enter, Tab, Escape, Ctrl+S, Alt+F4). Use type_text / type_into_element only for literal characters. Passing "\\n" to type_text will NOT press Enter; use key("Enter").
@@ -781,6 +781,9 @@ async function executeTool(driver, session, name, args) {
           const seed = `${n.type || ''}|${n.name || ''}|${n.automationId || ''}|${n.depth || 0}`;
           n.uid = 'uia_' + require('crypto').createHash('md5').update(seed).digest('hex').slice(0, 10);
         }
+        // Seed the delta baseline so the next mutating action's
+        // _postUiaDelta is computed against this snapshot.
+        session._lastUiaUids = new Set(nodes.map(n => n.uid));
         return { ok: true, nodes, truncated: !!(tree && tree.truncated), count: nodes.length };
       } catch (e) {
         return { ok: false, error: e.message, hint: 'window may be non-automatable; fall back to screenshot' };
@@ -1134,6 +1137,10 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
 
   let iter = 0;
   let finalSummary = null;
+  // Hoisted so the auto-promote pass at the end of the run can read it
+  // after the iteration loop exits. Each iteration's per-turn stuck flag
+  // assigns into this same binding.
+  let lastStuckSignal = null;
   const recentActions = [];
   try {
     while (iter < MAX_ITERATIONS) {
@@ -1174,6 +1181,9 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
       const pairs = [];
       let finished = false;
       let stuckSignal = null;
+      // Mirror per-iteration stuck signal into the outer-scope flag so the
+      // auto-promote pass at end-of-run can decide whether to save a recipe.
+      const _propagateStuck = () => { if (stuckSignal) lastStuckSignal = stuckSignal; };
       const lastActionsForObserver = [];
       for (const tc of resp.toolCalls) {
         if (session.stopped) break;
@@ -1208,8 +1218,47 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
         }
         try {
           learning.trackTry(session, tc.name, tc.args);
-          const result = await executeTool(driver, session, tc.name, tc.args);
+          let result = await executeTool(driver, session, tc.name, tc.args);
           learning.recordOutcome(session, tc.name, tc.args, true);
+          // Auto-refresh the UIA tree after every UI-mutating action so the
+          // model SEES the new state — buttons that just appeared, dialogs
+          // that opened, items that loaded — without having to call
+          // describe_window manually. We diff against the prior snapshot
+          // and attach a compact delta (added/removed UIDs + a short list
+          // of newly-visible interactables) to the tool result.
+          const MUTATING_TOOLS = new Set([
+            'click', 'click_element', 'type_text', 'type_into_element',
+            'key', 'scroll', 'drag', 'mouse_move',
+          ]);
+          if (MUTATING_TOOLS.has(tc.name) && session.hwnd != null && result && !result.error) {
+            try {
+              await new Promise(r => setTimeout(r, 350)); // let UI settle
+              const fresh = await driver.uiaTree(session.hwnd, { maxNodes: 300 });
+              const freshNodes = (fresh && fresh.nodes) || [];
+              const crypto = require('crypto');
+              const tag = (n) => 'uia_' + crypto.createHash('md5').update(`${n.type || ''}|${n.name || ''}|${n.automationId || ''}|${n.depth || 0}`).digest('hex').slice(0, 10);
+              const freshUids = new Set(freshNodes.map(tag));
+              const prevUids = session._lastUiaUids instanceof Set ? session._lastUiaUids : new Set();
+              const addedUids = [...freshUids].filter(u => !prevUids.has(u));
+              const removedUids = [...prevUids].filter(u => !freshUids.has(u));
+              const interactables = freshNodes
+                .filter(n => n.invokable || /Button|MenuItem|TabItem|Hyperlink|ListItem|TreeItem|RadioButton|CheckBox|ComboBox|Edit/i.test(n.type || ''))
+                .filter(n => n.name && n.name.length)
+                .slice(0, 60)
+                .map(n => ({ uid: tag(n), name: n.name, type: n.type, automationId: n.automationId || undefined }));
+              session._lastUiaUids = freshUids;
+              result = Object.assign({}, result, {
+                _postUiaDelta: {
+                  addedCount: addedUids.length,
+                  removedCount: removedUids.length,
+                  totalElements: freshNodes.length,
+                  truncated: !!(fresh && fresh.truncated),
+                  interactables,
+                  hint: 'Window state refreshed after your action. Use the elements above for the next click/type — call describe_window only if you need the full tree.',
+                },
+              });
+            } catch (_) { /* uia not available — leave result unchanged */ }
+          }
           // Successful action: progress, not an attempt. Attempt counts
           // only increment for failures (see catch branch below).
           // Broadcast plan updates after set_subgoal / complete_subgoal.
@@ -1351,6 +1400,7 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
         // triggered by the exact same signal instantly.
         if (session._sameToolStreak) session._sameToolStreak = { tool: null, n: 0 };
       }
+      _propagateStuck();
 
       // Observer pass: every N actions, fire-and-forget a side call to
       // capture anything memory-worthy.
@@ -1372,7 +1422,7 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
     // run on the same goal can replay it without spending LLM tokens.
     // Only fires on a clean finish (no stuck signal) with at least 3
     // recorded actions — anything shorter is too thin to be a recipe.
-    if (!stuckSignal && Array.isArray(session._recordedActions) && session._recordedActions.length >= 3 && session.app) {
+    if (!lastStuckSignal && Array.isArray(session._recordedActions) && session._recordedActions.length >= 3 && session.app) {
       try {
         const recipes = require('./apps-recipes');
         const steps = recipes.actionsToSteps(session._recordedActions);
