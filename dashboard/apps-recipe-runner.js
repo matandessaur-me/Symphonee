@@ -430,6 +430,12 @@ async function runStep({ session, driver, step, variables, emit, providerEntry, 
       await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd, button: 'right' });
       return;
     }
+    case 'MIDDLE_CLICK': {
+      if (!target) throw new Error('MIDDLE_CLICK requires a target (a description or "x,y" coordinates).');
+      const coord = await resolveCoord(session, driver, target);
+      await driver.click({ x: coord.x, y: coord.y, hwnd: session.hwnd, button: 'middle' });
+      return;
+    }
     case 'FIND': {
       if (!target) throw new Error('FIND requires a target description.');
       const coord = await locateTarget({ session, driver, description: target });

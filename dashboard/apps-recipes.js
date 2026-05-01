@@ -52,7 +52,7 @@ function _write(app, data) {
 }
 
 const ALLOWED_VERBS = new Set([
-  'CLICK', 'DOUBLE_CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
+  'CLICK', 'DOUBLE_CLICK', 'RIGHT_CLICK', 'MIDDLE_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY',
   'SCROLL', 'DRAG',
   // Reads a live UIA element value into a variable for subsequent steps.
   // Makes recipes dynamic ("play the first result, whatever it is").
@@ -390,7 +390,11 @@ function actionsToSteps(actions) {
     const name = a.name;
     const args = a.args || {};
     if (name === 'click' && Number.isFinite(args.x) && Number.isFinite(args.y)) {
-      out.push({ verb: args.double ? 'DOUBLE_CLICK' : 'CLICK', target: `${args.x},${args.y}` });
+      let verb = 'CLICK';
+      if (args.double) verb = 'DOUBLE_CLICK';
+      else if (args.button === 'right')  verb = 'RIGHT_CLICK';
+      else if (args.button === 'middle') verb = 'MIDDLE_CLICK';
+      out.push({ verb, target: `${args.x},${args.y}` });
     } else if (name === 'type_text' && typeof args.text === 'string') {
       out.push({ verb: 'TYPE', text: args.text });
     } else if (name === 'key' && typeof args.combo === 'string') {

@@ -5795,7 +5795,7 @@
           <div id="appsAutomationsVisual" ondragover="event.preventDefault();" ondrop="_appsPaletteAreaDrop(event)" style="flex:1; min-height:160px; max-height:360px; overflow-y:auto; border:1px solid var(--surface2); border-radius:6px; padding:6px; background:var(--bg); display:flex; flex-direction:column; gap:4px;"></div>
           <textarea id="appsAutomationsSteps" spellcheck="false" placeholder="CLICK {{regression}}&#10;CLICK File menu&#10;TYPE filename -> my-design&#10;PRESS Enter" style="display:none;flex:1;min-height:160px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:6px;padding:10px 12px;font:12px/1.5 var(--font-mono);resize:vertical;outline:none;"></textarea>
           <div style="font:11px var(--font-ui); color:var(--subtext0);">
-            Verbs: CLICK, TYPE, PRESS, WAIT, FIND, VERIFY, IF/ELSE/ENDIF, REPEAT/ENDREPEAT. Arrow <code>-&gt;</code> separates a target from typed text (e.g. <code>TYPE input -&gt; hello</code>). Coordinates <code>x,y</code> skip the vision locator.
+            Verbs: CLICK, DOUBLE_CLICK, RIGHT_CLICK, MIDDLE_CLICK, DRAG, SCROLL, TYPE, PRESS, WAIT, WAIT_UNTIL, FIND, VERIFY, EXTRACT, IF/ELSE/ENDIF, REPEAT/ENDREPEAT. Arrow <code>-&gt;</code> separates a target from typed text (e.g. <code>TYPE input -&gt; hello</code>). Coordinates <code>x,y</code> skip the vision locator. EXTRACT reads a UIA value into a variable: <code>EXTRACT uia:type=DataItem -&gt; song_name</code>.
           </div>
           <details style="border:1px solid var(--surface2); border-radius:6px; padding:4px 10px; background:var(--surface0);">
             <summary style="cursor:pointer; font:600 10px var(--font-ui); color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px; padding:4px 0;">
@@ -16145,8 +16145,19 @@ async function appsAutomationsExportAll() {
 }
 
 // ───── Visual step builder ──────────────────────────────────────────────
-const _APPS_VERBS = ['CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY', 'SCROLL', 'DRAG', 'IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT'];
-const _APPS_VERBS_WITH_TEXT = new Set(['TYPE', 'WAIT_UNTIL', 'DRAG']);
+// Authoritative verb list — keep in sync with ALLOWED_VERBS in
+// dashboard/apps-recipes.js. Mouse verbs grouped first, then keyboard,
+// timing, locator, control flow.
+const _APPS_VERBS = [
+  'CLICK', 'DOUBLE_CLICK', 'RIGHT_CLICK', 'MIDDLE_CLICK', 'DRAG', 'SCROLL',
+  'TYPE', 'PRESS',
+  'WAIT', 'WAIT_UNTIL',
+  'FIND', 'VERIFY', 'EXTRACT',
+  'IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT',
+];
+// Verbs that take text in addition to a target (TYPE field). EXTRACT uses
+// the text field for the variable name to bind, DRAG for the destination.
+const _APPS_VERBS_WITH_TEXT = new Set(['TYPE', 'WAIT_UNTIL', 'DRAG', 'EXTRACT']);
 const _APPS_VERBS_BARE = new Set(['ELSE', 'ENDIF', 'ENDREPEAT']);
 let _appsBuilderView = 'visual';
 let _appsBuilderSteps = [];
@@ -16259,7 +16270,7 @@ function _appsRenderBuilderRows() {
     return `<div class="apps-builder-row" draggable="true" data-idx="${i}" ondragstart="_appsBuilderDragStart(event,${i})" ondragover="_appsBuilderDragOver(event,${i})" ondragleave="_appsBuilderDragLeave(event)" ondrop="_appsBuilderDrop(event,${i})" ondragend="_appsBuilderDragEnd(event)" style="display:flex;align-items:center;gap:6px;padding:5px 6px;background:var(--surface0);border:1px solid var(--surface1);border-radius:5px;">
       <span style="cursor:grab;color:var(--overlay1);padding:0 3px;" title="Drag to reorder">::</span>
       <span style="color:var(--overlay1);font:10px var(--font-mono);min-width:22px;text-align:right;">${i + 1}</span>
-      <select onchange="_appsBuilderVerbChanged(${i}, this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-ui);min-width:96px;">${options}</select>
+      <select onchange="_appsBuilderVerbChanged(${i}, this.value)" style="background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:3px 6px;font:11px var(--font-ui);min-width:108px;color-scheme:dark;">${options}</select>
       ${showTarget ? _appsBuilderTargetControl(i, s, verb) : '<span style="flex:1;color:var(--overlay1);font:11px var(--font-ui);font-style:italic;">(block marker)</span>'}
       ${showText ? `<span style="color:var(--overlay1);">→</span><input type="text" placeholder="text to type" value="${_appsEscape(s.text || '')}" oninput="_appsBuilderUpdate(${i},'text',this.value)" style="flex:1;min-width:100px;background:var(--bg);color:var(--text);border:1px solid var(--surface2);border-radius:4px;padding:4px 8px;font:12px var(--font-mono);outline:none;">` : ''}
       <button type="button" onclick="appsAutomationsTestStep(${i})" title="Test just this step against the target window" style="background:transparent;border:1px solid var(--surface2);color:var(--subtext1);cursor:pointer;padding:2px 7px;font:10px var(--font-ui);border-radius:3px;">Test</button>
@@ -16532,14 +16543,15 @@ function _appsTextToVars(text) {
 
 function _appsTextToSteps(text) {
   const out = [];
-  const verbs = new Set(['CLICK', 'RIGHT_CLICK', 'TYPE', 'PRESS', 'WAIT', 'WAIT_UNTIL', 'FIND', 'VERIFY', 'SCROLL', 'DRAG', 'IF', 'ELSE', 'ENDIF', 'REPEAT', 'ENDREPEAT']);
+  // Mirror of _APPS_VERBS — kept as a Set so the parser is fast.
+  const verbs = new Set(_APPS_VERBS);
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const m = line.match(/^(\w+)\s*(.*)$/);
     if (!m) continue;
     const verb = m[1].toUpperCase();
-    if (!verbs.has(verb)) throw new Error('Unknown verb "' + m[1] + '". Use CLICK, TYPE, PRESS, WAIT, FIND, or VERIFY.');
+    if (!verbs.has(verb)) throw new Error('Unknown verb "' + m[1] + '". Allowed: ' + _APPS_VERBS.join(', ') + '.');
     let rest = m[2] || '';
     let notes;
     const noteIdx = rest.indexOf('//');
