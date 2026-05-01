@@ -81,6 +81,8 @@ const ROUTES = {
   '/mind-ui.js':              { file: path.join(publicDir, 'mind-ui.js'),                                          type: 'application/javascript' },
   '/vis-network.min.js':      { file: path.join(nodeModules, 'vis-network/standalone/umd/vis-network.min.js'),     type: 'application/javascript' },
   '/vis-network.min.css':     { file: path.join(nodeModules, 'vis-network/dist/dist/vis-network.min.css'),         type: 'text/css' },
+  '/3d-force-graph.min.js':   { file: path.join(nodeModules, '3d-force-graph/dist/3d-force-graph.min.js'),         type: 'application/javascript' },
+  '/force-graph.min.js':      { file: path.join(nodeModules, 'force-graph/dist/force-graph.min.js'),                type: 'application/javascript' },
 };
 
 // ── Pluggable route handlers (Electron adds its own via addRoute) ────────────
@@ -730,9 +732,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/busy' && req.method === 'GET')                return json(res, guard.activeLocks());
 
     // ── Static files ──────────────────────────────────────────────────────
+    // Cache-Control: no-store on dashboard assets. Without this header
+    // Electron's renderer was holding onto /mind-ui.js and /index.html
+    // across reloads, so code changes silently didn't show up until a full
+    // app restart. The asset server is on localhost - no CDN, no bandwidth
+    // concern - so always-fresh is the right default.
     const route = ROUTES[url.pathname];
     if (route && fs.existsSync(route.file)) {
-      res.writeHead(200, { 'Content-Type': route.type });
+      res.writeHead(200, {
+        'Content-Type': route.type,
+        'Cache-Control': 'no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      });
       fs.createReadStream(route.file).pipe(res);
     } else {
       // Plugin-aware 404 for /api/ paths owned by extracted plugins. Keeps the
