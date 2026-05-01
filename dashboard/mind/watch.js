@@ -48,6 +48,10 @@ class MindWatcher {
     targets.push(path.join(this.repoRoot, 'dashboard', 'app-recipes'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'app-memory'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'app-recipe-history'));
+    targets.push(path.join(this.repoRoot, 'dashboard', 'site-recipes'));
+    targets.push(path.join(this.repoRoot, 'dashboard', 'site-memory'));
+    targets.push(path.join(this.repoRoot, 'dashboard', 'site-snapshots'));
+    targets.push(path.join(this.repoRoot, 'dashboard', 'site-recipe-history'));
 
     const chokidar = tryRequireChokidar();
     if (chokidar) {

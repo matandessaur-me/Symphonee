@@ -319,6 +319,59 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
     if (body && body.recipeId) {
       return json(res, { ok: false, error: 'recipeId is not supported by the Browser Router yet' }, 400);
     }
+
+    // Pre-session Mind query: enrich the goal with prior site recipes
+    // and per-host memory before any driver runs. Verified hits get
+    // surfaced via a 'mind_match' broadcast so the UI can offer to
+    // replay without paying LLM tokens.
+    try {
+      const goal = String((body && (body.goal || body.task || body.prompt)) || '');
+      let host = null;
+      try {
+        const url = body && (body.url || body.targetUrl);
+        if (url) host = require('./site-recipes').normalizeHost(url);
+      } catch (_) {}
+      if (goal) {
+        const mindStore = require('./mind/store');
+        const mindQuery = require('./mind/query');
+        const repoRoot = require('path').resolve(__dirname, '..');
+        const graph = mindStore.loadGraph(repoRoot, '_global');
+        if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
+          const r = mindQuery.runQuery(graph, { question: host ? `${host}: ${goal}` : goal, budget: 1200 });
+          const candidates = (r.nodes || []).filter(n => n.kind === 'recipe' && (n.tags || []).includes('site-automation'));
+          const filtered = host ? candidates.filter(n => (n.tags || []).includes(host)) : candidates;
+          const verifiedHit = filtered.find(n => (n.tags || []).includes('verified'));
+          if (verifiedHit && typeof broadcast === 'function') {
+            try {
+              broadcast({
+                type: 'browser-router-dispatch', phase: 'mind_match',
+                recipe: { id: verifiedHit.id, label: verifiedHit.label, file: verifiedHit.source && verifiedHit.source.file },
+                message: `Found verified site automation "${verifiedHit.label}" for this goal. Pass skipMindMatch:true to bypass.`,
+                at: Date.now(),
+              });
+            } catch (_) {}
+          }
+          // Inject draft + memory hints into the body so dispatched drivers
+          // see them in the prompt.
+          const hints = [];
+          for (const n of filtered.slice(0, 3)) hints.push(`- ${n.label} [${(n.tags||[]).includes('verified') ? 'verified' : 'draft'}] — ${n.steps || 0} steps`);
+          const memNode = (r.nodes || []).find(n => n.kind === 'doc' && (n.tags || []).includes('site-memory') && (host ? (n.tags || []).includes(host) : true));
+          if (hints.length || memNode) {
+            const block = [
+              hints.length ? `## Prior automations for this site (from Mind)\n${hints.join('\n')}` : '',
+              memNode && memNode.description ? `## Prior site memory\n${memNode.description.slice(0, 600)}` : '',
+            ].filter(Boolean).join('\n\n');
+            if (body && typeof body === 'object') {
+              body._mindHints = block;
+              if (typeof body.task === 'string')   body.task   = `${body.task}\n\n${block}`;
+              if (typeof body.goal === 'string')   body.goal   = `${body.goal}\n\n${block}`;
+              if (typeof body.prompt === 'string') body.prompt = `${body.prompt}\n\n${block}`;
+            }
+          }
+        }
+      }
+    } catch (_) { /* Mind unavailable — proceed with a cold start */ }
+
     const decision = decide(body, settingsFor());
     const fallbacks = [];
     let driver = decision.driver;

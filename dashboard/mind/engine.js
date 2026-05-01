@@ -26,6 +26,7 @@ const { extractCliMemory } = require('./extractors/cli-memory');
 const { extractCliSkills } = require('./extractors/cli-skills');
 const { extractRecipes } = require('./extractors/recipes');
 const { extractAppRecipes } = require('./extractors/app-recipes');
+const { extractSiteMap } = require('./extractors/site-map');
 const { extractPlugins } = require('./extractors/plugins');
 const { extractInstructions } = require('./extractors/instructions');
 const { extractRepoCode } = require('./extractors/repo-code');
@@ -99,6 +100,12 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     onProgress('Extracting app automations (recipes/memory/run-history)...');
     const f = extractAppRecipes({ manifest, incremental });
     fragments.push(f); summary.appRecipes = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length };
+  }
+
+  if (sources.includes('site-map') || sources.includes('recipes')) {
+    onProgress('Extracting site map (site-recipes / site-memory / page snapshots)...');
+    const f = extractSiteMap({ manifest, incremental });
+    fragments.push(f); summary.siteMap = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length };
   }
 
   if (sources.includes('plugins')) {

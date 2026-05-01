@@ -31,7 +31,7 @@ const viz = require('./viz');
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
 const jobs = new Map();
-const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'app-recipes', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts'];
+const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'app-recipes', 'site-map', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts'];
 function makeJobId() { return 'mj_' + Math.random().toString(36).slice(2, 10); }
 
 function readBody(req) {
@@ -1248,31 +1248,50 @@ function mountMind(addRoute, json, ctx) {
       if (!stats) return `[mind: ${space} empty]`;
       const ageMin = Math.round((Date.now() - new Date(stats.lastBuildAt).getTime()) / 60000);
       const stamp = `[mind: ${space} nodes=${stats.nodes} edges=${stats.edges} communities=${stats.communities} staleness=${ageMin}m] Query before answering: POST http://127.0.0.1:3800/api/mind/query {"question":"..."}. Save findings: POST /api/mind/save-result {"question","answer","citedNodeIds"}.`;
-      // Apps awareness: enumerate which apps have automations indexed and
-      // how many are verified. Lets the dispatched worker know up front
-      // that a recipe path exists for "open Spotify and play X" without
-      // re-querying. ~one extra line, zero call cost.
+      // Apps + sites awareness: enumerate which apps and which sites have
+      // automations indexed and how many are verified. Lets the dispatched
+      // worker know up front that a recipe path exists without re-querying.
+      // Two short lines, zero call cost.
       let appsLine = '';
+      let sitesLine = '';
       try {
         const g = store.loadGraph(repoRoot, space);
         if (g && Array.isArray(g.nodes)) {
           const byApp = new Map();
+          const bySite = new Map();
           for (const n of g.nodes) {
-            if (n.kind !== 'recipe') continue;
-            if (!Array.isArray(n.tags) || !n.tags.includes('app-automation')) continue;
-            const appTag = n.tags.find(t => t !== 'app-automation' && t !== 'verified' && t !== 'draft' && t !== 'archived');
-            if (!appTag) continue;
-            const slot = byApp.get(appTag) || { total: 0, verified: 0 };
-            slot.total++;
-            if (n.tags.includes('verified')) slot.verified++;
-            byApp.set(appTag, slot);
+            if (n.kind !== 'recipe' || !Array.isArray(n.tags)) continue;
+            if (n.tags.includes('app-automation')) {
+              const appTag = n.tags.find(t => t !== 'app-automation' && t !== 'verified' && t !== 'draft' && t !== 'archived');
+              if (appTag) {
+                const slot = byApp.get(appTag) || { total: 0, verified: 0 };
+                slot.total++;
+                if (n.tags.includes('verified')) slot.verified++;
+                byApp.set(appTag, slot);
+              }
+            }
+            if (n.tags.includes('site-automation')) {
+              const siteTag = n.tags.find(t => t !== 'site-automation' && t !== 'verified' && t !== 'draft' && t !== 'archived');
+              if (siteTag) {
+                const slot = bySite.get(siteTag) || { total: 0, verified: 0 };
+                slot.total++;
+                if (n.tags.includes('verified')) slot.verified++;
+                bySite.set(siteTag, slot);
+              }
+            }
           }
           if (byApp.size) {
             const summary = [...byApp.entries()].slice(0, 8).map(([a, s]) => `${a}=${s.verified}/${s.total}`).join(' ');
             appsLine = `\n[apps: ${summary}] Use POST /api/apps/do { app, goal } to drive desktop apps; verified recipes replay without LLM tokens.`;
           }
+          if (bySite.size) {
+            const summary = [...bySite.entries()].slice(0, 8).map(([h, s]) => `${h}=${s.verified}/${s.total}`).join(' ');
+            sitesLine = `\n[sites: ${summary}] Use POST /api/browser/router/run { goal, url } to drive websites; verified site recipes replay without LLM tokens.`;
+          }
         }
       } catch (_) {}
+      // Concatenate so legacy callers that read appsLine alone still work.
+      appsLine = appsLine + sitesLine;
       if (opts.minimal) return stamp + appsLine;
       try {
         const g = store.loadGraph(repoRoot, space);

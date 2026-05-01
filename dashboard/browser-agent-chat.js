@@ -15,6 +15,7 @@
  */
 
 const https = require('https');
+const siteRecipes = require('./site-recipes');
 
 const MAX_ITERATIONS = 30;
 const DEFAULT_MAX_TOKENS = 1024;
@@ -1160,6 +1161,9 @@ async function runThread(args) {
 }
 
 async function _runThreadInner({ thread, task, agent, providerEntry, model, broadcast, credentials }) {
+  // Stash the goal on the thread so the auto-promote pass at the end of the
+  // run can reach it. Truncated to keep recipe names sane.
+  thread.goal = String(task || '').slice(0, 400);
   const emit = (step) => {
     if (typeof broadcast === 'function') {
       broadcast({ type: 'browser-agent-step', threadId: thread.id, ...step, at: Date.now() });
@@ -1268,6 +1272,25 @@ async function _runThreadInner({ thread, task, agent, providerEntry, model, broa
           const telemetry = beforeState ? await captureActionTelemetry(agent, beforeState) : null;
           const report = buildActionReport({ name: tc.name, args: tc.args, result, telemetry });
           if (report.markdown) actionReports.push(report);
+          // Track host context: every navigate updates thread.host so any
+          // subsequent click / fill action gets attributed to the right
+          // site when we auto-promote the session into a recipe.
+          if (tc.name === 'navigate' && result && result.url) {
+            thread.host = siteRecipes.normalizeHost(result.url);
+            thread.lastUrl = result.url;
+          }
+          // Record successful DOM-level actions so the session can be
+          // promoted to a site recipe on clean finish. Mirrors the apps
+          // recordedActions feed so the same Mind/Recipe pipeline applies.
+          const RECORDABLE = new Set([
+            'navigate', 'click', 'click_text', 'click_handle',
+            'fill', 'fill_by_label', 'fill_handle',
+            'press_key', 'wait_for', 'scroll_to', 'fill_saved_credentials',
+          ]);
+          if (RECORDABLE.has(tc.name)) {
+            if (!Array.isArray(thread._recordedActions)) thread._recordedActions = [];
+            thread._recordedActions.push({ name: tc.name, args: tc.args || {}, at: Date.now() });
+          }
           pairs.push({
             toolUseId: tc.id, name: tc.name,
             blocks: providerEntry.adapter.buildToolResultBlocks(tc.name, result),
@@ -1305,6 +1328,86 @@ async function _runThreadInner({ thread, task, agent, providerEntry, model, broa
       if (finished) break;
     }
     if (!finalSummary) finalSummary = iter >= MAX_ITERATIONS ? `Stopped after ${MAX_ITERATIONS} steps.` : 'Done.';
+
+    // Auto-promote a successful browser session into a draft site recipe
+    // so the next "do X on Y" hits the cache instead of paying tokens.
+    // Same shape as the apps auto-promote: requires a clean finish and
+    // 3+ recorded DOM/nav actions, plus a known host.
+    try {
+      const looksClean = finalSummary && !/\b(stuck|unable|cannot|could not|failed|stopped|loop detected)\b/i.test(finalSummary);
+      if (looksClean && Array.isArray(thread._recordedActions) && thread._recordedActions.length >= 3 && thread.host) {
+        const steps = siteRecipes.actionsToSteps(thread._recordedActions);
+        if (steps.length >= 3) {
+          // Minimization: collapse consecutive WAITs (none today, but the
+          // shape is here for future verbs) and trim trailing noise.
+          const minimized = [];
+          for (const s of steps) {
+            const last = minimized[minimized.length - 1];
+            if (s.verb === 'WAIT' && last && last.verb === 'WAIT') continue;
+            minimized.push(s);
+          }
+          // Concept tagging from goal text + step contents so cross-site
+          // queries like "how do I search" surface recipes whose goals
+          // didn't say "search" but whose steps clearly did.
+          const haystack = [
+            String(thread.goal || ''),
+            String(finalSummary || ''),
+            ...minimized.map(s => `${s.target || ''} ${s.text || ''} ${s.notes || ''}`),
+          ].join(' ').toLowerCase();
+          const conceptMap = {
+            login: ['log in', 'login', 'sign in', 'signin', 'authenticate', 'password', 'username', 'email'],
+            search: ['search', 'find ', 'lookup', 'query for'],
+            browse: ['top of', 'subreddit', '/r/', 'browse', 'feed'],
+            read: ['read article', 'read post', 'open article'],
+            post: ['post ', 'submit', 'publish', 'comment'],
+            extract: ['extract', 'scrape', 'collect', 'gather'],
+            buy: ['buy', 'add to cart', 'checkout'],
+            navigate: ['go to', 'navigate to', 'visit '],
+          };
+          const conceptTags = [];
+          for (const [tag, keys] of Object.entries(conceptMap)) {
+            if (keys.some(k => haystack.includes(k))) conceptTags.push(tag);
+          }
+
+          const baseName = String(thread.goal || 'auto-recorded').slice(0, 60).replace(/[\\/:*?"<>|]/g, ' ').trim();
+          const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+          const recipeName = `${baseName} (auto ${stamp})`;
+          const saved = siteRecipes.saveRecipe(thread.host, {
+            name: recipeName,
+            description: `Auto-recorded from browser session ${thread.id}. Goal: ${thread.goal || ''}`,
+            steps: minimized,
+            status: 'draft',
+            conceptTags,
+            sourceSessionId: thread.id,
+          });
+          emit({ kind: 'auto_recipe', host: thread.host, name: recipeName, steps: minimized.length, conceptTags });
+
+          // Live Mind sync so any other CLI sees the new automation
+          // immediately, not on the next /api/mind/build.
+          if (saved && saved.path) {
+            try {
+              const http = require('http');
+              const payload = JSON.stringify({
+                path: saved.path,
+                label: `${thread.host}: ${recipeName}`,
+                kind: 'recipe',
+                createdBy: 'browser-agent',
+                tags: ['site-automation', thread.host, ...conceptTags],
+              });
+              const mreq = http.request({
+                host: '127.0.0.1', port: 3800, path: '/api/mind/add', method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+              }, (mres) => { mres.resume(); });
+              mreq.on('error', () => {});
+              mreq.write(payload); mreq.end();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      emit({ kind: 'auto_recipe_error', error: e.message });
+    }
+
     const finalReport = buildFinalBrowserReport(finalSummary, actionReports);
     emit({ kind: 'done', summary: finalSummary, markdown: finalReport, reports: actionReports });
     thread.lastResult = { ok: true, kind: 'done', summary: finalSummary, iterations: iter, report: finalReport, actionReports, finishedAt: Date.now() };
