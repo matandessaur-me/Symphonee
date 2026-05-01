@@ -1242,6 +1242,47 @@ function mountMind(addRoute, json, ctx) {
     //
     // The worker is still expected to call /api/mind/query for anything
     // specific - the hint is the wake-up, not the answer.
+    // Run an incremental refresh on app startup so every session begins
+    // with a fresh graph (new files since last shutdown, new app/site
+    // recipes, new memory bullets). Fires a 'mind-startup-refresh' WS
+    // event with phase: started | done | error so the UI can toast.
+    // Idempotent: if a build is already in progress, this is a no-op.
+    async kickoffStartupRefresh() {
+      const space = getSpace();
+      const acq = lock.acquire(space, 'graph');
+      if (!acq.ok) {
+        // A build is already running (likely the auto-resumed watcher).
+        // Treat as success so the UI doesn't toast a stale error.
+        if (broadcast) broadcast({ type: 'mind-startup-refresh', payload: { phase: 'skipped', reason: 'build already in progress', space } });
+        return { ok: false, skipped: true, reason: 'busy' };
+      }
+      lock.release(space, 'graph');
+      const startedAt = Date.now();
+      if (broadcast) broadcast({ type: 'mind-startup-refresh', payload: { phase: 'started', space, startedAt } });
+      try {
+        const result = await engine.runBuild({
+          repoRoot, space,
+          sources: DEFAULT_BUILD_SOURCES,
+          incremental: true,
+          ctx,
+          onProgress: () => { /* progress is internal; the UI just wants the toast */ },
+        });
+        if (broadcast) broadcast({
+          type: 'mind-startup-refresh',
+          payload: {
+            phase: 'done', space,
+            durationMs: Date.now() - startedAt,
+            stats: store.statsFor(repoRoot, space),
+            sources: Object.keys(result && result.sources ? result.sources : {}),
+          },
+        });
+        return { ok: true, durationMs: Date.now() - startedAt };
+      } catch (e) {
+        if (broadcast) broadcast({ type: 'mind-startup-refresh', payload: { phase: 'error', space, error: e.message } });
+        return { ok: false, error: e.message };
+      }
+    },
+
     orchestratorHint(opts = {}) {
       const space = getSpace();
       const stats = store.statsFor(repoRoot, space);

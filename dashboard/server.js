@@ -3156,6 +3156,17 @@ if (orchestrator) {
   orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
 }
 
+// Auto-refresh Mind on every server boot so the graph is always current
+// when the user opens the app. Deferred 1.5s so the WebSocket layer is
+// ready to broadcast the toast event. Incremental — skips files whose
+// SHA256 hasn't changed, so it's cheap on a warm cache and a full rebuild
+// only on the first run after a clean clone.
+setTimeout(() => {
+  if (typeof mind.kickoffStartupRefresh === 'function') {
+    mind.kickoffStartupRefresh().catch(() => {});
+  }
+}, 1500);
+
 // ── Mount learnings ─────────────────────────────────────────────────────────
 const learningsDataDir = path.join(repoRoot, '.ai-workspace');
 _learningsInstance = mountLearnings(addRoute, json, { dataDir: learningsDataDir, getConfig, readBody });

@@ -7051,6 +7051,20 @@ requestAnimationFrame(fitTerminalNow);
           try { applyPluginSpaceFilter(); } catch (_) {}
           notifyPluginIframes('configChanged', {});
           break;
+        case 'mind-startup-refresh': {
+          // Auto-refresh fired on server boot. We surface only the terminal
+          // 'done' state as a bottom-right toast so the user gets one
+          // notification per startup, not three.
+          const p = msg.payload || {};
+          if (p.phase === 'done' && typeof toast === 'function') {
+            const sec = p.durationMs ? Math.max(1, Math.round(p.durationMs / 1000)) : 0;
+            const stat = p.stats ? ` ${p.stats.nodes} nodes` : '';
+            toast(`Mind refreshed.${stat}${sec ? ' (' + sec + 's)' : ''}`, 'success', { duration: 3500, silent: true });
+          } else if (p.phase === 'error' && typeof toast === 'function') {
+            toast('Mind refresh failed: ' + (p.error || 'unknown'), 'error', { duration: 4500 });
+          }
+          break;
+        }
         case 'ui-action':
           handleUiAction(msg);
           break;
