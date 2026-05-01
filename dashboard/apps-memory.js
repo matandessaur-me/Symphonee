@@ -194,7 +194,7 @@ function appendSection(app, section, note) {
   }
   meta.lastUpdated = new Date().toISOString();
   fs.writeFileSync(p, _writeFrontmatter(meta, updated), 'utf8');
-  return { ok: true, app: normalizeApp(app), section: canon, bytes };
+  return { ok: true, app: normalizeApp(app), section: canon, bytes, path: p };
 }
 
 function replaceSection(app, section, body) {

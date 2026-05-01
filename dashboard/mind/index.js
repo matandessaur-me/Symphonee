@@ -31,7 +31,7 @@ const viz = require('./viz');
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
 const jobs = new Map();
-const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts'];
+const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'app-recipes', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts'];
 function makeJobId() { return 'mj_' + Math.random().toString(36).slice(2, 10); }
 
 function readBody(req) {
@@ -1248,22 +1248,44 @@ function mountMind(addRoute, json, ctx) {
       if (!stats) return `[mind: ${space} empty]`;
       const ageMin = Math.round((Date.now() - new Date(stats.lastBuildAt).getTime()) / 60000);
       const stamp = `[mind: ${space} nodes=${stats.nodes} edges=${stats.edges} communities=${stats.communities} staleness=${ageMin}m] Query before answering: POST http://127.0.0.1:3800/api/mind/query {"question":"..."}. Save findings: POST /api/mind/save-result {"question","answer","citedNodeIds"}.`;
-      if (opts.minimal) return stamp;
+      // Apps awareness: enumerate which apps have automations indexed and
+      // how many are verified. Lets the dispatched worker know up front
+      // that a recipe path exists for "open Spotify and play X" without
+      // re-querying. ~one extra line, zero call cost.
+      let appsLine = '';
       try {
         const g = store.loadGraph(repoRoot, space);
-        if (!g) return stamp;
+        if (g && Array.isArray(g.nodes)) {
+          const byApp = new Map();
+          for (const n of g.nodes) {
+            if (n.kind !== 'recipe') continue;
+            if (!Array.isArray(n.tags) || !n.tags.includes('app-automation')) continue;
+            const appTag = n.tags.find(t => t !== 'app-automation' && t !== 'verified' && t !== 'draft' && t !== 'archived');
+            if (!appTag) continue;
+            const slot = byApp.get(appTag) || { total: 0, verified: 0 };
+            slot.total++;
+            if (n.tags.includes('verified')) slot.verified++;
+            byApp.set(appTag, slot);
+          }
+          if (byApp.size) {
+            const summary = [...byApp.entries()].slice(0, 8).map(([a, s]) => `${a}=${s.verified}/${s.total}`).join(' ');
+            appsLine = `\n[apps: ${summary}] Use POST /api/apps/do { app, goal } to drive desktop apps; verified recipes replay without LLM tokens.`;
+          }
+        }
+      } catch (_) {}
+      if (opts.minimal) return stamp + appsLine;
+      try {
+        const g = store.loadGraph(repoRoot, space);
+        if (!g) return stamp + appsLine;
         const ui = getUiContext ? getUiContext() : {};
-        // When the orchestrator passes the worker's task prompt as opts.question,
-        // L1 becomes the BFS sub-graph for that task. Otherwise it's the
-        // generic "god nodes + recent conversations" view.
         const wake = composeWakeUp(g, {
           activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
           budgetTokens: opts.budgetTokens || 600,
           question: opts.question || '',
         });
-        return `${stamp}\n\n${wake.text}`;
+        return `${stamp}${appsLine}\n\n${wake.text}`;
       } catch (_) {
-        return stamp;
+        return stamp + appsLine;
       }
     },
   };

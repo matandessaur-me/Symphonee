@@ -383,12 +383,67 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
       }, 400);
     }
 
-    const task = [
+    // Pre-session Mind query: see if a previously-recorded recipe matches
+    // this goal for this app. If a verified recipe exists, the user can
+    // re-run it directly (no LLM tokens). Draft recipes ride along as a
+    // system-prompt hint so the agent has a starting point.
+    let priorRecipes = [];
+    let priorMemory = null;
+    try {
+      const mindStore = require('./mind/store');
+      const mindQuery = require('./mind/query');
+      // No direct space accessor here; default to '_global' which is the
+      // Symphonee notesNamespace fallback that mind/index.js uses too.
+      const space = '_global';
+      const repoRoot = require('path').resolve(__dirname, '..');
+      const graph = mindStore.loadGraph(repoRoot, space);
+      if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
+        const r = mindQuery.runQuery(graph, { question: `${session.app}: ${goal}`, budget: 1200 });
+        const candidates = (r.nodes || []).filter(n => n.kind === 'recipe' && (n.tags || []).includes('app-automation') && (n.tags || []).includes(session.app));
+        priorRecipes = candidates.slice(0, 3).map(n => ({
+          id: n.id, label: n.label, status: (n.tags || []).includes('verified') ? 'verified' : 'draft',
+          steps: n.steps, description: n.description, file: n.source && n.source.file,
+        }));
+        const memNode = (r.nodes || []).find(n => n.kind === 'doc' && (n.tags || []).includes('app-memory') && (n.tags || []).includes(session.app));
+        if (memNode && memNode.description) priorMemory = memNode.description;
+      }
+    } catch (_) { /* Mind unavailable — proceed without hints */ }
+
+    // Verified recipe hit? Tell the caller and let them choose to run it
+    // standalone via /api/apps/macros/run instead of paying LLM tokens.
+    const verifiedHit = priorRecipes.find(p => p.status === 'verified');
+    if (verifiedHit && body.skipMindMatch !== true) {
+      // Fire and forget — emit a 'mind_match' event the UI can react to.
+      try {
+        if (typeof broadcast === 'function') broadcast({
+          type: 'apps-agent-step', sessionId: session.id, kind: 'mind_match',
+          recipe: { id: verifiedHit.id, label: verifiedHit.label, file: verifiedHit.file },
+          message: `Found verified automation "${verifiedHit.label}" for this goal. Pass skipMindMatch:true to bypass.`,
+          at: Date.now(),
+        });
+      } catch (_) {}
+    }
+
+    const taskLines = [
       `Goal: ${goal}`,
       '',
       `Target window: "${session.title}" (hwnd=${hwnd}, app=${session.app})`,
-      'The window is already focused. Start with a screenshot and work toward the goal.',
-    ].join('\n');
+      'The window is already focused. Start with describe_window to see UI elements; only fall back to screenshot when UIA returns nothing useful.',
+    ];
+    if (priorRecipes.length) {
+      taskLines.push('');
+      taskLines.push('## Prior automations for this app (from Mind)');
+      for (const p of priorRecipes) {
+        taskLines.push(`- ${p.label} [${p.status}] — ${p.steps || 0} steps. ${p.description || ''}`);
+      }
+      taskLines.push('You may follow one of these step-by-step if it matches the goal, or improvise if none fits.');
+    }
+    if (priorMemory) {
+      taskLines.push('');
+      taskLines.push('## Prior memory for this app (from Mind)');
+      taskLines.push(priorMemory.slice(0, 800));
+    }
+    const task = taskLines.join('\n');
 
     session._providerRegistry = registry;
     const runPromise = runSessionWithFallback({ attempts, session, task, driver, broadcast, notify });
@@ -1294,7 +1349,24 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
         name,
         description: String(body.description || '').trim() || `Captured from session ${sessionId}`,
         steps,
+        sourceSessionId: sessionId,
       });
+      // Live Mind sync so other CLIs see the new automation immediately.
+      if (r && r.path) {
+        try {
+          const http = require('http');
+          const payload = JSON.stringify({
+            path: r.path, label: `${app}: ${name}`, kind: 'recipe',
+            createdBy: 'apps-agent-manual', tags: ['app-automation', app],
+          });
+          const mreq = http.request({
+            host: '127.0.0.1', port: 3800, path: '/api/mind/add', method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+          }, (mres) => { mres.resume(); });
+          mreq.on('error', () => {});
+          mreq.write(payload); mreq.end();
+        } catch (_) {}
+      }
       json(res, { ...r, captured: steps.length });
     } catch (e) {
       json(res, { error: e.message }, 400);

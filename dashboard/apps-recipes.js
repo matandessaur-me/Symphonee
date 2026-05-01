@@ -156,6 +156,22 @@ function saveRecipe(app, recipe) {
     if (maximized) windowPin = { maximized: true };
     else if (w > 0 && h > 0) windowPin = { w, h, x: Number.isFinite(x) ? x : undefined, y: Number.isFinite(y) ? y : undefined };
   }
+  // Auto-recorded recipes start as 'draft'. Manually-saved recipes default
+  // to 'verified'. The status drives the pre-session Mind query: only
+  // verified recipes are auto-suggested for replay.
+  const allowedStatuses = new Set(['draft', 'verified', 'archived']);
+  const status = allowedStatuses.has(String(recipe.status))
+    ? String(recipe.status)
+    : (existing && existing.status) || 'verified';
+  const conceptTags = Array.isArray(recipe.conceptTags)
+    ? recipe.conceptTags.map(t => String(t).slice(0, 40)).filter(Boolean).slice(0, 12)
+    : (existing && existing.conceptTags) || undefined;
+  const sourceSessionId = recipe.sourceSessionId
+    ? String(recipe.sourceSessionId).slice(0, 80)
+    : (existing && existing.sourceSessionId) || undefined;
+  const successCount = Number.isFinite(recipe.successCount)
+    ? Math.max(0, recipe.successCount | 0)
+    : (existing && existing.successCount) || 0;
   const record = {
     id,
     name: String(recipe.name).trim().slice(0, 120),
@@ -166,6 +182,10 @@ function saveRecipe(app, recipe) {
     captureRect,
     window: windowPin,
     steps,
+    status,
+    conceptTags,
+    sourceSessionId,
+    successCount,
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now,
   };
@@ -176,7 +196,7 @@ function saveRecipe(app, recipe) {
     data.recipes.push(record);
   }
   _write(app, data);
-  return { ok: true, recipe: record };
+  return { ok: true, recipe: record, path: filePath(app) };
 }
 
 function deleteRecipe(app, id) {
@@ -347,6 +367,20 @@ function deleteTest(app, id) {
 // concrete recipe. Clicks with hand-tuned coordinates stay as explicit
 // "x,y" targets so playback is deterministic and doesn't need the vision
 // locator; type/key/scroll/wait map 1:1 to DSL verbs.
+// Encode a UIA selector as a single-line target string the recipe DSL can
+// hold. Format: "uia:<key=val|key=val>" — name/type/id/class only. Ancestors
+// are dropped here; recipes that need ancestor disambiguation can be edited
+// to use the FIND/CLICK with notes after the fact.
+function _encodeSelector(sel) {
+  if (!sel || typeof sel !== 'object') return '';
+  const parts = [];
+  if (sel.id)    parts.push(`id=${sel.id}`);
+  if (sel.name)  parts.push(`name=${sel.name}`);
+  if (sel.type)  parts.push(`type=${sel.type}`);
+  if (sel.class) parts.push(`class=${sel.class}`);
+  return 'uia:' + parts.join('|');
+}
+
 function actionsToSteps(actions) {
   const out = [];
   for (const a of actions || []) {
@@ -366,6 +400,15 @@ function actionsToSteps(actions) {
       out.push({ verb: 'SCROLL', target: `${dx},${dy}` });
     } else if (name === 'drag') {
       out.push({ verb: 'DRAG', target: `${args.fromX},${args.fromY}`, text: `${args.toX},${args.toY}` });
+    } else if (name === 'click_element') {
+      const t = _encodeSelector(args.selector);
+      if (t) out.push({ verb: 'CLICK', target: t, notes: 'UIA' });
+    } else if (name === 'type_into_element' && typeof args.text === 'string') {
+      const t = _encodeSelector(args.selector);
+      if (t) out.push({ verb: 'TYPE', target: t, text: args.text, notes: 'UIA' });
+    } else if (name === 'wait_for_element') {
+      const t = _encodeSelector(args.selector);
+      if (t) out.push({ verb: 'WAIT_UNTIL', target: t, notes: `timeout ${args.timeoutMs || 5000}ms` });
     }
   }
   return out;

@@ -376,6 +376,50 @@ async function uiaTree(hwnd, { maxNodes = 400 } = {}) {
   return { nodes: parsed.nodes || [], truncated: !!parsed.truncated };
 }
 
+// Reverse coordinate -> element lookup. Used by the self-healer: when a
+// pixel-coordinate click succeeds, we resolve the element under that point
+// so the recipe step can be rewritten as a stable selector for next time.
+async function findUIAElementAt(hwnd, x, y) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-hit-test.ps1');
+  const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -X ${Number(x)} -Y ${Number(y)}`;
+  const raw = await runPs(script, { timeoutMs: 8000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { return null; }
+  if (!parsed.hit) return null;
+  return parsed;
+}
+
+// Read the value/text of a UIA element. Lets the agent verify state without
+// taking a screenshot (button label, input contents, status bar text).
+async function readUIAElement(hwnd, selector) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-read.ps1');
+  const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
+  const script = `
+$sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))
+& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -SelectorJson $sel
+`;
+  const raw = await runPs(script, { timeoutMs: 8000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { return { hit: false, reason: 'non-JSON' }; }
+  return parsed;
+}
+
+// Wait until a UIA selector resolves (or timeout). Polls the tree at 250ms
+// cadence. Returns { hit, element } once found, or { hit: false } on timeout.
+async function waitForUIAElement(hwnd, selector, { timeoutMs = 5000, pollMs = 250 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const hit = await findUIAElement(hwnd, selector);
+      if (hit) return { hit: true, element: hit, waitedMs: Date.now() - start };
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, pollMs));
+  }
+  return { hit: false, waitedMs: Date.now() - start };
+}
+
 // Invoke-pattern shortcut: run the element's default action directly via
 // UIA instead of simulating a click. Returns { ok, pattern } on success or
 // { ok: false } so the caller can fall back to findUIAElement + click.
@@ -999,6 +1043,9 @@ module.exports = {
   setWindowRect,
   maximizeWindow,
   findUIAElement,
+  findUIAElementAt,
+  readUIAElement,
+  waitForUIAElement,
   invokeUIAElement,
   uiaTree,
   spawnUIAPicker,

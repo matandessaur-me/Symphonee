@@ -14,6 +14,7 @@ const https = require('https');
 const memory = require('./apps-memory');
 const learning = require('./apps-learning-loop');
 const planner = require('./apps-goal-planner');
+const healer = require('./apps-self-healer');
 const { diffFrames } = require('./apps-frame-diff');
 
 // "Live view" capture: when the model calls screenshot after a pixel-level
@@ -48,8 +49,36 @@ const MAX_HISTORY_MESSAGES = 14;
 // translates to its own shape.
 const DESKTOP_TOOLS = [
   { name: 'screenshot',
-    description: 'Capture a JPEG screenshot of the currently targeted application window. Always call this first and after any action that might have changed the screen.',
+    description: 'Capture a JPEG screenshot of the currently targeted application window. Use as fallback when describe_window does not surface a UIA element you need (custom-rendered canvas, game UI, web canvas).',
     parameters: { type: 'object', properties: {} } },
+  { name: 'describe_window',
+    description: 'Return a flat list of UI elements in the current target window from the Windows UIA (UI Automation) tree. Each element has stable identity (name, type, automationId) that survives resize, theme changes, and DPI. ALWAYS prefer this over screenshot when planning your next click — coordinates from screenshots drift, UIA selectors do not. Falls back to screenshot if the window is non-automatable (canvas / game / unknown framework).',
+    parameters: { type: 'object', properties: {
+      maxNodes: { type: 'number', description: 'Cap on returned elements (default 400, max 2000). Bigger trees mean more tokens.' }
+    } } },
+  { name: 'click_element',
+    description: 'Click a UI element by stable selector. The driver invokes the element directly via UIA Invoke pattern when possible (zero mouse movement, deterministic), and falls back to a center-coordinate click otherwise. Prefer this over click(x,y) for any normal control — buttons, menu items, list items.',
+    parameters: { type: 'object', properties: {
+      selector: { type: 'object', description: 'Object with optional fields { name, type, id (automationId), class, ancestors }. Provide as many as needed to disambiguate.', properties: {
+        name: { type: 'string' }, type: { type: 'string' }, id: { type: 'string' }, class: { type: 'string' },
+        ancestors: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, type: { type: 'string' } } } }
+      } }
+    }, required: ['selector'] } },
+  { name: 'type_into_element',
+    description: 'Focus a UIA editable element by selector and type the given text into it. Use this for text inputs, address bars, search boxes — more robust than clicking-then-typing because it sets focus via UIA.',
+    parameters: { type: 'object', properties: {
+      selector: { type: 'object' }, text: { type: 'string' }
+    }, required: ['selector', 'text'] } },
+  { name: 'wait_for_element',
+    description: 'Block until a UIA selector resolves (a dialog appears, a button becomes visible, a list populates) or timeoutMs elapses. Returns { hit, waitedMs }. Replaces brittle wait_ms("guess how long the dialog takes").',
+    parameters: { type: 'object', properties: {
+      selector: { type: 'object' }, timeoutMs: { type: 'number', description: 'Default 5000, max 30000.' }
+    }, required: ['selector'] } },
+  { name: 'read_element',
+    description: 'Read the text/value of a UIA element by selector. Returns the input contents, button label, status bar text, or any TextPattern/ValuePattern/Name property. Lets you verify state without spending a screenshot.',
+    parameters: { type: 'object', properties: {
+      selector: { type: 'object' }
+    }, required: ['selector'] } },
   { name: 'list_windows',
     description: 'Return the list of currently visible top-level windows on the desktop with process name, title, HWND, and bounding rect.',
     parameters: { type: 'object', properties: {} } },
@@ -140,17 +169,24 @@ const DESKTOP_TOOLS = [
     parameters: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-const BASE_SYSTEM_PROMPT = `You drive a Windows desktop application on the user's behalf by taking screenshots and issuing pixel-level mouse and keyboard actions. You are watching the target window over a cloud connection: expect 1-4 seconds of latency per tool call.
+const BASE_SYSTEM_PROMPT = `You drive a Windows desktop application on the user's behalf. You have TWO ways to perceive and act on the target window:
+
+  (a) UIA-native — describe_window returns the structured tree of real UI elements (buttons, menus, inputs) with stable selectors. click_element, type_into_element, wait_for_element, and read_element act on those selectors. Survives resize, theme, DPI. ZERO pixel arithmetic. Use this FIRST.
+  (b) Pixel-vision — screenshot returns a JPEG, and click(x,y) / type_text / key act at pixel coordinates. Fragile (coordinates drift). Use ONLY when the UIA tree is missing what you need (canvas, game, web canvas, custom-rendered surface).
+
+You are watching the target window over a cloud connection: expect 1-4 seconds of latency per tool call.
 
 ## How to work
 
-1. Start by calling screenshot to see what the window currently looks like. The image is in the tool result above; you MUST look at it before planning the next action.
-2. All coordinates are WINDOW-RELATIVE: (0,0) is the top-left of the target window, not the screen. You never see absolute screen positions and you never need to think about them.
-3. After any action that could change the screen (click, type_text, key, scroll, drag), call screenshot again before deciding the next step. Do not issue multiple clicks without screenshotting between them.
-4. Use key for named keys (Enter, Tab, Escape, Ctrl+S, Alt+F4). Use type_text only for literal characters. Passing "\\n" to type_text will NOT press Enter; use key("Enter").
-5. If the window closes, minimizes, or moves, the driver will tell you in the error. Re-list windows and refocus before continuing.
-   If you see a "focus_stolen" error on an input tool, it means another window was on top when you tried to click/type. Call focus_window again with the target hwnd before retrying. If it keeps happening, ask_user to bring the app to the front themselves.
-6. Scrolling: use ONE axis per call. If you need to reveal content BELOW, use scroll({ dy: 5 }). If you need content to the RIGHT, use scroll({ dx: 5 }). Never set dx and dy in the same call. If vertical scrolling doesn't change the page but a horizontal scrollbar is visible, you need dx, not dy.
+1. Start every new goal with describe_window. Read the element list. If your target is in the tree, use click_element / type_into_element — never reach for screenshot+click(x,y) when a UIA selector exists. UIA actions are deterministic; pixel actions are not.
+2. ONLY call screenshot when (a) describe_window returned no useful element for what you need, or (b) you need to read pixel content (image, chart, custom canvas). In that case, all coordinates are WINDOW-RELATIVE: (0,0) is the top-left.
+3. After any action that could change the screen (click_element, click, type_text, key, scroll, drag), call describe_window OR screenshot again before the next step. Do not chain inputs blindly.
+4. wait_for_element is preferred over wait_ms when waiting for a dialog / button / list. It returns the moment the element exists; wait_ms is a guess.
+5. read_element lets you verify state cheaply (input contents, status bar, button label) without spending a screenshot.
+6. Use key for named keys (Enter, Tab, Escape, Ctrl+S, Alt+F4). Use type_text / type_into_element only for literal characters. Passing "\\n" to type_text will NOT press Enter; use key("Enter").
+7. If the window closes, minimizes, or moves, the driver will tell you in the error. Re-list windows and refocus before continuing.
+   If you see a "focus_stolen" error on an input tool, call focus_window again with the target hwnd before retrying. If it keeps happening, ask_user to bring the app to the front themselves.
+8. Scrolling: use ONE axis per call. scroll({ dy: 5 }) reveals content below; scroll({ dx: 5 }) reveals content to the right. Never set dx and dy in the same call.
 
 ## Being honest about limits
 
@@ -684,6 +720,9 @@ function pickProvider(registry, preferred) {
 // these runs, we re-assert that the target window is the foreground one
 // so a stray click that landed outside (or a notification that stole focus)
 // can't redirect subsequent input into an unrelated window.
+// Pixel-coordinate input tools. UIA-targeted tools (click_element /
+// type_into_element) handle foreground enforcement themselves, so they are
+// NOT in this set — adding them would double-enforce.
 const INPUT_TOOLS = new Set(['click', 'mouse_move', 'drag', 'scroll', 'type_text', 'key']);
 
 async function executeTool(driver, session, name, args) {
@@ -729,6 +768,104 @@ async function executeTool(driver, session, name, args) {
         session._pendingChange = false;
         return shot;
       }
+    case 'describe_window': {
+      if (hwnd == null) throw new Error('no target window focused');
+      const cap = Math.min(2000, Math.max(50, Number(args.maxNodes) || 400));
+      try {
+        const tree = await driver.uiaTree(hwnd, { maxNodes: cap });
+        const nodes = (tree && tree.nodes) || [];
+        // Tag each node with a stable uid so the agent can refer back without
+        // restating the full selector. Hash of (type|name|automationId|depth)
+        // collides only when two siblings are genuinely indistinguishable.
+        for (const n of nodes) {
+          const seed = `${n.type || ''}|${n.name || ''}|${n.automationId || ''}|${n.depth || 0}`;
+          n.uid = 'uia_' + require('crypto').createHash('md5').update(seed).digest('hex').slice(0, 10);
+        }
+        return { ok: true, nodes, truncated: !!(tree && tree.truncated), count: nodes.length };
+      } catch (e) {
+        return { ok: false, error: e.message, hint: 'window may be non-automatable; fall back to screenshot' };
+      }
+    }
+    case 'click_element': {
+      if (hwnd == null) throw new Error('no target window focused');
+      if (!args.selector || typeof args.selector !== 'object') throw new Error('click_element requires a selector object');
+      try {
+        await driver.ensureForeground(hwnd);
+      } catch (e) {
+        const err = new Error(e.message || 'focus enforcement failed');
+        err.code = e.code || 'focus_failed';
+        throw err;
+      }
+      // Try Invoke pattern first (deterministic, no mouse movement). Fall back
+      // to find + click center coordinates.
+      const invoked = await driver.invokeUIAElement(hwnd, args.selector);
+      if (invoked && invoked.ok) {
+        session._pendingChange = true;
+        session.actionLog = session.actionLog || [];
+        session.actionLog.push({ verb: 'CLICK_ELEMENT', target: { selector: args.selector, via: 'uia-invoke', name: invoked.name, type: invoked.type }, attemptN: 1, outcome: 'ok', ts: Date.now() });
+        return { ok: true, via: 'invoke', pattern: invoked.pattern, name: invoked.name, type: invoked.type };
+      }
+      let hit = await driver.findUIAElement(hwnd, args.selector);
+      if (!hit) {
+        // Self-heal: try relaxed selectors, then vision fallback. On heal
+        // success the action log is rewritten with the recovered selector
+        // so the next run skips the heal.
+        session.actionLog = session.actionLog || [];
+        session.actionLog.push({ verb: 'CLICK_ELEMENT', target: { selector: args.selector, via: 'uia-find' }, attemptN: 1, outcome: 'miss', ts: Date.now() });
+        const description = [args.selector.name, args.selector.type, 'in', session.app || 'window'].filter(Boolean).join(' ');
+        const healed = await healer.heal({ driver, session, op: 'find', selector: args.selector, description });
+        if (healed.ok) {
+          session._pendingChange = true;
+          session.actionLog.push({ verb: 'CLICK_ELEMENT', target: { selector: healed.selector || healed.recoveredSelector || args.selector, via: 'healed-tier-' + healed.tier, xy: healed.xy }, attemptN: 2, outcome: 'healed', ts: Date.now() });
+          return { ok: true, via: 'healed', tier: healed.tier, x: (healed.xy && healed.xy.x) || null, y: (healed.xy && healed.xy.y) || null, recoveredSelector: healed.recoveredSelector || null };
+        }
+        const err = new Error('no element matched selector (heal failed)'); err.code = 'uia_miss'; throw err;
+      }
+      await driver.click(hit.x, hit.y, { hwnd });
+      session._pendingChange = true;
+      session.actionLog = session.actionLog || [];
+      session.actionLog.push({ verb: 'CLICK_ELEMENT', target: { selector: args.selector, via: 'uia-find+click', name: hit.meta && hit.meta.name, type: hit.meta && hit.meta.type, xy: { x: hit.x, y: hit.y } }, attemptN: 1, outcome: 'ok', ts: Date.now() });
+      return { ok: true, via: 'find+click', x: hit.x, y: hit.y, name: hit.meta && hit.meta.name, type: hit.meta && hit.meta.type, degraded: hit.meta && hit.meta.degraded || null };
+    }
+    case 'type_into_element': {
+      if (hwnd == null) throw new Error('no target window focused');
+      if (!args.selector || typeof args.selector !== 'object') throw new Error('type_into_element requires a selector');
+      const text = String(args.text == null ? '' : args.text);
+      try {
+        await driver.ensureForeground(hwnd);
+      } catch (e) {
+        const err = new Error(e.message || 'focus enforcement failed');
+        err.code = e.code || 'focus_failed';
+        throw err;
+      }
+      // Click the element to focus it, then type. SetFocus via UIA isn't
+      // universally supported, so a click is the most portable focus path.
+      const hit = await driver.findUIAElement(hwnd, args.selector);
+      if (!hit) {
+        const err = new Error('no element matched selector'); err.code = 'uia_miss'; throw err;
+      }
+      await driver.click(hit.x, hit.y, { hwnd });
+      await driver.type(text, { hwnd });
+      session._pendingChange = true;
+      session.actionLog = session.actionLog || [];
+      session.actionLog.push({ verb: 'TYPE_INTO_ELEMENT', target: { selector: args.selector, via: 'uia-focus+type', name: hit.meta && hit.meta.name }, text, attemptN: 1, outcome: 'ok', ts: Date.now() });
+      return { ok: true, name: hit.meta && hit.meta.name, charsTyped: text.length };
+    }
+    case 'wait_for_element': {
+      if (hwnd == null) throw new Error('no target window focused');
+      if (!args.selector || typeof args.selector !== 'object') throw new Error('wait_for_element requires a selector');
+      const timeoutMs = Math.min(30000, Math.max(250, Number(args.timeoutMs) || 5000));
+      const r = await driver.waitForUIAElement(hwnd, args.selector, { timeoutMs });
+      session.actionLog = session.actionLog || [];
+      session.actionLog.push({ verb: 'WAIT_FOR_ELEMENT', target: { selector: args.selector }, attemptN: 1, outcome: r.hit ? 'ok' : 'timeout', waitedMs: r.waitedMs, ts: Date.now() });
+      return r;
+    }
+    case 'read_element': {
+      if (hwnd == null) throw new Error('no target window focused');
+      if (!args.selector || typeof args.selector !== 'object') throw new Error('read_element requires a selector');
+      const r = await driver.readUIAElement(hwnd, args.selector);
+      return r;
+    }
     case 'list_windows':
       return await driver.listWindows({ force: true });
     case 'focus_window': {
@@ -824,7 +961,30 @@ async function executeTool(driver, session, name, args) {
     case 'write_memory': {
       const app = session.app;
       if (!app) throw new Error('no app identified for this session; writeMemory needs an app');
-      return memory.appendSection(app, String(args.section || '').trim(), String(args.note || '').trim());
+      const r = memory.appendSection(app, String(args.section || '').trim(), String(args.note || '').trim());
+      // Live Mind sync: every write_memory call pushes the per-app memory
+      // file into the brain so a different CLI can pick up the new note
+      // without waiting for the next /api/mind/build.
+      try {
+        const http = require('http');
+        const filePath = (r && r.path) || (typeof memory.filePath === 'function' ? memory.filePath(app) : null);
+        if (filePath) {
+          const payload = JSON.stringify({
+            path: filePath,
+            label: `${app} memory`,
+            kind: 'doc',
+            createdBy: 'apps-agent-memory',
+            tags: ['app-memory', app],
+          });
+          const mreq = http.request({
+            host: '127.0.0.1', port: 3800, path: '/api/mind/add', method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+          }, (mres) => { mres.resume(); });
+          mreq.on('error', () => {});
+          mreq.write(payload); mreq.end();
+        }
+      } catch (_) {}
+      return r;
     }
     case 'read_memory': {
       const app = session.app;
@@ -1084,10 +1244,22 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
           }
           learning.noteAction(session, tc.name);
           // Record successful input-level actions so the user can later
-          // export the session as a reusable recipe.
-          if (['click', 'type_text', 'key', 'scroll', 'drag', 'wait_ms'].includes(tc.name)) {
+          // export the session as a reusable recipe. Both pixel-level and
+          // UIA-targeted tools are captured — the UIA ones produce stable
+          // recipe steps without coordinate drift.
+          const RECORDABLE = ['click', 'type_text', 'key', 'scroll', 'drag', 'wait_ms',
+                              'click_element', 'type_into_element', 'wait_for_element'];
+          if (RECORDABLE.includes(tc.name)) {
             if (!Array.isArray(session._recordedActions)) session._recordedActions = [];
-            session._recordedActions.push({ name: tc.name, args: tc.args || {}, at: Date.now() });
+            session._recordedActions.push({
+              name: tc.name,
+              args: tc.args || {},
+              result: result && typeof result === 'object' ? {
+                via: result.via, name: result.name, type: result.type,
+                x: result.x, y: result.y, hit: result.hit,
+              } : null,
+              at: Date.now(),
+            });
           }
           lastActionsForObserver.push({ tool: tc.name, summary: describeAction(tc.name, tc.args), ok: true });
           emit({ kind: 'observation', tool: tc.name, ok: true, preview: summarizeResultForUi(tc.name, result) });
@@ -1195,6 +1367,98 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
       }
     }
     if (!finalSummary) finalSummary = iter >= MAX_ITERATIONS ? `Stopped after ${MAX_ITERATIONS} steps.` : 'Done.';
+
+    // Auto-promote a successful session into a draft recipe so the next
+    // run on the same goal can replay it without spending LLM tokens.
+    // Only fires on a clean finish (no stuck signal) with at least 3
+    // recorded actions — anything shorter is too thin to be a recipe.
+    if (!stuckSignal && Array.isArray(session._recordedActions) && session._recordedActions.length >= 3 && session.app) {
+      try {
+        const recipes = require('./apps-recipes');
+        const steps = recipes.actionsToSteps(session._recordedActions);
+        if (steps.length >= 3) {
+          // Minimization pass: fold consecutive WAIT entries into one and
+          // drop trailing WAITs. The agent often waits 500ms between
+          // every input, which bloats the recipe without adding value.
+          const minimized = [];
+          for (const s of steps) {
+            const last = minimized[minimized.length - 1];
+            if (s.verb === 'WAIT' && last && last.verb === 'WAIT') {
+              const ms = (parseInt(last.target, 10) || 0) + (parseInt(s.target, 10) || 0);
+              last.target = String(Math.min(60000, ms));
+              continue;
+            }
+            minimized.push(s);
+          }
+          while (minimized.length && minimized[minimized.length - 1].verb === 'WAIT') minimized.pop();
+
+          // Detect concept tags from the goal AND from the recipe step
+          // contents so cross-app queries like "how do I export X" surface
+          // recipes whose goal phrasing didn't match but whose actions did
+          // (e.g. a recipe that types "password" and clicks "Sign in"
+          // gets a login tag even if the goal said "log into Spotify").
+          const haystack = [
+            String(session.goal || ''),
+            String(finalSummary || ''),
+            ...minimized.map(s => `${s.target || ''} ${s.text || ''} ${s.notes || ''}`),
+          ].join(' ').toLowerCase();
+          const conceptTags = [];
+          const conceptMap = {
+            login: ['log in', 'login', 'sign in', 'signin', 'authenticate', 'password', 'username', 'email'],
+            export: ['export', 'save as', 'download', 'render out', 'render to'],
+            import: ['import', 'open file', 'load file', 'paste from'],
+            search: ['search for', 'find ', 'lookup', 'query for'],
+            create: ['create ', 'new file', 'new project', 'add a ', 'new document'],
+            send: ['send ', 'submit', 'post ', 'publish', 'share'],
+            open: ['open '],
+            play: ['play '],
+            stop: [' stop ', 'pause '],
+            'close-app': ['close app', 'quit ', 'exit '],
+            navigate: ['go to', 'navigate to', 'visit '],
+            settings: ['preferences', 'settings', 'options menu'],
+          };
+          for (const [tag, keys] of Object.entries(conceptMap)) {
+            if (keys.some(k => haystack.includes(k))) conceptTags.push(tag);
+          }
+
+          const baseName = (session.goal || 'auto-recorded').slice(0, 60).replace(/[\\/:*?"<>|]/g, ' ').trim();
+          const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+          const recipeName = `${baseName} (auto ${stamp})`;
+          const saved = recipes.saveRecipe(session.app, {
+            name: recipeName,
+            description: `Auto-recorded from session ${session.id}. Goal: ${session.goal || ''}`,
+            steps: minimized,
+            status: 'draft',
+            conceptTags,
+            sourceSessionId: session.id,
+          });
+
+          emit({ kind: 'auto_recipe', name: recipeName, app: session.app, steps: minimized.length, conceptTags });
+
+          // Live Mind sync so other CLIs see the new automation immediately,
+          // without waiting for the next /api/mind/build pass.
+          if (saved && saved.path) {
+            const http = require('http');
+            const body = JSON.stringify({
+              path: saved.path,
+              label: `${session.app}: ${recipeName}`,
+              kind: 'recipe',
+              createdBy: 'apps-agent',
+              tags: ['app-automation', session.app, ...conceptTags],
+            });
+            const req = http.request({
+              host: '127.0.0.1', port: 3800, path: '/api/mind/add', method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+            }, (resp) => { resp.resume(); });
+            req.on('error', () => {});
+            req.write(body); req.end();
+          }
+        }
+      } catch (e) {
+        emit({ kind: 'auto_recipe_error', error: e.message });
+      }
+    }
+
     emit({ kind: 'done', summary: finalSummary });
     return { ok: true, summary: finalSummary, iterations: iter };
   } catch (e) {
