@@ -91,6 +91,62 @@ function mapCliToProvider(cli) {
   return key ? (CLI_PROVIDER_MAP[key] || null) : null;
 }
 
+// Extract input values for a verified recipe from the user's goal text.
+// One non-tool LLM round-trip; falls back to defaults on any error so the
+// recipe still runs. Returns a map { inputName: value } or null.
+//
+// We bias the prompt toward returning the default when the user's goal
+// doesn't mention a different value, so "play music on Spotify" with a
+// recipe whose default query is "Rock Music" resolves to "Rock Music"
+// instead of inventing something.
+async function extractRecipeInputs({ goal, recipeInputs, providerEntry, model }) {
+  if (!Array.isArray(recipeInputs) || !recipeInputs.length) return null;
+  if (!providerEntry || !providerEntry.adapter) return null;
+  const schema = recipeInputs.map(i => `- ${i.name}${i.default !== undefined ? ` (default: ${JSON.stringify(i.default)})` : ''}: ${i.description || i.type || 'string'}`).join('\n');
+  const prompt = [
+    'You map a user goal to recipe input values. Return ONLY a JSON object with one key per input, values as strings.',
+    '',
+    `User goal: ${goal}`,
+    '',
+    'Inputs to fill:',
+    schema,
+    '',
+    'Rules:',
+    '- If the goal explicitly names a value for an input, use it (e.g. "search for jazz" -> query="jazz").',
+    '- If the goal does not specify, return the default (NEVER invent a value).',
+    '- Return ONLY valid JSON, no prose, no code fences.',
+  ].join('\n');
+
+  const adapter = providerEntry.adapter;
+  const adapterKind = adapter.kind;
+  const messages = adapterKind === 'gemini'
+    ? [{ role: 'user', parts: [{ text: prompt }] }]
+    : [{ role: 'user', content: prompt }];
+  let resp;
+  try {
+    resp = await adapter.call({
+      messages,
+      apiKey: providerEntry.apiKey,
+      model: model || adapter.defaultModel,
+      tools: [],
+      maxTokens: 200,
+    });
+  } catch (_) { return null; }
+  if (!resp || resp.text == null) return null;
+  const text = String(resp.text || '').trim();
+  // Strip code fences if a model added them despite the instruction.
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let parsed;
+  try { parsed = JSON.parse(m[0]); } catch (_) { return null; }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const out = {};
+  for (const inp of recipeInputs) {
+    if (parsed[inp.name] != null) out[inp.name] = String(parsed[inp.name]);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function isProviderExhaustionError(message) {
   const text = String(message || '').toLowerCase();
   if (!text) return false;
@@ -559,12 +615,32 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     const task = taskLines.join('\n');
 
     session._providerRegistry = registry;
+
+    // If we resolved a verified recipe with declared inputs, extract input
+    // values from the user's goal text. Defaults already populate via the
+    // runner's input-merge, so this only matters when the user wants
+    // something different than the default ("play classical" instead of
+    // the default "Rock Music"). One small LLM call, ~200 tokens.
+    let recipeInputs = undefined;
+    if (resolvedRecipe && Array.isArray(resolvedRecipe.inputs) && resolvedRecipe.inputs.length) {
+      try {
+        recipeInputs = await extractRecipeInputs({
+          goal, recipeInputs: resolvedRecipe.inputs,
+          providerEntry: attempts[0].entry, model: attempts[0].model,
+        });
+        if (typeof broadcast === 'function' && recipeInputs) {
+          try { broadcast({ type: 'apps-agent-step', sessionId: session.id, kind: 'recipe_inputs_extracted', inputs: recipeInputs, at: Date.now() }); } catch (_) {}
+        }
+      } catch (e) { /* fall back to defaults */ }
+    }
+
     const runPromise = runSessionWithFallback({
       attempts, session, task, driver, broadcast, notify,
       // When a verified recipe was resolved, hand it to runSessionForEntry
       // which routes through recipeRunner.runRecipe — deterministic playback
       // with vision-locator fallback only on UIA misses.
       recipe: resolvedRecipe || undefined,
+      inputs: recipeInputs,
     });
 
     if (waitMs === 0) {

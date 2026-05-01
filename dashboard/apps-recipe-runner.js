@@ -657,11 +657,21 @@ async function runRecipe({ session, driver, recipe, broadcast, providerEntry, mo
   const emit = emitter(broadcast, session.id);
   session.running = true;
   session._stepThrough = !!stepThrough;
-  // Merge order: static recipe.variables first, then per-run user inputs
-  // override. This lets the UI prompt for {{filename}} / {{count}} / ... at
-  // Run time while still honoring library-style variables defined on the
-  // recipe itself.
-  const variables = Object.assign({}, (recipe && recipe.variables) || {}, inputs || {});
+  // Merge order: static recipe.variables first, then defaults from
+  // recipe.inputs[].default, then per-run user inputs override. This lets
+  // the UI prompt for {{filename}} / {{count}} / ... at Run time while
+  // still honoring library-style variables defined on the recipe itself,
+  // AND making sure declared inputs with defaults populate even when the
+  // caller didn't pass them.
+  const inputDefaults = {};
+  if (recipe && Array.isArray(recipe.inputs)) {
+    for (const inp of recipe.inputs) {
+      if (inp && typeof inp.name === 'string' && inp.default !== undefined) {
+        inputDefaults[inp.name] = String(inp.default);
+      }
+    }
+  }
+  const variables = Object.assign({}, (recipe && recipe.variables) || {}, inputDefaults, inputs || {});
   const steps = (recipe && recipe.steps) || [];
   const startedAt = Date.now();
 
