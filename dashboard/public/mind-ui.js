@@ -43,6 +43,7 @@
     network: null,         // vis.Network instance
     visNodes: null,        // vis.DataSet for nodes
     visEdges: null,        // vis.DataSet for edges
+    graphSettled: false,   // true after the current vis-network stabilization pass
     ws: null,
     search: '',            // current search term (lowercased, trimmed)
     matches: [],           // ids of nodes matching state.search, ordered
@@ -1993,6 +1994,7 @@
     });
 
     teardownNetwork();
+    state.graphSettled = false;
     state.visNodes = new vis.DataSet(visNodes);
     state.visEdges = new vis.DataSet(visEdges);
     state.network = new vis.Network(host, { nodes: state.visNodes, edges: state.visEdges }, {
@@ -2011,23 +2013,31 @@
       edges: { selectionWidth: 1.5 },
     });
 
-    const finishBuild = () => {
+    let readyShown = false;
+    const showReadyOnce = () => {
       if (seq !== state.graphBuildSeq) return;
+      if (readyShown) return;
+      readyShown = true;
+      if (typeof onReady === 'function') requestAnimationFrame(onReady);
+    };
+    const settleGraph = () => {
+      if (seq !== state.graphBuildSeq) return;
+      state.graphSettled = true;
+      clearTimeout(fallbackTimer);
       try {
         state.network.setOptions({ physics: { stabilization: { enabled: false }, enabled: state.prefs.physicsEnabled !== false } });
       } catch (_) {}
       updatePhysicsBtnLabel();
-      if (typeof onReady === 'function') requestAnimationFrame(onReady);
+      showReadyOnce();
     };
-    let buildFinished = false;
-    const fallbackMs = capRaw === 'all' ? 15000 : 5000;
-    const fallbackTimer = setTimeout(finalizeOnce, fallbackMs);
-    function finalizeOnce() {
-      if (buildFinished) return;
-      buildFinished = true;
-      clearTimeout(fallbackTimer);
-      finishBuild();
-    }
+    const fallbackMs = capRaw === 'all' ? 45000 : 9000;
+    const fallbackTimer = setTimeout(() => {
+      // Large graphs can take longer than the loader should block. Let the UI
+      // become usable, but keep physics running until the real settle event so
+      // a saved frozen preference does not capture a half-collapsed layout.
+      showReadyOnce();
+      updatePhysicsBtnLabel();
+    }, fallbackMs);
 
     state.network.on('click', (params) => {
       if (params.nodes && params.nodes.length) {
@@ -2035,17 +2045,22 @@
         showNodeDetail(params.nodes[0]);
       }
     });
-    state.network.once('stabilizationIterationsDone', finalizeOnce);
+    state.network.once('stabilizationIterationsDone', settleGraph);
   }
 
   function updatePhysicsBtnLabel() {
     const btn = $('mindPhysicsBtn');
     if (!btn) return;
-    btn.textContent = state.prefs.physicsEnabled === false ? 'Resume' : 'Freeze';
+    if (state.prefs.physicsEnabled === false && !state.graphSettled && state.network) {
+      btn.textContent = 'Keep moving';
+    } else {
+      btn.textContent = state.prefs.physicsEnabled === false ? 'Resume' : 'Freeze';
+    }
   }
 
   function teardownNetwork() {
     if (state.network) { try { state.network.destroy(); } catch (_) {} state.network = null; }
+    state.graphSettled = false;
     state.visNodes = null;
     state.visEdges = null;
   }
@@ -2054,10 +2069,13 @@
 
   function togglePhysics() {
     if (!state.network) return;
-    const cur = state.network.physics.physicsEnabled;
-    const next = !cur;
-    state.network.setOptions({ physics: { enabled: next } });
+    const next = !state.graphSettled
+      ? state.prefs.physicsEnabled === false
+      : !state.network.physics.physicsEnabled;
     state.prefs.physicsEnabled = next;
+    if (next || state.graphSettled) {
+      state.network.setOptions({ physics: { enabled: next } });
+    }
     savePrefs();
     updatePhysicsBtnLabel();
   }
