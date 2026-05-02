@@ -138,3 +138,65 @@ test('composeWakeUp query-aware: degrades to generic L1 when question matches no
   // Falls back to generic L1 -- god node 'real node' should appear.
   assert.match(r.text, /ESSENTIAL STORY/);
 });
+
+const { pickRelevantMemories, renderMemoriesBlock } = require('./wakeup');
+
+test('pickRelevantMemories: scope.repo match scores higher than unrelated card', () => {
+  const now = new Date().toISOString();
+  const g = {
+    nodes: [
+      { id: 'm1', label: 'DYOB has its own design',  kind: 'memory', kindOfMemory: 'constraint', scope: { repo: 'DYOB3' }, tags: ['memory','DYOB'], createdAt: now },
+      { id: 'm2', label: 'unrelated trivia',         kind: 'memory', kindOfMemory: 'fact',      scope: null, tags: ['memory'], createdAt: now },
+    ],
+    edges: [],
+  };
+  const picks = pickRelevantMemories(g, { activeRepo: 'DYOB3', limit: 2 });
+  assert.ok(picks.length >= 1, 'expected at least one pick');
+  assert.equal(picks[0].id, 'm1', 'scope.repo match should sort first');
+});
+
+test('pickRelevantMemories: in_repo edge counts toward repo relevance', () => {
+  const now = new Date().toISOString();
+  const g = {
+    nodes: [
+      { id: 'm_via_edge', label: 'connected by in_repo', kind: 'memory', kindOfMemory: 'fact',
+        scope: null, tags: ['memory'], createdAt: now },
+      { id: 'm_irrelevant', label: 'not connected at all', kind: 'memory', kindOfMemory: 'fact',
+        scope: null, tags: ['memory'], createdAt: '2024-01-01T00:00:00Z' }, // older, no repo signal
+    ],
+    edges: [
+      { source: 'm_via_edge', target: 'cwd_dyob3', relation: 'in_repo' },
+    ],
+  };
+  const picks = pickRelevantMemories(g, { activeRepo: 'DYOB3', limit: 2 });
+  assert.equal(picks[0].id, 'm_via_edge');
+});
+
+test('renderMemoriesBlock: empty input -> empty string', () => {
+  assert.equal(renderMemoriesBlock([]), '');
+});
+
+test('renderMemoriesBlock: outputs kind tag + title', () => {
+  const out = renderMemoriesBlock([
+    { label: 'DYOB design', kindOfMemory: 'constraint' },
+    { label: 'Use Postgres', kindOfMemory: 'decision' },
+  ]);
+  assert.match(out, /\[constraint\] DYOB design/);
+  assert.match(out, /\[decision\] Use Postgres/);
+  assert.match(out, /^memories \(durable knowledge\):/m);
+});
+
+test('composeWakeUp: memories appear in L1 when present', () => {
+  const now = new Date().toISOString();
+  const g = {
+    nodes: [
+      { id: 'm1', label: 'DYOB has its own design system', kind: 'memory',
+        kindOfMemory: 'constraint', scope: { repo: 'DYOB3' }, tags: ['memory','DYOB'], createdAt: now },
+    ],
+    edges: [],
+    gods: [],
+  };
+  const r = composeWakeUp(g, { activeRepo: 'DYOB3', space: '_global', budgetTokens: 600 });
+  assert.match(r.text, /memories \(durable knowledge\)/);
+  assert.match(r.text, /\[constraint\] DYOB has its own design/);
+});

@@ -65,7 +65,15 @@
   function onActivate() {
     state.tabActive = true;
     refreshStatus();
-    loadGraph().then(render);
+    // If a search was active when the user navigated away, replay it after
+    // the graph reloads. onDeactivate() drops state.matches to free memory
+    // but keeps state.search so the input box (and the user's intent)
+    // survives the trip. applySearch() recomputes matches + repaints in
+    // one shot for whichever view they came back to.
+    loadGraph().then(() => {
+      if (state.search) applySearch(state.search);
+      else render();
+    });
     if (!state.ws) connectWS();
     bindSearchInput();
     updateSearchOnlyBtn();
@@ -181,13 +189,35 @@
     applySearch('');
   }
 
+  // Normalize away word separators so "bathfitter", "bath fitter",
+  // "bath_fitter", and "Bath-Fitter" all match the same set of nodes.
+  // Without this, repos that smush the brand together ("bathfitter") only
+  // match nodes that also smush, while repos that split it ("bath_fitter")
+  // match a different set - and the user has to guess which spelling is
+  // in the graph today.
+  function normForSearch(s) {
+    return typeof s === 'string' ? s.toLowerCase().replace(/[\s_.\-@]+/g, '') : '';
+  }
+
   function nodeMatchesSearch(n, q) {
     if (!q) return false;
-    if (typeof n.label === 'string' && n.label.toLowerCase().includes(q)) return true;
-    if (typeof n.id === 'string' && n.id.toLowerCase().includes(q)) return true;
+    const qn = normForSearch(q);
+    if (typeof n.label === 'string') {
+      const lbl = n.label.toLowerCase();
+      if (lbl.includes(q)) return true;
+      if (qn && normForSearch(n.label).includes(qn)) return true;
+    }
+    if (typeof n.id === 'string') {
+      const idl = n.id.toLowerCase();
+      if (idl.includes(q)) return true;
+      if (qn && normForSearch(n.id).includes(qn)) return true;
+    }
     if (Array.isArray(n.tags)) {
       for (const t of n.tags) {
-        if (typeof t === 'string' && t.toLowerCase().includes(q)) return true;
+        if (typeof t !== 'string') continue;
+        const tl = t.toLowerCase();
+        if (tl.includes(q)) return true;
+        if (qn && normForSearch(t).includes(qn)) return true;
       }
     }
     return false;
@@ -203,18 +233,60 @@
       degree.set(e.source, (degree.get(e.source) || 0) + 1);
       degree.set(e.target, (degree.get(e.target) || 0) + 1);
     }
+    const qn = normForSearch(q);
     const scored = [];
     for (const n of state.graph.nodes) {
       if (!nodeMatchesSearch(n, q)) continue;
       const lbl = (n.label || '').toLowerCase();
-      let rank = 3;
+      const lblN = normForSearch(n.label || '');
+      const idN = normForSearch(n.id || '');
+      let rank = 4;
       if (lbl.startsWith(q)) rank = 0;
       else if (lbl.includes(q)) rank = 1;
-      else if ((n.id || '').toLowerCase().includes(q)) rank = 2;
+      else if (qn && lblN.startsWith(qn)) rank = 2;
+      else if (qn && lblN.includes(qn)) rank = 2;
+      else if ((n.id || '').toLowerCase().includes(q)) rank = 3;
+      else if (qn && idN.includes(qn)) rank = 3;
       scored.push({ id: n.id, rank, deg: degree.get(n.id) || 0 });
     }
     scored.sort((a, b) => a.rank - b.rank || b.deg - a.deg);
-    state.matches = scored.map(x => x.id);
+    let matchIds = scored.map(x => x.id);
+
+    // Expand matches one hop along semantic edges so the user SEES
+    // related entities ("DYOB is connected to Bath Fitter") without
+    // pulling in the full cohort. If they want the cohort they click
+    // the related entity to drill in - cheaper for the eye, cheaper for
+    // the LLM if the search context is later sent as graph state.
+    //
+    // Edges traversed: conceptually_related_to (either direction) and
+    // mentions where the OTHER end is a kind:entity. Nothing more. An
+    // earlier version added Stage 2 (each reached entity's incoming
+    // mentions, capped at 50) which made "DYOB" pull every Bath Fitter
+    // node and visually drowned the actual answer. Removed.
+    if (matchIds.length) {
+      const matchSet = new Set(matchIds);
+      const nodeById = new Map();
+      for (const n of state.graph.nodes) nodeById.set(n.id, n);
+      const added = [];
+      for (const e of state.graph.edges) {
+        const inSrc = matchSet.has(e.source);
+        const inTgt = matchSet.has(e.target);
+        if (inSrc === inTgt) continue;
+        const peer = inSrc ? e.target : e.source;
+        if (matchSet.has(peer)) continue;
+        const peerNode = nodeById.get(peer);
+        if (!peerNode) continue;
+        const isEntityHop = peerNode.kind === 'entity';
+        const isRelEdge = e.relation === 'conceptually_related_to';
+        const isMentionToEntity = e.relation === 'mentions' && isEntityHop;
+        if (!isRelEdge && !isMentionToEntity) continue;
+        matchSet.add(peer);
+        added.push(peer);
+      }
+      matchIds = matchIds.concat(added);
+    }
+
+    state.matches = matchIds;
     state.matchIndex = 0;
   }
 

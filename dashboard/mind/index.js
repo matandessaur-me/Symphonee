@@ -31,7 +31,7 @@ const viz = require('./viz');
 // In-memory job table for build/update progress. Jobs are ephemeral; the
 // canonical graph on disk is the system of record.
 const jobs = new Map();
-const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'app-recipes', 'site-map', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts'];
+const DEFAULT_BUILD_SOURCES = ['notes', 'learnings', 'cli-memory', 'cli-skills', 'recipes', 'app-recipes', 'site-map', 'plugins', 'instructions', 'repo-code', 'cli-history', 'cli-drawers', 'context-artifacts', 'repos', 'entities'];
 function makeJobId() { return 'mj_' + Math.random().toString(36).slice(2, 10); }
 
 function readBody(req) {
@@ -1030,7 +1030,141 @@ function mountMind(addRoute, json, ctx) {
     }
     persistDerivedGraph(space, g);
     if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'node-added', id, createdBy } });
-    return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length });
+
+    // Auto-extract memory cards from the answer text. Conservative
+    // patterns ("remember:", "we decided", "the rule is", "prefer X",
+    // "watch out for", ...) become first-class kind:memory nodes linked
+    // back to this conversation node. Idempotent via content-hash so
+    // re-saving the same answer doesn't duplicate cards.
+    const memoryModule = require('./memory');
+    const candidates = memoryModule.extractMemoriesFromText(answer);
+    const memoriesCreated = [];
+    if (candidates.length) {
+      // Reload the graph so we see the conversation node we just wrote.
+      const reloaded = store.loadGraph(repoRoot, space) || g;
+      const existingMemoryHashes = new Set();
+      for (const n of reloaded.nodes) {
+        if (n.kind === 'memory' && typeof n.body === 'string') {
+          existingMemoryHashes.add(n.body.toLowerCase().trim().slice(0, 240));
+        }
+      }
+      // Carry forward brand tags from cited entity nodes so a memory
+      // about "DYOB design" auto-tags DYOB even if the answer text
+      // didn't list it.
+      const carryTags = [];
+      for (const cited of citedNodeIds) {
+        const node = reloaded.nodes.find(n => n.id === cited);
+        if (!node) continue;
+        if (node.kind === 'entity' && typeof node.label === 'string') carryTags.push(node.label);
+      }
+      for (const cand of candidates) {
+        const hash = cand.body.toLowerCase().trim().slice(0, 240);
+        if (existingMemoryHashes.has(hash)) continue;
+        existingMemoryHashes.add(hash);
+        try {
+          const r = await memoryModule.addMemoryCard({
+            repoRoot, space,
+            spec: {
+              ...cand,
+              tags: carryTags,
+              source: { type: 'conversation', ref: id },
+              createdBy: createdBy || 'mind/auto-extract',
+            },
+          });
+          memoriesCreated.push({ id: r.node.id, title: r.node.label, kindOfMemory: r.node.kindOfMemory });
+        } catch (_) { /* one bad pattern must not break the save */ }
+      }
+      if (memoriesCreated.length && broadcast) {
+        broadcast({ type: 'mind-update', payload: { kind: 'memory-extracted', conversationId: id, count: memoriesCreated.length, memories: memoriesCreated } });
+      }
+    }
+
+    return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length, memoriesCreated });
+  });
+
+  // ── Recall: time-ranged + topic-filtered retrieval ─────────────────────
+  // Different from /api/mind/query (BFS sub-graph) - returns a ranked
+  // LIST of recall-eligible items (memories, conversations, drawers)
+  // restricted to a time window and optionally a repo. Answers "what
+  // did I figure out about X 10 days ago?" / "what do I know about
+  // Playdate?" without graph traversal.
+  //
+  // POST /api/mind/recall
+  //   {
+  //     "question": "DYOB design",          // optional, BM25 ranks
+  //     "since":    "10 days ago",          // ISO or natural string
+  //     "until":    "today",                // ISO or natural string
+  //     "repo":     "DYOB3",                // optional repo scope
+  //     "kinds":    ["memory","conversation"], // default all
+  //     "limit":    20
+  //   }
+  // Returns { hits, total, since, until, repo, question }
+  addRoute('POST', '/api/mind/recall', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body || typeof body !== 'object') {
+      return json(res, { error: 'request body must be a JSON object' }, 400);
+    }
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { hits: [], total: 0, message: 'no graph for this space' });
+    const recallModule = require('./recall');
+    try {
+      const result = recallModule.recall(g, {
+        question: body.question || '',
+        since:    body.since,
+        until:    body.until,
+        repo:     body.repo,
+        kinds:    body.kinds,
+        limit:    body.limit,
+      });
+      return json(res, result);
+    } catch (e) {
+      return json(res, { error: e.message }, 400);
+    }
+  });
+
+  // ── Memory cards: durable knowledge taught mid-conversation ─────────────
+  // The user (or an AI on their behalf) committed a fact. "DYOB doesn't
+  // follow the Bath Fitter design system." "For Playdate, prefer pulldown
+  // for menu navigation." "Don't mock the database in tests - we got
+  // burned last quarter." Each becomes a kind:memory node, indexed by
+  // tags, linked to its source conversation if known, and surfaceable on
+  // wakeup + recall queries.
+  //
+  // POST /api/mind/teach
+  //   {
+  //     "title":          "DYOB doesn't follow Bath Fitter brand",
+  //     "body":           "Different colour palette + typography ...",
+  //     "kindOfMemory":   "constraint" | "decision" | "preference" |
+  //                       "lesson" | "gotcha" | "pattern" | "fact",
+  //     "tags":           ["DYOB", "Bath Fitter", "design"],
+  //     "scope":          { "repo": "DYOB3" },          // optional
+  //     "source":         { "type": "conversation",     // optional
+  //                         "ref":  "<existing node id>" },
+  //     "createdBy":      "claude" | "codex" | "user" | ...
+  //   }
+  // Returns: { ok, nodeId, node, edges }
+  addRoute('POST', '/api/mind/teach', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body || typeof body !== 'object') {
+      return json(res, { error: 'request body must be a JSON object' }, 400);
+    }
+    const space = getSpace();
+    const memoryModule = require('./memory');
+    try {
+      const { node, edges } = await memoryModule.addMemoryCard({
+        repoRoot, space, spec: body,
+      });
+      if (broadcast) {
+        broadcast({ type: 'mind-update', payload: { kind: 'memory-added', id: node.id, title: node.label, createdBy: node.createdBy } });
+      }
+      return json(res, { ok: true, nodeId: node.id, node, edges });
+    } catch (e) {
+      if (e.code === 'MIND_LOCKED') {
+        return json(res, { error: e.message, holderPid: e.holderPid }, 409);
+      }
+      return json(res, { error: e.message }, 400);
+    }
   });
 
   // ── Manual ingest: a user/agent pushes one artefact at a time ────────────
@@ -1248,7 +1382,7 @@ function mountMind(addRoute, json, ctx) {
         queryUrl: '/api/mind/query',
         wakeupUrl: '/api/mind/wakeup',
         message: stats
-          ? 'A shared knowledge graph exists for this space. Call POST /api/mind/query before answering questions about this codebase, notes, or prior decisions. Save new findings via POST /api/mind/save-result.'
+          ? 'A shared knowledge graph exists for this space. For questions about CODE STRUCTURE call POST /api/mind/query. For questions about PRIOR WORK / PAST DECISIONS / WHAT DID WE FIGURE OUT call POST /api/mind/recall (returns memory cards + conversations ranked by topic + recency). When the user TEACHES you something durable ("remember:", "we decided", "always X", "never Y", "X has different Y", "prefer X", "watch out for"), call POST /api/mind/teach BEFORE answering — that is how the AI gets smarter across sessions. Save findings from regular Q&A via POST /api/mind/save-result, which also auto-extracts memory cards from teaching language in your answer.'
           : 'Mind graph is empty for this space. Run POST /api/mind/build to populate it.',
       };
     },

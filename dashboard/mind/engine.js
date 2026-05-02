@@ -33,6 +33,8 @@ const { extractRepoCode } = require('./extractors/repo-code');
 const { extractCliHistory } = require('./extractors/cli-history');
 const { extractCliDrawers } = require('./extractors/cli-drawers');
 const { extractContextArtifacts } = require('./extractors/context-artifacts');
+const { extractRepos } = require('./extractors/repos');
+const { extractEntities } = require('./extractors/entities');
 const adapterRegistry = require('./extractors/base');
 
 async function runBuild({ repoRoot, space, sources = [], incremental = false, ctx = {}, onProgress = () => {} }) {
@@ -231,6 +233,43 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     graph = buildMerge(existing, fragments, { directed: true });
   } else {
     graph = build(fragments, { directed: true });
+  }
+
+  // ── Post-merge enrichment (Phase D + A) ───────────────────────────────────
+  // These extractors read the fully-merged graph and synthesize new nodes /
+  // edges on top. Pure additive: nothing existing is rewritten or removed.
+  // We re-run build() to fold the synth fragments in so dedup, edge
+  // sanitization, and the rest of the pipeline treat them like any other
+  // fragment.
+  const enrichmentFragments = [];
+  if (sources.includes('repos')) {
+    cp('enrich:repos');
+    onProgress('Synthesizing first-class repo nodes...');
+    const f = extractRepos(graph);
+    enrichmentFragments.push(f);
+    summary.repos = { scanned: f.scanned, repos: f.repos, nodes: f.nodes.length, edges: f.edges.length };
+  }
+  if (sources.includes('entities')) {
+    cp('enrich:entities');
+    onProgress('Synthesizing canonical entity layer (brands, products, projects)...');
+    const seedEntities = (ctx && Array.isArray(ctx.seedEntities)) ? ctx.seedEntities : [];
+    // Pass the live cfg.Repos map so parent-directory groupings (e.g.
+    // every repo under C:/Code/Personal/Playdate/) become brand entities
+    // even when no individual slug names the parent.
+    const repoPaths = typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {};
+    const f = extractEntities(graph, { seedEntities, repoRoot, repoPaths });
+    enrichmentFragments.push(f);
+    summary.entities = {
+      scanned: f.scanned,
+      entities: f.entities,
+      mentions: f.mentions,
+      declaredRelations: f.declaredRelations || 0,
+      nodes: f.nodes.length,
+      edges: f.edges.length,
+    };
+  }
+  if (enrichmentFragments.length) {
+    graph = build([{ nodes: graph.nodes, edges: graph.edges, hyperedges: graph.hyperedges }, ...enrichmentFragments], { directed: true });
   }
 
   onProgress(`Clustering ${graph.nodes.length} nodes...`);

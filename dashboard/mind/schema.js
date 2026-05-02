@@ -20,6 +20,17 @@ const NODE_KINDS = new Set([
   // 'drawer' = verbatim user/assistant turn (or any literal content snippet).
   // Verbatim-always: never paraphrase; the node text IS the source of truth.
   'drawer',
+  // Post-merge enrichment kinds. Synthesized after the fragment merge from
+  // the full graph state. 'repo' = first-class repository hub. 'entity' =
+  // canonical brand / product / project that fans out across repos.
+  'entity', 'repo',
+  // Memory cards. A small, durable piece of knowledge the user (or an
+  // AI on their behalf) committed to long-term memory: a decision,
+  // preference, constraint, lesson, gotcha, or pattern. Distinct from
+  // 'conversation' (full Q&A transcript) because the card IS the fact,
+  // not a citation of one. Survives across sessions; surfaces on
+  // wakeup and recall queries.
+  'memory',
 ]);
 
 const CONFIDENCE_LABELS = new Set(['EXTRACTED', 'INFERRED', 'AMBIGUOUS']);
@@ -37,6 +48,10 @@ const RELATIONS = new Set([
   'tagged_with',
   // repo ownership
   'in_repo',
+  // post-merge enrichment relations
+  // 'mentions' = a node's text references a canonical entity
+  // 'member_of' = a node lives under a first-class repo node
+  'mentions', 'member_of',
 ]);
 
 function emptyGraph(scope) {

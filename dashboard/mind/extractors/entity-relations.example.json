@@ -1,0 +1,17 @@
+{
+  "_README": "Copy this file to <repoRoot>/.symphonee/entity-relations.json to teach Mind explicit relationships between detected entities. The auto-detector finds brand hubs three ways: (1) plugin nodes are always entities, (2) repo-slug n-grams that span >=2 repos, (3) parent-directory names that group >=2 repos under the same folder. Anything beyond those needs to be declared here. `from` and `to` may be any surface form of the entity label — the extractor canonicalizes them. `relation` is one of: 'part_of', 'alias_of', 'related_to' (all map to the schema's 'conceptually_related_to' edge type, with the original kind preserved on the edge for UI rendering). A relation is silently skipped when either side isn't a detected entity, so this file can accrete forward-looking declarations without breaking the build.",
+  "relations": [
+    {
+      "from": "DYOB",
+      "to": "Bath Fitter",
+      "relation": "part_of",
+      "label": "DYOB is a Bath Fitter program / brand"
+    },
+    {
+      "from": "Builder.io",
+      "to": "Sanity",
+      "relation": "related_to",
+      "label": "Both are headless CMS / content platforms (often used interchangeably)"
+    }
+  ]
+}

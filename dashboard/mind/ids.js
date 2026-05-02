@@ -49,6 +49,23 @@ function deduplicateByLabel(nodes, edges) {
       canonical.set(`__file__${node.id}`, node);
       continue;
     }
+    // Post-merge enrichment kinds (Phase D + A). Entity and repo nodes are
+    // synthesized from already-merged graph state; collapsing them by label
+    // would let an entity like "Sanity" merge with an existing concept
+    // titled "Sanity", swapping kinds non-deterministically. Key by id so
+    // they live in their own namespace.
+    if (node.kind === 'entity' || node.kind === 'repo') {
+      canonical.set(`__synth__${node.id}`, node);
+      continue;
+    }
+    // Memory cards. Two cards with similar titles ("Don't use X" /
+    // "Don't use X with Y") could canonicalize to colliding labels and
+    // silently merge, destroying the second card's body. Memory is the
+    // user's knowledge - never silently drop it. Key by id.
+    if (node.kind === 'memory') {
+      canonical.set(`__memory__${node.id}`, node);
+      continue;
+    }
     const key = normLabel(node.label || node.id || '');
     if (!key) continue;
     const existing = canonical.get(key);

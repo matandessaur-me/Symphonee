@@ -101,10 +101,26 @@ function runQuery(graph, { question = '', mode = 'bfs', budget = 2000, seedIds =
   const visitedNodes = new Map();
   const visitedEdges = new Set();
   const queue = [];
+  // O(1) node lookup - the previous .find() per neighbour was O(N)
+  // and quietly turned the whole BFS quadratic on big graphs.
+  const nodeById = new Map();
+  for (const n of graph.nodes) nodeById.set(n.id, n);
   for (const id of seeds) {
-    const n = graph.nodes.find(x => x.id === id);
+    const n = nodeById.get(id);
     if (n) { visitedNodes.set(id, n); queue.push({ id, depth: 0 }); }
   }
+
+  // Mode auto-detection: if every seed is a code/symbol node, the user
+  // is asking about code structure. Suppress tier-3 (taxonomic) edges
+  // entirely - brand hubs and repo-membership are noise for "fix this
+  // function" / "what does X call". Saves budget for the actual code
+  // graph and keeps the response light. Any non-code seed flips back
+  // to full traversal.
+  const codeKinds = new Set(['code', 'doc', 'symbol']);
+  const codeOnlyMode = seeds.every(id => {
+    const n = nodeById.get(id);
+    return n && codeKinds.has(n.kind);
+  });
 
   let tokenEst = visitedNodes.size * APPROX_TOKENS_PER_NODE;
   while (queue.length && tokenEst < budget) {
@@ -113,10 +129,13 @@ function runQuery(graph, { question = '', mode = 'bfs', budget = 2000, seedIds =
     const neighbors = adj.get(id) || [];
     neighbors.sort((a, b) => confRank(a.edge) - confRank(b.edge));
     for (const { peer, edge } of neighbors) {
+      // In code-only mode, skip taxonomic edges so the answer stays
+      // about the code, not about the brand it lives under.
+      if (codeOnlyMode && relationTier(edge) >= 3) continue;
       const ekey = edgeKey(edge);
       if (!visitedEdges.has(ekey)) { visitedEdges.add(ekey); tokenEst += APPROX_TOKENS_PER_EDGE; }
       if (!visitedNodes.has(peer)) {
-        const node = graph.nodes.find(x => x.id === peer);
+        const node = nodeById.get(peer);
         if (node) {
           visitedNodes.set(peer, node);
           tokenEst += APPROX_TOKENS_PER_NODE;
@@ -144,11 +163,44 @@ function runQuery(graph, { question = '', mode = 'bfs', budget = 2000, seedIds =
   };
 }
 
+// Relation-tier classification. Code-structural edges (imports, calls,
+// defines, ...) traverse FIRST so a query seeded at a code symbol fills
+// its budget with the structure the user actually needs. Conceptual /
+// taxonomic edges (mentions, member_of, in_repo, tagged_with) are
+// high-fanout - a single brand entity hub can have hundreds of mention
+// edges - and would otherwise drown out the answer. They run last and
+// only burn whatever budget remains.
+//
+//   Tier 0: code structure (imports, calls, defines, contains,
+//           extends, implements). The literal "what calls what" graph
+//           the user usually wants when asking about a symbol.
+//   Tier 1: documentary + derivative (describes, references,
+//           derived_from, ...). Real semantic links, less central
+//           than code structure.
+//   Tier 2: conceptual (conceptually_related_to,
+//           semantically_similar_to, participate_in). Useful but
+//           should not crowd out structure.
+//   Tier 3: taxonomic / hub (mentions, member_of, in_repo,
+//           tagged_with). High-fanout brand-aware edges, only useful
+//           after the answer set has the actual context filled in.
+const RELATION_TIER = {
+  imports: 0, calls: 0, defines: 0, contains: 0, extends: 0, implements: 0,
+  describes: 1, cites: 1, references: 1, links_to: 1, derived_from: 1, answers: 1,
+  conceptually_related_to: 2, semantically_similar_to: 2, participate_in: 2,
+  mentions: 3, member_of: 3, in_repo: 3, tagged_with: 3,
+};
+function relationTier(edge) {
+  const t = RELATION_TIER[edge && edge.relation];
+  return typeof t === 'number' ? t : 1; // unknown relations default mid-tier
+}
+
 function confRank(edge) {
+  // Compose tier (relation-type priority) and confidence (signal quality).
+  // Tier dominates: code structure ranks before taxonomy regardless of
+  // confidence; within a tier prefer EXTRACTED > INFERRED > AMBIGUOUS.
   const c = edge.confidence;
-  if (c === 'EXTRACTED') return 0;
-  if (c === 'INFERRED') return 1;
-  return 2;
+  const conf = (c === 'EXTRACTED') ? 0 : (c === 'INFERRED') ? 1 : 2;
+  return relationTier(edge) * 4 + conf;
 }
 
 function edgeKey(e) { return `${e.source}|${e.relation}|${e.target}`; }
