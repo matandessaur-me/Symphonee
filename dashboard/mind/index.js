@@ -1082,6 +1082,47 @@ function mountMind(addRoute, json, ctx) {
     return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length, memoriesCreated });
   });
 
+  // ── Recall: time-ranged + topic-filtered retrieval ─────────────────────
+  // Different from /api/mind/query (BFS sub-graph) - returns a ranked
+  // LIST of recall-eligible items (memories, conversations, drawers)
+  // restricted to a time window and optionally a repo. Answers "what
+  // did I figure out about X 10 days ago?" / "what do I know about
+  // Playdate?" without graph traversal.
+  //
+  // POST /api/mind/recall
+  //   {
+  //     "question": "DYOB design",          // optional, BM25 ranks
+  //     "since":    "10 days ago",          // ISO or natural string
+  //     "until":    "today",                // ISO or natural string
+  //     "repo":     "DYOB3",                // optional repo scope
+  //     "kinds":    ["memory","conversation"], // default all
+  //     "limit":    20
+  //   }
+  // Returns { hits, total, since, until, repo, question }
+  addRoute('POST', '/api/mind/recall', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body || typeof body !== 'object') {
+      return json(res, { error: 'request body must be a JSON object' }, 400);
+    }
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { hits: [], total: 0, message: 'no graph for this space' });
+    const recallModule = require('./recall');
+    try {
+      const result = recallModule.recall(g, {
+        question: body.question || '',
+        since:    body.since,
+        until:    body.until,
+        repo:     body.repo,
+        kinds:    body.kinds,
+        limit:    body.limit,
+      });
+      return json(res, result);
+    } catch (e) {
+      return json(res, { error: e.message }, 400);
+    }
+  });
+
   // ── Memory cards: durable knowledge taught mid-conversation ─────────────
   // The user (or an AI on their behalf) committed a fact. "DYOB doesn't
   // follow the Bath Fitter design system." "For Playdate, prefer pulldown
