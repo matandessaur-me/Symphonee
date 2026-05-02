@@ -107,7 +107,64 @@ function renderL0({ activeRepo, activeRepoPath, space }) {
 
 // L1 -----------------------------------------------------------------------
 
-function renderL1(graph, { maxChars, question = '' } = {}) {
+// Pick the top K memory cards most relevant to the active repo. A card is
+// relevant when:
+//   - its scope.repo matches activeRepo (canonicalized)
+//   - it has an in_repo edge to cwd_<activeRepo>
+//   - its tags include the active-repo slug or its parent-dir entity
+// Scoring blends repo-fit with recency. No question filter here - that's
+// handled by the query-aware path below.
+function pickRelevantMemories(graph, { activeRepo = null, limit = 6 } = {}) {
+  const memories = (graph.nodes || []).filter(n => n.kind === 'memory');
+  if (!memories.length) return [];
+
+  const repoSlug = (activeRepo || '').replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase();
+  const cwdId = repoSlug ? `cwd_${repoSlug}` : null;
+  const inRepoSet = new Set(); // memoryId -> connected to active repo
+  if (cwdId) {
+    for (const e of (graph.edges || [])) {
+      if (e.relation === 'in_repo' && e.target === cwdId) inRepoSet.add(e.source);
+    }
+  }
+
+  const now = Date.now();
+  const scored = memories.map(m => {
+    let score = 0;
+    if (activeRepo) {
+      if (m.scope && m.scope.repo === activeRepo) score += 3;
+      if (inRepoSet.has(m.id)) score += 3;
+      const tagCanon = (m.tags || []).map(t => String(t).toLowerCase().replace(/[\s_.\-]+/g, ''));
+      const repoCanon = String(activeRepo).toLowerCase().replace(/[\s_.\-]+/g, '');
+      if (repoCanon && tagCanon.includes(repoCanon)) score += 2;
+    }
+    // Recency: cards from the last 7 days get a bump, last 30d a smaller one.
+    const ts = Date.parse(m.createdAt || '');
+    if (!Number.isNaN(ts)) {
+      const ageDays = (now - ts) / (1000 * 60 * 60 * 24);
+      if (ageDays < 7) score += 2;
+      else if (ageDays < 30) score += 1;
+    }
+    // Reference count: cards that have been recalled before are valuable.
+    const refs = Array.isArray(m.referencedAt) ? m.referencedAt.length : 0;
+    score += Math.min(2, refs * 0.25);
+    return { mem: m, score };
+  });
+  scored.sort((a, b) => b.score - a.score || (b.mem.createdAt || '').localeCompare(a.mem.createdAt || ''));
+  return scored.filter(s => s.score > 0).slice(0, limit).map(s => s.mem);
+}
+
+function renderMemoriesBlock(memories) {
+  if (!memories.length) return '';
+  const lines = ['memories (durable knowledge):'];
+  for (const m of memories) {
+    const tag = m.kindOfMemory ? `[${m.kindOfMemory}]` : '[fact]';
+    const title = (m.label || '').slice(0, 100);
+    lines.push(`  - ${tag} ${title}`);
+  }
+  return lines.join('\n');
+}
+
+function renderL1(graph, { maxChars, question = '', activeRepo = null } = {}) {
   if (!graph || !graph.nodes || !graph.nodes.length) return '## L1 - No memories yet (graph empty).';
 
   // Query-aware mode: when a non-empty `question` is given, L1 is the
@@ -117,23 +174,37 @@ function renderL1(graph, { maxChars, question = '' } = {}) {
   // higher signal. Pass-through `question = ''` for the default
   // generic wake-up.
   if (question && typeof question === 'string' && question.trim()) {
-    return renderL1QueryAware(graph, { maxChars, question });
+    return renderL1QueryAware(graph, { maxChars, question, activeRepo });
   }
 
   const lines = ['## L1 - ESSENTIAL STORY'];
   let used = lines[0].length;
   const budget = maxChars - used;
 
+  // Memories first - what the user has explicitly committed to long-term
+  // knowledge takes priority over high-degree nodes (which are graph
+  // topology, not necessarily what matters today).
+  const memBlock = renderMemoriesBlock(pickRelevantMemories(graph, { activeRepo, limit: 6 }));
+  if (memBlock) {
+    lines.push('');
+    lines.push(memBlock);
+    used += memBlock.length + 2;
+  }
+
+  const remaining = budget - used;
+  const godCap = Math.max(0, remaining * 0.35);
   const gods = (graph.gods || []).slice(0, 8);
-  if (gods.length) {
+  if (gods.length && godCap > 100) {
     lines.push('');
     lines.push('gods (highest-degree nodes):');
     used += 'gods (highest-degree nodes):\n'.length;
+    let godUsed = 0;
     for (const g of gods) {
       const labelText = g.label || g.id;
       const line = `  - [${g.degree || 0}] ${labelText.slice(0, 80)}`;
-      if (used + line.length > maxChars * 0.55) break;
+      if (godUsed + line.length > godCap) break;
       lines.push(line);
+      godUsed += line.length + 1;
       used += line.length + 1;
     }
   }
@@ -162,14 +233,24 @@ function renderL1(graph, { maxChars, question = '' } = {}) {
   return lines.join('\n');
 }
 
-function renderL1QueryAware(graph, { maxChars, question }) {
+function renderL1QueryAware(graph, { maxChars, question, activeRepo = null }) {
   const seeds = bestSeeds(graph, question, 5);
   if (!seeds.length) {
     // Question doesn't hit the corpus — degrade to generic L1.
-    return renderL1(graph, { maxChars });
+    return renderL1(graph, { maxChars, activeRepo });
   }
   const lines = [`## L1 - TASK CONTEXT for "${question.slice(0, 100)}"`];
   let used = lines[0].length;
+
+  // Memory cards relevant to this active repo go in first - they are the
+  // user's explicitly-committed knowledge and should land before any
+  // graph topology.
+  const memBlock = renderMemoriesBlock(pickRelevantMemories(graph, { activeRepo, limit: 4 }));
+  if (memBlock) {
+    lines.push('');
+    lines.push(memBlock);
+    used += memBlock.length + 2;
+  }
 
   // 1-hop expansion from seeds: each seed plus its top-3 most-confident
   // neighbours, ranked EXTRACTED > INFERRED > AMBIGUOUS.
@@ -222,7 +303,7 @@ function composeWakeUp(graph, { activeRepo, activeRepoPath, space, budgetTokens 
   const l0 = renderL0({ activeRepo, activeRepoPath, space });
   const l0Chars = l0.length + 2;
   const l1Budget = Math.max(300, budgetChars - l0Chars);
-  const l1 = renderL1(graph, { maxChars: l1Budget, question });
+  const l1 = renderL1(graph, { maxChars: l1Budget, question, activeRepo });
   const text = `${l0}\n\n${l1}`;
   return {
     text,
@@ -236,6 +317,8 @@ module.exports = {
   composeWakeUp,
   renderL0,
   renderL1,
+  pickRelevantMemories,
+  renderMemoriesBlock,
   DEFAULT_BUDGET_TOKENS,
   APPROX_CHARS_PER_TOKEN,
   CHARS_PER_GOD,
