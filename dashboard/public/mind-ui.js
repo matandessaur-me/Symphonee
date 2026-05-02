@@ -212,10 +212,11 @@
     state.search = (rawQuery || '').trim().toLowerCase();
     recomputeMatches();
     updateSearchUi();
-    // Re-render the active view. Graph/map prefer in-place re-paint so we
-    // don't blow away the network state, but rebuilding is acceptable here -
-    // small graphs only - and keeps the code path single.
-    if (state.view === 'graph') paintGraphSearch();
+    // Re-render the active view. Graph + mindmap views prefer in-place
+    // re-paint (paintGraphSearch -> buildNetworkAsync) so we don't blow
+    // away the canvas DOM and accidentally resurface the 'Enter Mind Map'
+    // gate. Other views can rebuild — they're cheap.
+    if (state.view === 'graph' || state.view === 'mindmap') paintGraphSearch();
     else render();
     // If we have a match, surface it in the detail panel automatically.
     if (state.matches.length) showNodeDetail(state.matches[0]);
@@ -3124,6 +3125,12 @@
     const btn = $('mindMapGateBtn');
     if (!btn) return;
     btn.textContent = 'Enter Mind Map';
+    // If the user already entered the map this session, keep the gate
+    // hidden across re-renders. Without this, anything that re-injects
+    // the renderGraph DOM (search Go, filter change, mode switch) would
+    // resurface the gate even though state.mindmapLoaded is still true.
+    const gate = $('mindMapGate');
+    if (gate) gate.style.display = state.mindmapLoaded ? 'none' : '';
   }
   function loadMindmap() {
     state.mindmapLoaded = true;
