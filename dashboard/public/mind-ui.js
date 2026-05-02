@@ -1967,7 +1967,19 @@
       if (cachedPos && cachedPos.length >= 3) {
         x = cachedPos[0]; y = cachedPos[1]; z = cachedPos[2];
         fx = x; fy = y; fz = z;  // pin
+      } else if (state.prefs.graphMode === '2d') {
+        // 2D pre-positioning: Fibonacci spiral on a disk. The 3D-sphere
+        // formula collapses onto the 2D plane as a clump (lots of nodes
+        // share similar (x,y) when z varies) which produces the
+        // 'hairball in the middle' look. Fibonacci-spiral disk spreads
+        // nodes evenly across the visible area before physics starts.
+        const angle = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+        const radius = SPHERE_R * Math.sqrt((i + 0.5) / N);
+        x = Math.cos(angle) * radius;
+        y = Math.sin(angle) * radius;
+        z = 0;
       } else {
+        // 3D Fibonacci sphere
         const phi = Math.acos(1 - 2 * (i + 0.5) / N);
         const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
         x = SPHERE_R * Math.sin(phi) * Math.cos(theta);
@@ -2141,9 +2153,13 @@
         // Cache hit -> physics is a no-op (every node is pinned). Drop
         // both warmup and cooldown to zero so the first frame is the
         // final frame and the iGPU stays at idle.
-        .cooldownTicks(cached2d ? 0 : 120)
-        .warmupTicks(cached2d ? 0 : 120)
-        .d3AlphaDecay(0.06)
+        // Cache miss on 2D: 250 warmup ticks (matching 3D) so a 6k+ node
+        // graph actually has time to spread out. 120 was too few — nodes
+        // started on the Fibonacci-spiral disk but didn't have enough
+        // iterations for charge + collide to push them apart.
+        .cooldownTicks(cached2d ? 0 : 60)
+        .warmupTicks(cached2d ? 0 : 250)
+        .d3AlphaDecay(0.04)
         .d3VelocityDecay(0.55);
       try {
         if (fg2.d3Force) {
