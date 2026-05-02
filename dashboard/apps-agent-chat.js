@@ -824,6 +824,22 @@ async function executeTool(driver, session, name, args) {
         }
         const err = new Error('no element matched selector (heal failed)'); err.code = 'uia_miss'; throw err;
       }
+      // Sandboxed targets cannot receive SendInput — route the click via
+      // PostMessage WM_LBUTTONDOWN/UP so it lands in the off-screen Spotify
+      // / Chromium-button instead of the user's foreground app. For
+      // non-sandboxed targets, the original nut-js click stays (faster +
+      // more compatible with weird input handlers).
+      if (typeof driver.isSandboxedHwnd === 'function' && driver.isSandboxedHwnd(hwnd)) {
+        const r = await driver.postMessageClick(hwnd, hit.x, hit.y);
+        if (!r || !r.ok) {
+          const err = new Error('sandboxed PostMessage click failed: ' + (r && r.reason || 'unknown'));
+          err.code = 'sandboxed_click_failed'; throw err;
+        }
+        session._pendingChange = true;
+        session.actionLog = session.actionLog || [];
+        session.actionLog.push({ verb: 'CLICK_ELEMENT', target: { selector: args.selector, via: 'postmessage', name: hit.meta && hit.meta.name, type: hit.meta && hit.meta.type, xy: { x: hit.x, y: hit.y }, target_hwnd: r.hwnd_target }, attemptN: 1, outcome: 'ok', ts: Date.now() });
+        return { ok: true, via: 'postmessage', x: hit.x, y: hit.y, name: hit.meta && hit.meta.name, type: hit.meta && hit.meta.type };
+      }
       await driver.click(hit.x, hit.y, { hwnd });
       session._pendingChange = true;
       session.actionLog = session.actionLog || [];
@@ -841,8 +857,32 @@ async function executeTool(driver, session, name, args) {
         err.code = e.code || 'focus_failed';
         throw err;
       }
-      // Click the element to focus it, then type. SetFocus via UIA isn't
-      // universally supported, so a click is the most portable focus path.
+      // Sandbox-aware path: prefer UIA ValuePattern.SetValue, which doesn't
+      // synthesize keystrokes (so the off-screen target gets the text instead
+      // of the user's foreground app) and is faster anyway. Pixel
+      // click+type is blocked on sandboxed hwnds for safety. We try
+      // UIA-value first for ALL targets (even non-sandboxed) since it's
+      // strictly better when the element supports ValuePattern.
+      if (typeof driver.setUIAValue === 'function') {
+        const v = await driver.setUIAValue(hwnd, args.selector, text);
+        if (v && v.ok) {
+          session._pendingChange = true;
+          session.actionLog = session.actionLog || [];
+          session.actionLog.push({ verb: 'TYPE_INTO_ELEMENT', target: { selector: args.selector, via: 'uia-value', name: v.name, type: v.type }, text, attemptN: 1, outcome: 'ok', ts: Date.now() });
+          return { ok: true, via: 'uia-value', name: v.name, charsTyped: v.chars };
+        }
+        // ValuePattern unsupported; if sandboxed we can't fall back to
+        // pixel input — surface a typed error so the agent can adapt
+        // (e.g. ask user to release sandbox, or pick a different field).
+        if (typeof driver.isSandboxedHwnd === 'function' && driver.isSandboxedHwnd(hwnd)) {
+          const err = new Error(`type_into_element: target element does not support UIA ValuePattern (${v && v.reason || 'unknown'}) and pixel input is blocked on sandboxed windows. Try a sibling input element or release the sandbox.`);
+          err.code = 'uia_value_unsupported_in_sandbox'; throw err;
+        }
+        // Non-sandboxed: fall through to legacy click+type path below.
+      }
+      // Legacy: click the element to focus it, then type. SetFocus via UIA
+      // isn't universally supported, so a click is the most portable focus
+      // path. Pixel-only — driver.click will refuse if sandboxed.
       const hit = await driver.findUIAElement(hwnd, args.selector);
       if (!hit) {
         const err = new Error('no element matched selector'); err.code = 'uia_miss'; throw err;
@@ -1086,7 +1126,19 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
   session.running = true;
   const emit = (step) => {
     if (typeof broadcast === 'function') {
-      broadcast({ type: 'apps-agent-step', sessionId: session.id, ...step, at: Date.now() });
+      // Include session.app and session.title on every frame so the
+      // multi-session strip in the UI can label chips even before it sees
+      // a session/start response (events for a brand-new session id may
+      // arrive before the strip has any other context).
+      broadcast({
+        type: 'apps-agent-step',
+        sessionId: session.id,
+        app: session.app || null,
+        title: session.title || null,
+        hwnd: session.hwnd || null,
+        ...step,
+        at: Date.now(),
+      });
     }
     // Session-scoped terminal listener (used by /api/apps/do to block on
     // completion). Best-effort, does not affect normal operation.

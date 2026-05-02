@@ -15,6 +15,8 @@ const memory = require('./apps-memory');
 const recipes = require('./apps-recipes');
 const recipeRunner = require('./apps-recipe-runner');
 const recorder = require('./apps-recorder');
+const sandbox = require('./apps-sandbox');
+const com = require('./apps-com');
 
 const PROVIDER_ORDER = ['anthropic', 'openai', 'gemini', 'grok', 'qwen'];
 const CLI_PROVIDER_MAP = {
@@ -376,18 +378,120 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     const id = body.id ? String(body.id) : null;
     const path = body.path ? String(body.path) : null;
     const name = body.name ? String(body.name) : null;
+    const stealth = body.sandbox === true || body.stealth === true;
     if (!id && !path) return json(res, { error: 'id or path required' }, 400);
     if (typeof permGate === 'function') {
-      const label = 'Launch app: ' + (name || id || path);
+      const label = (stealth ? 'Stealth-launch app: ' : 'Launch app: ') + (name || id || path);
       const ok = await permGate(res, 'api', 'POST /api/apps/launch', label);
       if (!ok) return;
     }
     try {
-      const result = await driver.launchApp({ id, path, name });
+      const result = stealth
+        ? await sandbox.stealthLaunch({ id, path, name })
+        : await driver.launchApp({ id, path, name });
       json(res, { ok: true, ...result });
     } catch (e) {
       json(res, { ok: false, error: e.message }, 500);
     }
+  });
+
+  // Sandbox control surface. The hwnd from a stealth launch (or one passed
+  // to /sandbox/adopt) becomes a "sandboxed" target — the agent treats it
+  // like any other window, but launch/focus are no-ops on the host desktop.
+  addRoute('POST', '/api/apps/sandbox/adopt', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = Number(body.hwnd);
+    if (!Number.isFinite(hwnd) || hwnd <= 0) return json(res, { error: 'hwnd required' }, 400);
+    if (typeof permGate === 'function') {
+      const ok = await permGate(res, 'api', 'POST /api/apps/sandbox/adopt', 'Stash window ' + hwnd + ' off-screen for stealth automation');
+      if (!ok) return;
+    }
+    try { json(res, { ok: true, ...(await sandbox.adoptIntoSandbox(hwnd, { app: body.app })) }); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/sandbox/peek', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = Number(body.hwnd);
+    if (!Number.isFinite(hwnd) || hwnd <= 0) return json(res, { error: 'hwnd required' }, 400);
+    try { json(res, await sandbox.peek(hwnd)); }
+    catch (e) { json(res, { ok: false, error: e.message }, 400); }
+  });
+
+  addRoute('POST', '/api/apps/sandbox/unpeek', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = Number(body.hwnd);
+    if (!Number.isFinite(hwnd) || hwnd <= 0) return json(res, { error: 'hwnd required' }, 400);
+    try { json(res, await sandbox.unpeek(hwnd)); }
+    catch (e) { json(res, { ok: false, error: e.message }, 400); }
+  });
+
+  addRoute('POST', '/api/apps/sandbox/release', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const hwnd = Number(body.hwnd);
+    if (!Number.isFinite(hwnd) || hwnd <= 0) return json(res, { error: 'hwnd required' }, 400);
+    const restore = body.restore !== false;
+    try { json(res, await sandbox.release(hwnd, { restore })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 400); }
+  });
+
+  addRoute('GET', '/api/apps/sandbox/list', async (req, res) => {
+    json(res, { ok: true, sandboxed: sandbox.list() });
+  });
+
+  // COM-based Office automation. Headless (no window painted at all) — even
+  // more invisible than off-screen positioning. Bypasses UIA which can't
+  // drive Office's custom-canvas editing surfaces.
+  addRoute('POST', '/api/apps/com/word/write', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    if (typeof permGate === 'function') {
+      const ok = await permGate(res, 'api', 'POST /api/apps/com/word/write', 'Write Word doc to ' + filePath);
+      if (!ok) return;
+    }
+    try { json(res, await com.wordWrite({ filePath, content: String(body.content || '') })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/com/word/read', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    try { json(res, await com.wordRead({ filePath })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/com/excel/write', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    if (!Array.isArray(body.values)) return json(res, { error: 'values required (2D array)' }, 400);
+    if (typeof permGate === 'function') {
+      const ok = await permGate(res, 'api', 'POST /api/apps/com/excel/write', 'Write Excel sheet to ' + filePath + ' (' + body.values.length + ' rows)');
+      if (!ok) return;
+    }
+    try { json(res, await com.excelWrite({ filePath, values: body.values, sheetName: body.sheetName, autoFit: body.autoFit !== false })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/com/excel/read', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    try { json(res, await com.excelRead({ filePath, sheetName: body.sheetName || null, maxRows: body.maxRows, maxCols: body.maxCols })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
   });
 
   // One-off screenshot for a window. Used by the AI recipe generator so it
@@ -444,6 +548,7 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
       if (!ok) return;
     }
 
+    const stealth = body.sandbox === true || body.stealth === true;
     let installed;
     try { installed = await driver.listInstalledApps(); }
     catch (e) { return json(res, { error: 'listInstalledApps failed: ' + e.message }, 500); }
@@ -455,6 +560,7 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
 
     let hwnd = null;
     let title = null;
+    let adoptedSandbox = false;
     if (!match) {
       // Fallback: maybe the app is already running. Look for a window whose
       // title or processName matches the needle, skip the launch step.
@@ -468,9 +574,16 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
         }, 404);
       }
       hwnd = win.hwnd; title = win.title;
+      // If the caller asked for stealth and we picked up an already-running
+      // window, stash it off-screen now so the run doesn't disturb the user.
+      if (stealth && !sandbox.isSandboxed(hwnd)) {
+        try { await sandbox.adoptIntoSandbox(hwnd, { app: appName }); adoptedSandbox = true; } catch (_) {}
+      }
     } else {
       try {
-        const launched = await driver.launchApp({ id: match.id, path: match.path, name: match.name });
+        const launched = stealth
+          ? await sandbox.stealthLaunch({ id: match.id, path: match.path, name: match.name })
+          : await driver.launchApp({ id: match.id, path: match.path, name: match.name });
         hwnd = launched.hwnd; title = launched.title;
       } catch (e) {
         return json(res, { error: 'launchApp failed: ' + e.message, app: match.name }, 500);
@@ -488,12 +601,23 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     if (session.running) return json(res, { error: 'Session already running. Stop it first or pass a different sessionId.' }, 409);
 
     try {
-      const focused = await driver.focusWindow(hwnd);
-      session.hwnd = hwnd;
-      session.title = focused.title || title;
+      // Sandboxed windows live off-screen; calling focusWindow on them would
+      // (a) drag them back onto the visible desktop and (b) steal foreground
+      // from whatever the user is doing. Skip the focus dance — UIA-based
+      // input doesn't need it.
+      const isSandboxed = sandbox.isSandboxed(hwnd);
+      if (isSandboxed) {
+        session.hwnd = hwnd;
+        session.title = title || (sandbox.getEntry(hwnd) || {}).app || 'sandboxed window';
+      } else {
+        const focused = await driver.focusWindow(hwnd);
+        session.hwnd = hwnd;
+        session.title = focused.title || title;
+      }
       session.app = match ? match.name : appName;
       session.goal = goal;
       session.stopped = false;
+      session.sandboxed = isSandboxed;
       driver.resetStopped();
     } catch (e) {
       const code = e && e.code;
@@ -720,12 +844,19 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     if (session.running) return json(res, { error: 'Session already running. Stop it first.' }, 409);
 
     try {
-      const focused = await driver.focusWindow(hwnd);
-      session.hwnd = hwnd;
-      session.title = focused.title;
+      const isSandboxed = sandbox.isSandboxed(hwnd);
+      if (isSandboxed) {
+        session.hwnd = hwnd;
+        session.title = (sandbox.getEntry(hwnd) || {}).app || 'sandboxed window';
+      } else {
+        const focused = await driver.focusWindow(hwnd);
+        session.hwnd = hwnd;
+        session.title = focused.title;
+      }
       session.app = String(body.app || '').trim() || null;
       session.goal = goal;
       session.stopped = false;
+      session.sandboxed = isSandboxed;
       driver.resetStopped();
     } catch (e) {
       const code = e && e.code;

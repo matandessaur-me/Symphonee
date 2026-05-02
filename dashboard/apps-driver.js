@@ -119,6 +119,17 @@ let _listCache = null;
 let _listCacheAt = 0;
 const LIST_CACHE_MS = 500;
 
+// Sandbox plug: apps-sandbox.js installs an `isSandboxed(hwnd) -> boolean`
+// predicate at module-load time. When a hwnd is sandboxed (off-screen, the
+// agent should never touch host foreground for it), focusWindow and
+// ensureForeground short-circuit. Default: always false (no-op). Wiring is
+// keyed by string hwnd to match the sandbox module's storage.
+let _sandboxedHwndCheck = () => false;
+function setSandboxedHwndCheck(fn) {
+  _sandboxedHwndCheck = (typeof fn === 'function') ? fn : (() => false);
+}
+function isSandboxedHwnd(hwnd) { return !!_sandboxedHwndCheck(hwnd); }
+
 async function listWindows({ force = false } = {}) {
   const now = Date.now();
   if (!force && _listCache && (now - _listCacheAt) < LIST_CACHE_MS) return _listCache;
@@ -186,6 +197,12 @@ async function findWindow(hwnd) {
 
 async function focusWindow(hwnd) {
   const w = await findWindow(hwnd);
+  // Sandboxed windows live off-screen on purpose; focusing would drag them
+  // back onto the host and steal foreground from the user. UIA-based input
+  // doesn't need foreground, so this is a safe no-op.
+  if (isSandboxedHwnd(hwnd)) {
+    return { ok: true, hwnd: w.hwnd, title: w.title, sandboxed: true };
+  }
   const script = `
 ${WIN32_TYPES}
 Add-Type -Name SyWinZoomF -Namespace Sy -MemberDefinition @"
@@ -225,6 +242,11 @@ if (-not [Sy.SyWinZoomF]::IsZoomed($h)) {
 // GetForegroundWindow and throw a typed error if the window still isn't in
 // front, so input tools abort instead of mis-routing clicks into another app.
 async function ensureForeground(hwnd) {
+  // Sandboxed windows are intentionally not in the foreground. The agent's
+  // input tools that call ensureForeground before acting need to NOT yank
+  // the window back on-screen for these. UIA Invoke / Value patterns don't
+  // require foreground anyway.
+  if (isSandboxedHwnd(hwnd)) return;
   const script = `
 ${WIN32_TYPES}
 Add-Type -Name SyWinZoomE -Namespace Sy -MemberDefinition @"
@@ -440,6 +462,46 @@ async function waitForUIAElement(hwnd, selector, { timeoutMs = 5000, pollMs = 25
   return { hit: false, waitedMs: Date.now() - start };
 }
 
+// PostMessage-based click. Delivers WM_LBUTTONDOWN/UP into the target
+// window's message queue, which works regardless of whether the window is
+// foreground / visible / on-screen. This is the sandbox-safe replacement
+// for nut-js click(): a sandboxed window can't receive synthetic input via
+// SendInput (it goes to user's foreground app instead), but PostMessage
+// goes directly to the hwnd. Coords are window-relative (same convention
+// as click()).
+async function postMessageClick(hwnd, x, y, { double: dbl = false } = {}) {
+  const path = require('path').join(__dirname, 'scripts', 'post-click.ps1');
+  const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -X ${Number(x)|0} -Y ${Number(y)|0}${dbl ? ' -Double' : ''}`;
+  const raw = await runPs(script, { timeoutMs: 5000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { return { ok: false, reason: 'non-JSON: ' + line.slice(0, 200) }; }
+  return parsed;
+}
+
+// Set an edit-style element's text via UIA ValuePattern.SetValue. This is
+// the sandbox-safe alternative to click-then-type — it doesn't synthesize
+// keystrokes (so the off-screen target receives the text instead of the
+// user's foreground app) and is significantly faster than per-char input.
+// Returns { ok, pattern, name, type, chars } on success or { ok:false,
+// reason } when the element doesn't support ValuePattern.
+async function setUIAValue(hwnd, selector, text) {
+  const path = require('path').join(__dirname, 'scripts', 'uia-set-value.ps1');
+  const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
+  const valB64 = Buffer.from(String(text == null ? '' : text), 'utf8').toString('base64');
+  const script = `
+$sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))
+$val = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${valB64}'))
+& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -SelectorJson $sel -Value $val
+`;
+  const raw = await runPs(script, { timeoutMs: 10000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { return { ok: false, reason: 'non-JSON' }; }
+  if (!parsed.hit) return { ok: false, reason: parsed.reason };
+  return { ok: true, pattern: parsed.pattern, name: parsed.name, type: parsed.type, chars: parsed.chars };
+}
+
 // Invoke-pattern shortcut: run the element's default action directly via
 // UIA instead of simulating a click. Returns { ok, pattern } on success or
 // { ok: false } so the caller can fall back to findUIAElement + click.
@@ -556,9 +618,16 @@ async function screenshotWindow(hwnd, { format = 'jpeg', quality = 60 } = {}) {
   let w = await findWindow(hwnd);
   if (w.isMinimized) {
     // Auto-restore the window so the agent can keep working instead of
-    // bailing. Users are told up-front that the Apps tab drives the real
-    // desktop, so un-minimizing an already-chosen target is expected.
-    try { await focusWindow(hwnd); } catch (_) {}
+    // bailing. For sandboxed windows we use ShowWindow(SW_SHOWNOACTIVATE=4)
+    // so we don't yank foreground (the window is at -32000,-32000 so it
+    // stays invisible on-screen).
+    try {
+      if (isSandboxedHwnd(hwnd)) {
+        await runPs(`${WIN32_TYPES}\n[void][Sy.SyWin32]::ShowWindow([System.IntPtr]::new([int64]${hwnd}), 4)`, { timeoutMs: 3000 });
+      } else {
+        await focusWindow(hwnd);
+      }
+    } catch (_) {}
     w = await findWindow(hwnd);
     if (w.isMinimized) return { error: 'window_minimized', hwnd: w.hwnd };
   }
@@ -626,6 +695,16 @@ async function verifyStableRect(hwnd, originalRect) {
   return current;
 }
 
+function _refusePixelInputOnSandboxed(hwnd, what) {
+  if (hwnd != null && isSandboxedHwnd(hwnd)) {
+    const e = new Error(
+      `${what}: pixel-level input is blocked on sandboxed windows because the window is intentionally off-screen and not foregrounded — calling SendInput would route the input into whatever app the user is actually using. Use UIA tools (click_element / type_in_element / invoke_element) for sandboxed targets, or unsandbox with /api/apps/sandbox/release first.`
+    );
+    e.code = 'sandboxed_pixel_input_blocked';
+    throw e;
+  }
+}
+
 async function click(xOrOpts, y, opts = {}) {
   // Two call shapes:
   //   click({ x, y, hwnd, button, double })
@@ -637,6 +716,7 @@ async function click(xOrOpts, y, opts = {}) {
     x = xOrOpts;
     ({ hwnd, button = 'left', double: dbl = false } = opts);
   }
+  _refusePixelInputOnSandboxed(hwnd, 'click');
   const n = loadNut();
   let abs = { x, y };
   if (hwnd != null) {
@@ -659,6 +739,7 @@ async function mouseMove(xOrOpts, y, opts = {}) {
     x = xOrOpts;
     ({ hwnd, smooth = false } = opts);
   }
+  _refusePixelInputOnSandboxed(hwnd, 'mouseMove');
   const n = loadNut();
   let abs = { x, y };
   if (hwnd != null) {
@@ -675,6 +756,7 @@ async function mouseMove(xOrOpts, y, opts = {}) {
 }
 
 async function drag(fromX, fromY, toX, toY, { hwnd } = {}) {
+  _refusePixelInputOnSandboxed(hwnd, 'drag');
   const n = loadNut();
   let from = { x: fromX, y: fromY };
   let to = { x: toX, y: toY };
@@ -716,6 +798,7 @@ async function drag(fromX, fromY, toX, toY, { hwnd } = {}) {
 }
 
 async function scroll(dx, dy, { hwnd } = {}) {
+  _refusePixelInputOnSandboxed(hwnd, 'scroll');
   const n = loadNut();
   if (hwnd != null) await focusWindow(hwnd);
   if (dy) {
@@ -730,6 +813,7 @@ async function scroll(dx, dy, { hwnd } = {}) {
 }
 
 async function type(text, { hwnd } = {}) {
+  _refusePixelInputOnSandboxed(hwnd, 'type');
   const n = loadNut();
   if (hwnd != null) await focusWindow(hwnd);
   await n.keyboard.type(String(text));
@@ -780,6 +864,7 @@ function parseKeyCombo(combo) {
 }
 
 async function key(combo, { hwnd } = {}) {
+  _refusePixelInputOnSandboxed(hwnd, 'key');
   const n = loadNut();
   if (hwnd != null) await focusWindow(hwnd);
   const { mods, key: k } = parseKeyCombo(combo);
@@ -1070,6 +1155,8 @@ module.exports = {
   readUIAElement,
   waitForUIAElement,
   invokeUIAElement,
+  setUIAValue,
+  postMessageClick,
   uiaTree,
   spawnUIAPicker,
   screenshotWindow,
@@ -1085,6 +1172,9 @@ module.exports = {
   stop,
   isStopped,
   resetStopped,
+  // Sandbox plug — apps-sandbox.js calls this at module-load time.
+  setSandboxedHwndCheck,
+  isSandboxedHwnd,
   // Exposed for tests / advanced callers:
   _runPs: runPs,
   _parseKeyCombo: parseKeyCombo

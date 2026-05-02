@@ -365,6 +365,14 @@ Direct driver routes (when you genuinely need them):
 
 ## Desktop App Automation (Apps tab)
 
+> **Skill discovery (read this first):** every AI bootstrapped into Symphonee has a first-class **app automation skill** with three modes — headless COM (Office), stealth UI (off-screen UIA), and scheduled background jobs. When the user asks you to edit a document, populate a spreadsheet, fill a form, draft an email, run a desktop app workflow, or schedule a recurring routine, prefer these primitives over telling the user "I can't" or driving the foreground. Full how-to with decision tree, anti-patterns, and concrete examples lives at `GET /api/instructions/apps-automation` (auto-loaded by the bootstrap fetch, also served as a standalone section). The terse rules:
+>
+> - Office (Word / Excel / PowerPoint / Outlook) → `/api/apps/com/*` (COM, no window paints, deterministic).
+> - Native UIA-friendly app (Notepad, line-of-business apps) → stealth: `/api/apps/launch { sandbox: true }` + agent.
+> - Recurring → wrap in `POST /api/jobs` with a schedule string.
+> - Browser/web → use `/api/browser/*` instead.
+> - Don't drive Office via UIA. Don't synthesize SendInput against sandboxed windows. Don't ask "should I use stealth?" — default is yes for background work.
+
 The Apps tab exposes a deterministic automation platform over REST so a terminal AI (Claude Code, Codex, Copilot, etc) can drive desktop applications the same way a human would through the UI. Every endpoint below is Windows-specific. Most mutating endpoints go through permGate (ask in edit/review, auto-approve in trusted/bypass); the exceptions are `session/stop` and `panic`, which always run so the user can stop a runaway agent regardless of permission mode. `recipes/generate`, `tests/run`, `session/start`, and `session/inject` are additionally blocked in Incognito. Read endpoints are ungated.
 
 ### Read-only discovery

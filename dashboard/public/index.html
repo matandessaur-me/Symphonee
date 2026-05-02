@@ -849,6 +849,110 @@
     .tab-panel#panel-apps { flex-direction: column; }
     .tab-panel#panel-apps.active { display: flex; }
     .apps-tab-root { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+
+    /* Multi-session strip: chips for each running / recent apps-agent session.
+       Click swaps the active session shown in the viewport + log below. */
+    .apps-sessions-strip {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 6px 14px; border-bottom: 1px solid var(--surface1);
+      background: var(--mantle, var(--surface0));
+    }
+    .apps-sessions-strip[hidden] { display: none; }
+    .apps-session-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 14px;
+      background: var(--surface0); border: 1px solid var(--surface2);
+      cursor: pointer; font: 500 11px var(--font-ui); color: var(--text);
+      max-width: 240px;
+    }
+    .apps-session-chip:hover { border-color: var(--accent, var(--blue)); }
+    .apps-session-chip.active {
+      background: color-mix(in srgb, var(--accent, var(--blue)) 18%, var(--surface0));
+      border-color: var(--accent, var(--blue));
+    }
+    .apps-session-chip .chip-app {
+      max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .apps-session-chip .chip-status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green, #98c379);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--green, #98c379) 70%, transparent);
+      animation: appsPulse 1.4s ease-out infinite;
+    }
+    .apps-session-chip.done .chip-status-dot {
+      background: var(--subtext0); animation: none;
+    }
+    .apps-session-chip.error .chip-status-dot {
+      background: var(--red, #e06c75); animation: none;
+    }
+    .apps-session-chip .chip-close {
+      background: transparent; border: none; color: var(--subtext0);
+      cursor: pointer; padding: 0 2px; font-size: 13px; line-height: 1;
+    }
+    .apps-session-chip .chip-close:hover { color: var(--red, #e06c75); }
+
+    /* Multi-session viewport grid: tiles of live screenshots, one per
+       registered session. Auto-laid-out 1/2/3 columns based on count. */
+    .apps-viewport-grid {
+      display: grid; gap: 8px; padding: 8px;
+      width: 100%; height: 100%; box-sizing: border-box;
+      background: var(--mantle, var(--surface0));
+      overflow: auto;
+    }
+    .apps-viewport-grid[data-count="1"] { grid-template-columns: 1fr; }
+    .apps-viewport-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
+    .apps-viewport-grid[data-count="3"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .apps-viewport-grid[data-count="3"] > .apps-viewport-tile:first-child { grid-column: 1 / 3; }
+    .apps-viewport-grid[data-count="4"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .apps-viewport-grid[data-count="5"], .apps-viewport-grid[data-count="6"] { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .apps-viewport-tile {
+      position: relative;
+      background: var(--surface0); border: 1px solid var(--surface2); border-radius: 6px;
+      cursor: pointer; overflow: hidden;
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .apps-viewport-tile:hover { border-color: var(--accent, var(--blue)); }
+    .apps-viewport-tile.active {
+      border-color: var(--accent, var(--blue));
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, var(--blue)) 35%, transparent);
+    }
+    .apps-viewport-tile-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 8px; font: 600 11px var(--font-ui); color: var(--subtext1);
+      border-bottom: 1px solid var(--surface2); background: var(--mantle, var(--surface0));
+      flex: 0 0 auto;
+    }
+    .apps-viewport-tile-head .tile-status {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green, #98c379);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--green, #98c379) 70%, transparent);
+      animation: appsPulse 1.4s ease-out infinite;
+      flex: 0 0 auto;
+    }
+    .apps-viewport-tile.done .tile-status { background: var(--subtext0); animation: none; }
+    .apps-viewport-tile.error .tile-status { background: var(--red, #e06c75); animation: none; }
+    .apps-viewport-tile-head .tile-label {
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .apps-viewport-tile-img-wrap {
+      flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+      background: #000; overflow: hidden;
+    }
+    .apps-viewport-tile-img-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .apps-viewport-tile-img-wrap .tile-empty {
+      color: var(--subtext0); font: 500 11px var(--font-ui);
+    }
+
+    /* Tab-button dot: lit when at least one apps-agent session is running. */
+    .tab-btn .tab-running-dot {
+      display: none;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green, #98c379);
+      margin-left: 6px; vertical-align: middle;
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--green, #98c379) 70%, transparent);
+      animation: appsPulse 1.4s ease-out infinite;
+    }
+    .tab-btn.has-running .tab-running-dot { display: inline-block; }
     .apps-banner {
       background: color-mix(in srgb, var(--red, #e06c75) 22%, var(--surface0));
       color: var(--red, #e06c75); border-bottom: 1px solid var(--red, #e06c75);
@@ -4884,7 +4988,7 @@
           <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')">Orchestrator</button>
           <button class="tab-btn" data-tab="automation" id="automationTabBtn" onclick="switchTab('automation')">Automation</button>
           <button class="tab-btn" data-tab="browser" id="browserTabBtn" onclick="switchTab('browser')" style="display:none;">Browser</button>
-          <button class="tab-btn" data-tab="apps" id="appsTabBtn" onclick="switchTab('apps')" style="display:none;">Apps</button>
+          <button class="tab-btn" data-tab="apps" id="appsTabBtn" onclick="switchTab('apps')" style="display:none;">Apps<span class="tab-running-dot" title="An apps-agent session is running"></span></button>
           <button class="tab-btn" data-tab="backlog" data-plugin-id="azure-devops" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
           <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
           <button class="tab-btn closable" data-tab="recipe-editor" id="recipeEditorTabBtn" onclick="switchTab('recipe-editor')" style="display:none;"><span>Recipe Editor</span><span class="tab-close" onclick="event.stopPropagation();closeRecipeEditor();" title="Close">&times;</span></button>
@@ -5381,6 +5485,13 @@
           <button class="sy-btn sy-btn-ghost" type="button" onclick="appsReset()" title="Clear session, plan, and activity">Reset</button>
         </div>
 
+        <!-- Session strip: shows all running/recent apps-agent sessions so the
+             user can monitor parallel runs (stealth makes this useful). Click
+             a chip to make that session the active one displayed in the
+             viewport + log below. Hidden by default until at least one
+             session exists. -->
+        <div class="apps-sessions-strip" id="appsSessionsStrip" hidden></div>
+
         <div class="apps-launcher" id="appsLauncher" hidden>
           <div class="apps-launcher-head">
             <input type="search" class="apps-launcher-search" id="appsLauncherSearch" placeholder="Search apps..." oninput="appsRenderLauncher()">
@@ -5406,7 +5517,13 @@
               <div class="apps-viewport-empty" id="appsViewportEmpty">
                 Pick a window to start.
               </div>
+              <!-- Single-session view: one big screenshot. Used when only one
+                   session is registered. Hidden when grid is active. -->
               <img id="appsViewportImg" alt="target window" style="display:none;">
+              <!-- Multi-session grid: one tile per registered session, each
+                   showing that session's most recent screenshot. Click a
+                   tile to promote it to the active (single) view. -->
+              <div id="appsViewportGrid" class="apps-viewport-grid" hidden></div>
             </div>
           </div>
           <div class="apps-bottom">
@@ -17549,8 +17666,229 @@ function _appsShowClickDot(at, rect) {
 
 var _appsLastRect = null;
 
+// Multi-session tracker: stealth automation makes parallel runs viable, so
+// the Apps tab can no longer assume a single session. Each session id seen
+// on a WS frame gets its own bookkeeping entry; the user clicks chips in
+// the strip to switch which session is "active" (the one whose viewport +
+// log is shown below). The existing single-session UI plumbing is left
+// intact — it just renders whichever session is currently active.
+var _appsSessions = new Map(); // sessionId -> { id, app, title, hwnd, status, lastActionAt, lastSummary }
+var _appsActiveSessionId = null;
+
+function _appsRegisterSession(msg) {
+  if (!msg || !msg.sessionId) return null;
+  const id = msg.sessionId;
+  let s = _appsSessions.get(id);
+  if (!s) {
+    s = {
+      id,
+      app: msg.app || _appsState.app || null,
+      title: msg.title || _appsState.title || null,
+      hwnd: msg.hwnd || _appsState.hwnd || null,
+      status: 'running',
+      startedAt: Date.now(),
+      lastActionAt: Date.now(),
+      lastSummary: null,
+    };
+    _appsSessions.set(id, s);
+    if (!_appsActiveSessionId) _appsActiveSessionId = id;
+    _appsRenderSessionStrip();
+    _appsUpdateTabRunningDot();
+  }
+  // Some events carry a fresher app/title (esp. early in the session).
+  if (msg.app && !s.app) s.app = msg.app;
+  if (msg.title && !s.title) s.title = msg.title;
+  s.lastActionAt = Date.now();
+  return s;
+}
+
+function _appsMarkSessionStatus(sessionId, status, summary) {
+  const s = _appsSessions.get(sessionId);
+  if (!s) return;
+  s.status = status;
+  if (summary) s.lastSummary = summary;
+  s.endedAt = Date.now();
+  _appsRenderSessionStrip();
+  _appsUpdateTabRunningDot();
+}
+
+function _appsSwitchActiveSession(sessionId) {
+  if (!_appsSessions.has(sessionId)) return;
+  _appsActiveSessionId = sessionId;
+  const s = _appsSessions.get(sessionId);
+  // Repoint the singleton _appsState to this session so the existing log /
+  // viewport / running chrome track the newly-active session. We do NOT
+  // replay history; the user gets a fresh view from this point forward.
+  _appsState.sessionId = sessionId;
+  _appsState.hwnd = s.hwnd || null;
+  _appsState.title = s.title || null;
+  _appsState.app = s.app || null;
+  _appsState.running = (s.status === 'running');
+  // If we drop to a single-session view, switch the viewport back to the
+  // big single image and seed it with this session's last screenshot.
+  if (_appsSessions.size <= 1) {
+    const grid = document.getElementById('appsViewportGrid');
+    const singleImg = document.getElementById('appsViewportImg');
+    const empty = document.getElementById('appsViewportEmpty');
+    if (grid) { grid.hidden = true; grid.innerHTML = ''; }
+    if (singleImg && s.lastScreenshot) { singleImg.src = s.lastScreenshot; singleImg.style.display = ''; if (empty) empty.style.display = 'none'; }
+  }
+  _appsRenderSessionStrip();
+  if (typeof _appsUpdateRunningChrome === 'function') _appsUpdateRunningChrome(_appsState.running);
+  // Clear the log since it was full of the previous session's events.
+  const list = document.getElementById('appsLogList');
+  if (list) list.innerHTML = '';
+  _appsAppendLog({ kind: 'info', text: 'Switched to session ' + sessionId + ' (' + (s.app || s.title || '?') + ')', klass: 'memory' });
+}
+
+function _appsCloseSession(sessionId) {
+  _appsSessions.delete(sessionId);
+  if (_appsActiveSessionId === sessionId) {
+    // Pick another session if any exist, else clear.
+    const next = _appsSessions.keys().next();
+    _appsActiveSessionId = next.done ? null : next.value;
+    if (_appsActiveSessionId) _appsSwitchActiveSession(_appsActiveSessionId);
+    else {
+      _appsState.sessionId = null;
+      const list = document.getElementById('appsLogList');
+      if (list) list.innerHTML = '';
+    }
+  }
+  _appsRenderSessionStrip();
+  _appsUpdateTabRunningDot();
+}
+
+function _appsRenderSessionStrip() {
+  const strip = document.getElementById('appsSessionsStrip');
+  if (!strip) return;
+  if (_appsSessions.size === 0) { strip.hidden = true; strip.innerHTML = ''; _appsRenderViewportGrid(); return; }
+  strip.hidden = false;
+  const sessions = Array.from(_appsSessions.values()).sort((a, b) => a.startedAt - b.startedAt);
+  strip.innerHTML = sessions.map(s => {
+    const cls = ['apps-session-chip'];
+    if (s.id === _appsActiveSessionId) cls.push('active');
+    if (s.status === 'done') cls.push('done');
+    if (s.status === 'error' || s.status === 'panic' || s.status === 'stopped') cls.push('error');
+    const label = _appsEscape(s.app || s.title || s.id.slice(0, 16));
+    return (
+      '<div class="' + cls.join(' ') + '" data-sid="' + _appsEscape(s.id) + '" title="' + _appsEscape(s.id) + ' — ' + (s.status || 'running') + '">'
+        + '<span class="chip-status-dot"></span>'
+        + '<span class="chip-app">' + label + '</span>'
+        + '<button class="chip-close" type="button" title="Remove from list">&times;</button>'
+      + '</div>'
+    );
+  }).join('');
+  // Wire click handlers (delegation kept simple).
+  strip.querySelectorAll('.apps-session-chip').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      if (e.target.classList.contains('chip-close')) {
+        e.stopPropagation();
+        _appsCloseSession(chip.dataset.sid);
+        return;
+      }
+      _appsSwitchActiveSession(chip.dataset.sid);
+    });
+  });
+  _appsRenderViewportGrid();
+}
+
+// Render the multi-session viewport grid. Tiles show each session's most
+// recent screenshot, status-coded border, click-to-activate. The grid is
+// shown when 2+ sessions are tracked; with 1 session we keep the single
+// big-image view (less visual noise for the common case).
+function _appsRenderViewportGrid() {
+  const grid = document.getElementById('appsViewportGrid');
+  const singleImg = document.getElementById('appsViewportImg');
+  const empty = document.getElementById('appsViewportEmpty');
+  if (!grid) return;
+  const sessions = Array.from(_appsSessions.values()).sort((a, b) => a.startedAt - b.startedAt);
+  if (sessions.length < 2) {
+    grid.hidden = true; grid.innerHTML = '';
+    grid.removeAttribute('data-count');
+    return;
+  }
+  // Multi-session mode: hide the single-image view, show grid.
+  grid.hidden = false;
+  if (singleImg) singleImg.style.display = 'none';
+  if (empty) empty.style.display = 'none';
+  grid.setAttribute('data-count', String(Math.min(sessions.length, 6)));
+  grid.innerHTML = sessions.map(s => {
+    const cls = ['apps-viewport-tile'];
+    if (s.id === _appsActiveSessionId) cls.push('active');
+    if (s.status === 'done') cls.push('done');
+    if (s.status === 'error' || s.status === 'panic' || s.status === 'stopped') cls.push('error');
+    const label = _appsEscape(s.app || s.title || s.id.slice(0, 12));
+    const img = s.lastScreenshot
+      ? '<img src="' + s.lastScreenshot + '" alt="' + label + '">'
+      : '<span class="tile-empty">No screenshot yet</span>';
+    return (
+      '<div class="' + cls.join(' ') + '" data-sid="' + _appsEscape(s.id) + '">'
+        + '<div class="apps-viewport-tile-head">'
+          + '<span class="tile-status"></span>'
+          + '<span class="tile-label">' + label + '</span>'
+          + '<span style="font:10px var(--font-mono);color:var(--subtext0);">' + (s.status || 'running') + '</span>'
+        + '</div>'
+        + '<div class="apps-viewport-tile-img-wrap">' + img + '</div>'
+      + '</div>'
+    );
+  }).join('');
+  grid.querySelectorAll('.apps-viewport-tile').forEach(tile => {
+    tile.addEventListener('click', () => _appsSwitchActiveSession(tile.dataset.sid));
+  });
+}
+
+function _appsUpdateTabRunningDot() {
+  const btn = document.getElementById('appsTabBtn');
+  if (!btn) return;
+  const anyRunning = Array.from(_appsSessions.values()).some(s => s.status === 'running');
+  btn.classList.toggle('has-running', anyRunning);
+}
+
 function handleAppsAgentStep(msg) {
   if (!msg) return;
+  // First: register / update the per-session tracker on every event that
+  // carries a sessionId. This is what powers the strip + tab dot.
+  if (msg.sessionId) _appsRegisterSession(msg);
+  // Only render into the visible UI for events belonging to the active
+  // session. Background sessions still affect the strip + dot but don't
+  // flood the active log.
+  if (msg.sessionId && _appsActiveSessionId && msg.sessionId !== _appsActiveSessionId) {
+    // Still need to track terminal states so the chip flips color.
+    if (msg.kind === 'done') _appsMarkSessionStatus(msg.sessionId, 'done', msg.summary || null);
+    else if (msg.kind === 'stopped') _appsMarkSessionStatus(msg.sessionId, 'stopped');
+    else if (msg.kind === 'error') _appsMarkSessionStatus(msg.sessionId, 'error', msg.message || null);
+    else if (msg.kind === 'panic') _appsMarkSessionStatus(msg.sessionId, 'panic');
+    // Bell notification fires regardless of which session was active.
+    if ((msg.kind === 'done' || msg.kind === 'error') && typeof notify === 'function') {
+      const s = _appsSessions.get(msg.sessionId) || {};
+      const appLabel = s.app || s.title || msg.sessionId;
+      const sev = msg.kind === 'error' ? 'error' : 'info';
+      notify('Apps: ' + appLabel + ' ' + msg.kind, String(msg.summary || msg.message || '').slice(0, 240), { source: 'apps-agent', icon: 'monitor', severity: sev });
+    }
+    return;
+  }
+  // For ANY session (active or background), capture screenshot frames
+  // into the per-session record so the multi-session grid stays live.
+  // The active session also goes through the existing single-img viewport
+  // path below.
+  if (msg.kind === 'screenshot' && msg.sessionId && msg.base64) {
+    const s = _appsSessions.get(msg.sessionId);
+    if (s) {
+      s.lastScreenshot = 'data:' + (msg.mimeType || 'image/jpeg') + ';base64,' + msg.base64;
+      // Cheap re-render: rather than touching the whole grid, update just
+      // this tile's <img>. Falls back to full re-render if the tile
+      // doesn't exist yet (first frame for a brand-new session).
+      const tile = document.querySelector('.apps-viewport-tile[data-sid="' + CSS.escape(msg.sessionId) + '"]');
+      if (tile) {
+        const wrap = tile.querySelector('.apps-viewport-tile-img-wrap');
+        if (wrap) {
+          wrap.innerHTML = '<img src="' + s.lastScreenshot + '" alt="">';
+        }
+      } else {
+        _appsRenderViewportGrid();
+      }
+    }
+  }
   const kind = msg.kind;
   if (kind === 'token') {
     // Stream text into the current rationale entry.
@@ -17731,6 +18069,7 @@ function handleAppsAgentStep(msg) {
   if (kind === 'done') {
     _appsAppendLog({ kind: 'done', text: (msg.summary || 'Done.') + '  (type a follow-up below to continue)', klass: 'done' });
     _appsState.running = false;
+    if (msg.sessionId) _appsMarkSessionStatus(msg.sessionId, 'done', msg.summary || null);
     // Keep sessionId so the user can chain a follow-up task. The Start button
     // will route to /api/apps/session/continue instead of starting fresh.
     _appsUpdateRunningChrome(false);
@@ -17742,11 +18081,20 @@ function handleAppsAgentStep(msg) {
       const summary = String(msg.summary || 'Automation completed.').replace(/\s+/g, ' ').slice(0, 200);
       toast(`Apps${app ? ': ' + app : ''} - ${summary}`, 'success', { duration: 5000 });
     }
+    // Persistent bell-panel notification so completed runs survive even
+    // after the toast fades. This is what the user asked for explicitly:
+    // "we also need a notification (in the notification bell)".
+    if (typeof notify === 'function') {
+      const app = (_appsState.app || msg.app || '').trim();
+      const summary = String(msg.summary || 'Automation completed.').replace(/\s+/g, ' ').slice(0, 240);
+      notify('Apps' + (app ? ': ' + app : '') + ' done', summary, { source: 'apps-agent', icon: 'monitor', severity: 'info' });
+    }
     return;
   }
   if (kind === 'stopped') {
     _appsAppendLog({ kind: 'stopped', text: 'Stopped.', klass: 'done' });
     _appsState.running = false;
+    if (msg.sessionId) _appsMarkSessionStatus(msg.sessionId, 'stopped');
     _appsState.sessionId = null;
     _appsUpdateRunningChrome(false);
     _appsUpdateStartButtonForFollowUp(false);
@@ -17755,6 +18103,7 @@ function handleAppsAgentStep(msg) {
   if (kind === 'panic') {
     _appsAppendLog({ kind: 'panic', text: 'Panic stop.', klass: 'error' });
     _appsState.running = false;
+    if (msg.sessionId) _appsMarkSessionStatus(msg.sessionId, 'panic');
     _appsState.sessionId = null;
     _appsUpdateRunningChrome(false);
     _appsUpdateStartButtonForFollowUp(false);
@@ -17763,8 +18112,13 @@ function handleAppsAgentStep(msg) {
   if (kind === 'error') {
     _appsAppendLog({ kind: 'error', text: msg.message || 'error', klass: 'error' });
     _appsState.running = false;
+    if (msg.sessionId) _appsMarkSessionStatus(msg.sessionId, 'error', msg.message || null);
     _appsState.sessionId = null;
     _appsUpdateRunningChrome(false);
+    if (typeof notify === 'function') {
+      const app = (_appsState.app || msg.app || '').trim();
+      notify('Apps' + (app ? ': ' + app : '') + ' error', String(msg.message || 'error').slice(0, 240), { source: 'apps-agent', icon: 'monitor', severity: 'error' });
+    }
     return;
   }
 }
