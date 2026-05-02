@@ -65,7 +65,15 @@
   function onActivate() {
     state.tabActive = true;
     refreshStatus();
-    loadGraph().then(render);
+    // If a search was active when the user navigated away, replay it after
+    // the graph reloads. onDeactivate() drops state.matches to free memory
+    // but keeps state.search so the input box (and the user's intent)
+    // survives the trip. applySearch() recomputes matches + repaints in
+    // one shot for whichever view they came back to.
+    loadGraph().then(() => {
+      if (state.search) applySearch(state.search);
+      else render();
+    });
     if (!state.ws) connectWS();
     bindSearchInput();
     updateSearchOnlyBtn();
