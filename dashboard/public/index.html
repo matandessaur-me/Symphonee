@@ -24349,6 +24349,36 @@ window.addEventListener('focus', () => {
   }
 });
 
+// ── Force whole-document repaint on focus / visibility return ───────────
+// User-reported bug: alt-tab back into Symphonee and EVERYTHING outside
+// the actively-animating regions (terminal canvas / 3D canvas) stays as
+// the stale pre-blur compositor layer. The user sees a black UI around
+// the terminal and clicking anywhere fixes it because any DOM event
+// invalidates the layers as a side effect.
+//
+// webContents.invalidate() in Electron main isn't enough on its own —
+// some Windows compositor configs keep presenting the cached tiles
+// regardless. The reliable fix is to toggle a CSS property on the
+// document root that forces Chromium to re-rasterize every layer.
+//
+// `transform: translateZ(0)` is a no-op visually but it promotes the
+// element into its own composited layer, which forces the GPU to
+// re-rasterize it. Toggling it for one frame and removing it sidesteps
+// any layout/paint cost — the layer just gets repainted clean.
+function forceFullRepaint() {
+  try {
+    const el = document.documentElement;
+    el.style.transform = 'translateZ(0)';
+    requestAnimationFrame(() => {
+      try { el.style.transform = ''; } catch (_) {}
+    });
+  } catch (_) {}
+}
+window.addEventListener('focus', forceFullRepaint);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') forceFullRepaint();
+});
+
 // ── Close modals on overlay click ───────────────────────────────────────
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', (e) => {
