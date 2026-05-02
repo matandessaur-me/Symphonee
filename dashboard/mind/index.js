@@ -1382,7 +1382,7 @@ function mountMind(addRoute, json, ctx) {
         queryUrl: '/api/mind/query',
         wakeupUrl: '/api/mind/wakeup',
         message: stats
-          ? 'A shared knowledge graph exists for this space. Call POST /api/mind/query before answering questions about this codebase, notes, or prior decisions. Save new findings via POST /api/mind/save-result.'
+          ? 'A shared knowledge graph exists for this space. For questions about CODE STRUCTURE call POST /api/mind/query. For questions about PRIOR WORK / PAST DECISIONS / WHAT DID WE FIGURE OUT call POST /api/mind/recall (returns memory cards + conversations ranked by topic + recency). When the user TEACHES you something durable ("remember:", "we decided", "always X", "never Y", "X has different Y", "prefer X", "watch out for"), call POST /api/mind/teach BEFORE answering — that is how the AI gets smarter across sessions. Save findings from regular Q&A via POST /api/mind/save-result, which also auto-extracts memory cards from teaching language in your answer.'
           : 'Mind graph is empty for this space. Run POST /api/mind/build to populate it.',
       };
     },

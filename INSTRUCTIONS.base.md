@@ -51,9 +51,19 @@ Know `permissions.settings.mode` (`review`, `edit`, `trusted`, or `bypass`). Bef
 
 `learnings` is the accumulated list of mistakes past sessions made. Do NOT repeat any of them. If you are about to do something similar, check the list first.
 
-### Phase 6.5 - Consult Mind (shared knowledge graph)
+### Phase 6.5 - Consult Mind (shared knowledge graph + memory)
 
-If `bootstrap.mind.enabled` is true, the brain is populated. Before answering questions about the codebase, prior decisions, learnings, or "what does X do?" type questions, call `POST /api/mind/query` with the user's question. The brain returns a BFS sub-graph the engine considers most relevant - use it as ground truth instead of guessing or re-reading raw files. After you answer, save findings back via `POST /api/mind/save-result` with `{question, answer, citedNodeIds, createdBy}`. Whatever you figure out becomes available to every other CLI in the next session.
+If `bootstrap.mind.enabled` is true, the brain is populated. Three different consultation modes — pick by the SHAPE of the user's question:
+
+- **Code structure** ("what does X call?", "what depends on Y?", "where is Z defined?") → `POST /api/mind/query` with the user's question. Returns a BFS sub-graph. Code-only queries auto-suppress brand/taxonomy edges so the answer stays light.
+
+- **Prior work / past decisions** ("what did we figure out about X?", "didn't we work on Y?", "what worked for Z?", "what do I know about W?") → `POST /api/mind/recall { question, since?, until?, repo? }` BEFORE answering. Returns a ranked list of memory cards + conversations + drawer turns from the time window. `since` accepts ISO dates OR natural language ("10 days ago", "last week", "yesterday"). Memory cards are the highest-priority hits because they are durable distilled facts.
+
+- **The user is teaching you something** (they say "remember:", "from now on", "always X", "never Y", "we decided", "X has different Y", "prefer X over Y", "watch out for", "the rule is", "the pattern is", or correct your earlier behaviour) → `POST /api/mind/teach { title, body, kindOfMemory, tags, scope?, createdBy }` BEFORE answering. The card lands in long-term memory and surfaces in the next wake-up. This is how the AI gets smarter across sessions. Do NOT rely on the user to remember to teach you — when YOU hear the signal, YOU make the call.
+
+After you answer a regular Q&A, save findings via `POST /api/mind/save-result` with `{question, answer, citedNodeIds, createdBy}`. Save-result auto-extracts memory cards from teaching language in your answer, so an answer that says "remember:..." or "we decided..." automatically lands the card without a separate `/teach` call.
+
+Whatever you figure out becomes available to every other CLI in the next session.
 
 ### Phase 7 - Respond
 
@@ -66,7 +76,7 @@ Only now answer the user. Prefer scripts (`./scripts/*.ps1` and `./scripts/*.js`
 - [ ] I can state `activeRepo`, `activeRepoPath`, and the current permission mode.
 - [ ] I checked the plugin keywords against the active repo and the user's task.
 - [ ] I scanned the learnings for anything relevant to the task.
-- [ ] I checked `bootstrap.mind.enabled` and queried the brain if it is populated.
+- [ ] I checked `bootstrap.mind.enabled` and consulted the brain by the right surface: `query` for code structure, `recall` for prior work / past decisions, `teach` when the user is teaching me something durable.
 
 If any box is unchecked: stop and finish Phases 1-6.5 before replying.
 
@@ -188,6 +198,80 @@ curl -s -X POST http://127.0.0.1:3800/api/mind/save-result \
 
 Adds your answer as a `conversation` node with `derived_from` edges to the cited nodes. The brain literally gets smarter every time it is used. **Orchestrator-dispatched worker tasks save automatically** - the orchestrator hooks `_broadcastTaskUpdate` to write a `task_<id>` node tagged with the CLI on every completion. So if you dispatched the work, the conversation lands in Mind without you doing anything. If YOU answered the user directly, save it explicitly.
 
+**Save-result auto-extracts memory cards.** When you save an answer that contains explicit teaching language ("remember:", "we decided", "the rule is", "prefer X", "watch out for", "the pattern is"), Mind automatically distils each into a `kind:memory` node — see "Memory cards" below. You don't need to call `/api/mind/teach` for these; just write naturally and the extractor catches them.
+
+### Memory cards: durable knowledge across sessions
+
+Memory cards are the user's **personal work-memory**. They are short, durable facts that survive across sessions: a constraint ("DYOB doesn't follow the Bath Fitter brand"), a decision ("we use Postgres for the listing manager"), a preference ("prefer pulldown nav for Playdate games"), a gotcha ("Greenhouse API rate-limits at 100 req/min"), a pattern, a lesson. Distinct from conversations (transcripts) — a card IS the takeaway.
+
+Cards surface automatically in the L1 wake-up for the active repo, AND they're searchable by topic + date through `/api/mind/recall`. So when the user comes back after two weeks and asks "what do I know about DYOB design?", the answer is right there.
+
+**Two ways memory cards land in Mind:**
+
+1. **Auto-extracted** from `/api/mind/save-result` when the answer text contains explicit teaching language. You get this for free when you save your answers.
+
+2. **Explicitly taught** via `POST /api/mind/teach` when the user instructs you to remember something the auto-extractor would miss.
+
+**When to call `/api/mind/teach` (be proactive — the user expects this):**
+
+The trigger is the user telling you something they want you to know going forward. Listen for these signals in their message and call `/api/mind/teach` BEFORE answering:
+
+- "remember (this|that)" / "note (this|that)"
+- "from now on", "going forward", "always", "never"
+- "X has different Y than Z", "X doesn't follow Y" (constraint)
+- "we use|chose|picked|decided X" (decision)
+- "prefer X over Y" (preference)
+- "watch out for X", "be careful with X" (gotcha)
+- "the rule is", "the convention is", "the pattern is"
+- "for X projects, do Y" (pattern)
+- explicit corrections to your earlier behaviour ("no, don't do that — instead, do this")
+
+When you teach, capture the verbatim or near-verbatim fact as `body`, a short imperative as `title`, choose `kindOfMemory` (decision / preference / constraint / lesson / gotcha / pattern / fact), and tag with the relevant brands and projects.
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/mind/teach \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title":        "DYOB doesn't follow Bath Fitter brand",
+    "body":         "DYOB has its own design system - different colours and typography. Do not apply Bath Fitter brand assumptions when working on DYOB code.",
+    "kindOfMemory": "constraint",
+    "tags":         ["DYOB", "Bath Fitter", "design", "brand"],
+    "scope":        { "repo": "DYOB3" },
+    "createdBy":    "<your CLI>"
+  }'
+```
+
+Returns `{ ok, nodeId, node, edges }`. Edges are auto-derived: `derived_from` to source if you supply `source.ref`, `mentions` to entity hubs for tags matching known entities (e.g. tag "DYOB" → `entity_dyob`), `in_repo` to the cwd_<slug> for `scope.repo`.
+
+**When to call `/api/mind/recall` (be proactive — call BEFORE answering, not after):**
+
+The trigger is the user asking about prior work, past decisions, or what was figured out before. Listen for:
+
+- "what did we (figure out|decide|do) about X"
+- "didn't we ... ?", "remember when we ... ?"
+- "what did I ask N (days|weeks|months) ago about X"
+- "have we worked on X before"
+- "what do I know about X"
+- "what worked|didn't work for X"
+- a bare topic where context implies "remind me what we know"
+
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/mind/recall \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "DYOB design",
+    "since":    "last month",
+    "repo":     "DYOB3",
+    "limit":    10
+  }'
+```
+
+`since` and `until` accept ISO timestamps OR natural strings: `"yesterday"`, `"last week"`, `"last month"`, `"<N> days|weeks|months|years|hours ago"`. `repo` scopes to memory and conversation nodes tied to that repo. `kinds` defaults to `["memory", "conversation", "drawer"]` in that priority order — graph topology kinds (code, doc, plugin, ...) are excluded because recall is about retrieval of memory, not graph traversal.
+
+Returns `{ hits: [{ id, kind, label, kindOfMemory, createdAt, ageDays, score, snippet, tags }, ...], total, since, until, repo, question }`. Cite memory IDs in your answer just like graph node IDs, and `/api/mind/save-result` will save the conversation as a `derived_from` link back to those cards.
+
+**Use `/api/mind/recall` instead of `/api/mind/query` when the question is about MEMORY** ("what did I tell you", "what did we decide", "have we done X before"). Use `/api/mind/query` when the question is about the CODE GRAPH ("what does function X call", "what depends on file Y"). Both are cheap; if in doubt about a question that mixes both, call recall first because memory cards short-circuit the answer when they exist.
+
 ### Building, watching, and ingesting
 
 Mind always ingests every repo Symphonee knows about (each `cfg.Repos` entry), tagging each node with `cwd:<repoName>`. Cross-project knowledge accumulates by default - a question about repo A can surface relevant code from repo B.
@@ -207,7 +291,9 @@ Mind always ingests every repo Symphonee knows about (each `cfg.Repos` entry), t
 - `GET /api/mind/gods` / `GET /api/mind/surprises` / `GET /api/mind/jobs?id=`.
 - `GET /api/mind/instructions` (this section, full version).
 - `GET /api/mind/watch`.
-- `GET /api/mind/wakeup?budget=600&question=...` — layered L0+L1 wake-up text. With `question`, L1 is the BFS sub-graph for that task (task-aware). Without, L1 is god nodes + recent conversations (generic).
+- `GET /api/mind/wakeup?budget=600&question=...` — layered L0+L1 wake-up text. With `question`, L1 is the BFS sub-graph for that task (task-aware). Without, L1 leads with the user's relevant memory cards for the active repo, then god nodes, then recent conversations.
+- `POST /api/mind/teach` — write a memory card directly. Use when the user teaches you something the save-result auto-extractor would miss. Schema in "Memory cards" above.
+- `POST /api/mind/recall` — time-ranged + topic-filtered retrieval over memory cards, conversations, and drawers. Use BEFORE answering when the user asks about prior work / past decisions / earlier conversations. Schema in "Memory cards" above.
 - `POST /api/mind/suggest-cli {"question":"..."}` — advisory CLI ranking for a task, based on which CLI has previously completed similar work successfully. Multi-CLI by design: every supported CLI (claude, codex, gemini, grok, qwen, copilot) can appear. If a CLI has no prior similar work, it's absent from the ranking — that's not a vote against it. Use as a tie-breaker, not a hard router; the model-router script remains authoritative for intent-based picks.
 
 ### Code-understanding endpoints (Phase 2-5 - SocratiCode-inspired)
@@ -266,7 +352,7 @@ Every prompt the orchestrator dispatches to a worker is automatically prefixed w
 
 ### Node kinds
 
-`note`, `code`, `doc`, `paper`, `image`, `workitem`, `recipe`, `conversation` (what a CLI saved back via `/api/mind/save-result`), `plugin`, `concept`, `tag`, `drawer` (verbatim user/assistant turn — never paraphrase, the node text IS the source of truth).
+`note`, `code`, `doc`, `paper`, `image`, `workitem`, `recipe`, `conversation` (what a CLI saved back via `/api/mind/save-result`), `plugin`, `concept`, `tag`, `drawer` (verbatim user/assistant turn — never paraphrase, the node text IS the source of truth), `memory` (durable knowledge taught via `/api/mind/teach` or auto-extracted from save-result — survives across sessions, surfaces first in wake-up), `entity` (canonical brand/product/project hub auto-detected from plugins, repo n-grams, and parent-dir groupings), `repo` (first-class repository hub, one per `cwd_*` tag), `artifact` (declared non-code context from `.symphonee/context-artifacts.json`).
 
 The `cli-drawers` build source produces drawer nodes from supported CLI session logs (Claude Code, Codex, Qwen, Grok, Copilot). Each drawer is one user or assistant turn with deterministic ID `drawer_<cli>_<sessionId>_<msgIdx>` and a `derived_from` edge back to its parent session node. Sweeper-pattern: idempotent on its own writes, resume-safe on crash, mtime-gated on incremental builds.
 
