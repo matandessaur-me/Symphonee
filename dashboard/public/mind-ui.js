@@ -1758,8 +1758,11 @@
           <div class="mind-spinner"></div>
           <div class="mind-loader-text">Preparing graph...</div>
         </div>
-        <div id="mindMapGate" style="position:absolute;inset:0;display:grid;place-items:center;background:var(--mantle);padding:24px;box-sizing:border-box;">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:18px;max-width:760px;width:100%;text-align:center;margin:auto;">
+        <div id="mindMapGate" style="position:absolute;inset:0;background:var(--mantle);box-sizing:border-box;">
+          <!-- Absolute-centered card. transform: translate(-50%, -50%) is the
+               bulletproof centering primitive — neither flex nor grid quirks
+               in the host layout chain can push it off-center. -->
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:18px;width:min(760px, calc(100% - 48px));max-height:calc(100% - 48px);overflow:auto;text-align:center;">
             <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:0.2px;">Mind Map</div>
             <div style="font-size:13px;color:var(--subtext0);line-height:1.55;max-width:520px;">A live force-directed view of every note, repo file, recipe, plugin, and saved AI conversation in your brain. Click a node to inspect, drag to pan, scroll to zoom.</div>
             <button type="button" id="mindMapGateBtn" onclick="MindUI.loadMindmap()" style="background:transparent;border:1.5px solid var(--accent);border-radius:8px;color:var(--accent);cursor:pointer;font-size:14px;font-weight:700;padding:12px 26px;letter-spacing:0.3px;transition:background 0.15s, color 0.15s;" onmouseover="this.style.background='var(--accent)';this.style.color='var(--mantle)';" onmouseout="this.style.background='transparent';this.style.color='var(--accent)';">Enter Mind Map</button>
