@@ -3170,6 +3170,23 @@
       .sort((a, b) => b[1] - a[1]);
 
     const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    // The marquee needs duplicated content so the loop is seamless. Each
+    // pass we render the pill list TWICE side-by-side and animate the
+    // outer track by -50% over a duration proportional to the pill count.
+    const renderPill = ([kind, count]) => {
+      const label = KIND_LABEL[kind] || kind;
+      const color = KIND_COLOR[kind] || '#cdd6f4';
+      return `<div class="mind-gate-pill" style="display:inline-flex;align-items:center;gap:8px;flex-shrink:0;background:var(--surface1);border:1px solid var(--surface2);border-radius:999px;padding:6px 14px;font-size:11px;color:var(--text);white-space:nowrap;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>
+        <span style="font-weight:500;">${label}</span>
+        <span style="color:var(--subtext0);font-variant-numeric:tabular-nums;">${fmt(count)}</span>
+      </div>`;
+    };
+    const pills = sortedKinds.map(renderPill).join('');
+    // 8 seconds per ~6 pills, scaled. Cap so very long lists still cycle in
+    // a reasonable time.
+    const animSeconds = Math.max(20, Math.min(60, sortedKinds.length * 3));
+
     stats.style.display = 'block';
     stats.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
@@ -3181,21 +3198,23 @@
         `).join('')}
       </div>
       ${sortedKinds.length ? `
-        <div style="text-align:left;background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:14px 16px;">
-          <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">What's inside</div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px 14px;">
-            ${sortedKinds.map(([kind, count]) => {
-              const label = KIND_LABEL[kind] || kind;
-              const color = KIND_COLOR[kind] || '#cdd6f4';
-              return `<div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text);">
-                <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>
-                <span>${label}</span>
-                <span style="color:var(--subtext0);font-variant-numeric:tabular-nums;">${fmt(count)}</span>
-              </div>`;
-            }).join('')}
+        <div style="text-align:left;background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:14px 0;overflow:hidden;">
+          <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;padding:0 16px;">What's inside</div>
+          <div class="mind-gate-marquee" style="overflow:hidden;mask-image:linear-gradient(90deg,transparent 0,#000 6%,#000 94%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 6%,#000 94%,transparent 100%);">
+            <div class="mind-gate-marquee-track" style="display:inline-flex;gap:10px;padding:2px 0;animation:mind-gate-marquee ${animSeconds}s linear infinite;">
+              ${pills}
+              ${pills}
+            </div>
           </div>
         </div>
       ` : ''}
+      <style>
+        @keyframes mind-gate-marquee {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
+        .mind-gate-marquee:hover .mind-gate-marquee-track { animation-play-state: paused; }
+      </style>
     `;
   }
   function loadMindmap() {
