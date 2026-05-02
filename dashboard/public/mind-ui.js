@@ -2069,8 +2069,16 @@
         .nodeCanvasObjectMode(() => 'replace')
         .nodeCanvasObject((node, ctx, globalScale) => {
           if (typeof node.x !== 'number' || typeof node.y !== 'number') return;
-          // Radius scales with degree like the default did, but computed cheaply.
-          const r = Math.max(1.5, Math.sqrt(node.val || 1) * 2);
+          // Radius scaling: every node clearly visible at any zoom (3px floor),
+          // hubs visibly bigger but not eclipsing the rest. sqrt(degree) gives
+          // a natural distribution where the gap between deg-0 and deg-1 is
+          // already noticeable but deg-50 vs deg-100 isn't dramatic.
+          //   deg 0  -> r = 3     (was 2.45 — fixed: now actually visible)
+          //   deg 1  -> r = 4.5
+          //   deg 5  -> r = 6.4
+          //   deg 20 -> r = 9.7
+          //   deg 50 -> r = 13.6
+          const r = 3 + Math.sqrt(Math.max(0, node.deg || 0)) * 1.5;
           ctx.fillStyle = (highlightNodes.size && node === hoverNode) ? '#f5e0dc' : node.color;
           ctx.beginPath();
           ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
@@ -2085,10 +2093,11 @@
           }
         })
         // Hit-detection paint: separate offscreen pass with a larger radius so
-        // small nodes are still clickable. This is the official pattern.
+        // small nodes are still easy to click. Same formula plus a flat +3px
+        // hit padding so even zero-degree nodes are comfortably clickable.
         .nodePointerAreaPaint((node, color, ctx) => {
           if (typeof node.x !== 'number') return;
-          const r = Math.max(4, Math.sqrt(node.val || 1) * 2 + 2);
+          const r = 3 + Math.sqrt(Math.max(0, node.deg || 0)) * 1.5 + 3;
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
