@@ -253,8 +253,92 @@ async function addMemoryCard({ repoRoot, space, spec }) {
   }
 }
 
+/**
+ * Conservative auto-extractor: scan a chunk of text for explicit memory
+ * signals and return 0-N memory-card specs.
+ *
+ * Designed for HIGH PRECISION over recall. Better to miss a card than
+ * flood the brain with paraphrased noise that drowns out the genuine
+ * facts. Only emits a candidate when the text contains an explicit
+ * teaching signal:
+ *
+ *   - "remember:"      / "remember that"     -> fact / rule
+ *   - "note:"          / "note that"         -> fact
+ *   - "the rule is"    / "rule:"             -> constraint
+ *   - "we decided"     / "decision:"         -> decision
+ *   - "prefer X over Y" / "always use X"     -> preference
+ *   - "never X" with an object               -> constraint
+ *   - "watch out for"  / "gotcha:"           -> gotcha
+ *   - "the pattern is" / "pattern:"          -> pattern
+ *
+ * Each match is scoped to the sentence/clause containing it - we don't
+ * try to summarize, paraphrase, or merge. The card BODY is the verbatim
+ * sentence; the user can always read the source conversation for
+ * context. The TITLE is the body trimmed to 80 chars at a word boundary.
+ *
+ * Returns an array of partial specs ready to feed into addMemoryCard:
+ *   [ { title, body, kindOfMemory }, ... ]
+ *
+ * Tags / scope / source are added by the caller from request context.
+ */
+const EXTRACT_PATTERNS = [
+  // "remember (this|that):" or "remember:" - the most explicit signal
+  { kind: 'fact',       re: /\b(?:please\s+)?remember(?:\s+(?:this|that))?\s*[:,]\s*([^\n.!?]{8,400})[.!?]?/gi },
+  // "note (that):" - similar explicit signal
+  { kind: 'fact',       re: /\bnote(?:\s+that)?\s*[:,]\s*([^\n.!?]{8,400})[.!?]?/gi },
+  // "the rule is X" / "rule: X"
+  { kind: 'constraint', re: /\b(?:the\s+rule\s+is|rule)\s*[:,]?\s*([^\n.!?]{8,400})[.!?]?/gi },
+  // "we decided" / "I decided" / "decision:" - decisions
+  { kind: 'decision',   re: /\b(?:we|I)\s+decided\s+(?:to\s+|that\s+)?([^\n.!?]{8,400})[.!?]?/gi },
+  { kind: 'decision',   re: /\bdecision\s*[:,]\s*([^\n.!?]{8,400})[.!?]?/gi },
+  // "prefer X over Y" / "always use X"
+  { kind: 'preference', re: /\bprefer\s+([^\n.!?]{8,400})[.!?]?/gi },
+  // "watch out for" / "gotcha:"
+  { kind: 'gotcha',     re: /\b(?:watch\s+out\s+for|gotcha)\s*[:,]?\s*([^\n.!?]{8,400})[.!?]?/gi },
+  // "the pattern is" / "pattern:"
+  { kind: 'pattern',    re: /\b(?:the\s+pattern\s+is|pattern)\s*[:,]\s*([^\n.!?]{8,400})[.!?]?/gi },
+];
+
+function _trimToWord(s, max) {
+  if (!s) return '';
+  const trimmed = s.trim();
+  if (trimmed.length <= max) return trimmed;
+  const cut = trimmed.slice(0, max);
+  const lastSp = cut.lastIndexOf(' ');
+  return (lastSp > max - 30) ? cut.slice(0, lastSp) : cut;
+}
+
+function extractMemoriesFromText(text, _opts = {}) {
+  if (typeof text !== 'string' || !text.trim()) return [];
+  const seen = new Set(); // dedup by lowercased body
+  const out = [];
+  for (const pat of EXTRACT_PATTERNS) {
+    pat.re.lastIndex = 0; // global regex - reset between calls
+    let m;
+    while ((m = pat.re.exec(text)) !== null) {
+      const body = (m[1] || '').trim();
+      if (!body) continue;
+      // Drop the obvious noise: a body that's mostly punctuation/whitespace,
+      // or one that's just a stop-word phrase like "this" / "that".
+      if (body.replace(/[\s\W_]+/g, '').length < 6) continue;
+      const dedup = body.toLowerCase().slice(0, 200);
+      if (seen.has(dedup)) continue;
+      seen.add(dedup);
+      const title = _trimToWord(body, 80);
+      out.push({
+        title,
+        body,
+        kindOfMemory: pat.kind,
+      });
+      if (out.length >= 8) return out; // upper bound per call
+    }
+  }
+  return out;
+}
+
 module.exports = {
   ALLOWED_KINDS,
   buildMemoryFragment,
   addMemoryCard,
+  extractMemoriesFromText,
 };

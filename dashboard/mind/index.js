@@ -1030,7 +1030,56 @@ function mountMind(addRoute, json, ctx) {
     }
     persistDerivedGraph(space, g);
     if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'node-added', id, createdBy } });
-    return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length });
+
+    // Auto-extract memory cards from the answer text. Conservative
+    // patterns ("remember:", "we decided", "the rule is", "prefer X",
+    // "watch out for", ...) become first-class kind:memory nodes linked
+    // back to this conversation node. Idempotent via content-hash so
+    // re-saving the same answer doesn't duplicate cards.
+    const memoryModule = require('./memory');
+    const candidates = memoryModule.extractMemoriesFromText(answer);
+    const memoriesCreated = [];
+    if (candidates.length) {
+      // Reload the graph so we see the conversation node we just wrote.
+      const reloaded = store.loadGraph(repoRoot, space) || g;
+      const existingMemoryHashes = new Set();
+      for (const n of reloaded.nodes) {
+        if (n.kind === 'memory' && typeof n.body === 'string') {
+          existingMemoryHashes.add(n.body.toLowerCase().trim().slice(0, 240));
+        }
+      }
+      // Carry forward brand tags from cited entity nodes so a memory
+      // about "DYOB design" auto-tags DYOB even if the answer text
+      // didn't list it.
+      const carryTags = [];
+      for (const cited of citedNodeIds) {
+        const node = reloaded.nodes.find(n => n.id === cited);
+        if (!node) continue;
+        if (node.kind === 'entity' && typeof node.label === 'string') carryTags.push(node.label);
+      }
+      for (const cand of candidates) {
+        const hash = cand.body.toLowerCase().trim().slice(0, 240);
+        if (existingMemoryHashes.has(hash)) continue;
+        existingMemoryHashes.add(hash);
+        try {
+          const r = await memoryModule.addMemoryCard({
+            repoRoot, space,
+            spec: {
+              ...cand,
+              tags: carryTags,
+              source: { type: 'conversation', ref: id },
+              createdBy: createdBy || 'mind/auto-extract',
+            },
+          });
+          memoriesCreated.push({ id: r.node.id, title: r.node.label, kindOfMemory: r.node.kindOfMemory });
+        } catch (_) { /* one bad pattern must not break the save */ }
+      }
+      if (memoriesCreated.length && broadcast) {
+        broadcast({ type: 'mind-update', payload: { kind: 'memory-extracted', conversationId: id, count: memoriesCreated.length, memories: memoriesCreated } });
+      }
+    }
+
+    return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length, memoriesCreated });
   });
 
   // ── Memory cards: durable knowledge taught mid-conversation ─────────────

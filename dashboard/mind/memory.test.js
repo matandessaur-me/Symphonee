@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { buildMemoryFragment, addMemoryCard, ALLOWED_KINDS } = require('./memory');
+const { buildMemoryFragment, addMemoryCard, ALLOWED_KINDS, extractMemoriesFromText } = require('./memory');
 const store = require('./store');
 
 test('buildMemoryFragment: minimal valid spec', () => {
@@ -155,6 +155,65 @@ test('addMemoryCard: rejects unknown kindOfMemory', async () => {
       /kindOfMemory must be one of/,
     );
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('extractMemoriesFromText: explicit "remember:" line', () => {
+  const r = extractMemoriesFromText('Working on this. Remember: DYOB does not follow the Bath Fitter design system.');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].kindOfMemory, 'fact');
+  assert.ok(r[0].body.includes('DYOB does not follow'));
+  assert.ok(r[0].title.length <= 80);
+});
+
+test('extractMemoriesFromText: "we decided" -> decision', () => {
+  const r = extractMemoriesFromText('After review we decided to use Postgres over Mongo for the listing manager.');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].kindOfMemory, 'decision');
+  assert.ok(r[0].body.toLowerCase().includes('postgres'));
+});
+
+test('extractMemoriesFromText: "the rule is" -> constraint', () => {
+  const r = extractMemoriesFromText('The rule is: never commit secrets to the repo.');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].kindOfMemory, 'constraint');
+});
+
+test('extractMemoriesFromText: "prefer X" -> preference', () => {
+  const r = extractMemoriesFromText('For navigation, prefer pulldown menus over the d-pad on Playdate games.');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].kindOfMemory, 'preference');
+});
+
+test('extractMemoriesFromText: "watch out for" -> gotcha', () => {
+  const r = extractMemoriesFromText('Watch out for the API rate limit at 100 req/min when calling Greenhouse.');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].kindOfMemory, 'gotcha');
+});
+
+test('extractMemoriesFromText: no signal -> no extraction', () => {
+  const r = extractMemoriesFromText('I built a thing today. It was fine. The end.');
+  assert.equal(r.length, 0);
+});
+
+test('extractMemoriesFromText: dedupes identical bodies', () => {
+  const r = extractMemoriesFromText(
+    'Remember: DYOB has its own design.\nNote that DYOB has its own design.'
+  );
+  assert.equal(r.length, 1, 'duplicate bodies should dedupe');
+});
+
+test('extractMemoriesFromText: caps at 8 candidates per call', () => {
+  // 12 distinct rules in one block; should clamp to 8
+  let text = '';
+  for (let i = 0; i < 12; i++) text += `Remember: rule number ${i} is important to follow always. `;
+  const r = extractMemoriesFromText(text);
+  assert.ok(r.length <= 8, `expected <= 8, got ${r.length}`);
+});
+
+test('extractMemoriesFromText: ignores empty/junk matches', () => {
+  // "remember: ." should NOT extract
+  const r = extractMemoriesFromText('Remember: .');
+  assert.equal(r.length, 0);
 });
 
 test('ALLOWED_KINDS: known set', () => {
