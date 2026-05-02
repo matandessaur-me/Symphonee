@@ -3285,7 +3285,44 @@
     return Math.round(ms / 31557600000) + 'y ago';
   }
 
-  window.MindUI = { onActivate, onDeactivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, setGraphMode, loadMindmap, clearSearch, runSearch, toggleSearchOnly,
+  // GPU / WebGL diagnostic — opens an alert dialog showing the renderer
+  // strings the browser actually sees. If the user expected hardware
+  // acceleration but the renderer reports 'SwiftShader' or 'Software'
+  // that's the smoking gun: Chromium fell back to software rendering.
+  function showGpuInfo() {
+    const lines = [];
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      if (!gl) {
+        lines.push('FAIL: WebGL is NOT available in this Electron window.');
+        lines.push('The 3D graph cannot use the GPU; everything will fall back to software.');
+      } else {
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+        const vendor   = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)   : gl.getParameter(gl.VENDOR);
+        const isWebGL2 = (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
+        const isSoftware = /(SwiftShader|llvmpipe|Microsoft Basic|Software)/i.test(renderer);
+        lines.push('WebGL version : ' + (isWebGL2 ? 'WebGL 2 (best)' : 'WebGL 1 (fallback)'));
+        lines.push('Vendor        : ' + vendor);
+        lines.push('Renderer      : ' + renderer);
+        lines.push('Max texture   : ' + gl.getParameter(gl.MAX_TEXTURE_SIZE));
+        lines.push('');
+        if (isSoftware) {
+          lines.push('WARNING: Renderer string suggests SOFTWARE rendering.');
+          lines.push('Hardware acceleration was requested but Chromium fell back.');
+          lines.push('Update your GPU driver, or check for an enterprise policy that disables GPU.');
+        } else {
+          lines.push('Hardware GPU is being used — graph rendering should be fast.');
+        }
+      }
+    } catch (e) {
+      lines.push('Probe failed: ' + (e.message || String(e)));
+    }
+    alert(lines.join('\n'));
+  }
+
+  window.MindUI = { onActivate, onDeactivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, setGraphMode, loadMindmap, clearSearch, runSearch, toggleSearchOnly, showGpuInfo,
     deselectNode: () => { if (state.fgClearHighlight) state.fgClearHighlight(); },
     showConnected: () => { if (state.fgShowConnected) state.fgShowConnected(); },
     refreshLock, refreshQuality,

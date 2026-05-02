@@ -1356,6 +1356,27 @@ function killStaleProcesses() {
   return false;
 }
 
+// ── GPU acceleration ─────────────────────────────────────────────────────────
+// Force-enable Chromium's GPU compositing + rasterization paths. By default
+// Electron has hardware acceleration on, but Chromium's GPU blocklist can
+// disable it on certain drivers (Intel iGPUs, older NVIDIA/AMD versions),
+// which kills performance on the Mind 2D/3D graph views even on machines
+// that have a perfectly capable GPU. These switches override the blocklist
+// and explicitly turn on GPU rasterization for Canvas2D + GPU-backed
+// compositing for WebGL.
+//
+// Must run BEFORE app.whenReady(). All flags are no-ops on systems that
+// genuinely have no usable GPU — they don't crash, they just don't help.
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
+app.commandLine.appendSwitch('enable-accelerated-video-decode');
+// WebGL is what powers 3d-force-graph (Three.js). Force the WebGL2 path —
+// the older WebGL1 fallback is significantly slower for 5k+ node graphs.
+app.commandLine.appendSwitch('use-angle', 'gl');
+app.commandLine.appendSwitch('enable-features', 'WebGPU,SharedArrayBuffer');
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   // Another instance holds the lock. Check if it's actually alive.
@@ -1432,6 +1453,12 @@ if (!gotLock) {
           contextIsolation: true,
           nodeIntegration: false,
           webviewTag: true,
+          // Explicit GPU paths for the 2D / 3D Mind graph views. webgl + offscreen
+          // false make sure the renderer process draws to an on-screen surface
+          // backed by the GPU compositor instead of a software canvas.
+          webgl: true,
+          offscreen: false,
+          backgroundThrottling: false,
         },
       });
       win.maximize();

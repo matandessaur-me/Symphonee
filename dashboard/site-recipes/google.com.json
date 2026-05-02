@@ -1,0 +1,36 @@
+{
+  "host": "google.com",
+  "recipes": [
+    {
+      "id": "r_0e8me6y7",
+      "name": "Pre-flight page map (refresh by calling inspect_dom   get_pa (auto 2026-05-02 15:58)",
+      "description": "Auto-recorded from browser session default. Goal: Pre-flight page map (refresh by calling inspect_dom / get_page_source for specifics):\n- URL: https://duckduckgo.com/\n- Title: DuckDuckGo - Protection. Privacy. Peace of mind.\n- Frameworks: React, Next.js\n- Background paint target: `body` (computed #ffffff). Use this for \"change the background\" requests.\n- Palette (hex -> roles):\n  - #ffffff -> background\n  - #222222 -> text, button-text\n  - #00000",
+      "host": "google.com",
+      "steps": [
+        {
+          "id": "s_sd62bsmt",
+          "verb": "GOTO",
+          "target": "https://www.google.com/search?tbm=isch&q="
+        },
+        {
+          "id": "s_cs18brvx",
+          "verb": "WAIT_FOR_DOM",
+          "target": "body"
+        },
+        {
+          "id": "s_qrk6wdxp",
+          "verb": "CLICK",
+          "target": "text=Images"
+        }
+      ],
+      "status": "draft",
+      "conceptTags": [
+        "search"
+      ],
+      "sourceSessionId": "default",
+      "successCount": 0,
+      "createdAt": "2026-05-02T15:58:27.305Z",
+      "updatedAt": "2026-05-02T15:58:27.305Z"
+    }
+  ]
+}
