@@ -25,10 +25,20 @@
   // Physics default = off (frozen). Stabilization still runs once to lay
   // out the graph, then physics is disabled so weaker machines aren't stuck
   // animating forever. The user can resume it from the Freeze button.
-  const DEFAULT_PREFS = { graphCap: '200', graphFilter: 'all', physicsEnabled: false, searchOnly: false, graphMode: '3d' };
+  // searchOnly: true is now the only mode (the toggle button was removed).
+  // When the user enters a search, only matching nodes render. When the
+  // search is empty, every node renders. This is what the user expected
+  // and removes a footgun (the toggle would partially-cache layout).
+  const DEFAULT_PREFS = { graphCap: '200', graphFilter: 'all', physicsEnabled: false, searchOnly: true, graphMode: '3d' };
   function loadPrefs() {
-    try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }
-    catch (_) { return Object.assign({}, DEFAULT_PREFS); }
+    try {
+      const merged = Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
+      // searchOnly is now hardcoded on — force it true regardless of
+      // what's in localStorage from older sessions where the toggle
+      // could be off.
+      merged.searchOnly = true;
+      return merged;
+    } catch (_) { return Object.assign({}, DEFAULT_PREFS); }
   }
   function savePrefs() {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (_) {}
@@ -212,10 +222,11 @@
     state.search = (rawQuery || '').trim().toLowerCase();
     recomputeMatches();
     updateSearchUi();
-    // Re-render the active view. Graph/map prefer in-place re-paint so we
-    // don't blow away the network state, but rebuilding is acceptable here -
-    // small graphs only - and keeps the code path single.
-    if (state.view === 'graph') paintGraphSearch();
+    // Re-render the active view. Graph + mindmap views prefer in-place
+    // re-paint (paintGraphSearch -> buildNetworkAsync) so we don't blow
+    // away the canvas DOM and accidentally resurface the 'Enter Mind Map'
+    // gate. Other views can rebuild — they're cheap.
+    if (state.view === 'graph' || state.view === 'mindmap') paintGraphSearch();
     else render();
     // If we have a match, surface it in the detail panel automatically.
     if (state.matches.length) showNodeDetail(state.matches[0]);
@@ -306,7 +317,84 @@
   async function loadGraph() {
     const g = await API('/api/mind/graph');
     state.graph = g.empty ? null : g;
+    // Pre-fetch cached graph layouts in parallel with whatever the user does
+    // next. If a layout is cached AND the node set hasn't changed, the
+    // simulator is skipped entirely (instant render, no GPU pin).
+    state.layoutCache = { '2d': null, '3d': null, hash: null };
+    if (state.graph) {
+      // Layout-algo version. Bump when the pre-positioning or force-tuning
+      // changes meaningfully so old cached positions don't lock the user
+      // into a stale (bad) layout. Hash includes this version so a mismatch
+      // forces fresh layout + cache rewrite.
+      const LAYOUT_VERSION = 'v4-no-partial-cache';
+      state.layoutCache.hash = computeNodeHash(state.graph.nodes) + ':' + LAYOUT_VERSION;
+      try {
+        const [c2, c3] = await Promise.all([
+          API('/api/mind/layout?mode=2d').catch(() => null),
+          API('/api/mind/layout?mode=3d').catch(() => null),
+        ]);
+        if (c2 && c2.cached && c2.nodeHash === state.layoutCache.hash) state.layoutCache['2d'] = c2.positions;
+        if (c3 && c3.cached && c3.nodeHash === state.layoutCache.hash) state.layoutCache['3d'] = c3.positions;
+      } catch (_) {}
+    }
     return state.graph;
+  }
+
+  // Cheap stable hash over node ids — used to invalidate the layout cache
+  // when the node set changes (build added or removed nodes). We sort + join
+  // and SHA-trunc; if the same set of ids comes back the hash matches and
+  // the cached positions are reused.
+  function computeNodeHash(nodes) {
+    const ids = nodes.map(n => n.id).sort();
+    let h = 5381;
+    for (const id of ids) {
+      for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0;
+    }
+    return `${ids.length}_${(h >>> 0).toString(16)}`;
+  }
+
+  // Save the current force-graph positions back to the server. Called from
+  // onEngineStop. Best-effort, no UI feedback — if the save fails, next
+  // load just re-runs the layout.
+  function persistLayout(mode, fgInstance) {
+    try {
+      if (!state.layoutCache || !state.layoutCache.hash) return;
+      const data = fgInstance.graphData ? fgInstance.graphData() : null;
+      if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return;
+      // PARTIAL-LAYOUT GUARD. When the user is searching (or 'searchOnly'
+      // is on) we render only a subset of nodes. Saving that subset's
+      // positions would poison the cache — next full-graph render would
+      // pin those few nodes and Fibonacci-spiral the rest, producing the
+      // hairball the user reported. Only persist when we have positions
+      // for at least 90% of the total graph nodes.
+      const totalNodes = (state.graph && state.graph.nodes && state.graph.nodes.length) || 0;
+      if (totalNodes && data.nodes.length < totalNodes * 0.9) {
+        return;
+      }
+      const positions = {};
+      for (const n of data.nodes) {
+        if (n.id == null) continue;
+        if (mode === '3d') positions[n.id] = [n.x || 0, n.y || 0, n.z || 0];
+        else positions[n.id] = [n.x || 0, n.y || 0];
+      }
+      fetch('/api/mind/layout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, nodeHash: state.layoutCache.hash, positions }),
+      }).catch(() => {});
+      state.layoutCache[mode] = positions;
+    } catch (_) {}
+  }
+
+  // Treat a cache as a hit ONLY if it covers the full node set (>=90%).
+  // A partial cache (e.g. one written before this guard existed, or an
+  // earlier corrupted save) would otherwise pin a few nodes and leave
+  // the rest at default positions — that's how the hairball got cached.
+  function cacheCoversFullGraph(cachedPositions) {
+    if (!cachedPositions) return false;
+    const totalNodes = (state.graph && state.graph.nodes && state.graph.nodes.length) || 0;
+    if (!totalNodes) return false;
+    const coverage = Object.keys(cachedPositions).length / totalNodes;
+    return coverage >= 0.9;
   }
 
   async function refreshStatus() {
@@ -528,7 +616,13 @@
   }
 
   async function runSmart() {
-    const q = ($('mindSmartQ') && $('mindSmartQ').value || '').trim();
+    // Lowercase the query so 'Bathfitter' and 'bathfitter' produce
+    // identical results. The BM25 backend already lowercases internally,
+    // but the dense embedding endpoint passes the query verbatim to the
+    // embedding model — and embedding models DO produce different
+    // vectors for different casings. Normalizing here keeps both ranker
+    // legs operating on the same input so RRF fusion is deterministic.
+    const q = ($('mindSmartQ') && $('mindSmartQ').value || '').trim().toLowerCase();
     const k = parseInt(($('mindSmartK') && $('mindSmartK').value) || '12', 10);
     state.smart = { q, k };
     const out = $('mindSmartOut');
@@ -1124,7 +1218,9 @@
   }
 
   async function runQueryFromUi() {
-    const question = ($('mindQueryQ') && $('mindQueryQ').value || '').trim();
+    // Same case-normalization as runSmart — keep dense + BM25 on the
+    // same input so capital vs lowercase produce identical results.
+    const question = ($('mindQueryQ') && $('mindQueryQ').value || '').trim().toLowerCase();
     if (!question) return;
     const asOf = ($('mindQueryAsOf') && $('mindQueryAsOf').value) || null;
     const budget = parseInt(($('mindQueryBudget') && $('mindQueryBudget').value) || '2000', 10);
@@ -1707,11 +1803,17 @@
           <div class="mind-spinner"></div>
           <div class="mind-loader-text">Preparing graph...</div>
         </div>
-        <div id="mindMapGate" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--mantle);padding:24px;">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:14px;max-width:460px;text-align:center;">
-            <div style="font-size:20px;font-weight:700;color:var(--text);letter-spacing:0.2px;">Mind Map</div>
-            <div style="font-size:13px;color:var(--subtext0);line-height:1.55;">A live force-directed view of every note, repo file, recipe, plugin, and saved AI conversation in your brain. Click a node to inspect it, drag to pan, scroll to zoom. Loading lays out thousands of nodes — only enter when you actually need it.</div>
-            <button type="button" id="mindMapGateBtn" onclick="MindUI.loadMindmap()" style="margin-top:6px;background:transparent;border:1.5px solid var(--accent);border-radius:8px;color:var(--accent);cursor:pointer;font-size:14px;font-weight:700;padding:12px 26px;letter-spacing:0.3px;transition:background 0.15s, color 0.15s;" onmouseover="this.style.background='var(--accent)';this.style.color='var(--mantle)';" onmouseout="this.style.background='transparent';this.style.color='var(--accent)';">Enter Mind Map</button>
+        <div id="mindMapGate" style="position:absolute;inset:0;background:var(--mantle);box-sizing:border-box;">
+          <!-- Absolute-centered card. transform: translate(-50%, -50%) is the
+               bulletproof centering primitive — neither flex nor grid quirks
+               in the host layout chain can push it off-center. -->
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:18px;width:min(760px, calc(100% - 48px));max-height:calc(100% - 48px);overflow:auto;text-align:center;">
+            <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:0.2px;">Mind Map</div>
+            <div style="font-size:13px;color:var(--subtext0);line-height:1.55;max-width:520px;">A live force-directed view of every note, repo file, recipe, plugin, and saved AI conversation in your brain. Click a node to inspect, drag to pan, scroll to zoom.</div>
+            <button type="button" id="mindMapGateBtn" onclick="MindUI.loadMindmap()" style="background:transparent;border:1.5px solid var(--accent);border-radius:8px;color:var(--accent);cursor:pointer;font-size:14px;font-weight:700;padding:12px 26px;letter-spacing:0.3px;transition:background 0.15s, color 0.15s;" onmouseover="this.style.background='var(--accent)';this.style.color='var(--mantle)';" onmouseout="this.style.background='transparent';this.style.color='var(--accent)';">Enter Mind Map</button>
+            <!-- Live stats panel: shows the user what's inside before they pay
+                 the layout cost. Populated by paintMindmapGate() from state.graph. -->
+            <div id="mindGateStats" style="display:none;width:100%;margin-top:6px;"></div>
           </div>
         </div>
       </div>`;
@@ -1850,7 +1952,10 @@
 
     let nodes = g.nodes;
     if (filter !== 'all') nodes = nodes.filter(n => n.kind === filter);
-    if (state.prefs.searchOnly && state.search && state.matches.length) {
+    // searchOnly is now always true — the toggle button was removed. We
+    // still gate on state.search + state.matches so an empty search
+    // shows everything.
+    if (state.search && state.matches.length) {
       const onlySet = new Set(state.matches);
       nodes = nodes.filter(n => onlySet.has(n.id));
     }
@@ -1887,11 +1992,17 @@
     // We pre-compute all visual properties here so the renderer accessors
     // are pure lookups (cheap on every frame).
     const matchSetNodes = state.search ? new Set(state.matches) : null;
-    // Pre-position nodes on a Fibonacci sphere. d3-force-3d defaults every
-    // node to (0,0,0), which causes the "explosion from middle" animation
-    // on first load - all forces fire at full strength against a degenerate
-    // starting state. With pre-positions, the simulation just nudges them
-    // into clusters from a sane starting layout.
+    // Layout-cache hot path: if the server has positions saved for this
+    // exact node set, place every node at its cached x/y/z and PIN it via
+    // fx/fy/fz. d3-force honors fx/fy/fz as immovable — physics still
+    // initializes but every iteration is a no-op for pinned nodes, so the
+    // simulation finishes in ~0ms instead of pinning the iGPU for seconds.
+    const cached3dRaw = (state.prefs.graphMode !== '2d' && state.layoutCache && state.layoutCache['3d']) || null;
+    const cached3d = cacheCoversFullGraph(cached3dRaw) ? cached3dRaw : null;
+    // Pre-position nodes on a Fibonacci sphere when no cache (cold start).
+    // d3-force-3d defaults every node to (0,0,0), which causes the
+    // "explosion from middle" animation - all forces fire at full strength
+    // against a degenerate starting state.
     const SPHERE_R = 600;
     const N = nodes.length;
     const fgNodes = nodes.map((n, i) => {
@@ -1900,9 +2011,31 @@
       const isMatch = matchSetNodes ? matchSetNodes.has(n.id) : false;
       const dim = !!matchSetNodes && !isMatch;
       const baseColor = isMatch ? '#f9e2af' : kindColor(n.kind, isHub);
-      const phi = Math.acos(1 - 2 * (i + 0.5) / N);
-      const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
-      return {
+      let x, y, z, fx, fy, fz;
+      const cachedPos = cached3d && cached3d[n.id];
+      if (cachedPos && cachedPos.length >= 3) {
+        x = cachedPos[0]; y = cachedPos[1]; z = cachedPos[2];
+        fx = x; fy = y; fz = z;  // pin
+      } else if (state.prefs.graphMode === '2d') {
+        // 2D pre-positioning: Fibonacci spiral on a disk. The 3D-sphere
+        // formula collapses onto the 2D plane as a clump (lots of nodes
+        // share similar (x,y) when z varies) which produces the
+        // 'hairball in the middle' look. Fibonacci-spiral disk spreads
+        // nodes evenly across the visible area before physics starts.
+        const angle = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+        const radius = SPHERE_R * Math.sqrt((i + 0.5) / N);
+        x = Math.cos(angle) * radius;
+        y = Math.sin(angle) * radius;
+        z = 0;
+      } else {
+        // 3D Fibonacci sphere
+        const phi = Math.acos(1 - 2 * (i + 0.5) / N);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+        x = SPHERE_R * Math.sin(phi) * Math.cos(theta);
+        y = SPHERE_R * Math.sin(phi) * Math.sin(theta);
+        z = SPHERE_R * Math.cos(phi);
+      }
+      const out = {
         id: n.id,
         label: n.label,
         kind: n.kind,
@@ -1913,10 +2046,12 @@
         isDim: dim,
         color: dim ? '#3a3b4a' : baseColor,
         val: Math.max(1.5, Math.pow(deg + 1, 1.1) * 0.8),
-        x: SPHERE_R * Math.sin(phi) * Math.cos(theta),
-        y: SPHERE_R * Math.sin(phi) * Math.sin(theta),
-        z: SPHERE_R * Math.cos(phi),
+        x, y, z,
       };
+      // When pinned (cache hit), set fx/fy/fz so the simulation skips
+      // every iteration on this node — the heart of the GPU-pin fix.
+      if (fx !== undefined) { out.fx = fx; out.fy = fy; out.fz = fz; }
+      return out;
     });
 
     const fgLinks = edges.map((e) => {
@@ -1969,6 +2104,15 @@
     // search behaviour - just a flat Canvas projection that's lighter on
     // GPU and easier to read for hub/cluster topology.
     if (state.prefs.graphMode === '2d' && typeof window.ForceGraph !== 'undefined') {
+      const cached2dRaw = (state.layoutCache && state.layoutCache['2d']) || null;
+      const cached2d = cacheCoversFullGraph(cached2dRaw) ? cached2dRaw : null;
+      // Apply cached 2D positions (and pin) before handing data to ForceGraph.
+      if (cached2d) {
+        for (const n of fgNodes) {
+          const p = cached2d[n.id];
+          if (p && p.length >= 2) { n.x = p[0]; n.y = p[1]; n.fx = p[0]; n.fy = p[1]; }
+        }
+      }
       const nodeById2d = new Map();
       fgNodes.forEach((n) => nodeById2d.set(n.id, n));
       const initialSize2d = graphHostSize(host);
@@ -1985,10 +2129,56 @@
           return n.color;
         })
         .nodeVisibility((n) => highlightNodes.size === 0 || highlightNodes.has(n))
+        // ── Large-graph fast path (vasturiano/force-graph large-graph example) ──
+        // Default node renderer for ForceGraph 2D is shape-based + sprite-based
+        // and recomputes per-frame; on a 5k-node graph this dominates frame time.
+        // Replacing it with a single arc draw (and a separate, slightly larger
+        // hit-test paint) is the canonical 'large graph' optimization. Visually
+        // identical for our use case (we already render dots), 5-10x faster.
+        .nodeCanvasObjectMode(() => 'replace')
+        .nodeCanvasObject((node, ctx, globalScale) => {
+          if (typeof node.x !== 'number' || typeof node.y !== 'number') return;
+          // Radius scaling: every node clearly visible at any zoom (3px floor),
+          // hubs visibly bigger but not eclipsing the rest. sqrt(degree) gives
+          // a natural distribution where the gap between deg-0 and deg-1 is
+          // already noticeable but deg-50 vs deg-100 isn't dramatic.
+          //   deg 0  -> r = 3     (was 2.45 — fixed: now actually visible)
+          //   deg 1  -> r = 4.5
+          //   deg 5  -> r = 6.4
+          //   deg 20 -> r = 9.7
+          //   deg 50 -> r = 13.6
+          const r = 3 + Math.sqrt(Math.max(0, node.deg || 0)) * 1.5;
+          ctx.fillStyle = (highlightNodes.size && node === hoverNode) ? '#f5e0dc' : node.color;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+          ctx.fill();
+          // Hub ring: only for the small set of high-degree nodes, only when
+          // we're zoomed in enough that it's actually visible. Keeps the look
+          // without paying for it on every node every frame.
+          if (node.isHub && globalScale > 0.6) {
+            ctx.strokeStyle = '#a6e3a1';
+            ctx.lineWidth = 0.6 / globalScale;
+            ctx.stroke();
+          }
+        })
+        // Hit-detection paint: separate offscreen pass with a larger radius so
+        // small nodes are still easy to click. Same formula plus a flat +3px
+        // hit padding so even zero-degree nodes are comfortably clickable.
+        .nodePointerAreaPaint((node, color, ctx) => {
+          if (typeof node.x !== 'number') return;
+          const r = 3 + Math.sqrt(Math.max(0, node.deg || 0)) * 1.5 + 3;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+          ctx.fill();
+        })
         .nodeLabel((n) => `<div style="background:#11111b;border:1px solid #313244;color:#cdd6f4;padding:6px 10px;border-radius:6px;font-family:ui-sans-serif,system-ui;font-size:11px;max-width:320px;"><div style="font-weight:600;margin-bottom:2px;">${escapeHtml(n.label || n.id)}</div><div style="color:#9399b2;font-size:10px;">${escapeHtml(n.kind || '')} - degree ${n.deg}</div></div>`)
         .linkColor((l) => highlightLinks.size === 0 ? l.color : '#fab387')
         .linkVisibility((l) => highlightLinks.size === 0 || highlightLinks.has(l))
-        .linkWidth(0.5)
+        // Thinner default lines (still visible, much less raster work). The
+        // large-graph example uses 0.2-0.3 — anything thicker quadratic-bills
+        // the rasterizer at this node count.
+        .linkWidth(0.3)
         .linkLabel((l) => `<div style="background:#11111b;border:1px solid #313244;color:#cdd6f4;padding:4px 8px;border-radius:4px;font-family:ui-sans-serif,system-ui;font-size:11px;">${escapeHtml(l.relation || 'related')} <span style="color:#9399b2;font-size:10px;">(${escapeHtml(l.confidence || '')})</span></div>`)
         .onNodeClick((n) => {
           state.selectedNode = n.id;
@@ -2010,23 +2200,66 @@
         })
         .onBackgroundClick(() => { /* deselect requires the explicit Deselect button — clicking empty space no longer clears the selection. */ })
         .onNodeHover((n) => { host.style.cursor = n ? 'pointer' : ''; })
-        .cooldownTicks(120)
-        .warmupTicks(120)
-        .d3AlphaDecay(0.06)
+        // Cache hit -> physics is a no-op (every node is pinned). Drop
+        // both warmup and cooldown to zero so the first frame is the
+        // final frame and the iGPU stays at idle.
+        // Cache miss on 2D: 250 warmup ticks (matching 3D) so a 6k+ node
+        // graph actually has time to spread out. 120 was too few — nodes
+        // started on the Fibonacci-spiral disk but didn't have enough
+        // iterations for charge + collide to push them apart.
+        .cooldownTicks(cached2d ? 0 : 60)
+        .warmupTicks(cached2d ? 0 : 250)
+        .d3AlphaDecay(0.04)
         .d3VelocityDecay(0.55);
       try {
         if (fg2.d3Force) {
-          // Stronger repulsion + longer springs = nodes spread out into
-          // readable clusters instead of clumping. Mirrors the 3D path's
-          // dispersion tuning, scaled for 2D pixel space.
+          // Force tuning for big graphs. -450 charge was way too weak for
+          // 6800 nodes — the inner cluster never got enough push to spread.
+          // Bumped to -1800 (4x), distanceMax doubled so far-away nodes
+          // still feel each other, and link.strength dropped so densely
+          // connected hubs don't collapse into a tight blob.
           const charge = fg2.d3Force('charge');
-          if (charge && charge.strength) charge.strength(-450);
-          if (charge && charge.distanceMax) charge.distanceMax(1400);
+          if (charge && charge.strength) charge.strength(-1800);
+          if (charge && charge.distanceMax) charge.distanceMax(2800);
           const link = fg2.d3Force('link');
-          if (link && link.distance) link.distance(140);
-          if (link && link.strength) link.strength(0.35);
+          if (link && link.distance) link.distance(180);
+          if (link && link.strength) link.strength(0.15);
           const center = fg2.d3Force('center');
-          if (center && center.strength) center.strength(0.012);
+          // Center force way down — was pulling everything back into the
+          // middle, fighting the charge force we just amped up.
+          if (center && center.strength) center.strength(0.003);
+
+          // Soft radial cap. forceCenter only shifts the mean of all
+          // positions — orphan / low-degree nodes that get pushed by
+          // charge with no link to pull them back drift forever, ending
+          // up as tiny dots far from the cluster (zoomToFit then shrinks
+          // the whole graph to fit them). This force gently pulls any
+          // node BACK if it ventures past MAX_RADIUS, doesn't touch
+          // nodes inside the cluster.
+          const MAX_RADIUS = 2400;
+          const radialCap = (function() {
+            let n2dNodes;
+            function force(alpha) {
+              if (!n2dNodes || !n2dNodes.length) return;
+              const k = 0.12 * alpha;
+              for (let i = 0; i < n2dNodes.length; i++) {
+                const node = n2dNodes[i];
+                const x = node.x || 0;
+                const y = node.y || 0;
+                const r = Math.sqrt(x * x + y * y);
+                if (r <= MAX_RADIUS) continue;
+                // Pull back toward the cap. Strength scales with how far
+                // beyond the cap the node is, so the further it drifts
+                // the harder it gets pulled.
+                const overshoot = (r - MAX_RADIUS) / r;
+                node.vx = (node.vx || 0) - x * overshoot * k;
+                node.vy = (node.vy || 0) - y * overshoot * k;
+              }
+            }
+            force.initialize = (n) => { n2dNodes = n; };
+            return force;
+          })();
+          fg2.d3Force('radialCap', radialCap);
           // Custom collision force (vasturiano/force-graph doesn't expose
           // d3 directly, so we register our own grid-bucketed collide).
           // Each tick bucketizes nodes by 2*maxRadius cells, then resolves
@@ -2154,11 +2387,18 @@
         } catch (_) {}
       }
       try { window.addEventListener('resize', resizeGraph2); state.fgResizeHandler = resizeGraph2; } catch (_) {}
+      // 2D Canvas has the same iGPU-handoff issue: comes back garbled or
+      // black after the Symphonee window loses focus. Same recovery
+      // helper, with mode='2d' so it knows the surface is Canvas2D rather
+      // than WebGL and skips the GL-specific listeners.
+      attachGraphRecovery(host, () => fg2, '2d');
       let firstStop2 = true;
       fg2.onEngineStop(() => {
         if (!firstStop2) return;
         firstStop2 = false;
         state.graphSettled = true;
+        // Persist positions so the next 2D open is a zero-physics paint.
+        if (!cached2d) persistLayout('2d', fg2);
         try {
           syncGraphSize(fg2, host);
           fg2.zoomToFit(0, 80);
@@ -2229,6 +2469,13 @@
         antialias: false,
         alpha: false,
         powerPreference: 'high-performance',
+        // Keep the last drawn frame in the buffer so a brief context blip
+        // (alt-tab on iGPUs) doesn't show garbled / black before the next
+        // requestAnimationFrame fires. Costs a tiny bit of memory; worth it.
+        preserveDrawingBuffer: true,
+        // Tell the GPU we want to recover automatically if the context
+        // gets revoked, instead of giving up permanently.
+        failIfMajorPerformanceCaveat: false,
       },
     })
       .width(initialSize.width)
@@ -2360,7 +2607,10 @@
       // the loader up for that whole window. The reward is zero animation
       // jitter when the graph appears.
       .cooldownTicks(0)
-      .warmupTicks(250)
+      // When the layout cache supplied positions for every node, skip the
+      // synchronous 250-tick warmup entirely. Render becomes a one-frame
+      // operation instead of a 1-2s GPU pin.
+      .warmupTicks(cached3d ? 0 : 250)
       .d3AlphaDecay(0.06)
       .d3VelocityDecay(0.55);
 
@@ -2582,6 +2832,15 @@
     }, { passive: false, capture: true });
 
     state.fg = fg;
+    // ── Context-loss + focus-loss recovery ─────────────────────────────────
+    // When Symphonee loses the GPU (alt-tab on iGPUs, lock screen, GPU
+    // process restart) the WebGL canvas comes back black or with garbled
+    // texture residue. Three.js auto-recovers when given the chance —
+    // we just need to (a) prevent the default 'lose forever' behavior on
+    // webglcontextlost, (b) trigger a re-render once webglcontextrestored
+    // fires, and (c) on plain window-focus return, force one fresh frame
+    // even if the GL context never officially died.
+    attachGraphRecovery(host, () => fg, '3d');
     state.fgClearHighlight = clearHighlight;
 
     const resizeGraph = () => {
@@ -2708,11 +2967,15 @@
     };
     fg.onEngineStop(() => {
       state.graphSettled = true;
+      // Persist the now-stable positions so the next load skips physics.
+      // Only save when we ran a real simulation (cache miss); otherwise
+      // we'd just be re-saving the same numbers we loaded.
+      if (!cached3d) persistLayout('3d', fg);
       // Settle buffer: even after the engine reports stop, Three.js often
       // needs another second to finish its last few draw calls and settle
       // material caches. Holding the loader for ~1.2s extra eliminates
       // the "appears, then is laggy for 5 seconds" complaint.
-      setTimeout(reveal, 1200);
+      setTimeout(reveal, cached3d ? 200 : 1200);
     });
 
     // Fallback: if onEngineStop never fires (worker issue, etc), reveal
@@ -2721,12 +2984,127 @@
     state.fgRevealFallback = revealFallback;
   }
 
+  // ── Graph context-loss + focus recovery ───────────────────────────────────
+  // Hooks four events on the canvas + window so a backgrounded Symphonee
+  // recovers cleanly:
+  //   webglcontextlost      -> preventDefault so Three.js gets a chance to
+  //                            restore (without this the GL context is
+  //                            torn down permanently).
+  //   webglcontextrestored  -> rebuild the renderer and force a frame.
+  //   visibilitychange      -> when Symphonee becomes visible again, ask
+  //                            the force-graph to re-render even if the GL
+  //                            context never officially died (catches the
+  //                            'comes back grey/garbled' case).
+  //   window 'focus'        -> belt-and-suspenders; some Windows compositors
+  //                            don't fire visibilitychange on alt-tab.
+  //
+  // All listeners are tracked on state.fgRecoveryHandlers so teardownNetwork
+  // can remove them. mode is '3d' (WebGL via Three.js) or '2d' (Canvas2D).
+  function attachGraphRecovery(host, getInstance, mode) {
+    if (state.fgRecoveryHandlers) detachGraphRecovery();
+    const handlers = { canvas: null, lost: null, restored: null, vis: null, focus: null, mode };
+
+    function findCanvas() {
+      // Both 3d-force-graph and the 2D ForceGraph mount their <canvas>
+      // inside the host. WebGL is the first canvas in 3D mode; 2D mode has
+      // its own. Either way, we just want every canvas in scope.
+      try { return Array.from(host.querySelectorAll('canvas')); }
+      catch (_) { return []; }
+    }
+
+    function forceRedraw() {
+      const fg = getInstance && getInstance();
+      if (!fg) return;
+      try {
+        // 1. RE-SYNC THE CANVAS BACKING STORE. The actual visible bug:
+        //    after a window restore, the host div has its current CSS
+        //    pixel size but the canvas's internal width/height attributes
+        //    are stale (whatever they were when focus was lost). Three.js
+        //    sets its GL viewport from those internal dims, so we get a
+        //    correctly-rendered 3D scene in the middle and the rest of
+        //    the canvas is black. Telling force-graph the new host size
+        //    rebuilds the canvas backing store + GL viewport in one shot.
+        const w = host.clientWidth || host.offsetWidth || 0;
+        const h = host.clientHeight || host.offsetHeight || 0;
+        if (w > 0 && h > 0) {
+          if (typeof fg.width === 'function')  fg.width(w);
+          if (typeof fg.height === 'function') fg.height(h);
+        }
+        // 2. Re-evaluate accessors and queue a real draw call.
+        if (typeof fg.refresh === 'function') fg.refresh();
+        // 3. Resume the rAF loop in case it was paused by visibility change.
+        if (typeof fg.resumeAnimation === 'function') fg.resumeAnimation();
+        // 4. NUDGE THE CHROMIUM COMPOSITOR. Even with the canvas resized
+        //    correctly, the compositor sometimes keeps presenting the
+        //    cached layer until something triggers a recomposite. A
+        //    1-frame transform toggle on the host forces the compositor
+        //    to re-rasterize this layer cleanly.
+        try {
+          host.style.transform = 'translateZ(0)';
+          requestAnimationFrame(() => {
+            try { host.style.transform = ''; } catch (_) {}
+          });
+        } catch (_) {}
+      } catch (_) {}
+    }
+
+    function onLost(e) {
+      // Default action of webglcontextlost is "context is gone, no recovery
+      // ever". We need to call preventDefault to enable
+      // webglcontextrestored to fire later.
+      try { e.preventDefault(); } catch (_) {}
+    }
+    function onRestored() {
+      // GPU is back. Tell force-graph to rebuild its draw state.
+      forceRedraw();
+    }
+    function onVisible() {
+      if (document.visibilityState === 'visible') {
+        // Schedule the redraw on the next animation frame so the compositor
+        // has finished setting up the new surface before we draw into it.
+        try { requestAnimationFrame(forceRedraw); } catch (_) { forceRedraw(); }
+      }
+    }
+    function onFocus() { try { requestAnimationFrame(forceRedraw); } catch (_) { forceRedraw(); } }
+
+    // Wire up.
+    handlers.canvases = findCanvas();
+    if (mode === '3d') {
+      for (const c of handlers.canvases) {
+        try { c.addEventListener('webglcontextlost', onLost, false); } catch (_) {}
+        try { c.addEventListener('webglcontextrestored', onRestored, false); } catch (_) {}
+      }
+    }
+    handlers.lost = onLost;
+    handlers.restored = onRestored;
+    handlers.vis = onVisible;
+    handlers.focus = onFocus;
+    try { document.addEventListener('visibilitychange', onVisible); } catch (_) {}
+    try { window.addEventListener('focus', onFocus); } catch (_) {}
+    state.fgRecoveryHandlers = handlers;
+  }
+
+  function detachGraphRecovery() {
+    const h = state.fgRecoveryHandlers;
+    if (!h) return;
+    if (h.canvases && (h.lost || h.restored)) {
+      for (const c of h.canvases) {
+        try { c.removeEventListener('webglcontextlost', h.lost, false); } catch (_) {}
+        try { c.removeEventListener('webglcontextrestored', h.restored, false); } catch (_) {}
+      }
+    }
+    if (h.vis) { try { document.removeEventListener('visibilitychange', h.vis); } catch (_) {} }
+    if (h.focus) { try { window.removeEventListener('focus', h.focus); } catch (_) {} }
+    state.fgRecoveryHandlers = null;
+  }
+
   function teardownNetwork() {
     if (state.sigmaLayoutCancel) { try { state.sigmaLayoutCancel(); } catch (_) {} state.sigmaLayoutCancel = null; }
     if (state.fgRevealFallback) { clearTimeout(state.fgRevealFallback); state.fgRevealFallback = null; }
     if (state.fgResizeObserver) { try { state.fgResizeObserver.disconnect(); } catch (_) {} state.fgResizeObserver = null; }
     if (state.fgResizeHandler) { try { window.removeEventListener('resize', state.fgResizeHandler); } catch (_) {} state.fgResizeHandler = null; }
     if (state.fgResizePause) { clearTimeout(state.fgResizePause); state.fgResizePause = null; }
+    detachGraphRecovery();
     if (state.fg) {
       try { state.fg.pauseAnimation(); } catch (_) {}
       try {
@@ -2855,6 +3233,94 @@
     const btn = $('mindMapGateBtn');
     if (!btn) return;
     btn.textContent = 'Enter Mind Map';
+    // If the user already entered the map this session, keep the gate
+    // hidden across re-renders. Without this, anything that re-injects
+    // the renderGraph DOM (search Go, filter change, mode switch) would
+    // resurface the gate even though state.mindmapLoaded is still true.
+    const gate = $('mindMapGate');
+    if (gate) gate.style.display = state.mindmapLoaded ? 'none' : '';
+    // Populate the live stats panel so the gate shows what's actually
+    // inside the brain instead of an empty void below the button.
+    const stats = $('mindGateStats');
+    if (!stats || !state.graph) return;
+    const g = state.graph;
+    const kindCounts = {};
+    let edgeCount = 0;
+    for (const n of g.nodes) kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1;
+    edgeCount = g.edges.length;
+    const communityCount = g.communities ? Object.keys(g.communities).length : 0;
+    // Top-level summary cards.
+    const summary = [
+      { label: 'Nodes',        value: g.nodes.length },
+      { label: 'Connections',  value: edgeCount },
+      { label: 'Communities',  value: communityCount },
+    ];
+    // Sort kinds by count, drop empty, format friendly label.
+    const KIND_LABEL = {
+      code: 'code', doc: 'docs', note: 'notes',
+      conversation: 'AI conversations', drawer: 'CLI messages',
+      learning: 'learnings', plugin: 'plugins', recipe: 'recipes',
+      workitem: 'work items', concept: 'concepts', tag: 'tags',
+      artifact: 'artifacts', paper: 'papers', image: 'images',
+    };
+    const KIND_COLOR = {
+      code: '#a6e3a1', doc: '#94e2d5', note: '#f9e2af',
+      conversation: '#cba6f7', drawer: '#b4befe',
+      learning: '#fab387', plugin: '#f5c2e7', recipe: '#89dceb',
+      workitem: '#f38ba8', concept: '#89b4fa', tag: '#bac2de',
+      artifact: '#74c7ec',
+    };
+    const sortedKinds = Object.entries(kindCounts)
+      .filter(([, c]) => c > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    // The marquee needs duplicated content so the loop is seamless. Each
+    // pass we render the pill list TWICE side-by-side and animate the
+    // outer track by -50% over a duration proportional to the pill count.
+    const renderPill = ([kind, count]) => {
+      const label = KIND_LABEL[kind] || kind;
+      const color = KIND_COLOR[kind] || '#cdd6f4';
+      return `<div class="mind-gate-pill" style="display:inline-flex;align-items:center;gap:8px;flex-shrink:0;background:var(--surface1);border:1px solid var(--surface2);border-radius:999px;padding:6px 14px;font-size:11px;color:var(--text);white-space:nowrap;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>
+        <span style="font-weight:500;">${label}</span>
+        <span style="color:var(--subtext0);font-variant-numeric:tabular-nums;">${fmt(count)}</span>
+      </div>`;
+    };
+    const pills = sortedKinds.map(renderPill).join('');
+    // 8 seconds per ~6 pills, scaled. Cap so very long lists still cycle in
+    // a reasonable time.
+    const animSeconds = Math.max(20, Math.min(60, sortedKinds.length * 3));
+
+    stats.style.display = 'block';
+    stats.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+        ${summary.map(s => `
+          <div style="background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:14px 12px;">
+            <div style="font-size:22px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">${fmt(s.value)}</div>
+            <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">${s.label}</div>
+          </div>
+        `).join('')}
+      </div>
+      ${sortedKinds.length ? `
+        <div style="text-align:left;background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:14px 0;overflow:hidden;">
+          <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;padding:0 16px;">What's inside</div>
+          <div class="mind-gate-marquee" style="overflow:hidden;mask-image:linear-gradient(90deg,transparent 0,#000 6%,#000 94%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 6%,#000 94%,transparent 100%);">
+            <div class="mind-gate-marquee-track" style="display:inline-flex;gap:10px;padding:2px 0;animation:mind-gate-marquee ${animSeconds}s linear infinite;">
+              ${pills}
+              ${pills}
+            </div>
+          </div>
+        </div>
+      ` : ''}
+      <style>
+        @keyframes mind-gate-marquee {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
+        .mind-gate-marquee:hover .mind-gate-marquee-track { animation-play-state: paused; }
+      </style>
+    `;
   }
   function loadMindmap() {
     state.mindmapLoaded = true;
@@ -3285,7 +3751,44 @@
     return Math.round(ms / 31557600000) + 'y ago';
   }
 
-  window.MindUI = { onActivate, onDeactivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, setGraphMode, loadMindmap, clearSearch, runSearch, toggleSearchOnly,
+  // GPU / WebGL diagnostic — opens an alert dialog showing the renderer
+  // strings the browser actually sees. If the user expected hardware
+  // acceleration but the renderer reports 'SwiftShader' or 'Software'
+  // that's the smoking gun: Chromium fell back to software rendering.
+  function showGpuInfo() {
+    const lines = [];
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      if (!gl) {
+        lines.push('FAIL: WebGL is NOT available in this Electron window.');
+        lines.push('The 3D graph cannot use the GPU; everything will fall back to software.');
+      } else {
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+        const vendor   = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)   : gl.getParameter(gl.VENDOR);
+        const isWebGL2 = (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
+        const isSoftware = /(SwiftShader|llvmpipe|Microsoft Basic|Software)/i.test(renderer);
+        lines.push('WebGL version : ' + (isWebGL2 ? 'WebGL 2 (best)' : 'WebGL 1 (fallback)'));
+        lines.push('Vendor        : ' + vendor);
+        lines.push('Renderer      : ' + renderer);
+        lines.push('Max texture   : ' + gl.getParameter(gl.MAX_TEXTURE_SIZE));
+        lines.push('');
+        if (isSoftware) {
+          lines.push('WARNING: Renderer string suggests SOFTWARE rendering.');
+          lines.push('Hardware acceleration was requested but Chromium fell back.');
+          lines.push('Update your GPU driver, or check for an enterprise policy that disables GPU.');
+        } else {
+          lines.push('Hardware GPU is being used — graph rendering should be fast.');
+        }
+      }
+    } catch (e) {
+      lines.push('Probe failed: ' + (e.message || String(e)));
+    }
+    alert(lines.join('\n'));
+  }
+
+  window.MindUI = { onActivate, onDeactivate, setView, build, update, toggleWatch, askAbout, purgeNode, closeDetail, fitGraph, setGraphMode, loadMindmap, clearSearch, runSearch, toggleSearchOnly, showGpuInfo,
     deselectNode: () => { if (state.fgClearHighlight) state.fgClearHighlight(); },
     showConnected: () => { if (state.fgShowConnected) state.fgShowConnected(); },
     refreshLock, refreshQuality,

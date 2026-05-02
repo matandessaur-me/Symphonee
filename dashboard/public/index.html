@@ -5503,8 +5503,7 @@
           </span>
           <span class="mind-toolbar-spacer"></span>
           <div class="mind-search-wrap">
-            <span style="font-size:10px;color:var(--subtext0);">Search</span>
-            <input id="mindSearchInput" type="text" placeholder="search the mind (Enter to run)" autocomplete="off" spellcheck="false"
+            <input id="mindSearchInput" type="text" placeholder="Search..." autocomplete="off" spellcheck="false"
               style="background:transparent;border:none;outline:none;color:var(--text);font-size:11px;padding:3px 0;" />
             <span id="mindSearchCount" style="font-size:10px;color:var(--subtext0);font-variant-numeric:tabular-nums;min-width:32px;text-align:right;"></span>
             <button id="mindSearchGo" type="button" title="Search (Enter)" onclick="MindUI.runSearch()"
@@ -5512,11 +5511,9 @@
             <button id="mindSearchClear" type="button" title="Clear (Esc)" onclick="MindUI.clearSearch()"
               style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;display:none;">×</button>
           </div>
-          <button id="mindSearchOnlyBtn" type="button" onclick="MindUI.toggleSearchOnly()"
-            title="When on, hide non-matching nodes instead of dimming them"
-            style="background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--subtext0);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;">Search only: off</button>
           <button class="tab-bar-btn" onclick="MindUI.build()" title="Build or rebuild the brain from all sources">Build</button>
           <button class="tab-bar-btn" id="mindWatchBtn" onclick="MindUI.toggleWatch()" title="Watch the active repo and auto-update">Watch: off</button>
+          <button class="tab-bar-btn" id="mindGpuBtn" onclick="MindUI.showGpuInfo()" title="Show GPU / WebGL info — verify hardware acceleration is on" aria-label="GPU info" style="display:inline-flex;align-items:center;justify-content:center;padding:0 8px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" opacity="0.85"/><polyline points="12 6 12 12 16 14"/></svg></button>
         </div>
         <div class="mind-tabs" role="tablist">
           <button class="mind-tab mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')">Dashboard</button>
@@ -24346,6 +24343,36 @@ window.addEventListener('focus', () => {
     const t = getActiveTerm();
     if (t) t.focus();
   }
+});
+
+// ── Force whole-document repaint on focus / visibility return ───────────
+// User-reported bug: alt-tab back into Symphonee and EVERYTHING outside
+// the actively-animating regions (terminal canvas / 3D canvas) stays as
+// the stale pre-blur compositor layer. The user sees a black UI around
+// the terminal and clicking anywhere fixes it because any DOM event
+// invalidates the layers as a side effect.
+//
+// webContents.invalidate() in Electron main isn't enough on its own —
+// some Windows compositor configs keep presenting the cached tiles
+// regardless. The reliable fix is to toggle a CSS property on the
+// document root that forces Chromium to re-rasterize every layer.
+//
+// `transform: translateZ(0)` is a no-op visually but it promotes the
+// element into its own composited layer, which forces the GPU to
+// re-rasterize it. Toggling it for one frame and removing it sidesteps
+// any layout/paint cost — the layer just gets repainted clean.
+function forceFullRepaint() {
+  try {
+    const el = document.documentElement;
+    el.style.transform = 'translateZ(0)';
+    requestAnimationFrame(() => {
+      try { el.style.transform = ''; } catch (_) {}
+    });
+  } catch (_) {}
+}
+window.addEventListener('focus', forceFullRepaint);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') forceFullRepaint();
 });
 
 // ── Close modals on overlay click ───────────────────────────────────────

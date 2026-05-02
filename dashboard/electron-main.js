@@ -1356,6 +1356,53 @@ function killStaleProcesses() {
   return false;
 }
 
+// ── GPU + window-survival switches (minimal, targeted) ──────────────────────
+// Earlier versions of this file flipped on every GPU-acceleration knob in
+// Chromium. On Intel UHD that over-subscribed the iGPU — the terminal's
+// xterm-webgl renderer would die ('unavailable' card), Canvas2D paths
+// were forced through a struggling iGPU instead of the CPU, and
+// background apps competed with the foreground for the same compositor.
+//
+// Stripped back to ONLY what the Mind 2D / 3D graph actually needs (the
+// WebGL it requests is GPU-accelerated by default in Electron — no flag
+// needed for that), plus the focus-return survival flags that the user
+// explicitly asked for.
+//
+// What we KEEP:
+//   - ignore-gpu-blocklist         : without this, Chromium silently
+//                                    drops to software rendering on some
+//                                    Intel iGPU drivers, killing the 3D
+//                                    graph's WebGL path. The Mind graph
+//                                    is the one place GPU is essential.
+//   - disable-renderer-backgrounding +
+//     disable-backgrounding-occluded-windows
+//                                  : keep Symphonee's compositor active
+//                                    when the window is occluded/inactive
+//                                    so alt-tab back doesn't show stale
+//                                    or torn-down layers.
+//
+// What we DROPPED (and why):
+//   - enable-gpu-rasterization     : forced ALL Canvas2D through the GPU;
+//                                    Chromium's auto-decision is fine.
+//   - enable-accelerated-2d-canvas : same reason.
+//   - enable-zero-copy             : WebGL texture upload optimization
+//                                    that's only useful when the iGPU is
+//                                    NOT the bottleneck. On Intel UHD it
+//                                    just adds memory pressure.
+//   - use-angle=gl                 : forced the OpenGL backend on Windows;
+//                                    D3D11 (the default) is actually faster
+//                                    on Intel iGPUs.
+//   - enable-features=WebGPU,SharedArrayBuffer : nothing in Symphonee
+//                                    uses WebGPU.
+//   - enable-accelerated-video-decode : irrelevant.
+//   - disable-background-timer-throttling : was making background tabs
+//                                    fight for CPU; the renderer-bg flag
+//                                    above is sufficient.
+//   - disable-features=CalculateNativeWinOcclusion : same.
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   // Another instance holds the lock. Check if it's actually alive.
@@ -1432,6 +1479,12 @@ if (!gotLock) {
           contextIsolation: true,
           nodeIntegration: false,
           webviewTag: true,
+          // Explicit GPU paths for the 2D / 3D Mind graph views. webgl + offscreen
+          // false make sure the renderer process draws to an on-screen surface
+          // backed by the GPU compositor instead of a software canvas.
+          webgl: true,
+          offscreen: false,
+          backgroundThrottling: false,
         },
       });
       win.maximize();
@@ -1757,6 +1810,27 @@ if (!gotLock) {
           event.preventDefault();
           shell.openExternal(url);
         });
+
+        // ── Force whole-window repaint on focus return ───────────────────
+        // User-reported bug: alt-tab back into Symphonee and the sidebars
+        // and header stay pure black until the user clicks something. The
+        // 3D canvas / xterm both paint themselves via rAF so they show up,
+        // but static HTML layers (sidebars, tab bar, top header) wait for
+        // a layout invalidation that never arrives — the OS compositor
+        // is still presenting the pre-blur cached layer.
+        //
+        // webContents.invalidate() forces Chromium to mark the entire
+        // page dirty and recomposite. Wiring it to focus + show + restore
+        // covers every "comes back into view" path:
+        //   - focus    : alt-tab, click on the window
+        //   - show     : workspace switch, app switcher
+        //   - restore  : un-minimize
+        const repaintWindow = () => {
+          try { if (win && !win.isDestroyed()) win.webContents.invalidate(); } catch (_) {}
+        };
+        win.on('focus', repaintWindow);
+        win.on('show', repaintWindow);
+        win.on('restore', repaintWindow);
       }
     });
 
