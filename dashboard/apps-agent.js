@@ -16,6 +16,7 @@ const recipes = require('./apps-recipes');
 const recipeRunner = require('./apps-recipe-runner');
 const recorder = require('./apps-recorder');
 const sandbox = require('./apps-sandbox');
+const com = require('./apps-com');
 
 const PROVIDER_ORDER = ['anthropic', 'openai', 'gemini', 'grok', 'qwen'];
 const CLI_PROVIDER_MAP = {
@@ -441,6 +442,56 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
 
   addRoute('GET', '/api/apps/sandbox/list', async (req, res) => {
     json(res, { ok: true, sandboxed: sandbox.list() });
+  });
+
+  // COM-based Office automation. Headless (no window painted at all) — even
+  // more invisible than off-screen positioning. Bypasses UIA which can't
+  // drive Office's custom-canvas editing surfaces.
+  addRoute('POST', '/api/apps/com/word/write', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    if (typeof permGate === 'function') {
+      const ok = await permGate(res, 'api', 'POST /api/apps/com/word/write', 'Write Word doc to ' + filePath);
+      if (!ok) return;
+    }
+    try { json(res, await com.wordWrite({ filePath, content: String(body.content || '') })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/com/word/read', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    try { json(res, await com.wordRead({ filePath })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/com/excel/write', async (req, res) => {
+    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    if (!Array.isArray(body.values)) return json(res, { error: 'values required (2D array)' }, 400);
+    if (typeof permGate === 'function') {
+      const ok = await permGate(res, 'api', 'POST /api/apps/com/excel/write', 'Write Excel sheet to ' + filePath + ' (' + body.values.length + ' rows)');
+      if (!ok) return;
+    }
+    try { json(res, await com.excelWrite({ filePath, values: body.values, sheetName: body.sheetName, autoFit: body.autoFit !== false })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/apps/com/excel/read', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const filePath = body.filePath ? String(body.filePath) : null;
+    if (!filePath) return json(res, { error: 'filePath required' }, 400);
+    try { json(res, await com.excelRead({ filePath, sheetName: body.sheetName || null, maxRows: body.maxRows, maxCols: body.maxCols })); }
+    catch (e) { json(res, { ok: false, error: e.message }, 500); }
   });
 
   // One-off screenshot for a window. Used by the AI recipe generator so it
