@@ -2861,11 +2861,35 @@
       const fg = getInstance && getInstance();
       if (!fg) return;
       try {
-        // 3d-force-graph + 2D ForceGraph both expose .refresh() which
-        // re-evaluates accessors and forces one full draw call.
+        // 1. RE-SYNC THE CANVAS BACKING STORE. The actual visible bug:
+        //    after a window restore, the host div has its current CSS
+        //    pixel size but the canvas's internal width/height attributes
+        //    are stale (whatever they were when focus was lost). Three.js
+        //    sets its GL viewport from those internal dims, so we get a
+        //    correctly-rendered 3D scene in the middle and the rest of
+        //    the canvas is black. Telling force-graph the new host size
+        //    rebuilds the canvas backing store + GL viewport in one shot.
+        const w = host.clientWidth || host.offsetWidth || 0;
+        const h = host.clientHeight || host.offsetHeight || 0;
+        if (w > 0 && h > 0) {
+          if (typeof fg.width === 'function')  fg.width(w);
+          if (typeof fg.height === 'function') fg.height(h);
+        }
+        // 2. Re-evaluate accessors and queue a real draw call.
         if (typeof fg.refresh === 'function') fg.refresh();
-        // Resume the rAF loop in case it was paused by visibility change.
+        // 3. Resume the rAF loop in case it was paused by visibility change.
         if (typeof fg.resumeAnimation === 'function') fg.resumeAnimation();
+        // 4. NUDGE THE CHROMIUM COMPOSITOR. Even with the canvas resized
+        //    correctly, the compositor sometimes keeps presenting the
+        //    cached layer until something triggers a recomposite. A
+        //    1-frame transform toggle on the host forces the compositor
+        //    to re-rasterize this layer cleanly.
+        try {
+          host.style.transform = 'translateZ(0)';
+          requestAnimationFrame(() => {
+            try { host.style.transform = ''; } catch (_) {}
+          });
+        } catch (_) {}
       } catch (_) {}
     }
 
