@@ -58,6 +58,14 @@ function deduplicateByLabel(nodes, edges) {
       canonical.set(`__synth__${node.id}`, node);
       continue;
     }
+    // Memory cards. Two cards with similar titles ("Don't use X" /
+    // "Don't use X with Y") could canonicalize to colliding labels and
+    // silently merge, destroying the second card's body. Memory is the
+    // user's knowledge - never silently drop it. Key by id.
+    if (node.kind === 'memory') {
+      canonical.set(`__memory__${node.id}`, node);
+      continue;
+    }
     const key = normLabel(node.label || node.id || '');
     if (!key) continue;
     const existing = canonical.get(key);

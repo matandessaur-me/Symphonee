@@ -1033,6 +1033,50 @@ function mountMind(addRoute, json, ctx) {
     return json(res, { ok: true, nodeId: id, audit, groundedCount: grounded.length });
   });
 
+  // ── Memory cards: durable knowledge taught mid-conversation ─────────────
+  // The user (or an AI on their behalf) committed a fact. "DYOB doesn't
+  // follow the Bath Fitter design system." "For Playdate, prefer pulldown
+  // for menu navigation." "Don't mock the database in tests - we got
+  // burned last quarter." Each becomes a kind:memory node, indexed by
+  // tags, linked to its source conversation if known, and surfaceable on
+  // wakeup + recall queries.
+  //
+  // POST /api/mind/teach
+  //   {
+  //     "title":          "DYOB doesn't follow Bath Fitter brand",
+  //     "body":           "Different colour palette + typography ...",
+  //     "kindOfMemory":   "constraint" | "decision" | "preference" |
+  //                       "lesson" | "gotcha" | "pattern" | "fact",
+  //     "tags":           ["DYOB", "Bath Fitter", "design"],
+  //     "scope":          { "repo": "DYOB3" },          // optional
+  //     "source":         { "type": "conversation",     // optional
+  //                         "ref":  "<existing node id>" },
+  //     "createdBy":      "claude" | "codex" | "user" | ...
+  //   }
+  // Returns: { ok, nodeId, node, edges }
+  addRoute('POST', '/api/mind/teach', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body || typeof body !== 'object') {
+      return json(res, { error: 'request body must be a JSON object' }, 400);
+    }
+    const space = getSpace();
+    const memoryModule = require('./memory');
+    try {
+      const { node, edges } = await memoryModule.addMemoryCard({
+        repoRoot, space, spec: body,
+      });
+      if (broadcast) {
+        broadcast({ type: 'mind-update', payload: { kind: 'memory-added', id: node.id, title: node.label, createdBy: node.createdBy } });
+      }
+      return json(res, { ok: true, nodeId: node.id, node, edges });
+    } catch (e) {
+      if (e.code === 'MIND_LOCKED') {
+        return json(res, { error: e.message, holderPid: e.holderPid }, 409);
+      }
+      return json(res, { error: e.message }, 400);
+    }
+  });
+
   // ── Manual ingest: a user/agent pushes one artefact at a time ────────────
   addRoute('POST', '/api/mind/add', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));

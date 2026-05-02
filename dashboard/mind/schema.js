@@ -24,6 +24,13 @@ const NODE_KINDS = new Set([
   // the full graph state. 'repo' = first-class repository hub. 'entity' =
   // canonical brand / product / project that fans out across repos.
   'entity', 'repo',
+  // Memory cards. A small, durable piece of knowledge the user (or an
+  // AI on their behalf) committed to long-term memory: a decision,
+  // preference, constraint, lesson, gotcha, or pattern. Distinct from
+  // 'conversation' (full Q&A transcript) because the card IS the fact,
+  // not a citation of one. Survives across sessions; surfaces on
+  // wakeup and recall queries.
+  'memory',
 ]);
 
 const CONFIDENCE_LABELS = new Set(['EXTRACTED', 'INFERRED', 'AMBIGUOUS']);
