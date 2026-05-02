@@ -11,6 +11,8 @@ const PORT = 3800;
 const HOST = '127.0.0.1';
 
 let win = null;
+let splashShownAt = 0;
+const SPLASH_MIN_MS = 1500;
 
 // ── In-app browser automation driver ───────────────────────────────────────
 // Tracks the <webview> webContents inside panel-browser and exposes
@@ -1403,6 +1405,43 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    // Create the main window FIRST and point it at splash.html on disk so
+    // the user sees the brand mark immediately. We swap to the dashboard
+    // URL once the HTTP server is listening (with a CSS fade in splash.html).
+    {
+      const displays = screen.getAllDisplays();
+      const pref = loadDisplayPref();
+      const preferredDisplay = pref
+        ? displays.find(d => d.id === pref.displayId) || screen.getPrimaryDisplay()
+        : screen.getPrimaryDisplay();
+      const { x, y, width, height } = preferredDisplay.workArea;
+      win = new BrowserWindow({
+        x, y, width, height,
+        autoHideMenuBar: true,
+        title: 'Symphonee',
+        backgroundColor: '#1a1a1a',
+        show: false,
+        icon: nativeImage.createFromPath(
+          fs.existsSync(path.join(__dirname, 'public', 'icon.ico'))
+            ? path.join(__dirname, 'public', 'icon.ico')
+            : path.join(__dirname, 'public', 'icon.png')
+        ),
+        titleBarStyle: 'hidden',
+        maximizable: false,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          webviewTag: true,
+        },
+      });
+      win.maximize();
+      win.once('ready-to-show', () => {
+        try { win.show(); splashShownAt = Date.now(); } catch (_) {}
+      });
+      win.on('closed', () => { win = null; });
+      try { win.loadFile(path.join(__dirname, 'public', 'splash.html')); } catch (_) {}
+    }
+
     // Wipe the renderer's HTTP cache on every launch. Electron's session
     // cache survives across app restarts and was serving stale index.html /
     // mind-ui.js even after the server had updated them, which broke the
@@ -1692,59 +1731,33 @@ if (!gotLock) {
     });
 
     server.on('listening', () => {
-      console.log('Server listening, creating window...');
-
-      // Pick the preferred display, fall back to primary if disconnected
-      const displays = screen.getAllDisplays();
-      const pref = loadDisplayPref();
-      const preferredDisplay = pref
-        ? displays.find(d => d.id === pref.displayId) || screen.getPrimaryDisplay()
-        : screen.getPrimaryDisplay();
-      const { x, y, width, height } = preferredDisplay.workArea;
-
-      win = new BrowserWindow({
-        x,
-        y,
-        width,
-        height,
-        autoHideMenuBar: true,
-        title: 'Symphonee',
-        icon: nativeImage.createFromPath(
-          fs.existsSync(path.join(__dirname, 'public', 'icon.ico'))
-            ? path.join(__dirname, 'public', 'icon.ico')
-            : path.join(__dirname, 'public', 'icon.png')
-        ),
-        titleBarStyle: 'hidden',
-        maximizable: false,
-        webPreferences: {
-          contextIsolation: true,
-          nodeIntegration: false,
-          webviewTag: true,
-        },
-      });
-      win.maximize();
-      win.loadURL(`http://${HOST}:${PORT}`);
-      win.on('closed', () => { win = null; });
-
-      // Open ALL links in system browser except our own app
+      console.log('Server listening, swapping splash to dashboard...');
       const appUrl = `http://${HOST}:${PORT}`;
 
-      win.webContents.setWindowOpenHandler(({ url }) => {
-        // Only allow our own app URL to open internally
-        if (url.startsWith(appUrl)) {
-          return { action: 'allow' };
-        }
-        // Everything else (including localhost dev servers) opens in system browser
-        shell.openExternal(url);
-        return { action: 'deny' };
-      });
+      // The main window already exists and is showing splash.html. Wait for
+      // the splash minimum, then navigate the same window to the dashboard.
+      const swap = () => {
+        if (!win || win.isDestroyed()) return;
+        try { win.loadURL(appUrl); } catch (_) {}
+      };
+      const elapsed = splashShownAt ? Date.now() - splashShownAt : 0;
+      const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
+      setTimeout(swap, remaining);
 
-      win.webContents.on('will-navigate', (event, url) => {
-        if (!url.startsWith(appUrl)) {
+      // Re-attach the link/navigation handlers on the live window.
+      if (win && !win.isDestroyed()) {
+        win.webContents.setWindowOpenHandler(({ url }) => {
+          if (url.startsWith(appUrl)) return { action: 'allow' };
+          shell.openExternal(url);
+          return { action: 'deny' };
+        });
+        win.webContents.on('will-navigate', (event, url) => {
+          // Allow internal navigations (splash -> dashboard) and our own URL.
+          if (url.startsWith(appUrl) || url.startsWith('file://')) return;
           event.preventDefault();
           shell.openExternal(url);
-        }
-      });
+        });
+      }
     });
 
     // ── Apps agent panic hotkey ────────────────────────────────────────
