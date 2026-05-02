@@ -49,6 +49,15 @@ function deduplicateByLabel(nodes, edges) {
       canonical.set(`__file__${node.id}`, node);
       continue;
     }
+    // Post-merge enrichment kinds (Phase D + A). Entity and repo nodes are
+    // synthesized from already-merged graph state; collapsing them by label
+    // would let an entity like "Sanity" merge with an existing concept
+    // titled "Sanity", swapping kinds non-deterministically. Key by id so
+    // they live in their own namespace.
+    if (node.kind === 'entity' || node.kind === 'repo') {
+      canonical.set(`__synth__${node.id}`, node);
+      continue;
+    }
     const key = normLabel(node.label || node.id || '');
     if (!key) continue;
     const existing = canonical.get(key);
