@@ -61,6 +61,11 @@ const STOPWORDS = new Set([
   'residential', 'commercial', 'marketing', 'analytics', 'media',
   'careers', 'career', 'jobs', 'job', 'lead', 'leads', 'sales', 'crm',
   'cms', 'main', 'old', 'new', 'legacy', 'v1', 'v2', 'v3', 'v4', 'v5',
+  // common organizational parent-dir names. these would otherwise
+  // become brand entities just because every repo lives under one of
+  // them (e.g. C:\Code\Personal\* groups every user project).
+  'personal', 'projects', 'project', 'repos', 'repo', 'workspace',
+  'workspaces', 'github', 'gitlab', 'documents', 'docs',
   // overly generic 4-letter false positives noticed during dev
   'code', 'data', 'file', 'item', 'user', 'auth', 'team', 'work', 'live',
   'true', 'false', 'null',
@@ -216,7 +221,33 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
     addCandidate(titleCase(ngramSurface.get(key) || key), 'repo-ngram');
   }
 
-  // 1c. Explicit seeds (user-curated overrides).
+  // 1c. Parent-directory groupings. When several repos live under the same
+  // directory ("C:/Code/Personal/Playdate/COA-Playdate", "../RAT", "../BUREAU"),
+  // that parent dir name is almost always a meaningful brand or programme
+  // grouping the slug-based n-gram pass can't see (because no individual
+  // slug shares it). Track which repos belong to each parent so we can
+  // emit explicit member edges later.
+  const parentDirToRepos = new Map(); // parentDirCanonicalKey -> Set<repoName>
+  const parentDirSurface = new Map(); // canonicalKey -> prettiest surface
+  const repoPaths = (opts.repoPaths && typeof opts.repoPaths === 'object') ? opts.repoPaths : {};
+  for (const [repoName, repoPath] of Object.entries(repoPaths)) {
+    if (typeof repoPath !== 'string' || !repoPath) continue;
+    const parent = path.basename(path.dirname(repoPath));
+    if (!parent) continue;
+    const key = canonicalize(parent);
+    if (!key || key.length < MIN_CANONICAL_LEN) continue;
+    if (STOPWORDS.has(key)) continue;
+    if (/^\d+$/.test(key)) continue;
+    if (!parentDirToRepos.has(key)) parentDirToRepos.set(key, new Set());
+    parentDirToRepos.get(key).add(repoName);
+    if (!parentDirSurface.has(key)) parentDirSurface.set(key, parent);
+  }
+  for (const [key, repos] of parentDirToRepos.entries()) {
+    if (repos.size < 2) continue;
+    addCandidate(parentDirSurface.get(key) || key, 'parent-dir');
+  }
+
+  // 1d. Explicit seeds (user-curated overrides).
   for (const seed of seedEntities) {
     if (typeof seed === 'string') addCandidate(seed, 'seed');
     else if (seed && typeof seed.label === 'string') addCandidate(seed.label, 'seed');
@@ -298,6 +329,42 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
         createdBy: 'mind/entities',
         createdAt,
       });
+      mentions++;
+    }
+  }
+
+  // ── Phase 4.5: parent-directory member edges ────────────────────────────
+  // For each parent-dir entity, link each member repo's cwd_* tag to it
+  // directly. Independent of text scan - guarantees the connection even if
+  // the cwd label doesn't literally contain the parent dir name (which is
+  // common: cwd_coa_playdate's label '@coa-playdate' has no 'playdate' in
+  // canonicalize-stripped form? It does: 'coaplaydate' contains 'playdate',
+  // so the scan would catch it. But other groupings - e.g. 'Personal'
+  // grouping every personal project - won't appear in slug labels.)
+  let parentDirEdges = 0;
+  for (const [parentKey, repos] of parentDirToRepos.entries()) {
+    if (repos.size < 2) continue;
+    const entityId = entityIdByKey.get(parentKey);
+    if (!entityId) continue; // candidate filtered out (stopword, length)
+    for (const repoName of repos) {
+      const cwdSlug = String(repoName).replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase();
+      const cwdId = `cwd_${cwdSlug}`;
+      // Verify cwd tag exists in the merged graph before pointing at it.
+      if (!nodes.some(n => n.id === cwdId)) continue;
+      const dedupKey = `${cwdId}\x01${parentKey}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+      newEdges.push({
+        source: cwdId,
+        target: entityId,
+        relation: 'mentions',
+        confidence: 'EXTRACTED',
+        confidenceScore: 1,
+        weight: 1,
+        createdBy: 'mind/entities/parent-dir',
+        createdAt,
+      });
+      parentDirEdges++;
       mentions++;
     }
   }

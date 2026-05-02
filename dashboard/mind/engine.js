@@ -253,7 +253,11 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     cp('enrich:entities');
     onProgress('Synthesizing canonical entity layer (brands, products, projects)...');
     const seedEntities = (ctx && Array.isArray(ctx.seedEntities)) ? ctx.seedEntities : [];
-    const f = extractEntities(graph, { seedEntities, repoRoot });
+    // Pass the live cfg.Repos map so parent-directory groupings (e.g.
+    // every repo under C:/Code/Personal/Playdate/) become brand entities
+    // even when no individual slug names the parent.
+    const repoPaths = typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {};
+    const f = extractEntities(graph, { seedEntities, repoRoot, repoPaths });
     enrichmentFragments.push(f);
     summary.entities = {
       scanned: f.scanned,

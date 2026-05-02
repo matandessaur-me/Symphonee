@@ -164,6 +164,50 @@ test('extractEntities: declared entity-relations emit conceptually_related_to ed
   }
 });
 
+test('extractEntities: parent-directory groupings become entities + member edges', () => {
+  // Three repos under /Code/Personal/Playdate/, two under /Code/Personal/.
+  // 'playdate' should become an entity (>=2 repos under it). 'personal'
+  // would too if it weren't a stopword - oh wait, 'personal' isn't in our
+  // stopword list. Test verifies playdate emerges and the cwd_* tags get
+  // mention edges to it.
+  const path = require('node:path');
+  const sep = path.sep; // platform-correct separator
+  const repoPaths = {
+    'COA-Playdate':   ['Code', 'Personal', 'Playdate', 'COA-Playdate'].join(sep),
+    'RAT':            ['Code', 'Personal', 'Playdate', 'RAT'].join(sep),
+    'BUREAU':         ['Code', 'Personal', 'Playdate', 'BUREAU'].join(sep),
+  };
+  const graph = {
+    nodes: [
+      { id: 'cwd_coa_playdate', label: '@COA-Playdate', kind: 'tag' },
+      { id: 'cwd_rat',          label: '@RAT',          kind: 'tag' },
+      { id: 'cwd_bureau',       label: '@BUREAU',       kind: 'tag' },
+    ],
+    edges: [],
+  };
+  const r = extractEntities(graph, { repoPaths });
+  const playdate = r.nodes.find(n => n.label === 'Playdate');
+  assert.ok(playdate, `expected Playdate entity, got ${r.nodes.map(n => n.label).join(',')}`);
+  // Each of the 3 cwd tags should have a mentions edge to entity_playdate
+  const playdateMentions = r.edges.filter(e => e.relation === 'mentions' && e.target === playdate.id);
+  const sources = playdateMentions.map(e => e.source).sort();
+  assert.deepEqual(sources, ['cwd_bureau', 'cwd_coa_playdate', 'cwd_rat']);
+});
+
+test('extractEntities: parent-dir entity needs >=2 repos under it', () => {
+  const path = require('node:path');
+  const sep = path.sep;
+  const repoPaths = {
+    'Solo': ['Code', 'Lonely', 'Solo'].join(sep), // only 1 under "Lonely"
+  };
+  const graph = {
+    nodes: [{ id: 'cwd_solo', label: '@solo', kind: 'tag' }],
+    edges: [],
+  };
+  const r = extractEntities(graph, { repoPaths });
+  assert.equal(r.nodes.find(n => n.label === 'Lonely'), undefined);
+});
+
 test('extractEntities: declared relation skipped when one side is unknown', () => {
   const fs = require('node:fs');
   const os = require('node:os');
