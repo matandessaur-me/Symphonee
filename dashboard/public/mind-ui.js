@@ -1758,11 +1758,14 @@
           <div class="mind-spinner"></div>
           <div class="mind-loader-text">Preparing graph...</div>
         </div>
-        <div id="mindMapGate" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--mantle);padding:24px;">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:14px;max-width:460px;text-align:center;">
-            <div style="font-size:20px;font-weight:700;color:var(--text);letter-spacing:0.2px;">Mind Map</div>
-            <div style="font-size:13px;color:var(--subtext0);line-height:1.55;">A live force-directed view of every note, repo file, recipe, plugin, and saved AI conversation in your brain. Click a node to inspect it, drag to pan, scroll to zoom. Loading lays out thousands of nodes — only enter when you actually need it.</div>
-            <button type="button" id="mindMapGateBtn" onclick="MindUI.loadMindmap()" style="margin-top:6px;background:transparent;border:1.5px solid var(--accent);border-radius:8px;color:var(--accent);cursor:pointer;font-size:14px;font-weight:700;padding:12px 26px;letter-spacing:0.3px;transition:background 0.15s, color 0.15s;" onmouseover="this.style.background='var(--accent)';this.style.color='var(--mantle)';" onmouseout="this.style.background='transparent';this.style.color='var(--accent)';">Enter Mind Map</button>
+        <div id="mindMapGate" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--mantle);padding:24px;overflow:auto;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:18px;max-width:760px;width:100%;text-align:center;">
+            <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:0.2px;">Mind Map</div>
+            <div style="font-size:13px;color:var(--subtext0);line-height:1.55;max-width:520px;">A live force-directed view of every note, repo file, recipe, plugin, and saved AI conversation in your brain. Click a node to inspect, drag to pan, scroll to zoom.</div>
+            <button type="button" id="mindMapGateBtn" onclick="MindUI.loadMindmap()" style="background:transparent;border:1.5px solid var(--accent);border-radius:8px;color:var(--accent);cursor:pointer;font-size:14px;font-weight:700;padding:12px 26px;letter-spacing:0.3px;transition:background 0.15s, color 0.15s;" onmouseover="this.style.background='var(--accent)';this.style.color='var(--mantle)';" onmouseout="this.style.background='transparent';this.style.color='var(--accent)';">Enter Mind Map</button>
+            <!-- Live stats panel: shows the user what's inside before they pay
+                 the layout cost. Populated by paintMindmapGate() from state.graph. -->
+            <div id="mindGateStats" style="display:none;width:100%;margin-top:6px;"></div>
           </div>
         </div>
       </div>`;
@@ -3131,6 +3134,69 @@
     // resurface the gate even though state.mindmapLoaded is still true.
     const gate = $('mindMapGate');
     if (gate) gate.style.display = state.mindmapLoaded ? 'none' : '';
+    // Populate the live stats panel so the gate shows what's actually
+    // inside the brain instead of an empty void below the button.
+    const stats = $('mindGateStats');
+    if (!stats || !state.graph) return;
+    const g = state.graph;
+    const kindCounts = {};
+    let edgeCount = 0;
+    for (const n of g.nodes) kindCounts[n.kind] = (kindCounts[n.kind] || 0) + 1;
+    edgeCount = g.edges.length;
+    const communityCount = g.communities ? Object.keys(g.communities).length : 0;
+    // Top-level summary cards.
+    const summary = [
+      { label: 'Nodes',        value: g.nodes.length },
+      { label: 'Connections',  value: edgeCount },
+      { label: 'Communities',  value: communityCount },
+    ];
+    // Sort kinds by count, drop empty, format friendly label.
+    const KIND_LABEL = {
+      code: 'code', doc: 'docs', note: 'notes',
+      conversation: 'AI conversations', drawer: 'CLI messages',
+      learning: 'learnings', plugin: 'plugins', recipe: 'recipes',
+      workitem: 'work items', concept: 'concepts', tag: 'tags',
+      artifact: 'artifacts', paper: 'papers', image: 'images',
+    };
+    const KIND_COLOR = {
+      code: '#a6e3a1', doc: '#94e2d5', note: '#f9e2af',
+      conversation: '#cba6f7', drawer: '#b4befe',
+      learning: '#fab387', plugin: '#f5c2e7', recipe: '#89dceb',
+      workitem: '#f38ba8', concept: '#89b4fa', tag: '#bac2de',
+      artifact: '#74c7ec',
+    };
+    const sortedKinds = Object.entries(kindCounts)
+      .filter(([, c]) => c > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    stats.style.display = 'block';
+    stats.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+        ${summary.map(s => `
+          <div style="background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:14px 12px;">
+            <div style="font-size:22px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1;">${fmt(s.value)}</div>
+            <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">${s.label}</div>
+          </div>
+        `).join('')}
+      </div>
+      ${sortedKinds.length ? `
+        <div style="text-align:left;background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:14px 16px;">
+          <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">What's inside</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 14px;">
+            ${sortedKinds.map(([kind, count]) => {
+              const label = KIND_LABEL[kind] || kind;
+              const color = KIND_COLOR[kind] || '#cdd6f4';
+              return `<div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text);">
+                <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>
+                <span>${label}</span>
+                <span style="color:var(--subtext0);font-variant-numeric:tabular-nums;">${fmt(count)}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
   }
   function loadMindmap() {
     state.mindmapLoaded = true;
