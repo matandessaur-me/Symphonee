@@ -306,7 +306,57 @@
   async function loadGraph() {
     const g = await API('/api/mind/graph');
     state.graph = g.empty ? null : g;
+    // Pre-fetch cached graph layouts in parallel with whatever the user does
+    // next. If a layout is cached AND the node set hasn't changed, the
+    // simulator is skipped entirely (instant render, no GPU pin).
+    state.layoutCache = { '2d': null, '3d': null, hash: null };
+    if (state.graph) {
+      state.layoutCache.hash = computeNodeHash(state.graph.nodes);
+      try {
+        const [c2, c3] = await Promise.all([
+          API('/api/mind/layout?mode=2d').catch(() => null),
+          API('/api/mind/layout?mode=3d').catch(() => null),
+        ]);
+        if (c2 && c2.cached && c2.nodeHash === state.layoutCache.hash) state.layoutCache['2d'] = c2.positions;
+        if (c3 && c3.cached && c3.nodeHash === state.layoutCache.hash) state.layoutCache['3d'] = c3.positions;
+      } catch (_) {}
+    }
     return state.graph;
+  }
+
+  // Cheap stable hash over node ids — used to invalidate the layout cache
+  // when the node set changes (build added or removed nodes). We sort + join
+  // and SHA-trunc; if the same set of ids comes back the hash matches and
+  // the cached positions are reused.
+  function computeNodeHash(nodes) {
+    const ids = nodes.map(n => n.id).sort();
+    let h = 5381;
+    for (const id of ids) {
+      for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0;
+    }
+    return `${ids.length}_${(h >>> 0).toString(16)}`;
+  }
+
+  // Save the current force-graph positions back to the server. Called from
+  // onEngineStop. Best-effort, no UI feedback — if the save fails, next
+  // load just re-runs the layout.
+  function persistLayout(mode, fgInstance) {
+    try {
+      if (!state.layoutCache || !state.layoutCache.hash) return;
+      const data = fgInstance.graphData ? fgInstance.graphData() : null;
+      if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return;
+      const positions = {};
+      for (const n of data.nodes) {
+        if (n.id == null) continue;
+        if (mode === '3d') positions[n.id] = [n.x || 0, n.y || 0, n.z || 0];
+        else positions[n.id] = [n.x || 0, n.y || 0];
+      }
+      fetch('/api/mind/layout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, nodeHash: state.layoutCache.hash, positions }),
+      }).catch(() => {});
+      state.layoutCache[mode] = positions;
+    } catch (_) {}
   }
 
   async function refreshStatus() {
@@ -1887,11 +1937,16 @@
     // We pre-compute all visual properties here so the renderer accessors
     // are pure lookups (cheap on every frame).
     const matchSetNodes = state.search ? new Set(state.matches) : null;
-    // Pre-position nodes on a Fibonacci sphere. d3-force-3d defaults every
-    // node to (0,0,0), which causes the "explosion from middle" animation
-    // on first load - all forces fire at full strength against a degenerate
-    // starting state. With pre-positions, the simulation just nudges them
-    // into clusters from a sane starting layout.
+    // Layout-cache hot path: if the server has positions saved for this
+    // exact node set, place every node at its cached x/y/z and PIN it via
+    // fx/fy/fz. d3-force honors fx/fy/fz as immovable — physics still
+    // initializes but every iteration is a no-op for pinned nodes, so the
+    // simulation finishes in ~0ms instead of pinning the iGPU for seconds.
+    const cached3d = (state.prefs.graphMode !== '2d' && state.layoutCache && state.layoutCache['3d']) || null;
+    // Pre-position nodes on a Fibonacci sphere when no cache (cold start).
+    // d3-force-3d defaults every node to (0,0,0), which causes the
+    // "explosion from middle" animation - all forces fire at full strength
+    // against a degenerate starting state.
     const SPHERE_R = 600;
     const N = nodes.length;
     const fgNodes = nodes.map((n, i) => {
@@ -1900,9 +1955,19 @@
       const isMatch = matchSetNodes ? matchSetNodes.has(n.id) : false;
       const dim = !!matchSetNodes && !isMatch;
       const baseColor = isMatch ? '#f9e2af' : kindColor(n.kind, isHub);
-      const phi = Math.acos(1 - 2 * (i + 0.5) / N);
-      const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
-      return {
+      let x, y, z, fx, fy, fz;
+      const cachedPos = cached3d && cached3d[n.id];
+      if (cachedPos && cachedPos.length >= 3) {
+        x = cachedPos[0]; y = cachedPos[1]; z = cachedPos[2];
+        fx = x; fy = y; fz = z;  // pin
+      } else {
+        const phi = Math.acos(1 - 2 * (i + 0.5) / N);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+        x = SPHERE_R * Math.sin(phi) * Math.cos(theta);
+        y = SPHERE_R * Math.sin(phi) * Math.sin(theta);
+        z = SPHERE_R * Math.cos(phi);
+      }
+      const out = {
         id: n.id,
         label: n.label,
         kind: n.kind,
@@ -1913,10 +1978,12 @@
         isDim: dim,
         color: dim ? '#3a3b4a' : baseColor,
         val: Math.max(1.5, Math.pow(deg + 1, 1.1) * 0.8),
-        x: SPHERE_R * Math.sin(phi) * Math.cos(theta),
-        y: SPHERE_R * Math.sin(phi) * Math.sin(theta),
-        z: SPHERE_R * Math.cos(phi),
+        x, y, z,
       };
+      // When pinned (cache hit), set fx/fy/fz so the simulation skips
+      // every iteration on this node — the heart of the GPU-pin fix.
+      if (fx !== undefined) { out.fx = fx; out.fy = fy; out.fz = fz; }
+      return out;
     });
 
     const fgLinks = edges.map((e) => {
@@ -1969,6 +2036,14 @@
     // search behaviour - just a flat Canvas projection that's lighter on
     // GPU and easier to read for hub/cluster topology.
     if (state.prefs.graphMode === '2d' && typeof window.ForceGraph !== 'undefined') {
+      const cached2d = (state.layoutCache && state.layoutCache['2d']) || null;
+      // Apply cached 2D positions (and pin) before handing data to ForceGraph.
+      if (cached2d) {
+        for (const n of fgNodes) {
+          const p = cached2d[n.id];
+          if (p && p.length >= 2) { n.x = p[0]; n.y = p[1]; n.fx = p[0]; n.fy = p[1]; }
+        }
+      }
       const nodeById2d = new Map();
       fgNodes.forEach((n) => nodeById2d.set(n.id, n));
       const initialSize2d = graphHostSize(host);
@@ -2010,8 +2085,11 @@
         })
         .onBackgroundClick(() => { /* deselect requires the explicit Deselect button — clicking empty space no longer clears the selection. */ })
         .onNodeHover((n) => { host.style.cursor = n ? 'pointer' : ''; })
-        .cooldownTicks(120)
-        .warmupTicks(120)
+        // Cache hit -> physics is a no-op (every node is pinned). Drop
+        // both warmup and cooldown to zero so the first frame is the
+        // final frame and the iGPU stays at idle.
+        .cooldownTicks(cached2d ? 0 : 120)
+        .warmupTicks(cached2d ? 0 : 120)
         .d3AlphaDecay(0.06)
         .d3VelocityDecay(0.55);
       try {
@@ -2159,6 +2237,8 @@
         if (!firstStop2) return;
         firstStop2 = false;
         state.graphSettled = true;
+        // Persist positions so the next 2D open is a zero-physics paint.
+        if (!cached2d) persistLayout('2d', fg2);
         try {
           syncGraphSize(fg2, host);
           fg2.zoomToFit(0, 80);
@@ -2360,7 +2440,10 @@
       // the loader up for that whole window. The reward is zero animation
       // jitter when the graph appears.
       .cooldownTicks(0)
-      .warmupTicks(250)
+      // When the layout cache supplied positions for every node, skip the
+      // synchronous 250-tick warmup entirely. Render becomes a one-frame
+      // operation instead of a 1-2s GPU pin.
+      .warmupTicks(cached3d ? 0 : 250)
       .d3AlphaDecay(0.06)
       .d3VelocityDecay(0.55);
 
@@ -2708,11 +2791,15 @@
     };
     fg.onEngineStop(() => {
       state.graphSettled = true;
+      // Persist the now-stable positions so the next load skips physics.
+      // Only save when we ran a real simulation (cache miss); otherwise
+      // we'd just be re-saving the same numbers we loaded.
+      if (!cached3d) persistLayout('3d', fg);
       // Settle buffer: even after the engine reports stop, Three.js often
       // needs another second to finish its last few draw calls and settle
       // material caches. Holding the loader for ~1.2s extra eliminates
       // the "appears, then is laggy for 5 seconds" complaint.
-      setTimeout(reveal, 1200);
+      setTimeout(reveal, cached3d ? 200 : 1200);
     });
 
     // Fallback: if onEngineStop never fires (worker issue, etc), reveal
