@@ -2232,6 +2232,11 @@
         } catch (_) {}
       }
       try { window.addEventListener('resize', resizeGraph2); state.fgResizeHandler = resizeGraph2; } catch (_) {}
+      // 2D Canvas has the same iGPU-handoff issue: comes back garbled or
+      // black after the Symphonee window loses focus. Same recovery
+      // helper, with mode='2d' so it knows the surface is Canvas2D rather
+      // than WebGL and skips the GL-specific listeners.
+      attachGraphRecovery(host, () => fg2, '2d');
       let firstStop2 = true;
       fg2.onEngineStop(() => {
         if (!firstStop2) return;
@@ -2309,6 +2314,13 @@
         antialias: false,
         alpha: false,
         powerPreference: 'high-performance',
+        // Keep the last drawn frame in the buffer so a brief context blip
+        // (alt-tab on iGPUs) doesn't show garbled / black before the next
+        // requestAnimationFrame fires. Costs a tiny bit of memory; worth it.
+        preserveDrawingBuffer: true,
+        // Tell the GPU we want to recover automatically if the context
+        // gets revoked, instead of giving up permanently.
+        failIfMajorPerformanceCaveat: false,
       },
     })
       .width(initialSize.width)
@@ -2665,6 +2677,15 @@
     }, { passive: false, capture: true });
 
     state.fg = fg;
+    // ── Context-loss + focus-loss recovery ─────────────────────────────────
+    // When Symphonee loses the GPU (alt-tab on iGPUs, lock screen, GPU
+    // process restart) the WebGL canvas comes back black or with garbled
+    // texture residue. Three.js auto-recovers when given the chance —
+    // we just need to (a) prevent the default 'lose forever' behavior on
+    // webglcontextlost, (b) trigger a re-render once webglcontextrestored
+    // fires, and (c) on plain window-focus return, force one fresh frame
+    // even if the GL context never officially died.
+    attachGraphRecovery(host, () => fg, '3d');
     state.fgClearHighlight = clearHighlight;
 
     const resizeGraph = () => {
@@ -2808,12 +2829,103 @@
     state.fgRevealFallback = revealFallback;
   }
 
+  // ── Graph context-loss + focus recovery ───────────────────────────────────
+  // Hooks four events on the canvas + window so a backgrounded Symphonee
+  // recovers cleanly:
+  //   webglcontextlost      -> preventDefault so Three.js gets a chance to
+  //                            restore (without this the GL context is
+  //                            torn down permanently).
+  //   webglcontextrestored  -> rebuild the renderer and force a frame.
+  //   visibilitychange      -> when Symphonee becomes visible again, ask
+  //                            the force-graph to re-render even if the GL
+  //                            context never officially died (catches the
+  //                            'comes back grey/garbled' case).
+  //   window 'focus'        -> belt-and-suspenders; some Windows compositors
+  //                            don't fire visibilitychange on alt-tab.
+  //
+  // All listeners are tracked on state.fgRecoveryHandlers so teardownNetwork
+  // can remove them. mode is '3d' (WebGL via Three.js) or '2d' (Canvas2D).
+  function attachGraphRecovery(host, getInstance, mode) {
+    if (state.fgRecoveryHandlers) detachGraphRecovery();
+    const handlers = { canvas: null, lost: null, restored: null, vis: null, focus: null, mode };
+
+    function findCanvas() {
+      // Both 3d-force-graph and the 2D ForceGraph mount their <canvas>
+      // inside the host. WebGL is the first canvas in 3D mode; 2D mode has
+      // its own. Either way, we just want every canvas in scope.
+      try { return Array.from(host.querySelectorAll('canvas')); }
+      catch (_) { return []; }
+    }
+
+    function forceRedraw() {
+      const fg = getInstance && getInstance();
+      if (!fg) return;
+      try {
+        // 3d-force-graph + 2D ForceGraph both expose .refresh() which
+        // re-evaluates accessors and forces one full draw call.
+        if (typeof fg.refresh === 'function') fg.refresh();
+        // Resume the rAF loop in case it was paused by visibility change.
+        if (typeof fg.resumeAnimation === 'function') fg.resumeAnimation();
+      } catch (_) {}
+    }
+
+    function onLost(e) {
+      // Default action of webglcontextlost is "context is gone, no recovery
+      // ever". We need to call preventDefault to enable
+      // webglcontextrestored to fire later.
+      try { e.preventDefault(); } catch (_) {}
+    }
+    function onRestored() {
+      // GPU is back. Tell force-graph to rebuild its draw state.
+      forceRedraw();
+    }
+    function onVisible() {
+      if (document.visibilityState === 'visible') {
+        // Schedule the redraw on the next animation frame so the compositor
+        // has finished setting up the new surface before we draw into it.
+        try { requestAnimationFrame(forceRedraw); } catch (_) { forceRedraw(); }
+      }
+    }
+    function onFocus() { try { requestAnimationFrame(forceRedraw); } catch (_) { forceRedraw(); } }
+
+    // Wire up.
+    handlers.canvases = findCanvas();
+    if (mode === '3d') {
+      for (const c of handlers.canvases) {
+        try { c.addEventListener('webglcontextlost', onLost, false); } catch (_) {}
+        try { c.addEventListener('webglcontextrestored', onRestored, false); } catch (_) {}
+      }
+    }
+    handlers.lost = onLost;
+    handlers.restored = onRestored;
+    handlers.vis = onVisible;
+    handlers.focus = onFocus;
+    try { document.addEventListener('visibilitychange', onVisible); } catch (_) {}
+    try { window.addEventListener('focus', onFocus); } catch (_) {}
+    state.fgRecoveryHandlers = handlers;
+  }
+
+  function detachGraphRecovery() {
+    const h = state.fgRecoveryHandlers;
+    if (!h) return;
+    if (h.canvases && (h.lost || h.restored)) {
+      for (const c of h.canvases) {
+        try { c.removeEventListener('webglcontextlost', h.lost, false); } catch (_) {}
+        try { c.removeEventListener('webglcontextrestored', h.restored, false); } catch (_) {}
+      }
+    }
+    if (h.vis) { try { document.removeEventListener('visibilitychange', h.vis); } catch (_) {} }
+    if (h.focus) { try { window.removeEventListener('focus', h.focus); } catch (_) {} }
+    state.fgRecoveryHandlers = null;
+  }
+
   function teardownNetwork() {
     if (state.sigmaLayoutCancel) { try { state.sigmaLayoutCancel(); } catch (_) {} state.sigmaLayoutCancel = null; }
     if (state.fgRevealFallback) { clearTimeout(state.fgRevealFallback); state.fgRevealFallback = null; }
     if (state.fgResizeObserver) { try { state.fgResizeObserver.disconnect(); } catch (_) {} state.fgResizeObserver = null; }
     if (state.fgResizeHandler) { try { window.removeEventListener('resize', state.fgResizeHandler); } catch (_) {} state.fgResizeHandler = null; }
     if (state.fgResizePause) { clearTimeout(state.fgResizePause); state.fgResizePause = null; }
+    detachGraphRecovery();
     if (state.fg) {
       try { state.fg.pauseAnimation(); } catch (_) {}
       try {
