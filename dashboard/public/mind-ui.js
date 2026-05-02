@@ -2090,6 +2090,39 @@
           fg2.d3Force('collide', collide);
         }
       } catch (_) {}
+      // ── Trackpad-friendly zoom-to-cursor ───────────────────────────────────
+      // force-graph's built-in d3-zoom barely moves on a Windows trackpad
+      // because two-finger swipe deltas are tiny (deltaMode=0, ~1-10 px). We
+      // intercept wheel in capture phase, normalise across deltaMode/pinch,
+      // and drive fg2.zoom() with cursor anchoring so the world point under
+      // the cursor stays put — same feel as Figma / the 3D path above.
+      host.addEventListener('wheel', (ev) => {
+        try {
+          if (typeof fg2.zoom !== 'function' || typeof fg2.screen2GraphCoords !== 'function') return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          let delta = ev.deltaY;
+          if (ev.deltaMode === 1) delta *= 16;
+          else if (ev.deltaMode === 2) delta *= host.clientHeight || 600;
+          // Pinch-zoom on a trackpad arrives as wheel + ctrlKey with smaller
+          // magnitudes; bump sensitivity so a pinch feels proportional.
+          const sensitivity = ev.ctrlKey ? 0.012 : 0.0025;
+          const factor = Math.exp(-delta * sensitivity);
+          const curZoom = fg2.zoom();
+          const newZoom = Math.max(0.05, Math.min(40, curZoom * factor));
+          if (Math.abs(newZoom - curZoom) < 1e-6) return;
+          const rect = host.getBoundingClientRect();
+          const cx = ev.clientX - rect.left;
+          const cy = ev.clientY - rect.top;
+          const before = fg2.screen2GraphCoords(cx, cy);
+          fg2.zoom(newZoom);
+          const after = fg2.screen2GraphCoords(cx, cy);
+          const center = fg2.centerAt();
+          if (center && before && after) {
+            fg2.centerAt(center.x + (before.x - after.x), center.y + (before.y - after.y));
+          }
+        } catch (_) {}
+      }, { passive: false, capture: true });
       try { host.style.opacity = '0'; } catch (_) {}
       // Same trick as the 3D path (Codex's fix): force-graph caches the
       // host's size at construction. Wire a ResizeObserver + window-resize
