@@ -252,27 +252,22 @@
     scored.sort((a, b) => a.rank - b.rank || b.deg - a.deg);
     let matchIds = scored.map(x => x.id);
 
-    // Expand matches along semantic edges. The search input is a
-    // navigation aid, not a query: when the user types "bathfitter" the
-    // brain knows "DYOB part_of Bath Fitter" - DYOB should light up too.
-    // When the user types "COA" the brain knows COA-Playdate mentions
-    // the Playdate entity which is also mentioned by RAT, BUREAU, etc -
-    // those siblings should light up too.
+    // Expand matches one hop along semantic edges so the user SEES
+    // related entities ("DYOB is connected to Bath Fitter") without
+    // pulling in the full cohort. If they want the cohort they click
+    // the related entity to drill in - cheaper for the eye, cheaper for
+    // the LLM if the search context is later sent as graph state.
     //
-    // Two-stage expansion (each strictly bounded so the highlight set
-    // never explodes):
-    //   1. From any match, follow conceptually_related_to (either dir)
-    //      and mentions->entity edges. Adds the directly-related entities.
-    //   2. For each entity added in stage 1, follow its incoming mentions
-    //      to surface sibling cohort members. This is what makes "COA"
-    //      pull the rest of the Playdate set.
+    // Edges traversed: conceptually_related_to (either direction) and
+    // mentions where the OTHER end is a kind:entity. Nothing more. An
+    // earlier version added Stage 2 (each reached entity's incoming
+    // mentions, capped at 50) which made "DYOB" pull every Bath Fitter
+    // node and visually drowned the actual answer. Removed.
     if (matchIds.length) {
       const matchSet = new Set(matchIds);
       const nodeById = new Map();
       for (const n of state.graph.nodes) nodeById.set(n.id, n);
       const added = [];
-      const entitiesReached = new Set();
-      // Stage 1
       for (const e of state.graph.edges) {
         const inSrc = matchSet.has(e.source);
         const inTgt = matchSet.has(e.target);
@@ -287,23 +282,6 @@
         if (!isRelEdge && !isMentionToEntity) continue;
         matchSet.add(peer);
         added.push(peer);
-        if (isEntityHop) entitiesReached.add(peer);
-      }
-      // Stage 2: pull sibling cohort via entity hubs (cap each entity to
-      // SIBLING_CAP so a 1000-mention hub doesn't drown the highlight).
-      const SIBLING_CAP = 50;
-      if (entitiesReached.size) {
-        const perEntityCount = new Map();
-        for (const id of entitiesReached) perEntityCount.set(id, 0);
-        for (const e of state.graph.edges) {
-          if (e.relation !== 'mentions') continue;
-          if (!entitiesReached.has(e.target)) continue;
-          if (matchSet.has(e.source)) continue;
-          if ((perEntityCount.get(e.target) || 0) >= SIBLING_CAP) continue;
-          matchSet.add(e.source);
-          added.push(e.source);
-          perEntityCount.set(e.target, (perEntityCount.get(e.target) || 0) + 1);
-        }
       }
       matchIds = matchIds.concat(added);
     }

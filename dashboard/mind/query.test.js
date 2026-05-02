@@ -137,3 +137,59 @@ test('validateGraph accepts a drawer-kind node', () => {
   };
   assert.deepEqual(validateGraph(g), []);
 });
+
+test('runQuery: code-only seeds skip taxonomic edges (mentions/member_of)', () => {
+  // Seed at a code node. The graph contains both a code-structural
+  // edge (calls -> auth_helper) AND a taxonomic edge (member_of ->
+  // repo node) AND a brand mention. Code-only mode should pull the
+  // structural neighbour and skip the brand/repo noise.
+  const g = {
+    version: 1,
+    scope: { space: 'test', isGlobal: false },
+    generatedAt: new Date().toISOString(),
+    nodes: [
+      makeNode('code_login', 'login.ts', { kind: 'code' }),
+      makeNode('code_auth_helper', 'auth_helper.ts', { kind: 'code' }),
+      makeNode('repo_node_app', 'app', { kind: 'repo' }),
+      makeNode('entity_brand', 'BrandX', { kind: 'entity' }),
+    ],
+    edges: [
+      makeEdge('code_login', 'code_auth_helper', { relation: 'calls' }),
+      makeEdge('code_login', 'repo_node_app',    { relation: 'member_of' }),
+      makeEdge('code_login', 'entity_brand',     { relation: 'mentions' }),
+    ],
+    hyperedges: [], communities: {}, gods: [], surprises: [],
+    stats: { nodes: 4, edges: 3, communities: 0, tokenCost: 0 },
+  };
+  const r = runQuery(g, { seedIds: ['code_login'], budget: 600 });
+  const ids = new Set(r.nodes.map(n => n.id));
+  assert.ok(ids.has('code_auth_helper'), 'should reach code-structural neighbour');
+  assert.ok(!ids.has('repo_node_app'), 'should skip member_of (tier 3)');
+  assert.ok(!ids.has('entity_brand'),  'should skip mentions (tier 3)');
+});
+
+test('runQuery: non-code seed allows full traversal including taxonomic', () => {
+  // Same graph, but seeded at a note (not code). The taxonomic edges
+  // are now allowed because the user might be asking about brand /
+  // repo membership.
+  const g = {
+    version: 1,
+    scope: { space: 'test', isGlobal: false },
+    generatedAt: new Date().toISOString(),
+    nodes: [
+      makeNode('note_q', 'a question note', { kind: 'note' }),
+      makeNode('repo_node_app', 'app', { kind: 'repo' }),
+      makeNode('entity_brand', 'BrandX', { kind: 'entity' }),
+    ],
+    edges: [
+      makeEdge('note_q', 'repo_node_app', { relation: 'member_of' }),
+      makeEdge('note_q', 'entity_brand',  { relation: 'mentions' }),
+    ],
+    hyperedges: [], communities: {}, gods: [], surprises: [],
+    stats: { nodes: 3, edges: 2, communities: 0, tokenCost: 0 },
+  };
+  const r = runQuery(g, { seedIds: ['note_q'], budget: 600 });
+  const ids = new Set(r.nodes.map(n => n.id));
+  assert.ok(ids.has('repo_node_app'), 'note seed should reach taxonomic neighbour');
+  assert.ok(ids.has('entity_brand'));
+});
