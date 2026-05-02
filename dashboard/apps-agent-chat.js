@@ -824,6 +824,22 @@ async function executeTool(driver, session, name, args) {
         }
         const err = new Error('no element matched selector (heal failed)'); err.code = 'uia_miss'; throw err;
       }
+      // Sandboxed targets cannot receive SendInput — route the click via
+      // PostMessage WM_LBUTTONDOWN/UP so it lands in the off-screen Spotify
+      // / Chromium-button instead of the user's foreground app. For
+      // non-sandboxed targets, the original nut-js click stays (faster +
+      // more compatible with weird input handlers).
+      if (typeof driver.isSandboxedHwnd === 'function' && driver.isSandboxedHwnd(hwnd)) {
+        const r = await driver.postMessageClick(hwnd, hit.x, hit.y);
+        if (!r || !r.ok) {
+          const err = new Error('sandboxed PostMessage click failed: ' + (r && r.reason || 'unknown'));
+          err.code = 'sandboxed_click_failed'; throw err;
+        }
+        session._pendingChange = true;
+        session.actionLog = session.actionLog || [];
+        session.actionLog.push({ verb: 'CLICK_ELEMENT', target: { selector: args.selector, via: 'postmessage', name: hit.meta && hit.meta.name, type: hit.meta && hit.meta.type, xy: { x: hit.x, y: hit.y }, target_hwnd: r.hwnd_target }, attemptN: 1, outcome: 'ok', ts: Date.now() });
+        return { ok: true, via: 'postmessage', x: hit.x, y: hit.y, name: hit.meta && hit.meta.name, type: hit.meta && hit.meta.type };
+      }
       await driver.click(hit.x, hit.y, { hwnd });
       session._pendingChange = true;
       session.actionLog = session.actionLog || [];

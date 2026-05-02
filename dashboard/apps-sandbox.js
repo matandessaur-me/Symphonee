@@ -33,8 +33,13 @@ function _runPs(script, opts) {
 }
 
 // Move a window to off-screen coords without activating it. SWP_NOACTIVATE
-// (0x0010) | SWP_NOZORDER (0x0004) | SWP_NOREDRAW (0x0008) — keeps the user's
-// active window untouched.
+// (0x0010) | SWP_NOZORDER (0x0004) — keeps the user's active window
+// untouched. We also OR WS_EX_NOACTIVATE (0x08000000) into the extended
+// style so Windows refuses to give the off-screen window foreground even
+// when the app calls SetForegroundWindow itself or its UIA SetFocus()
+// implicitly raises it. This is what stops user keystrokes from leaking
+// into a sandboxed Spotify search box (observed: typing in the terminal
+// landed in Spotify's hijacked-focus search field).
 async function setOffscreen(hwnd) {
   const script = `
 Add-Type -Name SyStealth -Namespace Sy -MemberDefinition @"
@@ -46,6 +51,10 @@ public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
 public static extern bool ShowWindow(System.IntPtr h, int c);
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool IsIconic(System.IntPtr h);
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
+public static extern int GetWindowLong(System.IntPtr h, int i);
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
+public static extern int SetWindowLong(System.IntPtr h, int i, int v);
 [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
 public struct RECT { public int left; public int top; public int right; public int bottom; }
 "@ -ErrorAction SilentlyContinue
@@ -53,6 +62,10 @@ $h = [System.IntPtr]::new([int64]${hwnd})
 # If minimized, restore first so the move actually applies (Windows ignores
 # SetWindowPos position on iconic windows in some cases).
 if ([Sy.SyStealth]::IsIconic($h)) { [void][Sy.SyStealth]::ShowWindow($h, 9) }
+# Apply WS_EX_NOACTIVATE (0x08000000). GWL_EXSTYLE = -20.
+$ex = [Sy.SyStealth]::GetWindowLong($h, -20)
+$newEx = $ex -bor 0x08000000
+[void][Sy.SyStealth]::SetWindowLong($h, -20, $newEx)
 $r = New-Object Sy.SyStealth+RECT
 [void][Sy.SyStealth]::GetWindowRect($h, [ref]$r)
 $w = $r.right - $r.left
@@ -69,15 +82,25 @@ $ht = $r.bottom - $r.top
 }
 
 // Move a window back to its remembered on-screen rect. If no rect is provided,
-// centers on the primary monitor at a sensible default size.
+// centers on the primary monitor at a sensible default size. Also clears the
+// WS_EX_NOACTIVATE bit setOffscreen added so peeked/released windows behave
+// like normal foreground-able windows again.
 async function restoreOnscreen(hwnd, rect) {
   const r = rect || { x: 100, y: 100, w: 1280, h: 800 };
   const script = `
 Add-Type -Name SyStealthR -Namespace Sy -MemberDefinition @"
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr hAfter, int x, int y, int cx, int cy, uint flags);
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
+public static extern int GetWindowLong(System.IntPtr h, int i);
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
+public static extern int SetWindowLong(System.IntPtr h, int i, int v);
 "@ -ErrorAction SilentlyContinue
 $h = [System.IntPtr]::new([int64]${hwnd})
+# Clear WS_EX_NOACTIVATE (0x08000000). GWL_EXSTYLE = -20.
+$ex = [Sy.SyStealthR]::GetWindowLong($h, -20)
+$newEx = $ex -band (-bnot 0x08000000)
+[void][Sy.SyStealthR]::SetWindowLong($h, -20, $newEx)
 # SWP_NOACTIVATE 0x0010 | SWP_NOZORDER 0x0004 — keep user's foreground window.
 [void][Sy.SyStealthR]::SetWindowPos($h, [System.IntPtr]::Zero, ${r.x | 0}, ${r.y | 0}, ${r.w | 0}, ${r.h | 0}, 0x14)
 `;
@@ -107,17 +130,15 @@ async function stealthLaunch({ id, path: appPath, name }) {
     launchedAt: Date.now(),
     peeked: false,
     _reapplyTimer: null,
+    _keepAliveTimer: null,
   };
   _sandbox.set(String(launched.hwnd), entry);
 
-  // Some apps (Spotify, Discord) paint a splash THEN the real window after
-  // the splash exits. Re-apply off-screen for ~3s in case the position gets
-  // reset. The timer self-stops once it observes 6 consecutive off-screen
-  // ticks, AND any peek/release call clears it explicitly so peek isn't
-  // immediately undone.
+  // Phase 1 (0-4s): aggressive reapply. Some apps (Spotify, Discord) paint a
+  // splash then the real window — keep yanking it off-screen at 500ms cadence
+  // until we observe 6 consecutive ticks where it stayed put.
   let stays = 0;
   entry._reapplyTimer = setInterval(async () => {
-    // If the user peeked or we released the entry, this loop is dead weight.
     const live = _sandbox.get(String(launched.hwnd));
     if (!live || live.peeked) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; return; }
     try {
@@ -134,6 +155,38 @@ async function stealthLaunch({ id, path: appPath, name }) {
   setTimeout(() => {
     if (entry._reapplyTimer) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; }
   }, 4000);
+
+  // Phase 2 (lifetime of entry): keep-alive un-minimizer. Some apps (Spotify
+  // with its tray-icon, Teams, Discord) auto-minimize when they never get
+  // foreground attention. UIA queries against an iconic window come back
+  // empty, stalling the agent. This 1500ms ticker catches iconic transitions
+  // and immediately restores via SW_SHOWNOACTIVATE then re-stashes off-screen.
+  // Skipped while peeked so the user can see the window normally.
+  entry._keepAliveTimer = setInterval(async () => {
+    const live = _sandbox.get(String(launched.hwnd));
+    if (!live) { clearInterval(entry._keepAliveTimer); entry._keepAliveTimer = null; return; }
+    if (live.peeked) return;
+    try {
+      const w = await driver.getWindowRect(launched.hwnd).catch(() => null);
+      if (!w) { clearInterval(entry._keepAliveTimer); entry._keepAliveTimer = null; return; }
+      const wentIconic = w.isMinimized || (w.w > 0 && w.w < 200 && w.h < 60);
+      const drifted = w.x > OFFSCREEN_X + 1000 || w.y > OFFSCREEN_Y + 1000;
+      if (wentIconic) {
+        // SW_SHOWNOACTIVATE = 4, then push off-screen at the original size.
+        try {
+          await driver._runPs(`Add-Type -Name SyKA -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool ShowWindow(System.IntPtr h, int c);
+"@ -ErrorAction SilentlyContinue
+[void][Sy.SyKA]::ShowWindow([System.IntPtr]::new([int64]${launched.hwnd}), 4)`, { timeoutMs: 2000 });
+        } catch (_) {}
+        await setOffscreen(launched.hwnd);
+      } else if (drifted) {
+        await setOffscreen(launched.hwnd);
+      }
+    } catch (_) {}
+  }, 1500);
+
 
   return { ...launched, sandbox: true, originalRect };
 }
@@ -184,6 +237,7 @@ async function release(hwnd, { restore = true } = {}) {
   const entry = _sandbox.get(String(hwnd));
   if (!entry) return { ok: false, reason: 'not_sandboxed' };
   if (entry._reapplyTimer) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; }
+  if (entry._keepAliveTimer) { clearInterval(entry._keepAliveTimer); entry._keepAliveTimer = null; }
   if (restore) {
     try { await restoreOnscreen(hwnd, entry.originalRect); } catch (_) {}
   }

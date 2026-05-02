@@ -462,6 +462,23 @@ async function waitForUIAElement(hwnd, selector, { timeoutMs = 5000, pollMs = 25
   return { hit: false, waitedMs: Date.now() - start };
 }
 
+// PostMessage-based click. Delivers WM_LBUTTONDOWN/UP into the target
+// window's message queue, which works regardless of whether the window is
+// foreground / visible / on-screen. This is the sandbox-safe replacement
+// for nut-js click(): a sandboxed window can't receive synthetic input via
+// SendInput (it goes to user's foreground app instead), but PostMessage
+// goes directly to the hwnd. Coords are window-relative (same convention
+// as click()).
+async function postMessageClick(hwnd, x, y, { double: dbl = false } = {}) {
+  const path = require('path').join(__dirname, 'scripts', 'post-click.ps1');
+  const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -X ${Number(x)|0} -Y ${Number(y)|0}${dbl ? ' -Double' : ''}`;
+  const raw = await runPs(script, { timeoutMs: 5000 });
+  const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let parsed;
+  try { parsed = JSON.parse(line); } catch (_) { return { ok: false, reason: 'non-JSON: ' + line.slice(0, 200) }; }
+  return parsed;
+}
+
 // Set an edit-style element's text via UIA ValuePattern.SetValue. This is
 // the sandbox-safe alternative to click-then-type — it doesn't synthesize
 // keystrokes (so the off-screen target receives the text instead of the
@@ -1139,6 +1156,7 @@ module.exports = {
   waitForUIAElement,
   invokeUIAElement,
   setUIAValue,
+  postMessageClick,
   uiaTree,
   spawnUIAPicker,
   screenshotWindow,
