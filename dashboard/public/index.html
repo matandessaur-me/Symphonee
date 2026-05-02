@@ -891,6 +891,69 @@
     }
     .apps-session-chip .chip-close:hover { color: var(--red, #e06c75); }
 
+    /* Hero / empty state for the apps viewport. Three cards introducing
+       the automation primitives. Hidden as soon as any session lands. */
+    .apps-viewport-hero {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 32px 28px; gap: 18px;
+      width: 100%; height: 100%; box-sizing: border-box;
+      color: var(--text); font-family: var(--font-ui);
+      background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent, var(--blue)) 8%, transparent), transparent 60%);
+    }
+    .apps-viewport-hero .hero-title {
+      font: 700 22px var(--font-ui); letter-spacing: 0.2px;
+    }
+    .apps-viewport-hero .hero-sub {
+      font: 500 13px var(--font-ui); color: var(--subtext0);
+      margin-bottom: 12px;
+    }
+    .apps-viewport-hero .hero-modes {
+      display: grid; grid-template-columns: repeat(3, minmax(220px, 320px));
+      gap: 14px; width: 100%; max-width: 1080px;
+    }
+    @media (max-width: 1100px) {
+      .apps-viewport-hero .hero-modes { grid-template-columns: 1fr; max-width: 460px; }
+    }
+    .apps-viewport-hero .hero-mode {
+      background: var(--surface0); border: 1px solid var(--surface2); border-radius: 10px;
+      padding: 16px; cursor: pointer;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+    .apps-viewport-hero .hero-mode:hover {
+      border-color: var(--accent, var(--blue));
+      transform: translateY(-2px);
+    }
+    .apps-viewport-hero .hero-mode-icon {
+      width: 32px; height: 32px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--accent, var(--blue)) 18%, var(--surface0));
+      color: var(--accent, var(--blue));
+    }
+    .apps-viewport-hero .hero-mode-title {
+      font: 600 14px var(--font-ui);
+    }
+    .apps-viewport-hero .hero-mode-desc {
+      font: 400 12px var(--font-ui); color: var(--subtext1);
+      line-height: 1.45;
+    }
+    .apps-viewport-hero .hero-mode-desc code {
+      background: var(--surface1); padding: 1px 5px; border-radius: 3px;
+      font-size: 11px;
+    }
+    .apps-viewport-hero .hero-mode-cta {
+      margin-top: auto; font: 600 11px var(--font-ui);
+      color: var(--accent, var(--blue)); letter-spacing: 0.3px;
+    }
+    .apps-viewport-hero .hero-foot {
+      font: 500 11px var(--font-ui); color: var(--subtext0);
+      margin-top: 6px;
+    }
+    .apps-viewport-hero .hero-foot code {
+      background: var(--surface1); padding: 1px 5px; border-radius: 3px;
+      font-family: var(--font-mono); color: var(--text);
+    }
+
     /* Multi-session viewport grid: tiles of live screenshots, one per
        registered session. Auto-laid-out 1/2/3 columns based on count. */
     .apps-viewport-grid {
@@ -5514,8 +5577,53 @@
         <div class="apps-main">
           <div class="apps-viewport-wrap">
             <div class="apps-viewport" id="appsViewport">
-              <div class="apps-viewport-empty" id="appsViewportEmpty">
-                Pick a window to start.
+              <!-- Hero / empty state: surfaces the three automation primitives
+                   so the user knows what this tab can do. Hidden as soon as
+                   any session is registered or a screenshot lands. -->
+              <div class="apps-viewport-hero" id="appsViewportEmpty">
+                <div class="hero-title">App Automation</div>
+                <div class="hero-sub">Drive desktop apps without taking over your screen.</div>
+                <div class="hero-modes">
+                  <div class="hero-mode" onclick="appsOpenLauncher()">
+                    <div class="hero-mode-icon">
+                      <i data-lucide="eye-off" style="width:20px;height:20px;"></i>
+                    </div>
+                    <div class="hero-mode-title">Stealth UI</div>
+                    <div class="hero-mode-desc">
+                      Launch any app off-screen and let an agent drive it via
+                      UIA. Your visible desktop stays untouched. Multiple
+                      sessions can run in parallel.
+                    </div>
+                    <div class="hero-mode-cta">Pick an app to launch &rarr;</div>
+                  </div>
+                  <div class="hero-mode" onclick="_appsHeroOpenComModal()">
+                    <div class="hero-mode-icon">
+                      <i data-lucide="file-text" style="width:20px;height:20px;"></i>
+                    </div>
+                    <div class="hero-mode-title">Headless Office</div>
+                    <div class="hero-mode-desc">
+                      Generate Word .docx and Excel .xlsx files directly via
+                      COM. No window paints. Best for documents, reports,
+                      spreadsheets, formulas.
+                    </div>
+                    <div class="hero-mode-cta">Open the COM helper &rarr;</div>
+                  </div>
+                  <div class="hero-mode" onclick="switchTab('orchestrator')">
+                    <div class="hero-mode-icon">
+                      <i data-lucide="calendar-clock" style="width:20px;height:20px;"></i>
+                    </div>
+                    <div class="hero-mode-title">Schedule</div>
+                    <div class="hero-mode-desc">
+                      Wrap any of the above in a recurring job. <code>daily 08:00</code>,
+                      <code>weekly 1 09:00</code>, <code>every 30m</code>.
+                      Runs while you're away or asleep.
+                    </div>
+                    <div class="hero-mode-cta">View jobs in Orchestrator &rarr;</div>
+                  </div>
+                </div>
+                <div class="hero-foot">
+                  Curl reference: <code>GET /api/instructions/apps-automation</code>
+                </div>
               </div>
               <!-- Single-session view: one big screenshot. Used when only one
                    session is registered. Hidden when grid is active. -->
@@ -17665,6 +17773,104 @@ function _appsShowClickDot(at, rect) {
 }
 
 var _appsLastRect = null;
+
+// Headless Office (COM) modal — tiny dialog launched from the hero card on
+// the empty viewport. Lets the user generate a Word or Excel file via
+// /api/apps/com/* without writing curl. Output path defaults to the user's
+// Documents folder.
+function _appsHeroOpenComModal() {
+  let overlay = document.getElementById('appsComModal');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'appsComModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3300;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const docs = 'C:\\Users\\' + (navigator.userAgent.includes('Win') ? '<you>' : '<you>') + '\\Documents';
+  overlay.innerHTML =
+    '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:10px;width:600px;max-width:94vw;box-shadow:0 12px 40px rgba(0,0,0,0.5);padding:18px 22px;">'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+      + '<i data-lucide="file-text" style="width:17px;height:17px;color:var(--accent);"></i>'
+      + '<strong style="font-size:14px;">Headless Office (COM)</strong>'
+      + '<div style="flex:1;"></div>'
+      + '<button onclick="document.getElementById(\'appsComModal\').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;font-size:16px;line-height:1;">&times;</button>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--subtext1);margin-bottom:14px;">Generates the file directly via Word.Application / Excel.Application COM. No window paints. The file is written to disk.</div>'
+    + '<div style="display:flex;gap:6px;margin-bottom:12px;">'
+      + '<button class="sy-btn sy-btn-outline" type="button" id="appsComMode-word" onclick="_appsComSetMode(\'word\')">Word .docx</button>'
+      + '<button class="sy-btn sy-btn-outline" type="button" id="appsComMode-excel" onclick="_appsComSetMode(\'excel\')">Excel .xlsx</button>'
+    + '</div>'
+    + '<label style="display:block;font-size:11px;color:var(--subtext0);margin-bottom:4px;">File path</label>'
+    + '<input type="text" id="appsComPath" placeholder="C:\\Users\\you\\Documents\\report.docx" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--surface2);background:var(--surface1);color:var(--text);font:12px var(--font-mono);margin-bottom:12px;">'
+    + '<label style="display:block;font-size:11px;color:var(--subtext0);margin-bottom:4px;" id="appsComBodyLabel">Document content</label>'
+    + '<textarea id="appsComBody" placeholder="Title\n\nFirst paragraph..." style="width:100%;height:160px;padding:10px;border-radius:6px;border:1px solid var(--surface2);background:var(--surface1);color:var(--text);font:12px var(--font-mono);margin-bottom:8px;resize:vertical;"></textarea>'
+    + '<div style="font-size:11px;color:var(--subtext0);margin-bottom:14px;display:none;" id="appsComExcelHint">'
+      + 'For Excel: paste a 2D JSON array (rows of cells). Use <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">"=SUM(B2:B3)"</code> for formulas. Numbers as numbers.'
+    + '</div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;">'
+      + '<button class="sy-btn sy-btn-ghost" type="button" onclick="document.getElementById(\'appsComModal\').remove()">Cancel</button>'
+      + '<button class="sy-btn sy-btn-primary" type="button" onclick="_appsComSubmit()" id="appsComSubmitBtn">Generate</button>'
+    + '</div>'
+  + '</div>';
+  document.body.appendChild(overlay);
+  if (typeof lucide !== 'undefined') lucide.createIcons({ el: overlay });
+  _appsComSetMode('word');
+}
+let _appsComMode = 'word';
+function _appsComSetMode(mode) {
+  _appsComMode = mode;
+  const wordBtn = document.getElementById('appsComMode-word');
+  const xlBtn   = document.getElementById('appsComMode-excel');
+  if (wordBtn && xlBtn) {
+    wordBtn.classList.toggle('sy-btn-primary', mode === 'word');
+    wordBtn.classList.toggle('sy-btn-outline', mode !== 'word');
+    xlBtn.classList.toggle('sy-btn-primary', mode === 'excel');
+    xlBtn.classList.toggle('sy-btn-outline', mode !== 'excel');
+  }
+  const label = document.getElementById('appsComBodyLabel');
+  const body  = document.getElementById('appsComBody');
+  const hint  = document.getElementById('appsComExcelHint');
+  const path  = document.getElementById('appsComPath');
+  if (mode === 'word') {
+    if (label) label.textContent = 'Document content (paragraphs separated by newlines)';
+    if (hint)  hint.style.display = 'none';
+    if (body && !body.value) body.placeholder = 'Title\n\nFirst paragraph.\nSecond paragraph.';
+    if (path && !path.value) path.value = '';
+  } else {
+    if (label) label.textContent = 'Excel data (2D JSON array)';
+    if (hint)  hint.style.display = '';
+    if (body && !body.value) body.placeholder = '[\n  ["Customer", "Deal Value"],\n  ["ACME", 12500],\n  ["Globex", 8400],\n  ["TOTAL", "=SUM(B2:B3)"]\n]';
+    if (path && !path.value) path.value = '';
+  }
+}
+async function _appsComSubmit() {
+  const path = (document.getElementById('appsComPath') || {}).value || '';
+  const body = (document.getElementById('appsComBody') || {}).value || '';
+  if (!path) { if (typeof toast === 'function') toast('File path required.', 'warning'); return; }
+  const btn = document.getElementById('appsComSubmitBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  try {
+    let route, payload;
+    if (_appsComMode === 'word') {
+      route = '/api/apps/com/word/write';
+      payload = { filePath: path, content: body };
+    } else {
+      let values;
+      try { values = JSON.parse(body); } catch (e) { throw new Error('Excel body must be valid JSON 2D array: ' + e.message); }
+      if (!Array.isArray(values) || !values.length || !Array.isArray(values[0])) throw new Error('Excel body must be an array of arrays');
+      route = '/api/apps/com/excel/write';
+      payload = { filePath: path, values };
+    }
+    const r = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'COM call failed');
+    if (typeof notify === 'function') notify('Apps COM ' + _appsComMode + ' done', 'Wrote ' + path, { source: 'apps-com', icon: 'file-text' });
+    if (typeof toast === 'function') toast('Saved ' + path, 'success', { duration: 4000 });
+    document.getElementById('appsComModal').remove();
+  } catch (e) {
+    if (typeof toast === 'function') toast('COM: ' + e.message, 'error', { duration: 5000 });
+    if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+  }
+}
 
 // Multi-session tracker: stealth automation makes parallel runs viable, so
 // the Apps tab can no longer assume a single session. Each session id seen
