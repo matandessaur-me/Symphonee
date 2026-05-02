@@ -91,6 +91,58 @@ $ex = [Sy.SyNoAct]::GetWindowLong($h, -20)
   try { await _runPs(script, { timeoutMs: 3000 }); } catch (_) {}
 }
 
+// Briefly bring the (still off-screen) sandboxed window to foreground so
+// Chromium / Electron renderers bind their input context. The window
+// remains at (-32000,-32000) the entire time — user sees nothing — but
+// Windows considers it the foreground window for ~120ms, which is enough
+// for Chromium's "first activation" guard to release the input pipeline.
+// We restore the previous foreground after, so the user's active window
+// is unchanged.
+async function focusSeed(hwnd) {
+  const script = `
+Add-Type -Name SyFocSeed -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern System.IntPtr GetForegroundWindow();
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool SetForegroundWindow(System.IntPtr h);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool BringWindowToTop(System.IntPtr h);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern System.IntPtr SendMessage(System.IntPtr h, uint msg, System.IntPtr w, System.IntPtr l);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint lpdwProcessId);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern uint GetCurrentThreadId();
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+"@ -ErrorAction SilentlyContinue
+$h = [System.IntPtr]::new([int64]${hwnd})
+$prev = [Sy.SyFocSeed]::GetForegroundWindow()
+$pid = 0
+$prevThread = [Sy.SyFocSeed]::GetWindowThreadProcessId($prev, [ref]$pid)
+$myThread   = [Sy.SyFocSeed]::GetCurrentThreadId()
+$tgtThread  = [Sy.SyFocSeed]::GetWindowThreadProcessId($h, [ref]$pid)
+# Attach so the cross-process SetForegroundWindow is honored.
+$ok1 = $false; $ok2 = $false
+if ($prevThread -ne 0 -and $prevThread -ne $myThread) { $ok1 = [Sy.SyFocSeed]::AttachThreadInput($myThread, $prevThread, $true) }
+if ($tgtThread  -ne 0 -and $tgtThread  -ne $myThread -and $tgtThread -ne $prevThread) { $ok2 = [Sy.SyFocSeed]::AttachThreadInput($myThread, $tgtThread, $true) }
+try {
+  [void][Sy.SyFocSeed]::BringWindowToTop($h)
+  [void][Sy.SyFocSeed]::SetForegroundWindow($h)
+  # WM_ACTIVATE = 0x0006. wParam: 1 = WA_ACTIVE.
+  [void][Sy.SyFocSeed]::SendMessage($h, 0x0006, [System.IntPtr]::new(1), [System.IntPtr]::Zero)
+  Start-Sleep -Milliseconds 120
+  # Hand foreground back to whatever was active before so user is undisturbed.
+  if ($prev -ne [System.IntPtr]::Zero) { [void][Sy.SyFocSeed]::SetForegroundWindow($prev) }
+} finally {
+  if ($ok1) { [void][Sy.SyFocSeed]::AttachThreadInput($myThread, $prevThread, $false) }
+  if ($ok2) { [void][Sy.SyFocSeed]::AttachThreadInput($myThread, $tgtThread,  $false) }
+}
+'seeded'
+`;
+  try { await _runPs(script, { timeoutMs: 4000 }); } catch (_) {}
+}
+
 async function clearNoActivate(hwnd) {
   const script = `
 Add-Type -Name SyClrNA -Namespace Sy -MemberDefinition @"
@@ -172,11 +224,21 @@ async function stealthLaunch({ id, path: appPath, name }) {
     if (entry._reapplyTimer) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; }
   }, 4000);
 
-  // Deferred WS_EX_NOACTIVATE (kills user-keystroke leak when the agent's
-  // UIA SetFocus() makes the off-screen window foreground-able). Has to fire
-  // AFTER Chromium's first paint, otherwise the renderer suspends and we
-  // get a blank UIA tree. 8s is conservative for Spotify cold start; native
-  // Win32 apps don't care when this lands.
+  // Phase 3 (~7s post-launch): focus-seed for Chromium-class apps. We
+  // briefly bring the off-screen window to foreground (it's still at
+  // -32000,-32000 so the user sees nothing), pump WM_ACTIVATE, then move
+  // the foreground back. This forces Chromium to bind its render context
+  // to the window's input thread — without it, Spotify's search input
+  // is unreachable even after first paint. Native apps don't need this
+  // and aren't harmed by it.
+  setTimeout(async () => {
+    if (!_sandbox.has(String(launched.hwnd))) return;
+    try { await focusSeed(launched.hwnd); entry.focusSeeded = true; } catch (_) {}
+  }, 7000);
+
+  // Deferred WS_EX_NOACTIVATE — kills user-keystroke leak when the agent's
+  // UIA SetFocus() makes the off-screen window foreground-able. Fires
+  // AFTER first paint AND focus-seed; native apps don't care.
   entry._noActivateTimer = setTimeout(async () => {
     if (!_sandbox.has(String(launched.hwnd))) return;
     try { await applyNoActivate(launched.hwnd); entry.noActivateApplied = true; } catch (_) {}
