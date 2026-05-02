@@ -1377,6 +1377,19 @@ app.commandLine.appendSwitch('enable-accelerated-video-decode');
 app.commandLine.appendSwitch('use-angle', 'gl');
 app.commandLine.appendSwitch('enable-features', 'WebGPU,SharedArrayBuffer');
 
+// ── Background-render survival ───────────────────────────────────────────────
+// Without these switches, when Symphonee loses focus (Alt-Tab, click another
+// window, lock screen) Chromium suspends the renderer process AND drops the
+// GPU context. On return the user sees a black canvas + reloading terminal
+// while everything rebuilds. These three switches keep the renderer alive
+// at full priority even when occluded or in the background.
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// Same idea for the GPU process — keep its compositor active even when the
+// window is hidden so the WebGL context survives a workspace switch.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   // Another instance holds the lock. Check if it's actually alive.
