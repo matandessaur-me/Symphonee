@@ -5504,7 +5504,7 @@
           <span class="mind-toolbar-spacer"></span>
           <div class="mind-search-wrap">
             <span style="font-size:10px;color:var(--subtext0);">Search</span>
-            <input id="mindSearchInput" type="text" placeholder="search the mind (Enter to run)" autocomplete="off" spellcheck="false"
+            <input id="mindSearchInput" type="text" placeholder="search..." autocomplete="off" spellcheck="false"
               style="background:transparent;border:none;outline:none;color:var(--text);font-size:11px;padding:3px 0;" />
             <span id="mindSearchCount" style="font-size:10px;color:var(--subtext0);font-variant-numeric:tabular-nums;min-width:32px;text-align:right;"></span>
             <button id="mindSearchGo" type="button" title="Search (Enter)" onclick="MindUI.runSearch()"
@@ -5517,7 +5517,7 @@
             style="background:var(--surface0);border:1px solid var(--surface1);border-radius:4px;color:var(--subtext0);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;">Search only: off</button>
           <button class="tab-bar-btn" onclick="MindUI.build()" title="Build or rebuild the brain from all sources">Build</button>
           <button class="tab-bar-btn" id="mindWatchBtn" onclick="MindUI.toggleWatch()" title="Watch the active repo and auto-update">Watch: off</button>
-          <button class="tab-bar-btn" id="mindGpuBtn" onclick="MindUI.showGpuInfo()" title="Show GPU / WebGL info — verify hardware acceleration is on">GPU?</button>
+          <button class="tab-bar-btn" id="mindGpuBtn" onclick="MindUI.showGpuInfo()" title="Show GPU / WebGL info — verify hardware acceleration is on" aria-label="GPU info" style="font-size:13px;line-height:1;padding:0 8px;">⚡</button>
         </div>
         <div class="mind-tabs" role="tablist">
           <button class="mind-tab mind-view-btn active" data-view="dashboard" onclick="MindUI.setView('dashboard')">Dashboard</button>
