@@ -189,13 +189,35 @@
     applySearch('');
   }
 
+  // Normalize away word separators so "bathfitter", "bath fitter",
+  // "bath_fitter", and "Bath-Fitter" all match the same set of nodes.
+  // Without this, repos that smush the brand together ("bathfitter") only
+  // match nodes that also smush, while repos that split it ("bath_fitter")
+  // match a different set - and the user has to guess which spelling is
+  // in the graph today.
+  function normForSearch(s) {
+    return typeof s === 'string' ? s.toLowerCase().replace(/[\s_.\-@]+/g, '') : '';
+  }
+
   function nodeMatchesSearch(n, q) {
     if (!q) return false;
-    if (typeof n.label === 'string' && n.label.toLowerCase().includes(q)) return true;
-    if (typeof n.id === 'string' && n.id.toLowerCase().includes(q)) return true;
+    const qn = normForSearch(q);
+    if (typeof n.label === 'string') {
+      const lbl = n.label.toLowerCase();
+      if (lbl.includes(q)) return true;
+      if (qn && normForSearch(n.label).includes(qn)) return true;
+    }
+    if (typeof n.id === 'string') {
+      const idl = n.id.toLowerCase();
+      if (idl.includes(q)) return true;
+      if (qn && normForSearch(n.id).includes(qn)) return true;
+    }
     if (Array.isArray(n.tags)) {
       for (const t of n.tags) {
-        if (typeof t === 'string' && t.toLowerCase().includes(q)) return true;
+        if (typeof t !== 'string') continue;
+        const tl = t.toLowerCase();
+        if (tl.includes(q)) return true;
+        if (qn && normForSearch(t).includes(qn)) return true;
       }
     }
     return false;
@@ -211,14 +233,20 @@
       degree.set(e.source, (degree.get(e.source) || 0) + 1);
       degree.set(e.target, (degree.get(e.target) || 0) + 1);
     }
+    const qn = normForSearch(q);
     const scored = [];
     for (const n of state.graph.nodes) {
       if (!nodeMatchesSearch(n, q)) continue;
       const lbl = (n.label || '').toLowerCase();
-      let rank = 3;
+      const lblN = normForSearch(n.label || '');
+      const idN = normForSearch(n.id || '');
+      let rank = 4;
       if (lbl.startsWith(q)) rank = 0;
       else if (lbl.includes(q)) rank = 1;
-      else if ((n.id || '').toLowerCase().includes(q)) rank = 2;
+      else if (qn && lblN.startsWith(qn)) rank = 2;
+      else if (qn && lblN.includes(qn)) rank = 2;
+      else if ((n.id || '').toLowerCase().includes(q)) rank = 3;
+      else if (qn && idN.includes(qn)) rank = 3;
       scored.push({ id: n.id, rank, deg: degree.get(n.id) || 0 });
     }
     scored.sort((a, b) => a.rank - b.rank || b.deg - a.deg);
