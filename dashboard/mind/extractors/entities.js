@@ -30,6 +30,9 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 // Generic words we never want as entities. Kept conservative on purpose —
 // the goal is to drop obvious filler ("website", "manager") without losing
 // real product names ("supabase", "builderio"). Matching is on the
@@ -89,6 +92,50 @@ function titleCase(s) {
 
 function entityIdFromKey(key) {
   return `entity_${key.replace(/[^a-z0-9]+/g, '_')}`;
+}
+
+// Domain knowledge the auto-detector can't infer: explicit relationships
+// between entities. Loaded from <repoRoot>/.symphonee/entity-relations.json
+// when available. Format:
+//   { "relations": [
+//       { "from": "dyob", "to": "bathfitter", "relation": "part_of",
+//         "label": "DYOB is a Bath Fitter program" },
+//       ...
+//   ] }
+// `from` and `to` may be any surface form - we canonicalize them. Allowed
+// relations: 'part_of', 'alias_of', 'related_to'. They all map to the
+// schema's 'conceptually_related_to' relation today (a shared bucket
+// keeps schema.RELATIONS small) with the user-supplied semantic label
+// preserved in the edge's `relationLabel` field for UI rendering.
+function loadEntityRelations(repoRoot) {
+  if (!repoRoot) return [];
+  const candidates = [
+    path.join(repoRoot, '.symphonee', 'entity-relations.json'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const txt = fs.readFileSync(p, 'utf8');
+      const data = JSON.parse(txt);
+      const list = Array.isArray(data) ? data : (Array.isArray(data.relations) ? data.relations : []);
+      const out = [];
+      for (const rel of list) {
+        if (!rel || typeof rel !== 'object') continue;
+        const from = canonicalize(rel.from || '');
+        const to = canonicalize(rel.to || '');
+        if (!from || !to || from === to) continue;
+        out.push({
+          from,
+          to,
+          relationKind: typeof rel.relation === 'string' ? rel.relation : 'related_to',
+          label: typeof rel.label === 'string' ? rel.label : null,
+          source: p,
+        });
+      }
+      return out;
+    } catch (_) { /* ignore parse errors - the file is user-edited */ }
+  }
+  return [];
 }
 
 function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
@@ -255,13 +302,45 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
     }
   }
 
+  // ── Phase 5: declared entity relations ──────────────────────────────────
+  // Domain links the auto-detector can't infer (e.g., DYOB is part of
+  // Bath Fitter). Read from `.symphonee/entity-relations.json`. Edges land
+  // as `conceptually_related_to` with the user-supplied kind preserved on
+  // `relationLabel` and `relationKind`.
+  let declaredRelations = 0;
+  if (opts.repoRoot) {
+    const declared = loadEntityRelations(opts.repoRoot);
+    for (const rel of declared) {
+      const fromId = entityIdByKey.get(rel.from);
+      const toId = entityIdByKey.get(rel.to);
+      // Only emit when BOTH sides exist as entity nodes - silently skip
+      // declarations that name an entity the auto-detector hasn't picked
+      // up (the user can add it via opts.seedEntities).
+      if (!fromId || !toId) continue;
+      newEdges.push({
+        source: fromId,
+        target: toId,
+        relation: 'conceptually_related_to',
+        relationKind: rel.relationKind,
+        relationLabel: rel.label || null,
+        confidence: 'EXTRACTED',
+        confidenceScore: 1,
+        weight: 2,
+        createdBy: 'mind/entities/relations',
+        createdAt,
+      });
+      declaredRelations++;
+    }
+  }
+
   return {
     nodes: newNodes,
     edges: newEdges,
     scanned: nodes.length,
     entities: newNodes.length,
     mentions,
+    declaredRelations,
   };
 }
 
-module.exports = { extractEntities, canonicalize, tokenize };
+module.exports = { extractEntities, canonicalize, tokenize, loadEntityRelations };

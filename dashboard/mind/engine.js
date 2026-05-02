@@ -253,9 +253,16 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     cp('enrich:entities');
     onProgress('Synthesizing canonical entity layer (brands, products, projects)...');
     const seedEntities = (ctx && Array.isArray(ctx.seedEntities)) ? ctx.seedEntities : [];
-    const f = extractEntities(graph, { seedEntities });
+    const f = extractEntities(graph, { seedEntities, repoRoot });
     enrichmentFragments.push(f);
-    summary.entities = { scanned: f.scanned, entities: f.entities, mentions: f.mentions, nodes: f.nodes.length, edges: f.edges.length };
+    summary.entities = {
+      scanned: f.scanned,
+      entities: f.entities,
+      mentions: f.mentions,
+      declaredRelations: f.declaredRelations || 0,
+      nodes: f.nodes.length,
+      edges: f.edges.length,
+    };
   }
   if (enrichmentFragments.length) {
     graph = build([{ nodes: graph.nodes, edges: graph.edges, hyperedges: graph.hyperedges }, ...enrichmentFragments], { directed: true });

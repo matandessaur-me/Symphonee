@@ -128,3 +128,64 @@ test('extractEntities: idempotent on empty input', () => {
   assert.deepEqual(extractEntities({}).nodes, []);
   assert.deepEqual(extractEntities().nodes, []);
 });
+
+test('extractEntities: declared entity-relations emit conceptually_related_to edges', () => {
+  // Build a tiny .symphonee/entity-relations.json in a tmp dir and verify
+  // the extractor reads it + emits the cross-entity edge.
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-rels-'));
+  try {
+    fs.mkdirSync(path.join(root, '.symphonee'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, '.symphonee', 'entity-relations.json'),
+      JSON.stringify({ relations: [{ from: 'DYOB', to: 'Bath Fitter', relation: 'part_of', label: 'DYOB is a Bath Fitter program' }] }),
+    );
+    const graph = {
+      nodes: [
+        { id: 'cwd_bath_fitter_x', label: '@bath-fitter-x', kind: 'tag' },
+        { id: 'cwd_bath_fitter_y', label: '@bath-fitter-y', kind: 'tag' },
+        { id: 'cwd_dyob3',         label: '@dyob3',         kind: 'tag' },
+        { id: 'cwd_dyob_react',    label: '@dyob-react',    kind: 'tag' },
+      ],
+      edges: [],
+    };
+    const r = extractEntities(graph, { repoRoot: root });
+    assert.equal(r.declaredRelations, 1);
+    const rel = r.edges.find(e => e.relation === 'conceptually_related_to');
+    assert.ok(rel, 'expected conceptually_related_to edge');
+    assert.equal(rel.source, 'entity_dyob');
+    assert.equal(rel.target, 'entity_bathfitter');
+    assert.equal(rel.relationKind, 'part_of');
+    assert.equal(rel.relationLabel, 'DYOB is a Bath Fitter program');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('extractEntities: declared relation skipped when one side is unknown', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-rels-skip-'));
+  try {
+    fs.mkdirSync(path.join(root, '.symphonee'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, '.symphonee', 'entity-relations.json'),
+      JSON.stringify({ relations: [{ from: 'DYOB', to: 'NeverHeardOf', relation: 'part_of' }] }),
+    );
+    const graph = {
+      nodes: [
+        { id: 'cwd_dyob3',      label: '@dyob3',      kind: 'tag' },
+        { id: 'cwd_dyob_react', label: '@dyob-react', kind: 'tag' },
+      ],
+      edges: [],
+    };
+    const r = extractEntities(graph, { repoRoot: root });
+    assert.equal(r.declaredRelations, 0);
+    assert.equal(r.edges.filter(e => e.relation === 'conceptually_related_to').length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
