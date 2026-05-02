@@ -841,8 +841,32 @@ async function executeTool(driver, session, name, args) {
         err.code = e.code || 'focus_failed';
         throw err;
       }
-      // Click the element to focus it, then type. SetFocus via UIA isn't
-      // universally supported, so a click is the most portable focus path.
+      // Sandbox-aware path: prefer UIA ValuePattern.SetValue, which doesn't
+      // synthesize keystrokes (so the off-screen target gets the text instead
+      // of the user's foreground app) and is faster anyway. Pixel
+      // click+type is blocked on sandboxed hwnds for safety. We try
+      // UIA-value first for ALL targets (even non-sandboxed) since it's
+      // strictly better when the element supports ValuePattern.
+      if (typeof driver.setUIAValue === 'function') {
+        const v = await driver.setUIAValue(hwnd, args.selector, text);
+        if (v && v.ok) {
+          session._pendingChange = true;
+          session.actionLog = session.actionLog || [];
+          session.actionLog.push({ verb: 'TYPE_INTO_ELEMENT', target: { selector: args.selector, via: 'uia-value', name: v.name, type: v.type }, text, attemptN: 1, outcome: 'ok', ts: Date.now() });
+          return { ok: true, via: 'uia-value', name: v.name, charsTyped: v.chars };
+        }
+        // ValuePattern unsupported; if sandboxed we can't fall back to
+        // pixel input — surface a typed error so the agent can adapt
+        // (e.g. ask user to release sandbox, or pick a different field).
+        if (typeof driver.isSandboxedHwnd === 'function' && driver.isSandboxedHwnd(hwnd)) {
+          const err = new Error(`type_into_element: target element does not support UIA ValuePattern (${v && v.reason || 'unknown'}) and pixel input is blocked on sandboxed windows. Try a sibling input element or release the sandbox.`);
+          err.code = 'uia_value_unsupported_in_sandbox'; throw err;
+        }
+        // Non-sandboxed: fall through to legacy click+type path below.
+      }
+      // Legacy: click the element to focus it, then type. SetFocus via UIA
+      // isn't universally supported, so a click is the most portable focus
+      // path. Pixel-only — driver.click will refuse if sandboxed.
       const hit = await driver.findUIAElement(hwnd, args.selector);
       if (!hit) {
         const err = new Error('no element matched selector'); err.code = 'uia_miss'; throw err;
