@@ -34,12 +34,11 @@ function _runPs(script, opts) {
 
 // Move a window to off-screen coords without activating it. SWP_NOACTIVATE
 // (0x0010) | SWP_NOZORDER (0x0004) — keeps the user's active window
-// untouched. We also OR WS_EX_NOACTIVATE (0x08000000) into the extended
-// style so Windows refuses to give the off-screen window foreground even
-// when the app calls SetForegroundWindow itself or its UIA SetFocus()
-// implicitly raises it. This is what stops user keystrokes from leaking
-// into a sandboxed Spotify search box (observed: typing in the terminal
-// landed in Spotify's hijacked-focus search field).
+// untouched. WS_EX_NOACTIVATE is applied SEPARATELY via applyNoActivate()
+// after a delay because Chromium-based apps (Spotify, Discord, Slack)
+// suspend page rendering until the window has been activated at least
+// once. Setting NOACTIVATE before first paint = blank window, empty UIA
+// tree, agent stuck.
 async function setOffscreen(hwnd) {
   const script = `
 Add-Type -Name SyStealth -Namespace Sy -MemberDefinition @"
@@ -51,10 +50,6 @@ public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
 public static extern bool ShowWindow(System.IntPtr h, int c);
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool IsIconic(System.IntPtr h);
-[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
-public static extern int GetWindowLong(System.IntPtr h, int i);
-[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
-public static extern int SetWindowLong(System.IntPtr h, int i, int v);
 [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
 public struct RECT { public int left; public int top; public int right; public int bottom; }
 "@ -ErrorAction SilentlyContinue
@@ -62,10 +57,6 @@ $h = [System.IntPtr]::new([int64]${hwnd})
 # If minimized, restore first so the move actually applies (Windows ignores
 # SetWindowPos position on iconic windows in some cases).
 if ([Sy.SyStealth]::IsIconic($h)) { [void][Sy.SyStealth]::ShowWindow($h, 9) }
-# Apply WS_EX_NOACTIVATE (0x08000000). GWL_EXSTYLE = -20.
-$ex = [Sy.SyStealth]::GetWindowLong($h, -20)
-$newEx = $ex -bor 0x08000000
-[void][Sy.SyStealth]::SetWindowLong($h, -20, $newEx)
 $r = New-Object Sy.SyStealth+RECT
 [void][Sy.SyStealth]::GetWindowRect($h, [ref]$r)
 $w = $r.right - $r.left
@@ -81,26 +72,51 @@ $ht = $r.bottom - $r.top
   return rect;
 }
 
-// Move a window back to its remembered on-screen rect. If no rect is provided,
-// centers on the primary monitor at a sensible default size. Also clears the
-// WS_EX_NOACTIVATE bit setOffscreen added so peeked/released windows behave
-// like normal foreground-able windows again.
-async function restoreOnscreen(hwnd, rect) {
-  const r = rect || { x: 100, y: 100, w: 1280, h: 800 };
+// Add the WS_EX_NOACTIVATE bit to a window's ex-style. Call this AFTER the
+// app has had time to paint its UI (~8s for Chromium cold start) so it
+// doesn't trip Chromium's "skip rendering until activated" guard.
+async function applyNoActivate(hwnd) {
   const script = `
-Add-Type -Name SyStealthR -Namespace Sy -MemberDefinition @"
-[System.Runtime.InteropServices.DllImport("user32.dll")]
-public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr hAfter, int x, int y, int cx, int cy, uint flags);
+Add-Type -Name SyNoAct -Namespace Sy -MemberDefinition @"
 [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
 public static extern int GetWindowLong(System.IntPtr h, int i);
 [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
 public static extern int SetWindowLong(System.IntPtr h, int i, int v);
 "@ -ErrorAction SilentlyContinue
 $h = [System.IntPtr]::new([int64]${hwnd})
-# Clear WS_EX_NOACTIVATE (0x08000000). GWL_EXSTYLE = -20.
-$ex = [Sy.SyStealthR]::GetWindowLong($h, -20)
-$newEx = $ex -band (-bnot 0x08000000)
-[void][Sy.SyStealthR]::SetWindowLong($h, -20, $newEx)
+$ex = [Sy.SyNoAct]::GetWindowLong($h, -20)
+[void][Sy.SyNoAct]::SetWindowLong($h, -20, ($ex -bor 0x08000000))
+'0x{0:X8}' -f ($ex -bor 0x08000000)
+`;
+  try { await _runPs(script, { timeoutMs: 3000 }); } catch (_) {}
+}
+
+async function clearNoActivate(hwnd) {
+  const script = `
+Add-Type -Name SyClrNA -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
+public static extern int GetWindowLong(System.IntPtr h, int i);
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true)]
+public static extern int SetWindowLong(System.IntPtr h, int i, int v);
+"@ -ErrorAction SilentlyContinue
+$h = [System.IntPtr]::new([int64]${hwnd})
+$ex = [Sy.SyClrNA]::GetWindowLong($h, -20)
+[void][Sy.SyClrNA]::SetWindowLong($h, -20, ($ex -band (-bnot 0x08000000)))
+`;
+  try { await _runPs(script, { timeoutMs: 3000 }); } catch (_) {}
+}
+
+// Move a window back to its remembered on-screen rect. If no rect is
+// provided, centers on the primary monitor at a sensible default size.
+// Caller is responsible for clearNoActivate() if the window had it applied.
+async function restoreOnscreen(hwnd, rect) {
+  const r = rect || { x: 100, y: 100, w: 1280, h: 800 };
+  const script = `
+Add-Type -Name SyStealthR -Namespace Sy -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr hAfter, int x, int y, int cx, int cy, uint flags);
+"@ -ErrorAction SilentlyContinue
+$h = [System.IntPtr]::new([int64]${hwnd})
 # SWP_NOACTIVATE 0x0010 | SWP_NOZORDER 0x0004 — keep user's foreground window.
 [void][Sy.SyStealthR]::SetWindowPos($h, [System.IntPtr]::Zero, ${r.x | 0}, ${r.y | 0}, ${r.w | 0}, ${r.h | 0}, 0x14)
 `;
@@ -156,6 +172,16 @@ async function stealthLaunch({ id, path: appPath, name }) {
     if (entry._reapplyTimer) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; }
   }, 4000);
 
+  // Deferred WS_EX_NOACTIVATE (kills user-keystroke leak when the agent's
+  // UIA SetFocus() makes the off-screen window foreground-able). Has to fire
+  // AFTER Chromium's first paint, otherwise the renderer suspends and we
+  // get a blank UIA tree. 8s is conservative for Spotify cold start; native
+  // Win32 apps don't care when this lands.
+  entry._noActivateTimer = setTimeout(async () => {
+    if (!_sandbox.has(String(launched.hwnd))) return;
+    try { await applyNoActivate(launched.hwnd); entry.noActivateApplied = true; } catch (_) {}
+  }, 8000);
+
   // Phase 2 (lifetime of entry): keep-alive un-minimizer. Some apps (Spotify
   // with its tray-icon, Teams, Discord) auto-minimize when they never get
   // foreground attention. UIA queries against an iconic window come back
@@ -196,6 +222,9 @@ public static extern bool ShowWindow(System.IntPtr h, int c);
 async function adoptIntoSandbox(hwnd, { app } = {}) {
   const w = await driver.getWindowRect(hwnd);
   const originalRect = await setOffscreen(hwnd);
+  // Adopted windows are already painted, so we can apply NOACTIVATE
+  // immediately.
+  await applyNoActivate(hwnd);
   _sandbox.set(String(hwnd), {
     pid: null,
     processName: w.processName || null,
@@ -204,6 +233,7 @@ async function adoptIntoSandbox(hwnd, { app } = {}) {
     launchedAt: Date.now(),
     peeked: false,
     adopted: true,
+    noActivateApplied: true,
   });
   return { hwnd, sandboxed: true, originalRect };
 }
@@ -214,10 +244,12 @@ async function adoptIntoSandbox(hwnd, { app } = {}) {
 async function peek(hwnd) {
   const entry = _sandbox.get(String(hwnd));
   if (!entry) throw new Error(`hwnd ${hwnd} is not a sandboxed window`);
-  // Stop the reapply timer FIRST so it doesn't yank the window back as soon
-  // as we restore on-screen.
+  // Stop the reapply timer FIRST so it doesn't yank the window back.
   if (entry._reapplyTimer) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; }
   entry.peeked = true;
+  // Clear NOACTIVATE during peek so the user can interact with the window
+  // normally if they want. We re-apply on unpeek.
+  if (entry.noActivateApplied) await clearNoActivate(hwnd);
   await restoreOnscreen(hwnd, entry.originalRect);
   return { ok: true, rect: entry.originalRect };
 }
@@ -227,6 +259,7 @@ async function unpeek(hwnd) {
   if (!entry) throw new Error(`hwnd ${hwnd} is not a sandboxed window`);
   entry.peeked = false;
   await setOffscreen(hwnd);
+  if (entry.noActivateApplied) await applyNoActivate(hwnd);
   return { ok: true };
 }
 
@@ -238,6 +271,10 @@ async function release(hwnd, { restore = true } = {}) {
   if (!entry) return { ok: false, reason: 'not_sandboxed' };
   if (entry._reapplyTimer) { clearInterval(entry._reapplyTimer); entry._reapplyTimer = null; }
   if (entry._keepAliveTimer) { clearInterval(entry._keepAliveTimer); entry._keepAliveTimer = null; }
+  if (entry._noActivateTimer) { clearTimeout(entry._noActivateTimer); entry._noActivateTimer = null; }
+  if (entry.noActivateApplied) {
+    try { await clearNoActivate(hwnd); } catch (_) {}
+  }
   if (restore) {
     try { await restoreOnscreen(hwnd, entry.originalRect); } catch (_) {}
   }
