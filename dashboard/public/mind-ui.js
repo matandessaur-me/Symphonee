@@ -2090,36 +2090,52 @@
           fg2.d3Force('collide', collide);
         }
       } catch (_) {}
-      // ── Trackpad-friendly zoom-to-cursor ───────────────────────────────────
+      // ── Trackpad+mouse zoom-to-cursor ──────────────────────────────────────
       // force-graph's built-in d3-zoom barely moves on a Windows trackpad
       // because two-finger swipe deltas are tiny (deltaMode=0, ~1-10 px). We
-      // intercept wheel in capture phase, normalise across deltaMode/pinch,
+      // intercept wheel in capture phase, normalise across deltaMode + pinch,
       // and drive fg2.zoom() with cursor anchoring so the world point under
       // the cursor stays put — same feel as Figma / the 3D path above.
+      // Track zoom locally too: some bundles of vasturiano/force-graph return
+      // the chain (not the number) from `.zoom()` getter, which would NaN out
+      // the math and silently kill all wheel zoom.
+      let zoomLevel2d = 1;
       host.addEventListener('wheel', (ev) => {
         try {
-          if (typeof fg2.zoom !== 'function' || typeof fg2.screen2GraphCoords !== 'function') return;
+          if (typeof fg2.zoom !== 'function') return;
           ev.preventDefault();
           ev.stopPropagation();
           let delta = ev.deltaY;
           if (ev.deltaMode === 1) delta *= 16;
           else if (ev.deltaMode === 2) delta *= host.clientHeight || 600;
-          // Pinch-zoom on a trackpad arrives as wheel + ctrlKey with smaller
+          // Pinch-zoom on a trackpad arrives as wheel + ctrlKey with small
           // magnitudes; bump sensitivity so a pinch feels proportional.
           const sensitivity = ev.ctrlKey ? 0.012 : 0.0025;
           const factor = Math.exp(-delta * sensitivity);
-          const curZoom = fg2.zoom();
+          let curZoom = zoomLevel2d;
+          try {
+            const probe = fg2.zoom();
+            if (typeof probe === 'number' && isFinite(probe) && probe > 0) curZoom = probe;
+          } catch (_) {}
           const newZoom = Math.max(0.05, Math.min(40, curZoom * factor));
-          if (Math.abs(newZoom - curZoom) < 1e-6) return;
+          if (!isFinite(newZoom) || Math.abs(newZoom - curZoom) < 1e-6) return;
           const rect = host.getBoundingClientRect();
           const cx = ev.clientX - rect.left;
           const cy = ev.clientY - rect.top;
-          const before = fg2.screen2GraphCoords(cx, cy);
-          fg2.zoom(newZoom);
-          const after = fg2.screen2GraphCoords(cx, cy);
-          const center = fg2.centerAt();
-          if (center && before && after) {
-            fg2.centerAt(center.x + (before.x - after.x), center.y + (before.y - after.y));
+          let before = null;
+          try {
+            if (typeof fg2.screen2GraphCoords === 'function') before = fg2.screen2GraphCoords(cx, cy);
+          } catch (_) {}
+          fg2.zoom(newZoom, 0);
+          zoomLevel2d = newZoom;
+          if (before && typeof fg2.centerAt === 'function' && typeof fg2.screen2GraphCoords === 'function') {
+            try {
+              const after = fg2.screen2GraphCoords(cx, cy);
+              const center = fg2.centerAt();
+              if (after && center && typeof center.x === 'number' && typeof center.y === 'number') {
+                fg2.centerAt(center.x + (before.x - after.x), center.y + (before.y - after.y), 0);
+              }
+            } catch (_) {}
           }
         } catch (_) {}
       }, { passive: false, capture: true });
