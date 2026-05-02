@@ -312,7 +312,12 @@
     // simulator is skipped entirely (instant render, no GPU pin).
     state.layoutCache = { '2d': null, '3d': null, hash: null };
     if (state.graph) {
-      state.layoutCache.hash = computeNodeHash(state.graph.nodes);
+      // Layout-algo version. Bump when the pre-positioning or force-tuning
+      // changes meaningfully so old cached positions don't lock the user
+      // into a stale (bad) layout. Hash includes this version so a mismatch
+      // forces fresh layout + cache rewrite.
+      const LAYOUT_VERSION = 'v3-2d-fib-spiral-strong-charge';
+      state.layoutCache.hash = computeNodeHash(state.graph.nodes) + ':' + LAYOUT_VERSION;
       try {
         const [c2, c3] = await Promise.all([
           API('/api/mind/layout?mode=2d').catch(() => null),
@@ -2163,17 +2168,21 @@
         .d3VelocityDecay(0.55);
       try {
         if (fg2.d3Force) {
-          // Stronger repulsion + longer springs = nodes spread out into
-          // readable clusters instead of clumping. Mirrors the 3D path's
-          // dispersion tuning, scaled for 2D pixel space.
+          // Force tuning for big graphs. -450 charge was way too weak for
+          // 6800 nodes — the inner cluster never got enough push to spread.
+          // Bumped to -1800 (4x), distanceMax doubled so far-away nodes
+          // still feel each other, and link.strength dropped so densely
+          // connected hubs don't collapse into a tight blob.
           const charge = fg2.d3Force('charge');
-          if (charge && charge.strength) charge.strength(-450);
-          if (charge && charge.distanceMax) charge.distanceMax(1400);
+          if (charge && charge.strength) charge.strength(-1800);
+          if (charge && charge.distanceMax) charge.distanceMax(2800);
           const link = fg2.d3Force('link');
-          if (link && link.distance) link.distance(140);
-          if (link && link.strength) link.strength(0.35);
+          if (link && link.distance) link.distance(180);
+          if (link && link.strength) link.strength(0.15);
           const center = fg2.d3Force('center');
-          if (center && center.strength) center.strength(0.012);
+          // Center force way down — was pulling everything back into the
+          // middle, fighting the charge force we just amped up.
+          if (center && center.strength) center.strength(0.003);
           // Custom collision force (vasturiano/force-graph doesn't expose
           // d3 directly, so we register our own grid-bucketed collide).
           // Each tick bucketizes nodes by 2*maxRadius cells, then resolves
