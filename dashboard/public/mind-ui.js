@@ -616,7 +616,13 @@
   }
 
   async function runSmart() {
-    const q = ($('mindSmartQ') && $('mindSmartQ').value || '').trim();
+    // Lowercase the query so 'Bathfitter' and 'bathfitter' produce
+    // identical results. The BM25 backend already lowercases internally,
+    // but the dense embedding endpoint passes the query verbatim to the
+    // embedding model — and embedding models DO produce different
+    // vectors for different casings. Normalizing here keeps both ranker
+    // legs operating on the same input so RRF fusion is deterministic.
+    const q = ($('mindSmartQ') && $('mindSmartQ').value || '').trim().toLowerCase();
     const k = parseInt(($('mindSmartK') && $('mindSmartK').value) || '12', 10);
     state.smart = { q, k };
     const out = $('mindSmartOut');
@@ -1212,7 +1218,9 @@
   }
 
   async function runQueryFromUi() {
-    const question = ($('mindQueryQ') && $('mindQueryQ').value || '').trim();
+    // Same case-normalization as runSmart — keep dense + BM25 on the
+    // same input so capital vs lowercase produce identical results.
+    const question = ($('mindQueryQ') && $('mindQueryQ').value || '').trim().toLowerCase();
     if (!question) return;
     const asOf = ($('mindQueryAsOf') && $('mindQueryAsOf').value) || null;
     const budget = parseInt(($('mindQueryBudget') && $('mindQueryBudget').value) || '2000', 10);
