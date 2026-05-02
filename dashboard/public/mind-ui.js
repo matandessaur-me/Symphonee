@@ -2220,6 +2220,38 @@
           // Center force way down — was pulling everything back into the
           // middle, fighting the charge force we just amped up.
           if (center && center.strength) center.strength(0.003);
+
+          // Soft radial cap. forceCenter only shifts the mean of all
+          // positions — orphan / low-degree nodes that get pushed by
+          // charge with no link to pull them back drift forever, ending
+          // up as tiny dots far from the cluster (zoomToFit then shrinks
+          // the whole graph to fit them). This force gently pulls any
+          // node BACK if it ventures past MAX_RADIUS, doesn't touch
+          // nodes inside the cluster.
+          const MAX_RADIUS = 2400;
+          const radialCap = (function() {
+            let n2dNodes;
+            function force(alpha) {
+              if (!n2dNodes || !n2dNodes.length) return;
+              const k = 0.12 * alpha;
+              for (let i = 0; i < n2dNodes.length; i++) {
+                const node = n2dNodes[i];
+                const x = node.x || 0;
+                const y = node.y || 0;
+                const r = Math.sqrt(x * x + y * y);
+                if (r <= MAX_RADIUS) continue;
+                // Pull back toward the cap. Strength scales with how far
+                // beyond the cap the node is, so the further it drifts
+                // the harder it gets pulled.
+                const overshoot = (r - MAX_RADIUS) / r;
+                node.vx = (node.vx || 0) - x * overshoot * k;
+                node.vy = (node.vy || 0) - y * overshoot * k;
+              }
+            }
+            force.initialize = (n) => { n2dNodes = n; };
+            return force;
+          })();
+          fg2.d3Force('radialCap', radialCap);
           // Custom collision force (vasturiano/force-graph doesn't expose
           // d3 directly, so we register our own grid-bucketed collide).
           // Each tick bucketizes nodes by 2*maxRadius cells, then resolves
