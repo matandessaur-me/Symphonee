@@ -962,6 +962,12 @@
       background: var(--mantle, var(--surface0));
       overflow: auto;
     }
+    /* The HTML `hidden` attribute applies display:none via the user-agent
+       stylesheet, but our display:grid rule above overrides it. Force the
+       hide explicitly so the grid container collapses when there's no
+       multi-session view active (otherwise it shows as an empty black
+       rectangle next to the hero). */
+    .apps-viewport-grid[hidden] { display: none; }
     .apps-viewport-grid[data-count="1"] { grid-template-columns: 1fr; }
     .apps-viewport-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
     .apps-viewport-grid[data-count="3"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
