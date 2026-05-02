@@ -1356,39 +1356,52 @@ function killStaleProcesses() {
   return false;
 }
 
-// ── GPU acceleration ─────────────────────────────────────────────────────────
-// Force-enable Chromium's GPU compositing + rasterization paths. By default
-// Electron has hardware acceleration on, but Chromium's GPU blocklist can
-// disable it on certain drivers (Intel iGPUs, older NVIDIA/AMD versions),
-// which kills performance on the Mind 2D/3D graph views even on machines
-// that have a perfectly capable GPU. These switches override the blocklist
-// and explicitly turn on GPU rasterization for Canvas2D + GPU-backed
-// compositing for WebGL.
+// ── GPU + window-survival switches (minimal, targeted) ──────────────────────
+// Earlier versions of this file flipped on every GPU-acceleration knob in
+// Chromium. On Intel UHD that over-subscribed the iGPU — the terminal's
+// xterm-webgl renderer would die ('unavailable' card), Canvas2D paths
+// were forced through a struggling iGPU instead of the CPU, and
+// background apps competed with the foreground for the same compositor.
 //
-// Must run BEFORE app.whenReady(). All flags are no-ops on systems that
-// genuinely have no usable GPU — they don't crash, they just don't help.
+// Stripped back to ONLY what the Mind 2D / 3D graph actually needs (the
+// WebGL it requests is GPU-accelerated by default in Electron — no flag
+// needed for that), plus the focus-return survival flags that the user
+// explicitly asked for.
+//
+// What we KEEP:
+//   - ignore-gpu-blocklist         : without this, Chromium silently
+//                                    drops to software rendering on some
+//                                    Intel iGPU drivers, killing the 3D
+//                                    graph's WebGL path. The Mind graph
+//                                    is the one place GPU is essential.
+//   - disable-renderer-backgrounding +
+//     disable-backgrounding-occluded-windows
+//                                  : keep Symphonee's compositor active
+//                                    when the window is occluded/inactive
+//                                    so alt-tab back doesn't show stale
+//                                    or torn-down layers.
+//
+// What we DROPPED (and why):
+//   - enable-gpu-rasterization     : forced ALL Canvas2D through the GPU;
+//                                    Chromium's auto-decision is fine.
+//   - enable-accelerated-2d-canvas : same reason.
+//   - enable-zero-copy             : WebGL texture upload optimization
+//                                    that's only useful when the iGPU is
+//                                    NOT the bottleneck. On Intel UHD it
+//                                    just adds memory pressure.
+//   - use-angle=gl                 : forced the OpenGL backend on Windows;
+//                                    D3D11 (the default) is actually faster
+//                                    on Intel iGPUs.
+//   - enable-features=WebGPU,SharedArrayBuffer : nothing in Symphonee
+//                                    uses WebGPU.
+//   - enable-accelerated-video-decode : irrelevant.
+//   - disable-background-timer-throttling : was making background tabs
+//                                    fight for CPU; the renderer-bg flag
+//                                    above is sufficient.
+//   - disable-features=CalculateNativeWinOcclusion : same.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
-app.commandLine.appendSwitch('enable-accelerated-video-decode');
-// WebGL is what powers 3d-force-graph (Three.js). Force the WebGL2 path —
-// the older WebGL1 fallback is significantly slower for 5k+ node graphs.
-app.commandLine.appendSwitch('use-angle', 'gl');
-app.commandLine.appendSwitch('enable-features', 'WebGPU,SharedArrayBuffer');
-
-// ── Background-render survival ───────────────────────────────────────────────
-// Without these switches, when Symphonee loses focus (Alt-Tab, click another
-// window, lock screen) Chromium suspends the renderer process AND drops the
-// GPU context. On return the user sees a black canvas + reloading terminal
-// while everything rebuilds. These three switches keep the renderer alive
-// at full priority even when occluded or in the background.
-app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-// Same idea for the GPU process — keep its compositor active even when the
-// window is hidden so the WebGL context survives a workspace switch.
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
