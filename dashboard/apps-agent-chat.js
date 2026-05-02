@@ -1126,7 +1126,19 @@ async function runSession({ session, task, driver, providerEntry, model, broadca
   session.running = true;
   const emit = (step) => {
     if (typeof broadcast === 'function') {
-      broadcast({ type: 'apps-agent-step', sessionId: session.id, ...step, at: Date.now() });
+      // Include session.app and session.title on every frame so the
+      // multi-session strip in the UI can label chips even before it sees
+      // a session/start response (events for a brand-new session id may
+      // arrive before the strip has any other context).
+      broadcast({
+        type: 'apps-agent-step',
+        sessionId: session.id,
+        app: session.app || null,
+        title: session.title || null,
+        hwnd: session.hwnd || null,
+        ...step,
+        at: Date.now(),
+      });
     }
     // Session-scoped terminal listener (used by /api/apps/do to block on
     // completion). Best-effort, does not affect normal operation.
