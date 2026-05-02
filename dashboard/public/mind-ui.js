@@ -25,10 +25,20 @@
   // Physics default = off (frozen). Stabilization still runs once to lay
   // out the graph, then physics is disabled so weaker machines aren't stuck
   // animating forever. The user can resume it from the Freeze button.
-  const DEFAULT_PREFS = { graphCap: '200', graphFilter: 'all', physicsEnabled: false, searchOnly: false, graphMode: '3d' };
+  // searchOnly: true is now the only mode (the toggle button was removed).
+  // When the user enters a search, only matching nodes render. When the
+  // search is empty, every node renders. This is what the user expected
+  // and removes a footgun (the toggle would partially-cache layout).
+  const DEFAULT_PREFS = { graphCap: '200', graphFilter: 'all', physicsEnabled: false, searchOnly: true, graphMode: '3d' };
   function loadPrefs() {
-    try { return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }
-    catch (_) { return Object.assign({}, DEFAULT_PREFS); }
+    try {
+      const merged = Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
+      // searchOnly is now hardcoded on — force it true regardless of
+      // what's in localStorage from older sessions where the toggle
+      // could be off.
+      merged.searchOnly = true;
+      return merged;
+    } catch (_) { return Object.assign({}, DEFAULT_PREFS); }
   }
   function savePrefs() {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (_) {}
@@ -316,7 +326,7 @@
       // changes meaningfully so old cached positions don't lock the user
       // into a stale (bad) layout. Hash includes this version so a mismatch
       // forces fresh layout + cache rewrite.
-      const LAYOUT_VERSION = 'v3-2d-fib-spiral-strong-charge';
+      const LAYOUT_VERSION = 'v4-no-partial-cache';
       state.layoutCache.hash = computeNodeHash(state.graph.nodes) + ':' + LAYOUT_VERSION;
       try {
         const [c2, c3] = await Promise.all([
@@ -351,6 +361,16 @@
       if (!state.layoutCache || !state.layoutCache.hash) return;
       const data = fgInstance.graphData ? fgInstance.graphData() : null;
       if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return;
+      // PARTIAL-LAYOUT GUARD. When the user is searching (or 'searchOnly'
+      // is on) we render only a subset of nodes. Saving that subset's
+      // positions would poison the cache — next full-graph render would
+      // pin those few nodes and Fibonacci-spiral the rest, producing the
+      // hairball the user reported. Only persist when we have positions
+      // for at least 90% of the total graph nodes.
+      const totalNodes = (state.graph && state.graph.nodes && state.graph.nodes.length) || 0;
+      if (totalNodes && data.nodes.length < totalNodes * 0.9) {
+        return;
+      }
       const positions = {};
       for (const n of data.nodes) {
         if (n.id == null) continue;
@@ -363,6 +383,18 @@
       }).catch(() => {});
       state.layoutCache[mode] = positions;
     } catch (_) {}
+  }
+
+  // Treat a cache as a hit ONLY if it covers the full node set (>=90%).
+  // A partial cache (e.g. one written before this guard existed, or an
+  // earlier corrupted save) would otherwise pin a few nodes and leave
+  // the rest at default positions — that's how the hairball got cached.
+  function cacheCoversFullGraph(cachedPositions) {
+    if (!cachedPositions) return false;
+    const totalNodes = (state.graph && state.graph.nodes && state.graph.nodes.length) || 0;
+    if (!totalNodes) return false;
+    const coverage = Object.keys(cachedPositions).length / totalNodes;
+    return coverage >= 0.9;
   }
 
   async function refreshStatus() {
@@ -1912,7 +1944,10 @@
 
     let nodes = g.nodes;
     if (filter !== 'all') nodes = nodes.filter(n => n.kind === filter);
-    if (state.prefs.searchOnly && state.search && state.matches.length) {
+    // searchOnly is now always true — the toggle button was removed. We
+    // still gate on state.search + state.matches so an empty search
+    // shows everything.
+    if (state.search && state.matches.length) {
       const onlySet = new Set(state.matches);
       nodes = nodes.filter(n => onlySet.has(n.id));
     }
@@ -1954,7 +1989,8 @@
     // fx/fy/fz. d3-force honors fx/fy/fz as immovable — physics still
     // initializes but every iteration is a no-op for pinned nodes, so the
     // simulation finishes in ~0ms instead of pinning the iGPU for seconds.
-    const cached3d = (state.prefs.graphMode !== '2d' && state.layoutCache && state.layoutCache['3d']) || null;
+    const cached3dRaw = (state.prefs.graphMode !== '2d' && state.layoutCache && state.layoutCache['3d']) || null;
+    const cached3d = cacheCoversFullGraph(cached3dRaw) ? cached3dRaw : null;
     // Pre-position nodes on a Fibonacci sphere when no cache (cold start).
     // d3-force-3d defaults every node to (0,0,0), which causes the
     // "explosion from middle" animation - all forces fire at full strength
@@ -2060,7 +2096,8 @@
     // search behaviour - just a flat Canvas projection that's lighter on
     // GPU and easier to read for hub/cluster topology.
     if (state.prefs.graphMode === '2d' && typeof window.ForceGraph !== 'undefined') {
-      const cached2d = (state.layoutCache && state.layoutCache['2d']) || null;
+      const cached2dRaw = (state.layoutCache && state.layoutCache['2d']) || null;
+      const cached2d = cacheCoversFullGraph(cached2dRaw) ? cached2dRaw : null;
       // Apply cached 2D positions (and pin) before handing data to ForceGraph.
       if (cached2d) {
         for (const n of fgNodes) {
