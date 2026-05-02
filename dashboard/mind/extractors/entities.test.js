@@ -194,6 +194,87 @@ test('extractEntities: parent-directory groupings become entities + member edges
   assert.deepEqual(sources, ['cwd_bureau', 'cwd_coa_playdate', 'cwd_rat']);
 });
 
+test('extractEntities: co-mentioned entities get INFERRED conceptually_related_to', () => {
+  // Brand A and Brand B are both mentioned by 4 of the same 5 nodes -
+  // strong co-mention signal. They should land as INFERRED related
+  // automatically without any declared relation.
+  const graph = {
+    nodes: [
+      { id: 'plugin_a', label: 'BrandA',  kind: 'plugin' },
+      { id: 'plugin_b', label: 'BrandB',  kind: 'plugin' },
+      { id: 'note_1',   label: 'I use BrandA and BrandB together', kind: 'note' },
+      { id: 'note_2',   label: 'BrandA needs BrandB to ship',      kind: 'note' },
+      { id: 'note_3',   label: 'My BrandA / BrandB integration',   kind: 'note' },
+      { id: 'note_4',   label: 'BrandA tip: pair with BrandB',     kind: 'note' },
+    ],
+    edges: [],
+  };
+  const r = extractEntities(graph);
+  const inferredEdges = r.edges.filter(e =>
+    e.relation === 'conceptually_related_to' && e.relationKind === 'co_mentioned'
+  );
+  assert.equal(inferredEdges.length, 1, `expected 1 co-mention edge, got ${inferredEdges.length}`);
+  const edge = inferredEdges[0];
+  assert.equal(edge.confidence, 'INFERRED');
+  assert.ok(edge.sharedMentions >= 3, `expected >=3 shared, got ${edge.sharedMentions}`);
+  assert.ok(edge.jaccard >= 0.10);
+});
+
+test('extractEntities: weakly co-mentioned entities are NOT inferred-related', () => {
+  // Two plugins, only ONE node mentions both. Below the 3-shared
+  // threshold - no edge should land.
+  const graph = {
+    nodes: [
+      { id: 'plugin_a', label: 'BrandA', kind: 'plugin' },
+      { id: 'plugin_b', label: 'BrandB', kind: 'plugin' },
+      { id: 'note_1',   label: 'BrandA and BrandB once', kind: 'note' },
+      { id: 'note_2',   label: 'BrandA solo',            kind: 'note' },
+      { id: 'note_3',   label: 'BrandA again',           kind: 'note' },
+      { id: 'note_4',   label: 'BrandB solo',            kind: 'note' },
+      { id: 'note_5',   label: 'BrandB again',           kind: 'note' },
+    ],
+    edges: [],
+  };
+  const r = extractEntities(graph);
+  const inferred = r.edges.filter(e =>
+    e.relation === 'conceptually_related_to' && e.relationKind === 'co_mentioned'
+  );
+  assert.equal(inferred.length, 0);
+});
+
+test('extractEntities: declared relation pre-empts auto co-mention edge', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-pre-'));
+  try {
+    fs.mkdirSync(path.join(root, '.symphonee'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, '.symphonee', 'entity-relations.json'),
+      JSON.stringify({ relations: [{ from: 'BrandA', to: 'BrandB', relation: 'part_of', label: 'declared' }] }),
+    );
+    const graph = {
+      nodes: [
+        { id: 'plugin_a', label: 'BrandA', kind: 'plugin' },
+        { id: 'plugin_b', label: 'BrandB', kind: 'plugin' },
+        { id: 'n1', label: 'BrandA BrandB', kind: 'note' },
+        { id: 'n2', label: 'BrandA BrandB', kind: 'note' },
+        { id: 'n3', label: 'BrandA BrandB', kind: 'note' },
+        { id: 'n4', label: 'BrandA BrandB', kind: 'note' },
+      ],
+      edges: [],
+    };
+    const r = extractEntities(graph, { repoRoot: root });
+    const rels = r.edges.filter(e => e.relation === 'conceptually_related_to');
+    assert.equal(rels.length, 1, `expected exactly 1 relation edge, got ${rels.length}`);
+    // The declared one wins (EXTRACTED, with the user's label preserved).
+    assert.equal(rels[0].confidence, 'EXTRACTED');
+    assert.equal(rels[0].relationLabel, 'declared');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('extractEntities: parent-dir entity needs >=2 repos under it', () => {
   const path = require('node:path');
   const sep = path.sep;

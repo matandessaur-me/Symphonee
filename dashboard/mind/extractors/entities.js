@@ -400,6 +400,77 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
     }
   }
 
+  // ── Phase 6: AUTOMATIC entity-to-entity relationships ───────────────────
+  // Two entities mentioned by the same set of source nodes are almost
+  // always related: the Bath Fitter Listing Manager docs that name DYOB,
+  // the DYOB3 docs that name Bath Fitter, drawer turns that talk about
+  // both. Compute pairwise Jaccard over each entity's mention set and
+  // emit conceptually_related_to (INFERRED) whenever the overlap is
+  // statistically meaningful.
+  //
+  // Thresholds picked to favour precision: at least 3 shared mention
+  // sources AND Jaccard >= 0.10. With those bars, a pair of plugin
+  // entities that happen to both appear in one CLAUDE.md doesn't
+  // generate noise, but a pair like Bath Fitter / DYOB - mentioned
+  // together across docs, drawers, and notes - lights up automatically.
+  // Edges from this phase carry confidence INFERRED; explicit
+  // declarations from entity-relations.json win on rebuild because
+  // they come first and Phase 6 skips pairs already connected.
+  const MIN_SHARED = 3;
+  const MIN_JACCARD = 0.10;
+  const mentionsByEntity = new Map(); // entityId -> Set<sourceNodeId>
+  for (const e of newEdges) {
+    if (e.relation !== 'mentions') continue;
+    if (!mentionsByEntity.has(e.target)) mentionsByEntity.set(e.target, new Set());
+    mentionsByEntity.get(e.target).add(e.source);
+  }
+  // Track pairs we've already emitted (or that Phase 5 declared) so we
+  // don't double-write.
+  const pairKey = (a, b) => (a < b) ? `${a}\x01${b}` : `${b}\x01${a}`;
+  const claimedPairs = new Set();
+  for (const e of newEdges) {
+    if (e.relation === 'conceptually_related_to') {
+      claimedPairs.add(pairKey(e.source, e.target));
+    }
+  }
+  const entityIds = Array.from(mentionsByEntity.keys());
+  let coMentionRelations = 0;
+  for (let i = 0; i < entityIds.length; i++) {
+    const a = entityIds[i];
+    const A = mentionsByEntity.get(a);
+    if (A.size < MIN_SHARED) continue;
+    for (let j = i + 1; j < entityIds.length; j++) {
+      const b = entityIds[j];
+      const B = mentionsByEntity.get(b);
+      if (B.size < MIN_SHARED) continue;
+      if (claimedPairs.has(pairKey(a, b))) continue;
+      // Compute intersection cheaply: walk the smaller set.
+      const [small, large] = A.size <= B.size ? [A, B] : [B, A];
+      let inter = 0;
+      for (const id of small) if (large.has(id)) inter++;
+      if (inter < MIN_SHARED) continue;
+      const union = A.size + B.size - inter;
+      const jaccard = inter / union;
+      if (jaccard < MIN_JACCARD) continue;
+      newEdges.push({
+        source: a,
+        target: b,
+        relation: 'conceptually_related_to',
+        relationKind: 'co_mentioned',
+        relationLabel: `Co-mentioned by ${inter} nodes (Jaccard ${jaccard.toFixed(2)})`,
+        confidence: 'INFERRED',
+        confidenceScore: 0.6 + Math.min(0.3, jaccard),
+        weight: jaccard,
+        jaccard,
+        sharedMentions: inter,
+        createdBy: 'mind/entities/co-mention',
+        createdAt,
+      });
+      claimedPairs.add(pairKey(a, b));
+      coMentionRelations++;
+    }
+  }
+
   return {
     nodes: newNodes,
     edges: newEdges,
@@ -407,6 +478,7 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
     entities: newNodes.length,
     mentions,
     declaredRelations,
+    coMentionRelations,
   };
 }
 
