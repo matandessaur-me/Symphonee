@@ -1797,6 +1797,27 @@ if (!gotLock) {
           event.preventDefault();
           shell.openExternal(url);
         });
+
+        // ── Force whole-window repaint on focus return ───────────────────
+        // User-reported bug: alt-tab back into Symphonee and the sidebars
+        // and header stay pure black until the user clicks something. The
+        // 3D canvas / xterm both paint themselves via rAF so they show up,
+        // but static HTML layers (sidebars, tab bar, top header) wait for
+        // a layout invalidation that never arrives — the OS compositor
+        // is still presenting the pre-blur cached layer.
+        //
+        // webContents.invalidate() forces Chromium to mark the entire
+        // page dirty and recomposite. Wiring it to focus + show + restore
+        // covers every "comes back into view" path:
+        //   - focus    : alt-tab, click on the window
+        //   - show     : workspace switch, app switcher
+        //   - restore  : un-minimize
+        const repaintWindow = () => {
+          try { if (win && !win.isDestroyed()) win.webContents.invalidate(); } catch (_) {}
+        };
+        win.on('focus', repaintWindow);
+        win.on('show', repaintWindow);
+        win.on('restore', repaintWindow);
       }
     });
 
