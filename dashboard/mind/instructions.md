@@ -370,7 +370,9 @@ Single source of truth for every Mind URL. Refer here when an inline section abo
 - `POST /api/mind/watch        {"enabled":true}` or `{ enabled: true|false }` — chokidar on every connected repo + notes + recipes + instructions, 3s debounce, auto-incremental rebuild.
 - `GET  /api/mind/watch` — current watch state.
 - `POST /api/mind/add          { url|path, label, kind, createdBy }` — add one artefact. URLs go through SSRF guards.
+- `POST /api/mind/patch-file   { file }` — cheaper than `/api/mind/update` for the "user just saved one file" case. Drops the file from the manifest and triggers a single-file incremental re-extract via the same engine path. `file` may be absolute or repo-relative. Returns `{ jobId, ok, file }` immediately; completion broadcasts `mind-update` with `kind: "patch-file-complete"`.
 - `DELETE /api/mind/node       {"id":"..."}` — purge a hallucinated node.
+- `POST /api/mind/artifacts/init` — initialise artefact indexing (creates the artefact manifest if missing).
 
 **Graph inspection**
 - `GET  /api/mind/graph` — full graph (every node + edge).
@@ -390,6 +392,9 @@ Single source of truth for every Mind URL. Refer here when an inline section abo
 - `POST /api/mind/lock/clear` — force-clear a stuck lock (terminates orphan PID on Windows / SIGTERM elsewhere).
 - `GET  /api/mind/checkpoint` — last completed phase if a build is in progress.
 - `GET  /api/mind/quality` — `resolvedPct` of import edges + sample of unresolved specs.
+
+**CLI coverage diagnostic**
+- `GET  /api/mind/cli-coverage` — per-CLI evidence in the brain (`claude`, `codex`, `gemini`, `grok`, `qwen`, `copilot`, `cursor`, `windsurf`). For each: memory file presence, conversation count, drawer count, history count, skills, plugins. A CLI with zero coverage is a real signal (extractor bug, missing convention) — not a quirk.
 
 **Reference**
 - `GET  /api/mind/instructions` — this document.

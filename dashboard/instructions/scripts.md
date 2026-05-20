@@ -19,6 +19,28 @@ Use these before writing anything custom. They handle the common Symphonee opera
 | `Run-Query.ps1 -File path/to/query.ps1` | Run a generic query script |
 | `Get-PluginInstructions.ps1 [-Plugin <id>]` | Fetch AI instructions from installed plugins |
 
+## Mind (shared knowledge graph)
+
+| Script | Purpose |
+|---|---|
+| `Build-Mind.ps1` / `node scripts/build-mind.js` | Full rebuild of the brain (POST `/api/mind/build`) |
+| `Query-Mind.ps1 -Question '...'` / `query-mind.js` | Code-graph BFS (POST `/api/mind/query`) |
+| `Show-Mind.ps1 [-NodeId <id>]` | Visualise the graph or one node |
+| `Add-To-Mind.ps1 -Url <u> -Label '...' -Kind doc` | Add one artefact (POST `/api/mind/add`) |
+
+## Instruction Coherence
+
+| Script | Purpose |
+|---|---|
+| `Audit-Instructions.ps1` | Re-run the 4 coherence checks (URLs / triggers / atoms / file sizes) |
+| `Audit-Instructions.ps1 -UpdateBaseline` | Regenerate `scripts/audit-baseline.txt` after an intentional atom removal |
+
+## Apps Automation
+
+| Script | Purpose |
+|---|---|
+| `Invoke-AppsDo.ps1 -App <name> -Goal '...'` | Wrap `POST /api/apps/do` (default entry point for "open X and do Y") |
+
 ## Graph Runs (see graph-runs.md)
 
 | Script | Purpose |

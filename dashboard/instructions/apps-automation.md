@@ -261,6 +261,17 @@ Single source of truth for every Apps URL. Every endpoint is Windows-specific.
 
 Recipe DSL verbs: `CLICK TYPE PRESS WAIT WAIT_UNTIL FIND VERIFY SCROLL DRAG IF ELSE ENDIF REPEAT ENDREPEAT`. Stored per-app as JSON under `dashboard/app-recipes/<app>.json`.
 
+**Recording (capture mouse + keyboard into a recipe draft)**
+- `POST /api/apps/recording/start  { hwnd }` — start capturing raw input against a window. Permission-gated; resolves `hwnd` against the live window list. Returns `{ recordingId, captureRect, target }`. Stop with Ctrl+Shift+Q or the stop endpoint.
+- `POST /api/apps/recording/stop   { recordingId?, app?, save?, name?, description? }` — translate the captured stream into a DSL `draft`. Pass `app + save:true` to also save into that app's library in one round trip.
+- `GET  /api/apps/recording/status` — `{ active, recordingId, hwnd, eventCount, captureRect, startedAt }` while a session is live.
+
+**UIA inspection + window control**
+- `POST /api/apps/window/maximize  { hwnd }` — maximise a target window so coordinate-based recipe steps replay against the same layout they were captured against.
+- `POST /api/apps/uia/tree         { hwnd, maxNodes? }` — full UIA accessibility tree (capped 50-2000 nodes, default 400). Use to build PAD-style selectors that survive resizes.
+- `POST /api/apps/uia/find         { hwnd, selector }` — locate one element by a selector object. Returns `{ hit, element }`.
+- `GET  /api/apps/uia/pick?hwnd=<n>` — Server-Sent Events stream from the live element picker (`uia-pick.ps1`). User Ctrl+Clicks the target, picker emits `{type:"picked", ...}`, Esc emits `{type:"cancelled"}`. Auto-closes on terminal event. Blocked in Incognito.
+
 **Tests (regression harness, REST only)**
 - `GET  /api/apps/tests?app=<name>` — list tests.
 - `POST /api/apps/tests            { app, test: { name, macro (recipeId), inputs?, expected? } }` — save. `expected` supports `outcome`, `elementsPresent[]`, `elementsAbsent[]`.

@@ -56,6 +56,12 @@ Invoke workers via `POST /api/orchestrator/spawn` with `{"cli":"gemini","prompt"
    - If it timed out: try once more with a simpler prompt. Only after a second failure should you do it yourself.
    - **"Do it yourself" is a LAST resort**, not the first response to a failed dispatch. Always try to understand why it failed first.
 
+### Worker Anti-Patterns
+
+The orchestrator prefixes every worker prompt with a hard prohibition: **NEVER use sleep commands. NEVER poll with curl in a loop.** Workers exist to do one focused task and return. They do not wait on external state, they do not watch processes, they do not implement polling loops.
+
+If a worker's task naturally requires waiting (a long build, a deploy, an external job), it is not the right task for a worker — keep it on the supervisor, or model it as a graph run with an approval/wait node. Workers that sleep or poll burn the parent's session time and never return useful work.
+
 ### Supervision
 
 While workers run, you can:
