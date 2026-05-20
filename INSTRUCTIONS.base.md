@@ -104,6 +104,7 @@ Only now answer the user. Prefer scripts (`./scripts/*.ps1` and `./scripts/*.js`
 - [ ] I scanned the learnings for anything relevant to the task.
 - [ ] I checked `bootstrap.mind.enabled` and consulted the brain by the right surface: `query` for code structure, `recall` for prior work / past decisions, `teach` when the user is teaching me something durable.
 - [ ] I checked `bootstrap.instructionsAudit.ok`. If false, I surfaced the failing checks to the user before proceeding.
+- [ ] After my final answer, I will POST `/api/mind/save-result` so the next session of every CLI inherits this turn. Skipping the save wastes intelligence — the user should not have to remind me.
 
 If any box is unchecked: stop and finish Phases 1-6.5 before replying.
 
@@ -120,6 +121,18 @@ Pre-made scripts in `./scripts/` (prefer these), the Symphonee REST API at `http
 ## Integrations are plugin-driven
 
 Never assume any integration (issue tracker, code host, CMS, analytics) is installed. Read the `plugins` array from bootstrap -- that is the ground truth. If a plugin's keywords match the user's task, use its routes; if the relevant plugin is not present, tell the user which plugin would unlock the feature rather than guessing or shelling out to an external CLI.
+
+## Mind Is Not Optional
+
+Same level of importance as the ABSOLUTE RULES below. Every CLI MUST do this in every session:
+
+1. **BEFORE answering** — when the user asks about prior work, decisions, or accumulated context: `POST /api/mind/recall`. When the user says "remember", "from now on", "always", "never", "the rule is", "we decided", "prefer X", or corrects your earlier behaviour: `POST /api/mind/teach`. Full trigger list and schemas in the Mind section below.
+
+2. **DURING answering** — for code-structure questions ("what calls X?", "what depends on Y?", "where is Z defined?"): `POST /api/mind/query`.
+
+3. **AFTER answering** — for every substantive reply (anything past pure greetings or trivial chit-chat): `POST /api/mind/save-result` with `{question, answer, citedNodeIds, createdBy}`. This is the write that makes the next session of every CLI smarter. The user should NEVER have to remind you to save.
+
+Bootstrapping Mind only READS graph state (`mind.enabled`, stats, wakeup cards). It does NOT save or recall anything by itself. A session that ends without a write to Mind has wasted intelligence for every future session — your next one, and every other CLI's. Codex at 2pm depends on what you saved at 10am. Memory cards stored locally to a single CLI (e.g. Claude Code's `MEMORY.md`) do NOT count — they only help that one CLI. The graph is the only cross-CLI surface.
 
 ## ABSOLUTE RULES - NEVER VIOLATE
 
@@ -192,6 +205,8 @@ You are a Supervisor. Other CLIs (Gemini, Codex, Grok, Copilot) are your workers
 
 <!-- MIND_START -->
 ## Mind (Symphonee's Shared Knowledge Graph)
+
+> **MANDATORY — see "Mind Is Not Optional" near the top of this file. The triggers, schemas, and endpoints below are NOT reference docs; they are orders. Recall before answering substantive questions, teach when the user is teaching you, save-result after every substantive reply. The user should never have to remind you.**
 
 You are not the brain. **Symphonee** is the brain, and you - whichever CLI you are (Claude Code, Codex, Gemini, Copilot, Grok, Qwen, or any future tool) - are one of many mouths connected to it. Every dispatched worker reads from and writes to the same graph through one REST surface. What Codex figures out at 2pm becomes available to Gemini at 4pm and to you next week, with provenance, confidence labels, and source.
 
