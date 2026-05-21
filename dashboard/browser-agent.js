@@ -1375,13 +1375,8 @@ function mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast, dr
     }
   };
 
-  const isIncognito = () => (getConfig().IncognitoMode === true);
-
-  function browserRoute(method, routePath, handler, { checkIncognito = true } = {}) {
+  function browserRoute(method, routePath, handler) {
     addRoute(method, routePath, async (req, res) => {
-      if (checkIncognito && isIncognito()) {
-        return json(res, { error: 'Blocked by Incognito Mode: browser automation interacts with external services', incognito: true }, 403);
-      }
       try {
         const body = method === 'POST' ? await readBody(req) : {};
         const url = new URL(req.url, `http://${req.headers.host}`);
@@ -1417,24 +1412,24 @@ function mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast, dr
   browserRoute('POST', '/api/browser/close', () => agent.close());
   browserRoute('POST', '/api/browser/check-email', (body) => agent.checkEmail(body));
 
-  browserRoute('GET', '/api/browser/screenshot', () => agent.screenshot(), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/read-page', (_, url) => agent.readPage({ selector: url.searchParams.get('selector') }), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/source', () => agent.getPageSource(), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/dom', (_, url) => agent.inspectDom({ limit: Number(url.searchParams.get('limit') || 120) }), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/forms', (_, url) => agent.getForms({ limit: Number(url.searchParams.get('limit') || 50) }), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/watchdogs', () => agent.getWatchdogEvents(), { checkIncognito: false });
+  browserRoute('GET', '/api/browser/screenshot', () => agent.screenshot());
+  browserRoute('GET', '/api/browser/read-page', (_, url) => agent.readPage({ selector: url.searchParams.get('selector') }));
+  browserRoute('GET', '/api/browser/source', () => agent.getPageSource());
+  browserRoute('GET', '/api/browser/dom', (_, url) => agent.inspectDom({ limit: Number(url.searchParams.get('limit') || 120) }));
+  browserRoute('GET', '/api/browser/forms', (_, url) => agent.getForms({ limit: Number(url.searchParams.get('limit') || 50) }));
+  browserRoute('GET', '/api/browser/watchdogs', () => agent.getWatchdogEvents());
   browserRoute('GET', '/api/browser/interactive', (_, url) => agent.listInteractive({
     limit: Number(url.searchParams.get('limit') || 200),
     includeHidden: url.searchParams.get('includeHidden') === 'true' || url.searchParams.get('includeHidden') === '1',
     maxFrameDepth: Number(url.searchParams.get('maxFrameDepth') || 4),
     maxIframes: Number(url.searchParams.get('maxIframes') || 100)
-  }), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/query-all', (_, url) => agent.queryAll(url.searchParams.get('selector') || '*'), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/network', (_, url) => agent.getNetworkLog({ limit: Number(url.searchParams.get('limit') || 50) }), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/network-body', (_, url) => agent.getNetworkBody(url.searchParams.get('requestId') || ''), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/console', (_, url) => agent.getConsoleLog({ limit: Number(url.searchParams.get('limit') || 50) }), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/cookies', () => agent.getCookies(), { checkIncognito: false });
-  browserRoute('GET', '/api/browser/sessions', () => agent.listSessions(), { checkIncognito: false });
+  }));
+  browserRoute('GET', '/api/browser/query-all', (_, url) => agent.queryAll(url.searchParams.get('selector') || '*'));
+  browserRoute('GET', '/api/browser/network', (_, url) => agent.getNetworkLog({ limit: Number(url.searchParams.get('limit') || 50) }));
+  browserRoute('GET', '/api/browser/network-body', (_, url) => agent.getNetworkBody(url.searchParams.get('requestId') || ''));
+  browserRoute('GET', '/api/browser/console', (_, url) => agent.getConsoleLog({ limit: Number(url.searchParams.get('limit') || 50) }));
+  browserRoute('GET', '/api/browser/cookies', () => agent.getCookies());
+  browserRoute('GET', '/api/browser/sessions', () => agent.listSessions());
 
   browserRoute('GET', '/api/browser/accounts', () => {
     const cfg = getConfig();
@@ -1445,7 +1440,7 @@ function mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast, dr
       hasPassword: !!data.password,
     }));
     return { ok: true, count: accounts.length, accounts };
-  }, { checkIncognito: false });
+  });
 
   return agent;
 }

@@ -124,16 +124,11 @@
     // Phase 4b helper: call this to gate tabs on provider presence. Dormant until Phase 7
     // flips the default shell behavior; safe to invoke anytime since it only updates
     // display:none on elements that already exist in index.html.
-    applyTabVisibility(opts) {
-      opts = opts || {};
-      const honorLegacyConfig = opts.honorLegacyConfig !== false;
+    applyTabVisibility() {
       const setVis = (id, show) => {
         const el = document.getElementById(id);
         if (!el) return;
-        if (!show) { el.style.display = 'none'; return; }
-        // Only unhide if legacy path didn't already hide for its own reason (e.g. incognito).
-        if (honorLegacyConfig && el.dataset.pluginFirstHidden === 'incognito') return;
-        el.style.display = '';
+        el.style.display = show ? '' : 'none';
       };
       setVis('backlogTabBtn', api.hasWorkItemProvider());
       setVis('prsTabBtn', api.hasPrProvider());

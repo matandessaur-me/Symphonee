@@ -131,5 +131,3 @@ Single source of truth for every Browser URL.
 
 **Reference**
 - `GET /api/instructions/browser-router` — this document.
-
-POST endpoints blocked in Incognito.

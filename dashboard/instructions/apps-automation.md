@@ -270,7 +270,7 @@ Recipe DSL verbs: `CLICK TYPE PRESS WAIT WAIT_UNTIL FIND VERIFY SCROLL DRAG IF E
 - `POST /api/apps/window/maximize  { hwnd }` — maximise a target window so coordinate-based recipe steps replay against the same layout they were captured against.
 - `POST /api/apps/uia/tree         { hwnd, maxNodes? }` — full UIA accessibility tree (capped 50-2000 nodes, default 400). Use to build PAD-style selectors that survive resizes.
 - `POST /api/apps/uia/find         { hwnd, selector }` — locate one element by a selector object. Returns `{ hit, element }`.
-- `GET  /api/apps/uia/pick?hwnd=<n>` — Server-Sent Events stream from the live element picker (`uia-pick.ps1`). User Ctrl+Clicks the target, picker emits `{type:"picked", ...}`, Esc emits `{type:"cancelled"}`. Auto-closes on terminal event. Blocked in Incognito.
+- `GET  /api/apps/uia/pick?hwnd=<n>` — Server-Sent Events stream from the live element picker (`uia-pick.ps1`). User Ctrl+Clicks the target, picker emits `{type:"picked", ...}`, Esc emits `{type:"cancelled"}`. Auto-closes on terminal event.
 
 **Tests (regression harness, REST only)**
 - `GET  /api/apps/tests?app=<name>` — list tests.
@@ -284,4 +284,4 @@ Recipe DSL verbs: `CLICK TYPE PRESS WAIT WAIT_UNTIL FIND VERIFY SCROLL DRAG IF E
 **Reference**
 - `GET  /api/instructions/apps-automation` — this document.
 
-**Permissions:** most mutating endpoints go through permGate (ask in edit/review, auto-approve in trusted/bypass). `session/stop` and `panic` always run. `recipes/generate`, `tests/run`, `session/start`, and `session/inject` are blocked in Incognito. Read endpoints are ungated.
+**Permissions:** most mutating endpoints go through permGate (ask in edit/review, auto-approve in trusted/bypass). `session/stop` and `panic` always run. Read endpoints are ungated.

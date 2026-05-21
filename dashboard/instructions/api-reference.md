@@ -176,7 +176,6 @@ curl -s http://127.0.0.1:3800/api/config               # Full credentials in Bro
 - **You MUST ask before filling in credentials or submitting forms**
 - **You MUST ask before clicking buttons that perform external actions** (sign up, purchase, send message, etc.)
 - You may read pages, take screenshots, and query elements without asking
-- All browser POST endpoints are blocked when Incognito Mode is active
 
 ### Browser Workflow
 Launch browser with a session name, navigate to the target page, use `query-all` to understand the form structure, then fill fields and click submit. Save the session for reuse, and close when done. The typical flow is: `launch` -> `navigate` -> `query-all` -> `fill`/`click` -> `save-session` -> `close`.

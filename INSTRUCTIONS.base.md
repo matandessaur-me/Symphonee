@@ -146,12 +146,6 @@ Bootstrapping Mind only READS graph state (`mind.enabled`, stats, wakeup cards).
 7. Repo names are CONFIGURED names, not folder names. Use the name from `/api/repos` or `/api/ui/context` (e.g. `"My Website"`, not `"my-company-website"`).
 <!-- REPO_CONTEXT_END -->
 
-<!-- INCOGNITO_START -->
-## INCOGNITO MODE IS ACTIVE
-
-All external plugin connections (read and write) are BLOCKED. Allowed: local git (status/log/diff/branch/commit), file edits, notes, local scripts, terminal. Blocked: anything that touches a remote service through a plugin. A blocked operation returns 403 with `"incognito": true`.
-<!-- INCOGNITO_END -->
-
 ## Shell / Path / Speed / Punctuation
 
 Full details at `/api/instructions/shell-rules`. Short version:
@@ -329,7 +323,7 @@ Accumulated technical mistakes. Fetched at bootstrap via `/api/learnings`. Recor
 curl -s http://127.0.0.1:3800/api/instructions/browser-router
 ```
 
-Behavioural rules - MUST ask the user before launching, filling credentials, submitting forms, or clicking external-action buttons. Reading pages, screenshots, element queries: no permission needed. POST endpoints blocked in Incognito.
+Behavioural rules - MUST ask the user before launching, filling credentials, submitting forms, or clicking external-action buttons. Reading pages, screenshots, element queries: no permission needed.
 
 ## Desktop App Automation (Apps tab)
 
@@ -348,7 +342,7 @@ Behavioural rules - MUST ask the user before launching, filling credentials, sub
 curl -s http://127.0.0.1:3800/api/instructions/apps-automation
 ```
 
-Permissions: most mutating endpoints go through permGate. `session/stop` and `panic` always run so the user can halt a runaway agent regardless of mode. `recipes/generate`, `tests/run`, `session/start`, and `session/inject` are blocked in Incognito. Read endpoints are ungated. Every endpoint is Windows-specific.
+Permissions: most mutating endpoints go through permGate. `session/stop` and `panic` always run so the user can halt a runaway agent regardless of mode. Read endpoints are ungated. Every endpoint is Windows-specific.
 
 <!-- PLUGIN_INSTRUCTIONS_START -->
 <!-- PLUGIN_INSTRUCTIONS_END -->

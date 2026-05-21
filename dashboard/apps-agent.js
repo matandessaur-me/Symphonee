@@ -339,7 +339,6 @@ async function runSessionWithFallback({
 }
 
 function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resolveTermCli } = {}) {
-  const isIncognito = () => (getConfig && getConfig().IncognitoMode === true);
   const buildRegistry = () => {
     const aiKeys = Object.assign({}, (getConfig && getConfig().AiApiKeys) || {});
     for (const k of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY', 'DASHSCOPE_API_KEY', 'GEMINI_API_KEY']) {
@@ -372,7 +371,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   });
 
   addRoute('POST', '/api/apps/launch', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const id = body.id ? String(body.id) : null;
@@ -399,7 +397,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // to /sandbox/adopt) becomes a "sandboxed" target — the agent treats it
   // like any other window, but launch/focus are no-ops on the host desktop.
   addRoute('POST', '/api/apps/sandbox/adopt', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const hwnd = Number(body.hwnd);
@@ -448,7 +445,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // more invisible than off-screen positioning. Bypasses UIA which can't
   // drive Office's custom-canvas editing surfaces.
   addRoute('POST', '/api/apps/com/word/write', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const filePath = body.filePath ? String(body.filePath) : null;
@@ -471,7 +467,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   });
 
   addRoute('POST', '/api/apps/com/excel/write', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const filePath = body.filePath ? String(body.filePath) : null;
@@ -529,7 +524,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // up to waitMs) or returns immediately (waitMs=0) so the caller can
   // observe via the apps-agent-step WS.
   addRoute('POST', '/api/apps/do', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
 
@@ -811,7 +805,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   });
 
   addRoute('POST', '/api/apps/session/start', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
 
@@ -935,7 +928,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // the next model iteration sees it. Does NOT consume a pending ask_user;
   // dedicated /api/apps/session/answer is the way to do that.
   addRoute('POST', '/api/apps/session/inject', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const sessionId = String(body.sessionId || '');
@@ -983,7 +975,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // message history so the agent retains context from the prior task(s)
   // instead of re-discovering the app from scratch.
   addRoute('POST', '/api/apps/session/continue', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const sessionId = String(body.sessionId || '');
@@ -1151,7 +1142,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // "Test step" button so the user can iterate on one UIA selector or
   // coordinate without replaying the whole recipe.
   addRoute('POST', '/api/apps/recipes/run-step', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const hwnd = body && body.hwnd;
@@ -1197,7 +1187,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // returned by /stop so the UI can show it in the editor before the user
   // decides to save.
   addRoute('POST', '/api/apps/recording/start', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const hwnd = body && body.hwnd;
@@ -1311,7 +1300,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // Streaming picker: spawns uia-pick.ps1 and pipes its JSON-lines back as a
   // simple Server-Sent Events stream. Closes automatically on picked/cancelled.
   addRoute('GET', '/api/apps/uia/pick', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     const url = new URL(req.url, `http://${req.headers.host}`);
     const hwnd = url.searchParams.get('hwnd');
     if (!hwnd) return json(res, { error: 'hwnd required' }, 400);
@@ -1426,7 +1414,6 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // verify post-run assertions via the vision locator. Returns pass/fail
   // with per-assertion detail.
   addRoute('POST', '/api/apps/tests/run', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const app = String(body.app || '').trim();
@@ -1525,10 +1512,8 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
   // Natural-language recipe generator. Sends a description (plus any
   // per-app instructions the user has written, plus an optional current
   // screenshot of the target window) to Anthropic and parses the returned
-  // JSON into DSL steps. Blocked in Incognito because it can exfiltrate
-  // window screenshots and per-app notes to Anthropic.
+  // JSON into DSL steps.
   addRoute('POST', '/api/apps/recipes/generate', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const description = String(body.description || '').trim();

@@ -1508,7 +1508,6 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
     return;
   }
 
-  const isIncognito = () => (getConfig().IncognitoMode === true);
   const buildRegistry = () => {
     const aiKeys = Object.assign({}, getConfig().AiApiKeys || {});
     // Environment variables are a fallback source.
@@ -1519,7 +1518,6 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
   };
 
   addRoute('POST', '/api/browser/agent/chat', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const task = (body.task || body.message || '').trim();
@@ -1605,7 +1603,6 @@ function mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent, broadca
   });
 
   addRoute('POST', '/api/browser/agent/refine', async (req, res) => {
-    if (isIncognito()) return json(res, { error: 'Blocked by Incognito Mode.' }, 403);
     let body;
     try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
     const draft = String(body.draft || '').trim();

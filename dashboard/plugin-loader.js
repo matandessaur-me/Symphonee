@@ -186,7 +186,7 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
             // SWR cache for plugins -- use to cache expensive API calls
             // Usage: ctx.cache.get('myKey', async () => fetchData(), { forceRefresh })
             cache: swrCache || null,
-            // Shell helpers shared with core (gitExec, sanitizeText, permGate, incognitoGuard,
+            // Shell helpers shared with core (gitExec, sanitizeText, permGate,
             // repoRoot, getRepoPath, https). Populated by server.js at startup so plugins
             // never need to reach into core modules.
             shell: shellDeps || {},
