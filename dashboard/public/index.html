@@ -22738,7 +22738,11 @@ async function refreshSmartSearchStatus() {
     const v = r.vectors || {};
     const ol = r.ollama || {};
     if (r.activeProvider === 'ollama') {
-      statusEl.textContent = 'Active: Local AI (Ollama / ' + (ol.model || '') + ') -- ' + (v.count || 0) + ' vectors. Runs entirely on your machine. New nodes embed automatically.';
+      var chat = r.chat || {};
+      var chatLine = chat.preferredModel
+        ? ' Reflection model: ' + chat.preferredModel + '.'
+        : ' Reflection model: downloading in background...';
+      statusEl.textContent = 'Active: Local AI (Ollama / ' + (ol.model || '') + ') -- ' + (v.count || 0) + ' vectors. Runs entirely on your machine. New nodes embed automatically.' + chatLine;
       // Everything works -- expose the manual re-run as a quiet escape hatch.
       btn.style.display = 'inline-block';
     } else if (ol.installed && ol.running && !ol.modelInstalled) {
@@ -22791,6 +22795,8 @@ function handleEmbedSetupEvent(payload) {
   else if (s === 'launching') progress.textContent = (auto ? '[auto] ' : '') + 'Launching Ollama...';
   else if (s === 'launch-failed') progress.textContent = 'Could not launch Ollama: ' + (payload.hint || payload.reason || 'unknown');
   else if (s === 'pulling-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading embedding model (' + (payload.model || '') + ')...';
+  else if (s === 'pulling-chat-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading reflection model (' + (payload.model || '') + ')...';
+  else if (s === 'chat-model-ready') { progress.textContent = 'Reflection model ready (' + (payload.model || '') + ').'; refreshSmartSearchStatus(); }
   else if (s === 'pull-failed') progress.textContent = 'Model download failed: ' + (payload.error || 'unknown');
   else if (s === 'dropping-old-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Clearing old vectors...';
   else if (s === 'rebuilding-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Building semantic search index...';

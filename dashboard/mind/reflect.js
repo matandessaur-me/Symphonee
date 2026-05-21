@@ -33,9 +33,21 @@
 
 const store = require('./store');
 const memoryModule = require('./memory');
+const llm = require('./llm');
 
 const MIN_CLUSTER_SIZE = 3;
 const MAX_CARDS_PER_PASS = 4;
+// Hard cap on LLM calls per reflection pass. The reflection scheduler
+// can fire as often as every 5 min in continuous mode; with each LLM
+// judgement taking 1-2s on a 1.5b model, an unbounded pass on a wide
+// window could chew up minutes of GPU time. Sorting clusters by item
+// count first means we always judge the most-plausible-pattern clusters
+// first within this budget.
+const MAX_CLUSTERS_JUDGED = 10;
+const VALID_MEMORY_KINDS = new Set([
+  'decision', 'preference', 'constraint',
+  'lesson', 'gotcha', 'pattern', 'fact',
+]);
 const STOPWORDS = new Set([
   'the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 'into', 'about',
   'when', 'what', 'where', 'which', 'while', 'will', 'your', 'their', 'they',
@@ -104,7 +116,9 @@ function _existingCardCovers(memCards, tokens) {
   return false;
 }
 
-function _composeCard(cluster) {
+// Mechanical fallback card composer. Only used when no chat model is
+// available. The LLM-driven path (below) produces much better cards.
+function _composeCardFallback(cluster) {
   const sortedItems = cluster.items
     .slice()
     .sort((a, b) => (b.node.createdAt || '').localeCompare(a.node.createdAt || ''));
@@ -127,6 +141,90 @@ function _composeCard(cluster) {
     tags: tokenList,
     createdBy: 'mind/reflection',
   };
+}
+
+// Build the chat prompt that asks the local LLM to decide whether a
+// cluster is a real recurring theme vs coincidental token overlap, and
+// to write a clean memory card if it is. Output is forced to JSON via
+// Ollama's format:'json' flag so we always get a parseable object.
+function _buildClusterPrompt(cluster) {
+  const sortedItems = cluster.items
+    .slice()
+    .sort((a, b) => (b.node.createdAt || '').localeCompare(a.node.createdAt || ''));
+  const itemLines = sortedItems.slice(0, 10).map((item, idx) => {
+    const n = item.node;
+    const kind = n.kind || 'item';
+    const label = (n.label || '').replace(/\s+/g, ' ').slice(0, 140);
+    const body = (n.body || n.answer || '').replace(/\s+/g, ' ').slice(0, 220);
+    return `${idx + 1}. [${kind}] ${label}${body ? '\n   ' + body : ''}`;
+  }).join('\n');
+  const sys = [
+    'You analyze recent items from a developer\'s knowledge graph to decide whether a cluster of items represents a real recurring theme worth promoting to a long-term memory card, or just coincidental vocabulary overlap (filenames, timestamps, generic verbs).',
+    '',
+    'Real patterns: repeated decisions, recurring constraints, shared workflows, debugging gotchas, design choices that come up more than once.',
+    'Coincidence: items that share filename tokens, dates, "run" / "test" / "build" / "ok" / "failed" tokens but no shared meaning.',
+    '',
+    'Respond with JSON only. No markdown. No prose.',
+    '',
+    'Schema:',
+    '{',
+    '  "is_pattern": true | false,',
+    '  "title": "<short imperative title under 90 chars>" | null,',
+    '  "summary": "<2-3 sentence explanation>" | null,',
+    '  "tags": ["tag1", "tag2", ...] | null,',
+    '  "kindOfMemory": "lesson" | "pattern" | "decision" | "preference" | "constraint" | "gotcha" | "fact" | null',
+    '}',
+    '',
+    'If is_pattern is false, set the other fields to null.',
+  ].join('\n');
+  const user = `Here are ${sortedItems.length} items that share vocabulary:\n\n${itemLines}\n\nIs this a real recurring theme?`;
+  return [
+    { role: 'system', content: sys },
+    { role: 'user', content: user },
+  ];
+}
+
+// Send a cluster to the local chat model. Returns `{ ok: true, card }` on
+// a real pattern, `{ ok: false, reason: 'coincidence' }` when the LLM
+// rejects the cluster, or `{ ok: false, reason: 'no-llm' | 'error' }`
+// when the call itself fails. Never throws to the caller.
+async function _judgeWithLLM(cluster) {
+  if (!llm.pickChatModel()) return { ok: false, reason: 'no-llm' };
+  try {
+    const messages = _buildClusterPrompt(cluster);
+    const res = await llm.chatOllama(messages, { format: 'json', timeoutMs: 25_000, numPredict: 400 });
+    const j = res.json || {};
+    if (!j.is_pattern) return { ok: false, reason: 'coincidence', model: res.model };
+    const sortedItems = cluster.items
+      .slice()
+      .sort((a, b) => (b.node.createdAt || '').localeCompare(a.node.createdAt || ''));
+    const title = String(j.title || '').slice(0, 180).trim();
+    const summary = String(j.summary || '').trim();
+    if (!title || !summary) return { ok: false, reason: 'empty-fields', model: res.model };
+    const kind = VALID_MEMORY_KINDS.has(j.kindOfMemory) ? j.kindOfMemory : 'pattern';
+    const tags = Array.isArray(j.tags)
+      ? j.tags.filter(t => typeof t === 'string' && t.trim()).slice(0, 8)
+      : [];
+    const body = [
+      summary,
+      '',
+      'Sources:',
+      ...sortedItems.slice(0, 6).map(i => `  - [${i.node.kind}] ${(i.node.label || i.node.id || '').slice(0, 100)}`),
+    ].join('\n');
+    return {
+      ok: true,
+      card: {
+        title,
+        body,
+        kindOfMemory: kind,
+        tags,
+        createdBy: 'mind/reflection-llm',
+      },
+      model: res.model,
+    };
+  } catch (e) {
+    return { ok: false, reason: 'error', error: e.message };
+  }
 }
 
 /**
@@ -164,26 +262,54 @@ async function reflectOnce({
   if (recent.length < minClusterSize) {
     return { ok: true, clustersChecked: 0, cardsCreated: 0, reason: 'too-few-recent', recent: recent.length };
   }
-  const clusters = _clusterNodes(recent).filter(c => c.items.length >= minClusterSize);
+  const clusters = _clusterNodes(recent)
+    .filter(c => c.items.length >= minClusterSize)
+    // Biggest clusters first — they're statistically more likely to be
+    // real patterns. Then cap at MAX_CLUSTERS_JUDGED so a wide reflection
+    // window never runs the LLM more than ~10 times in one pass.
+    .sort((a, b) => b.items.length - a.items.length)
+    .slice(0, MAX_CLUSTERS_JUDGED);
   if (!clusters.length) {
     return { ok: true, clustersChecked: 0, cardsCreated: 0, reason: 'no-clusters-met-threshold' };
   }
+  // Refresh chat-model availability so we know whether to use the LLM
+  // judge or fall back to the mechanical title.
+  await llm.refreshChatStatus({ force: false });
+  const hasLLM = !!llm.pickChatModel();
   const existingMems = g.nodes.filter(n => n.kind === 'memory');
   const created = [];
+  let rejected = 0;
   for (const cluster of clusters) {
     if (created.length >= maxCards) break;
     if (_existingCardCovers(existingMems, cluster.tokens)) continue;
-    const spec = _composeCard(cluster);
-    if (dryRun) { created.push({ dryRun: true, ...spec }); continue; }
+    let spec, source;
+    if (hasLLM) {
+      // LLM path: model decides real-pattern vs coincidence AND writes
+      // the card. Junk clusters (Figma recording titles, timestamp-token
+      // overlap) get rejected here.
+      const verdict = await _judgeWithLLM(cluster);
+      if (!verdict.ok) { rejected++; continue; }
+      spec = verdict.card;
+      source = 'llm';
+    } else {
+      // Fallback path: no chat model installed yet. Mechanical title
+      // from the first item. User sees less-interesting cards until the
+      // auto-bootstrap finishes pulling a chat model.
+      spec = _composeCardFallback(cluster);
+      source = 'fallback';
+    }
+    if (dryRun) { created.push({ dryRun: true, source, ...spec }); continue; }
     try {
       const r = await memoryModule.addMemoryCard({ repoRoot, space, spec });
-      created.push({ id: r.node.id, title: r.node.label, kindOfMemory: r.node.kindOfMemory });
+      created.push({ id: r.node.id, title: r.node.label, kindOfMemory: r.node.kindOfMemory, source });
     } catch (_) { /* lock contention or schema rejection — skip silently */ }
   }
   return {
     ok: true,
     clustersChecked: clusters.length,
     cardsCreated: created.length,
+    cardsRejected: rejected,
+    usedLLM: hasLLM,
     cards: created,
     windowHours,
     recentScanned: recent.length,

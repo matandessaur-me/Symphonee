@@ -32,6 +32,8 @@ const { URL } = require('url');
 
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://localhost:11434';
 const DEFAULT_MODEL = process.env.SYMPHONEE_EMBED_MODEL || 'nomic-embed-text';
+const DEFAULT_CHAT_MODEL = process.env.SYMPHONEE_CHAT_MODEL || 'qwen2.5:1.5b';
+const { PREFERRED_CHAT_MODELS, isEmbeddingModel } = require('./llm');
 
 function getHttp(urlStr, timeoutMs = 1500) {
   return new Promise((resolve, reject) => {
@@ -113,7 +115,7 @@ function findOllamaBinary() {
   return null;
 }
 
-async function detect({ model = DEFAULT_MODEL } = {}) {
+async function detect({ model = DEFAULT_MODEL, chatModel = DEFAULT_CHAT_MODEL } = {}) {
   const installPath = findOllamaBinary();
   const installed = !!installPath;
   let running = false, modelInstalled = false, models = [];
@@ -126,7 +128,23 @@ async function detect({ model = DEFAULT_MODEL } = {}) {
       modelInstalled = models.some(n => n.startsWith(model));
     }
   } catch (_) { /* not running */ }
-  return { installed, installPath, running, model, modelInstalled, models };
+  // Split installed models into embed-capable vs chat-capable. The
+  // reflection cycle picks the smallest preferred chat model that's
+  // present; falls back to any non-embed model the user has.
+  const chatModels = models.filter(n => !isEmbeddingModel(n));
+  let preferredChat = null;
+  for (const pref of PREFERRED_CHAT_MODELS) {
+    const hit = chatModels.find(n => n === pref || n.startsWith(pref + ':'));
+    if (hit) { preferredChat = hit; break; }
+  }
+  if (!preferredChat && chatModels.length) preferredChat = chatModels[0];
+  const chatModelInstalled = !!preferredChat;
+  return {
+    installed, installPath, running,
+    model, modelInstalled,
+    chatModel, chatModelInstalled, preferredChat, chatModels,
+    models,
+  };
 }
 
 async function ensureRunning({ installPath }) {
@@ -182,6 +200,7 @@ async function ensureModel({ model = DEFAULT_MODEL, broadcast } = {}) {
 module.exports = {
   OLLAMA_BASE,
   DEFAULT_MODEL,
+  DEFAULT_CHAT_MODEL,
   detect,
   ensureRunning,
   ensureModel,

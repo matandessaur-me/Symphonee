@@ -24,6 +24,7 @@ const { MindWatcher } = require('./watch');
 const { reflectOnce, startReflectionScheduler } = require('./reflect');
 const { healOnce, startHealingScheduler } = require('./heal');
 const ollamaSetup = require('./ollama-setup');
+const llm = require('./llm');
 const lock = require('./lock');
 const checkpoint = require('./checkpoint');
 const impact = require('./impact');
@@ -78,10 +79,14 @@ function mountMind(addRoute, json, ctx) {
   refreshEmbedKeys();
   // Probe Ollama at boot + every 5 min so the picker prefers local
   // semantic search the moment Ollama becomes available (no restart
-  // required). Failure is silent — falls back to whatever cloud key
-  // is configured, then BM25.
+  // required). Failure is silent — falls back to BM25.
   embeddings.refreshOllamaStatus({ force: true }).catch(() => {});
   setInterval(() => { embeddings.refreshOllamaStatus().catch(() => {}); }, 5 * 60 * 1000).unref();
+  // Same cadence for the chat-model probe so reflection wakes up the
+  // instant a chat model gets pulled (whether by auto-bootstrap or by
+  // the user running `ollama pull` manually).
+  llm.refreshChatStatus({ force: true }).catch(() => {});
+  setInterval(() => { llm.refreshChatStatus().catch(() => {}); }, 5 * 60 * 1000).unref();
 
   const getSpace = () => {
     const c = getUiContext ? getUiContext() : {};
@@ -1391,8 +1396,11 @@ function mountMind(addRoute, json, ctx) {
     // Live probe of Ollama (forced — bypasses the 5min cache so the UI
     // always sees current state when the user opens Settings).
     try { await embeddings.refreshOllamaStatus({ force: true }); } catch (_) {}
-    const ollama = embeddings.getOllamaStatus();
-    const detect = await ollamaSetup.detect({ model: embeddings.OLLAMA_DEFAULT_MODEL });
+    try { await llm.refreshChatStatus({ force: true }); } catch (_) {}
+    const detect = await ollamaSetup.detect({
+      model: embeddings.OLLAMA_DEFAULT_MODEL,
+      chatModel: ollamaSetup.DEFAULT_CHAT_MODEL,
+    });
     const provider = embeddings.pickProvider();
     return json(res, {
       activeProvider: provider || 'bm25',   // ollama | bm25 (cloud never picked)
@@ -1403,6 +1411,12 @@ function mountMind(addRoute, json, ctx) {
         modelInstalled: detect.modelInstalled,
         model: detect.model,
         models: detect.models,
+      },
+      chat: {
+        modelInstalled: detect.chatModelInstalled,
+        preferredModel: detect.preferredChat,
+        defaultModel: detect.chatModel,
+        installedChatModels: detect.chatModels,
       },
       vectors: { count: vectorCount, dim: vectorDim },
       downloadUrl: 'https://ollama.com/download',
@@ -1500,7 +1514,8 @@ function mountMind(addRoute, json, ctx) {
     try {
       const space = getSpace();
       const m = embeddings.OLLAMA_DEFAULT_MODEL;
-      const detect = await ollamaSetup.detect({ model: m });
+      const chatM = ollamaSetup.DEFAULT_CHAT_MODEL;
+      const detect = await ollamaSetup.detect({ model: m, chatModel: chatM });
       if (!detect.installed) {
         if (broadcast) broadcast({
           type: 'mind-update',
@@ -1508,21 +1523,40 @@ function mountMind(addRoute, json, ctx) {
         });
         return;
       }
-      // Check if we already have a healthy local vector store. If yes,
-      // skip the heavy rebuild — the heal watchdog will fill in the
-      // rest. The bootstrap only forces a rebuild when there's nothing
-      // usable yet (no vectors) or when the existing store is for a
-      // different provider.
+      // Embedding side: rebuild only when there's nothing usable yet OR
+      // the store belongs to a different provider. Heal watchdog handles
+      // ongoing backfill, so we don't touch the store when it's healthy.
       let needsRebuild = false;
       try {
         const vs = new VectorStore(repoRoot, space);
         if (!vs.load() || vs.count() === 0 || vs.provider !== 'ollama') needsRebuild = true;
       } catch (_) { needsRebuild = true; }
-      if (detect.running && detect.modelInstalled && !needsRebuild) {
+      if (!detect.running || !detect.modelInstalled || needsRebuild) {
+        await runEmbedSetup({ model: m, source: 'auto' });
+      } else {
         await embeddings.refreshOllamaStatus({ force: true });
-        return; // happy path: nothing to do
       }
-      await runEmbedSetup({ model: m, source: 'auto' });
+      // Chat-model side: silently pull the reflection model if no chat
+      // model is installed yet. This is the "humanless" pull — the user
+      // never has to know it happened. ensureRunning was already handled
+      // above so we know Ollama is alive at this point.
+      const postEmbedDetect = await ollamaSetup.detect({ model: m, chatModel: chatM });
+      if (postEmbedDetect.running && !postEmbedDetect.chatModelInstalled) {
+        if (broadcast) broadcast({
+          type: 'mind-update',
+          payload: { kind: 'embed-setup', step: 'pulling-chat-model', source: 'auto', model: chatM },
+        });
+        const pull = await ollamaSetup.ensureModel({ model: chatM, broadcast });
+        if (pull.ok) {
+          if (broadcast) broadcast({
+            type: 'mind-update',
+            payload: { kind: 'embed-setup', step: 'chat-model-ready', source: 'auto', model: chatM },
+          });
+          await llm.refreshChatStatus({ force: true });
+        }
+      } else if (postEmbedDetect.chatModelInstalled) {
+        await llm.refreshChatStatus({ force: true });
+      }
     } catch (e) {
       if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'embed-setup', step: 'error', source: 'auto', error: e.message } });
     }
