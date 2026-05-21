@@ -722,23 +722,6 @@
     .tab-panel.active { display: flex; flex-direction: column; }
     .tab-panel#panel-terminal.active { display: flex; flex-direction: column; position: relative; }
 
-    /* ── Incognito mode ────────────────────────────────────────────────── */
-    /* Hide all external-connected UI */
-    body.incognito-active #sidebarAdoFixed { display: none !important; }
-    body.incognito-active #sidebarAdoActions { display: none !important; }
-    body.incognito-active #sidebarGitActions { display: none !important; }
-    body.incognito-active #sidebarPluginAiActions { display: none !important; }
-    body.incognito-active #sidebarPluginSections { display: none !important; }
-    body.incognito-active [data-tab="backlog"] { display: none !important; }
-    body.incognito-active [data-tab="workitem"] { display: none !important; }
-    body.incognito-active [data-tab="activity"] { display: none !important; }
-    body.incognito-active [data-tab="prs"] { display: none !important; }
-    /* Right panel: hide all intel tabs and content, show incognito message */
-    body.incognito-active .intel .intel-tabs { display: none !important; }
-    body.incognito-active .intel .intel-panel { display: none !important; }
-    body.incognito-active .intel #incognitoIntelMsg { display: flex !important; }
-    /* Plugin tabs with external connections: hidden via JS (incognitoAware flag) */
-    body.incognito-active .plugin-tab-incognito { display: none !important; }
     .plugin-space-hidden { display: none !important; }
 
     /* ── Orchestration mode badge ────────────────────────────────────────── */
@@ -4927,10 +4910,6 @@
       <i data-lucide="sparkles" style="width:12px;height:12px;color:var(--accent);"></i>
       <span id="onboardingChipText">0 of 4</span>
     </div>
-    <div id="incognitoIndicator" style="display:none;align-items:center;gap:4px;padding:2px 10px;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--accent);color:var(--accent);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:4px;">
-      <i data-lucide="shield" style="width:13px;height:13px;"></i>
-      <span>INCOGNITO</span>
-    </div>
     <div id="permModeSlot" style="display:inline-flex;align-items:center;flex-shrink:0;position:relative;">
       <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
         <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
@@ -5820,13 +5799,6 @@
 
   <!-- ─── Intelligence Panel ──────────────────────────────────────────── -->
   <aside class="intel">
-    <!-- Incognito mode: shown instead of intel tabs/panels -->
-    <div id="incognitoIntelMsg" style="display:none;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px 20px;text-align:center;">
-      <i data-lucide="shield" style="width:48px;height:48px;color:var(--accent);opacity:0.5;"></i>
-      <div style="font-size:15px;font-weight:700;letter-spacing:2px;color:var(--accent);opacity:0.6;">INCOGNITO</div>
-      <div style="font-size:12px;color:var(--subtext0);line-height:1.5;max-width:280px;">All external connections are disabled. Working locally only. No data is sent to or received from plugin-backed external services.</div>
-      <div style="font-size:11px;color:var(--subtext1);margin-top:12px;">Disable in Settings to reconnect.</div>
-    </div>
     <div class="intel-tabs">
       <button class="intel-tab active" data-itab="activity" data-plugin-id="azure-devops" id="intelTab-activity" onclick="switchIntelTab('activity')" style="display:none;">Activity</button>
       <button class="intel-tab" data-itab="team" data-plugin-id="azure-devops" id="intelTab-team" onclick="switchIntelTab('team')" style="display:none;">Team</button>
@@ -6524,14 +6496,22 @@
             </div>
           </div>
           <div class="settings-section">
-            <div class="settings-section-title">Incognito Mode</div>
-            <div class="settings-section-desc">When enabled, all external provider connections (work item trackers, code hosts, and any plugin-contributed integrations) are blocked: no reading or writing work items, no PRs, no push/pull/fetch. Only local operations (commits, checkouts, local git history, file editing) remain available. Requires a restart to update AI instructions.</div>
+            <div class="settings-section-title">Continuous Learning</div>
+            <div class="settings-section-desc">When enabled, Mind reflects more aggressively: every 5 minutes it scans recent conversations, drawers, and learnings for patterns and promotes them to durable memory cards. Default is idle-and-hourly, which feels organic and uses fewer embedding tokens. Turn this on if you want Mind to feel like it's always thinking.</div>
             <div style="display:flex;align-items:center;gap:10px;">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="checkbox" id="settingsIncognitoMode" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" onchange="checkSettingsNeedRestart()">
-                <span style="font-size:12px;color:var(--text);">Enable incognito mode</span>
+                <input type="checkbox" id="settingsEnableContinuousLearning" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+                <span style="font-size:12px;color:var(--text);">Enable continuous reflection</span>
               </label>
             </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">Smart Search</div>
+            <div class="settings-section-desc">Mind sets up local semantic search automatically on every boot. No clicks, no cloud, no API tokens. The only thing Symphonee can't install for you is Ollama itself -- if it's missing, a download link appears below.</div>
+            <div id="smartSearchStatus" style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--surface1);border-radius:var(--radius);background:var(--surface0);margin-bottom:10px;font-size:12px;color:var(--subtext0);">Checking status...</div>
+            <a href="#" id="smartSearchDownloadLink" style="display:none;color:var(--accent);text-decoration:underline;font-size:12px;">Download Ollama (free, ~600 MB)</a>
+            <div id="smartSearchProgress" style="display:none;margin-top:10px;font-size:11px;color:var(--subtext0);font-family:var(--font-mono);"></div>
+            <button type="button" id="smartSearchSetupBtn" style="background:transparent;color:var(--subtext0);border:1px solid var(--surface1);border-radius:var(--radius);padding:6px 10px;cursor:pointer;font-size:11px;display:none;margin-top:10px;">Re-run setup manually</button>
           </div>
           <div class="settings-section" id="settingsSection-videoUse" style="display:none;">
             <div class="settings-section-title">Video Use</div>
@@ -7332,6 +7312,13 @@ requestAnimationFrame(fitTerminalNow);
           } else if (p.phase === 'error' && typeof toast === 'function') {
             toast('Mind refresh failed: ' + (p.error || 'unknown'), 'error', { duration: 4500 });
           }
+          break;
+        }
+        case 'mind-update': {
+          // Re-dispatch as a DOM event so feature-specific listeners (Smart
+          // Search setup progress, mind-ui graph refresh, etc.) can hook
+          // in without each having their own WebSocket.
+          try { window.dispatchEvent(new CustomEvent('symphonee-mind-update', { detail: msg.payload || {} })); } catch (_) {}
           break;
         }
         case 'ui-action':
@@ -12266,7 +12253,7 @@ setTimeout(() => orchRefresh(), 1000);
     console.info('[startup] post-load refresh delta: added=', (delta.added||[]).map(function(p){return p.id;}), 'removed=', (delta.removed||[]).map(function(p){return p.id;}));
     // Even without a delta, reconcile native tab claims now that
     // _loadedPlugins is guaranteed populated (closes the cold-start race).
-    try { reconcilePluginShellSurfaces(configData.IncognitoMode === true, { preferActivityDefault: true }); console.info('[startup] reconcilePluginShellSurfaces done'); } catch (e) { console.warn('[startup] reconcilePluginShellSurfaces failed', e); }
+    try { reconcilePluginShellSurfaces({ preferActivityDefault: true }); console.info('[startup] reconcilePluginShellSurfaces done'); } catch (e) { console.warn('[startup] reconcilePluginShellSurfaces failed', e); }
     // Apply contributions for any plugin that activated between initPlugins
     // snapshot and this point (e.g. plugin config became valid mid-startup).
     for (var _i = 0; _i < (delta.added || []).length; _i++) {
@@ -12906,11 +12893,9 @@ async function loadConfig(autoSelectSprint) {
     // appearing in _loadedPlugins implies its config is satisfied.
     const hasAdo = !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.workItemProvider));
     const hasGh = !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.prProvider));
-    const isIncognito = configData.IncognitoMode === true;
-    // Incognito overrides everything: hide all external-connected UI.
     // Plugin-driven surfaces depend on _loadedPlugins, so this is also rerun
     // after plugin init completes to close the cold-start race.
-    reconcilePluginShellSurfaces(isIncognito);
+    reconcilePluginShellSurfaces();
     // Left-column Git actions: only useful once a repo is selected.
     var _gitActionsEl = document.getElementById('sidebarGitActions');
     if (_gitActionsEl) {
@@ -12919,7 +12904,7 @@ async function loadConfig(autoSelectSprint) {
     }
     // Git modal: hide Pull/Push when no PAT (local ops like Branches/Commit/Compare still work)
     const hasPat = !!(configData.GitHubPAT && configData.GitHubPAT.trim());
-    const gitAuthOk = (hasGh || hasPat) && !isIncognito;
+    const gitAuthOk = (hasGh || hasPat);
     const gitPullBtn = document.getElementById('gitNavPull');
     const gitPushBtn = document.getElementById('gitNavPush');
     const gitNoPatHint = document.getElementById('gitNavNoPatHint');
@@ -12927,15 +12912,6 @@ async function loadConfig(autoSelectSprint) {
     if (gitPushBtn) gitPushBtn.style.display = gitAuthOk ? '' : 'none';
     if (gitNoPatHint) gitNoPatHint.style.display = gitAuthOk ? 'none' : '';
     document.getElementById('orchestratorTabBtn').style.display = '';
-    const incogEl = document.getElementById('incognitoIndicator');
-    if (incogEl) { incogEl.style.display = isIncognito ? 'flex' : 'none'; }
-    document.body.classList.toggle('incognito-active', isIncognito);
-    // If incognito is on and we're currently on a hidden tab, switch to terminal
-    if (isIncognito) {
-      const activeTab = document.querySelector('.tab-btn.active');
-      const hiddenTabs = ['backlog', 'workitem', 'activity', 'prs'];
-      if (activeTab && hiddenTabs.includes(activeTab.dataset.tab)) switchTab('terminal');
-    }
     // Repo list is core, not ADO-specific; always load it.
     loadRepoList();
     if (hasAdo) {
@@ -22171,7 +22147,7 @@ async function applyPluginSpaceFilter() {
     try { switchTab('terminal'); } catch (_) {}
   }
   // Re-evaluate section title visibility now that buttons may have been hidden.
-  try { reconcilePluginShellSurfaces(typeof configData !== 'undefined' && configData.IncognitoMode === true); } catch (_) {}
+  try { reconcilePluginShellSurfaces(); } catch (_) {}
 }
 
 // Switch the active space. If the new space has a single repo, auto-select
@@ -22414,7 +22390,9 @@ function openSettings(tab) {
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
   document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
-  document.getElementById('settingsIncognitoMode').checked = configData.IncognitoMode === true;
+  const continuousEl = document.getElementById('settingsEnableContinuousLearning');
+  if (continuousEl) continuousEl.checked = configData.EnableContinuousLearning === true;
+  refreshSmartSearchStatus();
   // AI API keys
   const aiKeys = configData.AiApiKeys || {};
   document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
@@ -22736,15 +22714,123 @@ async function _fetchGitHubRepos(query) { return _fetchPluginRepos(_repoSourceBy
 function _renderGitHubRepoList(repos, ctx, mode) { return _renderPluginRepoList(_repoSourceById('github'), repos, ctx, mode); }
 async function _showGitHubPicker(ctx, mode) { return _showPluginClonePicker(_repoSourceById('github'), ctx, mode); }
 
-// Track which settings require an app restart when changed
+// Track which settings require an app restart when changed.
+// No setting currently requires a restart, so this is a no-op kept
+// callable in case future settings need it.
 function checkSettingsNeedRestart() {
   const btn = document.getElementById('settingsSaveBtn');
   if (!btn) return;
-  const incogChanged = document.getElementById('settingsIncognitoMode').checked !== (configData.IncognitoMode === true);
-  const needsRestart = incogChanged;
-  btn.textContent = needsRestart ? 'Save & Restart' : 'Save';
-  btn._needsRestart = needsRestart;
+  btn.textContent = 'Save';
+  btn._needsRestart = false;
 }
+
+// ── Smart Search (semantic embeddings) UI ─────────────────────────────
+async function refreshSmartSearchStatus() {
+  const statusEl = document.getElementById('smartSearchStatus');
+  const btn = document.getElementById('smartSearchSetupBtn');
+  const dl = document.getElementById('smartSearchDownloadLink');
+  if (!statusEl || !btn || !dl) return;
+  statusEl.textContent = 'Checking status...';
+  btn.style.display = 'none';
+  dl.style.display = 'none';
+  try {
+    const r = await fetch('/api/mind/embed-status').then(r => r.json());
+    const v = r.vectors || {};
+    const ol = r.ollama || {};
+    if (r.activeProvider === 'ollama') {
+      statusEl.textContent = 'Active: Local AI (Ollama / ' + (ol.model || '') + ') -- ' + (v.count || 0) + ' vectors. Runs entirely on your machine. New nodes embed automatically.';
+      // Everything works -- expose the manual re-run as a quiet escape hatch.
+      btn.style.display = 'inline-block';
+    } else if (ol.installed && ol.running && !ol.modelInstalled) {
+      statusEl.textContent = 'Mind is downloading the embedding model in the background. This page will update when it finishes.';
+    } else if (ol.installed && !ol.running) {
+      statusEl.textContent = 'Mind is launching Ollama in the background...';
+    } else if (!ol.installed) {
+      statusEl.textContent = 'Active: keyword search. Ollama is the only thing Symphonee cannot install for you -- one download and the rest happens automatically.';
+      dl.href = r.downloadUrl || 'https://ollama.com/download';
+      dl.style.display = 'inline-block';
+    } else {
+      statusEl.textContent = 'Active: keyword search. Smart Search is initializing in the background...';
+      btn.style.display = 'inline-block';
+    }
+  } catch (e) {
+    statusEl.textContent = 'Could not reach the Mind status endpoint.';
+  }
+}
+
+async function startSmartSearchSetup() {
+  const btn = document.getElementById('smartSearchSetupBtn');
+  const progress = document.getElementById('smartSearchProgress');
+  if (!btn || !progress) return;
+  btn.disabled = true;
+  btn.textContent = 'Setting up...';
+  progress.style.display = 'block';
+  progress.textContent = 'Starting...';
+  try {
+    await fetch('/api/mind/embed-setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  } catch (e) {
+    progress.textContent = 'Setup request failed: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = 'Set up local smart search';
+  }
+  // Progress arrives via WebSocket mind-update events handled below.
+}
+
+function handleEmbedSetupEvent(payload) {
+  const progress = document.getElementById('smartSearchProgress');
+  const btn = document.getElementById('smartSearchSetupBtn');
+  if (!progress) return;
+  progress.style.display = 'block';
+  const s = payload.step;
+  const auto = payload.source === 'auto';
+  if (s === 'detect') progress.textContent = (auto ? '[auto] ' : '') + 'Looking for Ollama...';
+  else if (s === 'needs-install') {
+    progress.textContent = 'Ollama is the only thing Symphonee cannot install for you. Use the download link above. Once installed, Mind picks it up automatically -- no clicks required.';
+    refreshSmartSearchStatus();
+  }
+  else if (s === 'launching') progress.textContent = (auto ? '[auto] ' : '') + 'Launching Ollama...';
+  else if (s === 'launch-failed') progress.textContent = 'Could not launch Ollama: ' + (payload.hint || payload.reason || 'unknown');
+  else if (s === 'pulling-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading embedding model (' + (payload.model || '') + ')...';
+  else if (s === 'pull-failed') progress.textContent = 'Model download failed: ' + (payload.error || 'unknown');
+  else if (s === 'dropping-old-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Clearing old vectors...';
+  else if (s === 'rebuilding-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Building semantic search index...';
+  else if (s === 'embed-progress') progress.textContent = (auto ? '[auto] ' : '') + (payload.msg || 'Embedding...');
+  else if (s === 'embed-failed') progress.textContent = 'Embedding failed: ' + (payload.error || 'unknown');
+  else if (s === 'done') {
+    progress.textContent = 'Done. Local smart search is active.';
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-run setup manually'; }
+    refreshSmartSearchStatus();
+  }
+  else if (s === 'error') progress.textContent = 'Error: ' + (payload.error || 'unknown');
+}
+
+function handleOllamaPullEvent(payload) {
+  const progress = document.getElementById('smartSearchProgress');
+  if (!progress) return;
+  if (payload.total && payload.completed) {
+    const mb = (n) => (n / 1048576).toFixed(1);
+    progress.textContent = 'Downloading ' + (payload.model || 'model') + ': ' + mb(payload.completed) + ' MB / ' + mb(payload.total) + ' MB';
+  } else if (payload.status) {
+    progress.textContent = 'Ollama: ' + payload.status;
+  }
+}
+
+// Wire up the button + global WebSocket listener for embed-setup events.
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('smartSearchSetupBtn');
+  if (btn) btn.addEventListener('click', startSmartSearchSetup);
+});
+// The main WebSocket is already established earlier in this file; we
+// piggyback on the same connection by listening to message events on
+// window.ws if it's exposed, otherwise add a passive listener for the
+// custom event that the main handler dispatches. To keep things simple
+// we hook the message globally — the main handler ignores unknown types
+// so re-dispatching here is safe.
+window.addEventListener('symphonee-mind-update', (ev) => {
+  const payload = ev.detail || {};
+  if (payload.kind === 'embed-setup') handleEmbedSetupEvent(payload);
+  else if (payload.kind === 'ollama-pull') handleOllamaPullEvent(payload);
+});
 
 function openFactoryResetModal() {
   const el = document.getElementById('factoryResetModal');
@@ -22812,7 +22898,7 @@ async function saveSettings() {
       GitHubPAT: _txt('settingsGitHubPAT'),
       WhisperKey: _txt('settingsWispr'),
       OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
-      IncognitoMode: _chk('settingsIncognitoMode'),
+      EnableContinuousLearning: _chk('settingsEnableContinuousLearning'),
       AiApiKeys: {
         OPENAI_API_KEY: _txt('settingsOpenaiKey') || undefined,
         GEMINI_API_KEY: _txt('settingsGeminiKey') || undefined,
@@ -24493,11 +24579,10 @@ let _cmdFiltered = [];
 
 function getCmdActions() {
   const repos = configData.Repos ? _repoNamesForSpace(configData.Repos, window._spacesCache || {}, activeSpace) : [];
-  const isIncognito = configData.IncognitoMode === true;
   // Palette feature flags derive from provider contributions, not plugin ids,
   // so a Jira or GitLab plugin unlocks the same surfaces without core edits.
-  const hasAdo = !isIncognito && !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.workItemProvider));
-  const hasGh  = !isIncognito && !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.prProvider));
+  const hasAdo = !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.workItemProvider));
+  const hasGh  = !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.prProvider));
   const actions = [
     // Navigation (core always-on)
     { label: 'Go to Terminal', icon: 'terminal', action: () => switchTab('terminal'), category: 'Navigate', hint: 'Ctrl+T' },
@@ -25061,7 +25146,7 @@ function filterCmdPalette() {
   }
 
   // Check if user typed a work item ID like #12345 or just 12345 - only when a work-item plugin is active.
-  const _hasAdoQuick = !!((_loadedPlugins || []).some(p => p.id === 'azure-devops')) && configData.IncognitoMode !== true;
+  const _hasAdoQuick = !!((_loadedPlugins || []).some(p => p.id === 'azure-devops'));
   const idMatch = _hasAdoQuick ? q.match(/^#?(\d{3,})$/) : null;
 
   if (idMatch) {
@@ -25976,10 +26061,7 @@ function injectCenterTab(plugin, tab) {
   var tabId = 'plugin-' + plugin.id + '-' + tab.id;
 
   var btn = document.createElement('button');
-  // Plugins that interact with external services are hidden in incognito mode
-  // Plugin manifests can set incognitoSafe: true to stay visible
-  var hideInIncognito = !plugin.incognitoSafe;
-  btn.className = 'tab-btn closable' + (hideInIncognito ? ' plugin-tab-incognito' : '');
+  btn.className = 'tab-btn closable';
   btn.dataset.tab = tabId;
   btn.dataset.pluginId = plugin.id;
   btn.setAttribute('data-plugin-id', plugin.id);
@@ -26100,11 +26182,11 @@ function _hasVisibleChildren(el) {
   return Array.from(el.children).some(function (c) { return getComputedStyle(c).display !== 'none'; });
 }
 
-function reconcilePluginShellSurfaces(isIncognito, opts) {
+function reconcilePluginShellSurfaces(opts) {
   var pluginDriven = document.getElementById('sidebarPluginDriven');
   var hasLeft = _hasVisibleChildren(document.getElementById('sidebarPluginActions'));
   var hasAi = _hasVisibleChildren(document.getElementById('sidebarPluginAiActions'));
-  if (pluginDriven) pluginDriven.style.display = ((hasLeft || hasAi) && !isIncognito) ? '' : 'none';
+  if (pluginDriven) pluginDriven.style.display = (hasLeft || hasAi) ? '' : 'none';
 
   var aiTitle = document.getElementById('sidebarPluginAiTitle');
   var aiDiv = document.getElementById('sidebarPluginAiDivider');
@@ -26120,21 +26202,20 @@ function reconcilePluginShellSurfaces(isIncognito, opts) {
     return p.contributions && p.contributions.workItemProvider;
   }));
   var adoFixed = document.getElementById('sidebarAdoFixed');
-  if (adoFixed) adoFixed.style.display = (hasProvider && !isIncognito) ? '' : 'none';
+  if (adoFixed) adoFixed.style.display = hasProvider ? '' : 'none';
 
   // Activity and Team intel tabs are ADO-specific — hide when ADO plugin is absent.
   var activityTab = document.getElementById('intelTab-activity');
   var teamTab = document.getElementById('intelTab-team');
-  var showAdoTabs = hasProvider && !isIncognito;
-  if (activityTab) activityTab.style.display = showAdoTabs ? '' : 'none';
-  if (teamTab) teamTab.style.display = showAdoTabs ? '' : 'none';
+  if (activityTab) activityTab.style.display = hasProvider ? '' : 'none';
+  if (teamTab) teamTab.style.display = hasProvider ? '' : 'none';
   // If Activity was the active intel tab and is now hidden, fall back to Git Log.
-  if (!showAdoTabs && activityTab && activityTab.classList.contains('active')) {
+  if (!hasProvider && activityTab && activityTab.classList.contains('active')) {
     var gitLogTab = document.getElementById('intelTab-gitlog');
     if (gitLogTab && typeof switchIntelTab === 'function') switchIntelTab('gitlog');
   }
 
-  applyPluginPinnedTabs(isIncognito, opts);
+  applyPluginPinnedTabs(opts);
 
   // Repaint any visible "Clone from X" button rows from repoSources contributions.
   try { renderCloneSourceButtons('settingsRepoAddBtns', 'settings', 'modal-btn'); } catch (_) {}
@@ -26187,7 +26268,7 @@ function _collectPinnedTabs(kind) {
   return out;
 }
 
-function applyPluginPinnedTabs(isIncognito, opts) {
+function applyPluginPinnedTabs(opts) {
   opts = opts || {};
 
   // User-saved drag-reorder overrides win over declared defaults.
@@ -26241,14 +26322,12 @@ function applyPluginPinnedTabs(isIncognito, opts) {
         // (e.g. viewWorkItem). Closing happens via the panel's own close
         // affordance - the tab itself does not get an X.
         el.style.display = 'none';
-      } else if (isIncognito) {
-        el.style.display = 'none';
       } else {
         el.style.removeProperty('display');
         el.removeAttribute('hidden');
       }
     } else if (tab.html) {
-      injectPinnedCenterTab(entry.plugin, tab, entry.position, isIncognito);
+      injectPinnedCenterTab(entry.plugin, tab, entry.position);
     }
   });
 
@@ -26260,14 +26339,12 @@ function applyPluginPinnedTabs(isIncognito, opts) {
       el.style.order = String(entry.position);
       if (tab.popup) {
         el.style.display = 'none';
-      } else if (isIncognito) {
-        el.style.display = 'none';
       } else {
         el.style.removeProperty('display');
         el.removeAttribute('hidden');
       }
     } else if (tab.html) {
-      injectPinnedIntelPanel(entry.plugin, tab, entry.position, isIncognito);
+      injectPinnedIntelPanel(entry.plugin, tab, entry.position);
     }
   });
 
@@ -26368,8 +26445,7 @@ function closePopupTab(tabBtnId) {
 }
 
 // Inject an iframe-backed pinned center tab at a declared position. Idempotent.
-function injectPinnedCenterTab(plugin, tab, position, isIncognito) {
-  if (isIncognito && !plugin.incognitoSafe) return;
+function injectPinnedCenterTab(plugin, tab, position) {
   var scrollContainer = document.querySelector('.tab-bar-scroll');
   var tabId = 'plugin-' + plugin.id + '-' + tab.id;
   var _overrides = (typeof getSavedTabOrderOverrides === 'function') ? getSavedTabOrderOverrides() : {};
@@ -26406,8 +26482,7 @@ function injectPinnedCenterTab(plugin, tab, position, isIncognito) {
   document.querySelector('.center').appendChild(panel);
 }
 
-function injectPinnedIntelPanel(plugin, tab, position, isIncognito) {
-  if (isIncognito && !plugin.incognitoSafe) return;
+function injectPinnedIntelPanel(plugin, tab, position) {
   var tabBar = document.querySelector('.intel-tabs');
   var panelId = 'plugin-' + plugin.id + '-' + tab.id;
   var existing = tabBar.querySelector('.intel-tab[data-itab="' + panelId + '"]');
@@ -26506,7 +26581,6 @@ function toggleOpenTabMenu() {
   menu.classList.toggle('open', !isOpen);
   if (!isOpen) {
     menu.innerHTML = '';
-    var isIncog = document.body.classList.contains('incognito-active');
     // Gather the active space's plugin preset so we filter out plugins the
     // user hasn't surfaced for this space. Empty preset / no space = no filter.
     var allowed = null;
@@ -26522,8 +26596,6 @@ function toggleOpenTabMenu() {
     } catch (_) {}
     for (var i = 0; i < pluginTabRegistry.length; i++) {
       (function(entry) {
-        // Hide non-incognito-safe plugins in incognito mode
-        if (isIncog && !entry.plugin.incognitoSafe) return;
         if (allowed && !allowed.has(entry.plugin.id)) return;
         var open = isPluginTabOpen(entry.tabId);
         var item = document.createElement('button');

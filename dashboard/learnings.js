@@ -405,8 +405,15 @@ class Learnings {
 
 // ── Mount API routes ────────────────────────────────────────────────────────
 
-function mountLearnings(addRoute, json, { dataDir, getConfig, readBody }) {
+function mountLearnings(addRoute, json, { dataDir, getConfig, readBody, onChange }) {
   const learnings = new Learnings({ dataDir, getConfig });
+  // onChange fires whenever the learnings ledger mutates (add/remove/pull).
+  // Symphonee wires this to mind.notifyKnowledgeEvent so the brain reacts
+  // without anyone having to remember to rebuild.
+  const fire = (kind, payload) => {
+    if (typeof onChange !== 'function') return;
+    try { onChange({ kind, payload }); } catch (_) { /* best-effort */ }
+  };
 
   // GET /api/learnings — list all learnings
   addRoute('GET', '/api/learnings', (req, res) => {
@@ -427,6 +434,7 @@ function mountLearnings(addRoute, json, { dataDir, getConfig, readBody }) {
     const body = await readBody(req);
     const entry = learnings.add(body);
     if (!entry) return json(res, { error: 'Rejected: duplicate or contains sensitive/company-specific content' }, 400);
+    fire('learning-added', { id: entry.id, category: entry.category });
     json(res, entry);
   });
 
@@ -435,6 +443,7 @@ function mountLearnings(addRoute, json, { dataDir, getConfig, readBody }) {
     const body = await readBody(req);
     if (!body.id) return json(res, { error: 'id required' }, 400);
     const ok = learnings.remove(body.id);
+    if (ok) fire('learning-removed', { id: body.id });
     json(res, { ok }, ok ? 200 : 404);
   });
 
@@ -442,12 +451,14 @@ function mountLearnings(addRoute, json, { dataDir, getConfig, readBody }) {
   addRoute('POST', '/api/learnings/sync', async (req, res) => {
     const pullResult = await learnings.pull();
     const pushResult = await learnings.push();
+    if (pullResult.pulled > 0) fire('learnings-synced', { pulled: pullResult.pulled });
     json(res, { pulled: pullResult.pulled, pushed: pushResult.pushed, errors: [pullResult.error, pushResult.error].filter(Boolean) });
   });
 
   // POST /api/learnings/pull — pull only (no push)
   addRoute('POST', '/api/learnings/pull', async (req, res) => {
     const result = await learnings.pull();
+    if (result.pulled > 0) fire('learnings-pulled', { pulled: result.pulled });
     json(res, result);
   });
 

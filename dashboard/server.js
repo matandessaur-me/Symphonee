@@ -570,15 +570,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/git/log' && req.method === 'GET')       return handleGitLog(url, res);
     if (url.pathname === '/api/git/commit-diff' && req.method === 'GET') return handleCommitDiff(url, res);
     if (url.pathname === '/api/git/checkout' && req.method === 'POST')  return handleGitCheckout(req, res);
-    if (url.pathname === '/api/git/pull' && req.method === 'POST') {
-      if (incognitoGuard(res, 'git pull')) return; return handleGitPull(req, res);
-    }
-    if (url.pathname === '/api/git/push' && req.method === 'POST') {
-      if (incognitoGuard(res, 'git push')) return; return handleGitPush(req, res);
-    }
-    if (url.pathname === '/api/git/fetch' && req.method === 'POST') {
-      if (incognitoGuard(res, 'git fetch')) return; return handleGitFetch(req, res);
-    }
+    if (url.pathname === '/api/git/pull' && req.method === 'POST')    return handleGitPull(req, res);
+    if (url.pathname === '/api/git/push' && req.method === 'POST')    return handleGitPush(req, res);
+    if (url.pathname === '/api/git/fetch' && req.method === 'POST')   return handleGitFetch(req, res);
     if (url.pathname === '/api/git/discard' && req.method === 'POST')   return handleGitDiscard(req, res);
 
     // ── Split Diff ────────────────────────────────────────────────────────
@@ -708,7 +702,6 @@ const server = http.createServer(async (req, res) => {
             orchestrateMode: true,
             graphRunsMode: true,
             mindMode: true,
-            incognitoMode: cfg.IncognitoMode === true,
           },
         };
         // Checksum: short hash so the CLI can echo it. Computed over a stable view.
@@ -864,16 +857,6 @@ function normalizeRootConfig(config) {
   return rootConfig;
 }
 
-// ── Incognito Mode guard ─────────────────────────────────────────────────
-function isIncognito() { return getConfig().IncognitoMode === true; }
-function incognitoGuard(res, action) {
-  if (isIncognito()) {
-    json(res, { error: `Blocked by Incognito Mode: "${action}" is not available in incognito. Plugin-backed integrations and remote operations are disabled. Turn off incognito in Settings to proceed.`, incognito: true }, 403);
-    return true;
-  }
-  return false;
-}
-
 // ── Themes ────────────────────────────────────────────────────────────────
 const themesPath = path.join(repoRoot, 'config', 'themes.json');
 
@@ -913,7 +896,7 @@ async function handleSaveConfig(req, res) {
   // Core caches that survive in core. Plugin caches (ADO, GH) are invalidated
   // via the 'config-changed' broadcast the next step already emits.
   swrGit.clear(); swrPlugins.clear();
-  // Regenerate AI instructions (incognito, orchestration, etc. may have changed)
+  // Regenerate AI instructions (plugin set, orchestration, etc. may have changed)
   try { writePluginHints(); } catch (_) {}
   json(res, { ok: true });
 }
@@ -3083,13 +3066,10 @@ function writePluginHints() {
   const END = '<!-- PLUGIN_INSTRUCTIONS_END -->';
   const REPO_START = '<!-- REPO_CONTEXT_START -->';
   const REPO_END = '<!-- REPO_CONTEXT_END -->';
-  const INCOGNITO_START = '<!-- INCOGNITO_START -->';
-  const INCOGNITO_END = '<!-- INCOGNITO_END -->';
   const cfg = getConfig();
   // Orchestration (and Graph Runs) are always on; BETA toggle is gone.
   const uiCtx = getUiContextWithPath();
   const hasRepo = !!uiCtx.activeRepo;
-  const incognitoActive = cfg.IncognitoMode === true;
 
   if (!fs.existsSync(templatePath)) {
     console.warn('  [writePluginHints] template not found: INSTRUCTIONS.base.md');
@@ -3109,14 +3089,6 @@ function writePluginHints() {
         let rStart, rEnd;
         while ((rStart = content.indexOf(REPO_START)) !== -1 && (rEnd = content.indexOf(REPO_END, rStart)) !== -1) {
           content = content.substring(0, rStart) + content.substring(rEnd + REPO_END.length);
-        }
-      }
-      // Strip incognito section when NOT in incognito mode (include when active)
-      if (!incognitoActive) {
-        const iStart = content.indexOf(INCOGNITO_START);
-        const iEnd = content.indexOf(INCOGNITO_END);
-        if (iStart !== -1 && iEnd !== -1) {
-          content = content.substring(0, iStart) + content.substring(iEnd + INCOGNITO_END.length);
         }
       }
       // Inject plugin instructions
@@ -3180,6 +3152,9 @@ const mind = mountMind(addRoute, json, {
   // (cfg.Repos) instead of just the active one.
   getAllRepos: () => (getConfig().Repos || {}),
   getAiApiKeys: () => (getConfig().AiApiKeys || {}),
+  // Reflection scheduler reads EnableContinuousLearning from here. Passed
+  // as a getter so settings changes take effect without restart.
+  getConfig,
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
@@ -3203,7 +3178,14 @@ setTimeout(() => {
 
 // ── Mount learnings ─────────────────────────────────────────────────────────
 const learningsDataDir = path.join(repoRoot, '.ai-workspace');
-_learningsInstance = mountLearnings(addRoute, json, { dataDir: learningsDataDir, getConfig, readBody });
+_learningsInstance = mountLearnings(addRoute, json, {
+  dataDir: learningsDataDir, getConfig, readBody,
+  onChange: (event) => {
+    // Wire learning ledger mutations into Mind so the brain reacts the
+    // same way it does to save-result / teach / file edits.
+    try { if (mind && mind.notifyKnowledgeEvent) mind.notifyKnowledgeEvent({ kind: event.kind, reason: event.kind, nodeIds: [] }); } catch (_) {}
+  },
+});
 console.log('  Learnings module mounted (/api/learnings/*)');
 // Pull shared learnings on startup, then regenerate instruction files
 _learningsInstance.pull().then(r => {
@@ -3262,7 +3244,7 @@ loadedPlugins = loadPlugins(pluginsDir, {
   addRoute, getConfig, broadcast, json, writePluginHints,
   swrCache: swrPlugins,
   shellDeps: {
-    gitExec, sanitizeText, permGate, incognitoGuard,
+    gitExec, sanitizeText, permGate,
     getRepoPath, repoRoot,
     https: require('https'),
     fs: require('fs'),

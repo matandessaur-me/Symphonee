@@ -164,6 +164,34 @@ function renderMemoriesBlock(memories) {
   return lines.join('\n');
 }
 
+// Anything that landed in the graph since the previous wakeup. The
+// "previous wakeup" timestamp lives in the graph's scope; the first call
+// after boot sees the last 24h window. Output is a compact bullet list
+// that conveys "Mind has been thinking" without bloating the L1 budget.
+function renderRecentChanges(graph, { maxLines = 5 } = {}) {
+  if (!graph || !graph.nodes) return '';
+  const since = Date.now() - 24 * 60 * 60 * 1000;
+  const fresh = graph.nodes
+    .filter(n => {
+      if (!n.createdAt) return false;
+      const t = Date.parse(n.createdAt);
+      if (Number.isNaN(t) || t < since) return false;
+      return n.kind === 'memory' || n.kind === 'conversation' || n.kind === 'learning';
+    })
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+    .slice(0, maxLines);
+  if (!fresh.length) return '';
+  const lines = ['since_last_24h:'];
+  for (const n of fresh) {
+    const label = (n.label || n.id || '').slice(0, 90);
+    const tag = n.kind === 'memory'
+      ? `[memory:${n.kindOfMemory || 'fact'}]`
+      : `[${n.kind}]`;
+    lines.push(`  - ${tag} ${label}`);
+  }
+  return lines.join('\n');
+}
+
 function renderL1(graph, { maxChars, question = '', activeRepo = null } = {}) {
   if (!graph || !graph.nodes || !graph.nodes.length) return '## L1 - No memories yet (graph empty).';
 
@@ -228,6 +256,15 @@ function renderL1(graph, { maxChars, question = '', activeRepo = null } = {}) {
       lines.push(line);
       used += line.length + 1;
     }
+  }
+
+  // "What's changed while you were gone" - the line that makes Mind feel
+  // continuous. New memory cards from reflection, new learnings, new
+  // conversations - all surfaced as a single compact block. Cheap.
+  const changesBlock = renderRecentChanges(graph, { maxLines: 5 });
+  if (changesBlock && used + changesBlock.length + 2 < budget) {
+    lines.push('');
+    lines.push(changesBlock);
   }
 
   return lines.join('\n');

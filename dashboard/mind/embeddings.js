@@ -13,21 +13,60 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 
-// Provider resolution order:
-//   1. Explicit SYMPHONEE_EMBED_PROVIDER env var (developer override).
-//   2. Symphonee's config.AiApiKeys - whichever key is set first wins
-//      (openai > google). Set per-process by mind/index.js at boot.
-//   3. No implicit provider. If no key is configured, dense search stays off.
+// Mind is local-only. The default picker returns Ollama if reachable
+// with a usable model, otherwise null — and Mind falls back to BM25
+// keyword search. It NEVER picks a cloud provider, full stop. No tokens,
+// no billing surprises, no quiet API spend.
+//
+// Cloud providers (openai/google) still exist as adapters because
+// /api/mind/embed can be invoked with an explicit provider for dev /
+// debugging purposes, but the default picker won't choose them.
+//
+// Hard override (developer escape hatch): SYMPHONEE_EMBED_PROVIDER env
+// var. Set it to ollama|openai|google to short-circuit the picker.
 const DEFAULT_PROVIDER = process.env.SYMPHONEE_EMBED_PROVIDER || 'auto';
+const OLLAMA_DEFAULT_MODEL = process.env.SYMPHONEE_EMBED_MODEL || 'nomic-embed-text';
+const OLLAMA_PROBE_TTL_MS = 5 * 60 * 1000;
 
 let _availableKeys = null;
+let _ollamaStatus = { reachable: false, modelOk: false, models: [], checkedAt: 0 };
 function setAvailableApiKeys(keys) { _availableKeys = keys || null; }
+
+async function refreshOllamaStatus({ force = false } = {}) {
+  if (!force && Date.now() - _ollamaStatus.checkedAt < OLLAMA_PROBE_TTL_MS) return _ollamaStatus;
+  const url = (process.env.OLLAMA_URL || 'http://localhost:11434') + '/api/tags';
+  try {
+    const res = await new Promise((resolve, reject) => {
+      const u = new URL(url);
+      const req = http.request({
+        hostname: u.hostname, port: u.port || 80, path: u.pathname, method: 'GET',
+      }, (r) => {
+        let buf = '';
+        r.on('data', c => buf += c);
+        r.on('end', () => resolve({ status: r.statusCode, body: buf }));
+      });
+      req.on('error', reject);
+      req.setTimeout(1500, () => req.destroy(new Error('ollama-probe-timeout')));
+      req.end();
+    });
+    if (res.status !== 200) throw new Error('ollama status ' + res.status);
+    const data = JSON.parse(res.body);
+    const models = (data.models || []).map(m => m.name);
+    const modelOk = models.some(n => n.startsWith(OLLAMA_DEFAULT_MODEL));
+    _ollamaStatus = { reachable: true, modelOk, models, checkedAt: Date.now() };
+  } catch (_) {
+    _ollamaStatus = { reachable: false, modelOk: false, models: [], checkedAt: Date.now() };
+  }
+  return _ollamaStatus;
+}
+
+function getOllamaStatus() { return _ollamaStatus; }
+
 function pickProvider() {
+  // Dev escape hatch: explicit env override.
   if (DEFAULT_PROVIDER && DEFAULT_PROVIDER !== 'auto') return DEFAULT_PROVIDER;
-  const k = _availableKeys || {};
-  if (k.OPENAI_API_KEY) return 'openai';
-  if (k.GOOGLE_API_KEY) return 'google';
-  return null;
+  // Local-only: Ollama or nothing. BM25 takes over when null.
+  return (_ollamaStatus.reachable && _ollamaStatus.modelOk) ? 'ollama' : null;
 }
 
 // Per-process cache of last-known provider state so the health endpoint
@@ -173,5 +212,8 @@ module.exports = {
   health,
   pickProvider,
   setAvailableApiKeys,
+  refreshOllamaStatus,
+  getOllamaStatus,
+  OLLAMA_DEFAULT_MODEL,
   defaultProvider: () => DEFAULT_PROVIDER,
 };

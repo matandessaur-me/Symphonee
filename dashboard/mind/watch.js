@@ -15,6 +15,8 @@ const WATCH_EXT = new Set([
   '.go', '.java', '.kt', '.kts', '.scala', '.sc', '.rs', '.rb', '.php', '.swift',
   '.css', '.scss', '.sass', '.less', '.styl', '.svelte', '.vue',
   '.json', '.yaml', '.yml',
+  // CLI drawer transcripts (Claude, Codex, Gemini, Grok, Qwen, Copilot)
+  '.jsonl',
 ]);
 const SKIP_SEG = /[\\/](node_modules|\.git|\.next|dist|build|out|\.cache|coverage|\.symphonee|\.ai-workspace|__pycache__)([\\/]|$)/;
 
@@ -45,6 +47,7 @@ class MindWatcher {
     targets.push(path.join(this.repoRoot, 'notes', notesNs));
     targets.push(path.join(this.repoRoot, 'recipes'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'instructions'));
+    targets.push(path.join(this.repoRoot, 'dashboard', 'plugins'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'app-recipes'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'app-memory'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'app-recipe-history'));
@@ -52,6 +55,21 @@ class MindWatcher {
     targets.push(path.join(this.repoRoot, 'dashboard', 'site-memory'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'site-snapshots'));
     targets.push(path.join(this.repoRoot, 'dashboard', 'site-recipe-history'));
+    // Learnings ledger so /api/learnings POST flows into Mind without a
+    // separate event hook — the file watcher already covers it.
+    targets.push(path.join(this.repoRoot, '.ai-workspace'));
+    // CLI drawer transcripts in the user's home dir. Each CLI writes its
+    // session log here. The cli-drawers extractor filters to the active
+    // repo, so cross-project noise doesn't pollute the graph; the watcher
+    // still triggers, but the build is cheap when nothing relevant
+    // changed (manifest skips unchanged sessions).
+    const home = require('os').homedir();
+    targets.push(path.join(home, '.claude', 'projects'));
+    targets.push(path.join(home, '.codex', 'sessions'));
+    targets.push(path.join(home, '.qwen', 'projects'));
+    targets.push(path.join(home, '.grok', 'sessions'));
+    targets.push(path.join(home, '.copilot', 'session-state'));
+    targets.push(path.join(home, '.gemini', 'tmp'));
 
     const chokidar = tryRequireChokidar();
     if (chokidar) {
