@@ -31,6 +31,11 @@ const NODE_KINDS = new Set([
   // not a citation of one. Survives across sessions; surfaces on
   // wakeup and recall queries.
   'memory',
+  // Proactive insights. Mind notices a pattern in its own corpus
+  // (repeated questions, file co-edits, decay, cross-repo similarity)
+  // and proposes an action. Has lifecycle: pending -> acted | dismissed
+  // | snoozed. Surfaced via the topbar tray, not via recall.
+  'insight',
 ]);
 
 const CONFIDENCE_LABELS = new Set(['EXTRACTED', 'INFERRED', 'AMBIGUOUS']);

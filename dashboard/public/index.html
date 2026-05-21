@@ -4910,6 +4910,17 @@
       <i data-lucide="sparkles" style="width:12px;height:12px;color:var(--accent);"></i>
       <span id="onboardingChipText">0 of 4</span>
     </div>
+    <div id="insightsSlot" style="display:inline-flex;align-items:center;flex-shrink:0;position:relative;margin-right:6px;">
+      <div id="insightsChip" title="Mind insights" onclick="toggleInsightsTray(event)" style="display:none;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--accent);color:var(--accent);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
+        <i data-lucide="sparkles" style="width:13px;height:13px;"></i>
+        <span>Mind: <span id="insightsChipCount">0</span></span>
+      </div>
+      <div id="insightsTray" style="display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:2000;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);padding:8px;width:380px;max-height:480px;overflow-y:auto;font-family:var(--font-ui);font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <div id="insightsTrayList" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="color:var(--subtext0);text-align:center;padding:16px 8px;font-size:11px;">No pending insights.</div>
+        </div>
+      </div>
+    </div>
     <div id="permModeSlot" style="display:inline-flex;align-items:center;flex-shrink:0;position:relative;">
       <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
         <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
@@ -22836,6 +22847,97 @@ window.addEventListener('symphonee-mind-update', (ev) => {
   const payload = ev.detail || {};
   if (payload.kind === 'embed-setup') handleEmbedSetupEvent(payload);
   else if (payload.kind === 'ollama-pull') handleOllamaPullEvent(payload);
+  else if (payload.kind === 'insights-generated' || payload.kind === 'insight-acted' || payload.kind === 'insight-dismissed' || payload.kind === 'insight-snoozed') {
+    refreshInsights();
+  }
+});
+
+// ── Proactive insights (topbar chip + tray) ───────────────────────────
+const INSIGHT_CATEGORY_LABEL = {
+  'repeated-question': 'Repeated question',
+  'co-edit': 'Files always edited together',
+  'memory-decay': 'Old memories',
+  'cross-repo': 'Cross-repo pattern',
+};
+function _escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+async function refreshInsights() {
+  const chip = document.getElementById('insightsChip');
+  const countEl = document.getElementById('insightsChipCount');
+  const list = document.getElementById('insightsTrayList');
+  if (!chip || !countEl || !list) return;
+  try {
+    const r = await fetch('/api/mind/insights?status=pending').then(r => r.json());
+    const items = r.items || [];
+    countEl.textContent = String(items.length);
+    chip.style.display = items.length > 0 ? 'inline-flex' : 'none';
+    if (items.length === 0) {
+      list.innerHTML = '<div style="color:var(--subtext0);text-align:center;padding:16px 8px;font-size:11px;">No pending insights.</div>';
+      return;
+    }
+    list.innerHTML = items.map(function(it) {
+      const catLabel = INSIGHT_CATEGORY_LABEL[it.category] || it.category;
+      const bodyHtml = _escapeHtml(it.body || '').replace(/\n/g, '<br>');
+      return [
+        '<div style="border:1px solid var(--surface2);border-radius:var(--radius);padding:10px;background:var(--surface0);">',
+        '  <div style="font-size:10px;color:var(--subtext0);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">' + _escapeHtml(catLabel) + '</div>',
+        '  <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;">' + _escapeHtml(it.label) + '</div>',
+        '  <div style="font-size:11px;color:var(--subtext0);line-height:1.4;margin-bottom:8px;white-space:pre-wrap;">' + bodyHtml + '</div>',
+        '  <div style="display:flex;gap:6px;">',
+        '    <button onclick="actInsight(\'' + _escapeHtml(it.id) + '\')" style="background:var(--accent);color:var(--base);border:none;border-radius:var(--radius);padding:5px 10px;cursor:pointer;font-size:11px;font-weight:600;">Act</button>',
+        '    <button onclick="dismissInsight(\'' + _escapeHtml(it.id) + '\')" style="background:transparent;color:var(--subtext0);border:1px solid var(--surface2);border-radius:var(--radius);padding:5px 10px;cursor:pointer;font-size:11px;">Dismiss</button>',
+        '    <button onclick="snoozeInsight(\'' + _escapeHtml(it.id) + '\')" style="background:transparent;color:var(--subtext0);border:1px solid var(--surface2);border-radius:var(--radius);padding:5px 10px;cursor:pointer;font-size:11px;">Snooze 7d</button>',
+        '  </div>',
+        '</div>',
+      ].join('');
+    }).join('');
+  } catch (_) { /* keep last good render */ }
+}
+function toggleInsightsTray(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const tray = document.getElementById('insightsTray');
+  if (!tray) return;
+  tray.style.display = tray.style.display === 'none' || !tray.style.display ? 'block' : 'none';
+}
+document.addEventListener('click', (ev) => {
+  const tray = document.getElementById('insightsTray');
+  const chip = document.getElementById('insightsChip');
+  if (!tray || !chip) return;
+  if (tray.style.display !== 'block') return;
+  if (chip.contains(ev.target) || tray.contains(ev.target)) return;
+  tray.style.display = 'none';
+});
+async function actInsight(id) {
+  try {
+    const r = await fetch('/api/mind/insights/act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    const data = await r.json().catch(() => ({}));
+    if (typeof toast === 'function') {
+      if (data.ok) toast('Insight applied.', 'success', { duration: 3000 });
+      else toast('Insight action failed: ' + (data.error || 'unknown'), 'error', { duration: 4000 });
+    }
+    refreshInsights();
+  } catch (e) { if (typeof toast === 'function') toast('Insight act failed: ' + e.message, 'error'); }
+}
+async function dismissInsight(id) {
+  try {
+    await fetch('/api/mind/insights/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    refreshInsights();
+  } catch (_) {}
+}
+async function snoozeInsight(id) {
+  try {
+    await fetch('/api/mind/insights/snooze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    refreshInsights();
+  } catch (_) {}
+}
+// Initial fetch on boot. Subsequent updates come via the WS handler above.
+document.addEventListener('DOMContentLoaded', () => {
+  refreshInsights();
+  // Slow refresh as a safety net in case a broadcast was missed.
+  setInterval(refreshInsights, 60_000);
 });
 
 function openFactoryResetModal() {
