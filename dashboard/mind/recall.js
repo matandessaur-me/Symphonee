@@ -37,7 +37,14 @@ const SUGGESTION_KIND = 'insight';
 
 const KIND_BASE_SCORE = {
   memory: 5.0,
-  insight: 4.0,        // ranks just below memory when suggestion-intent triggers
+  // Insights only enter the candidate set when explicitly requested or
+  // when the question carries suggestion-intent. So when they appear,
+  // they're highly relevant by definition -- they should rank above
+  // drawers that happen to contain generic words like "improve" or
+  // "any" by accident. Base 8 ensures suggestion-intent queries are
+  // led by actual suggestions, not by chat history that mentioned the
+  // same verbs.
+  insight: 8.0,
   conversation: 1.5,
   drawer: 0.6,
 };
@@ -268,7 +275,20 @@ function recall(graph, opts = {}) {
   });
   scored.sort((a, b) => b.score - a.score || (b.createdAt || '').localeCompare(a.createdAt || ''));
   const limit = Math.max(1, Math.min(200, opts.limit || 20));
-  out.hits = scored.slice(0, limit);
+  // When the user explicitly asked for suggestions ("any suggestions?",
+  // "what should I clean up?"), reserve the top slots for insights so
+  // they aren't drowned out by drawers that happen to share common
+  // verbs ("any", "improve", "clean"). BM25 against generic vocabulary
+  // would otherwise rank chat history above actual suggestions. We
+  // pull insights to the front, in their own score order, then fill
+  // the rest with the remaining results.
+  if (detectSuggestionIntent(opts.question)) {
+    const insights = scored.filter(h => h.kind === SUGGESTION_KIND);
+    const rest = scored.filter(h => h.kind !== SUGGESTION_KIND);
+    out.hits = [...insights, ...rest].slice(0, limit);
+  } else {
+    out.hits = scored.slice(0, limit);
+  }
   return out;
 }
 
