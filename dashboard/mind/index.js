@@ -1644,6 +1644,39 @@ function mountMind(addRoute, json, ctx) {
     return json(res, { items, count: items.length, status });
   });
 
+  // GET /api/mind/suggestions?topic=<text>&limit=<n>
+  // The "is there anything we can do?" surface. Returns pending insights
+  // ranked by relevance to the topic (BM25 against title + body). If no
+  // topic is given, returns all pending insights sorted by recency. CLIs
+  // call this when the user asks for suggestions.
+  addRoute('GET', '/api/mind/suggestions', (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const topic = (url.searchParams.get('topic') || '').trim();
+    const limit = Math.max(1, Math.min(20, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
+    const space = getSpace();
+    let items = insights.listInsights({ repoRoot, space, status: 'pending' });
+    if (topic) {
+      // Cheap BM25-style scoring without pulling in the full index.
+      // Each insight scores by how many topic terms appear in its
+      // searchable text (label + body + category + payload labels).
+      const terms = topic.toLowerCase().split(/[^a-z0-9_]+/).filter(t => t.length >= 3);
+      items = items.map(it => {
+        const blob = [
+          it.label, it.body, it.category,
+          it.action && it.action.payload && it.action.payload.title,
+          it.action && it.action.payload && it.action.payload.description,
+          ...(Array.isArray(it.action && it.action.payload && it.action.payload.tags) ? it.action.payload.tags : []),
+        ].filter(Boolean).join(' ').toLowerCase();
+        let score = 0;
+        for (const t of terms) {
+          if (blob.indexOf(t) !== -1) score += 1;
+        }
+        return { ...it, _topicScore: score };
+      }).filter(it => it._topicScore > 0).sort((a, b) => b._topicScore - a._topicScore);
+    }
+    return json(res, { items: items.slice(0, limit), count: Math.min(items.length, limit), topic: topic || null });
+  });
+
   // POST /api/mind/insights/generate { categories?: ['repeated-question',...] }
   addRoute('POST', '/api/mind/insights/generate', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));

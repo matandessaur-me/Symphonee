@@ -29,13 +29,37 @@
 const { bm25Scores } = require('./bm25');
 
 // Order matters: memories first, conversations second, drawers third.
+// 'insight' is recall-eligible but ONLY when the question signals
+// suggestion intent (detectSuggestionIntent below). It never surfaces
+// by default — Mind suggests when asked, not unprompted.
 const RECALL_KINDS = ['memory', 'conversation', 'drawer'];
+const SUGGESTION_KIND = 'insight';
 
 const KIND_BASE_SCORE = {
   memory: 5.0,
+  insight: 4.0,        // ranks just below memory when suggestion-intent triggers
   conversation: 1.5,
   drawer: 0.6,
 };
+
+// Detects "is there anything we can do?" / "any suggestions?" / "what
+// should I" style questions. When true, recall expands its kinds set to
+// include pending insights so suggestions surface in the results.
+const SUGGESTION_INTENT_PATTERNS = [
+  /\b(any|got any|have any)\s+(suggestions?|ideas?|recommendations?|tips?)\b/i,
+  /\bwhat\s+(should|could|can)\s+(i|we)\b/i,
+  /\bwhat\s+(would|do)\s+you\s+recommend\b/i,
+  /\banything\s+(i|we)\s+(should|could|can)\b/i,
+  /\banything\s+to\s+(clean|fix|improve|do|prune|archive)\b/i,
+  /\bsomething\s+(we|i)\s+(should|could|can)\b/i,
+  /\bcleanup|clean\s*up\b/i,
+  /\bsuggest(ions?)?\b/i,
+  /\bideas?\s+(for|on|about)\b/i,
+];
+function detectSuggestionIntent(question) {
+  if (!question || typeof question !== 'string') return false;
+  return SUGGESTION_INTENT_PATTERNS.some(rx => rx.test(question));
+}
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -149,20 +173,39 @@ function recall(graph, opts = {}) {
   out.since = since ? since.toISOString() : null;
   out.until = until ? until.toISOString() : null;
 
+  // Default kinds set comes from RECALL_KINDS unless caller overrides.
+  // When the question carries suggestion-intent ("any suggestions?",
+  // "what should I clean up?", etc.) we also include pending insights
+  // so Mind's accumulated suggestions surface alongside memories.
+  const defaultKinds = detectSuggestionIntent(opts.question)
+    ? [...RECALL_KINDS, SUGGESTION_KIND]
+    : RECALL_KINDS;
+  const validKinds = [...RECALL_KINDS, SUGGESTION_KIND];
   const allowedKinds = new Set(
     Array.isArray(opts.kinds) && opts.kinds.length
-      ? opts.kinds.filter(k => RECALL_KINDS.includes(k))
-      : RECALL_KINDS,
+      ? opts.kinds.filter(k => validKinds.includes(k))
+      : defaultKinds,
   );
   const repoSlug = opts.repo
     ? String(opts.repo).replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase()
     : null;
 
   // Filter to recall-eligible nodes within the date window and repo scope.
+  const now = Date.now();
   const candidates = [];
   for (const n of graph.nodes) {
     if (!allowedKinds.has(n.kind)) continue;
     if (!_matchesRepo(n, repoSlug)) continue;
+    // Insights have their own lifecycle: dismissed insights never resurface,
+    // snoozed ones only after the snooze expires, acted ones don't surface
+    // as live suggestions (the action is already done).
+    if (n.kind === SUGGESTION_KIND) {
+      if (n.status === 'dismissed' || n.status === 'acted') continue;
+      if (n.status === 'snoozed') {
+        const until = Date.parse(n.snoozedUntil || '');
+        if (Number.isNaN(until) || until > now) continue;
+      }
+    }
     const ts = Date.parse(n.createdAt || '');
     if (!Number.isNaN(ts)) {
       if (since && ts < since.getTime()) continue;
@@ -191,7 +234,7 @@ function recall(graph, opts = {}) {
   // returns sensible results.
   const BM25_WEIGHT = bmScores ? 4.0 : 0;
 
-  const now = Date.now();
+  // `now` is declared above the candidates loop and used for snooze checks.
   const scored = candidates.map((n, i) => {
     const base = KIND_BASE_SCORE[n.kind] || 0.5;
     let score = base;
