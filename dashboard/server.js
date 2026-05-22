@@ -3239,11 +3239,24 @@ if (orchestrator && typeof brain.plan === 'function') {
 _brainForKnowledgeEvents = brain;
 
 // ── Boot-time brain setup check ─────────────────────────────────────────────
-// Detect what's installed. Auto-pull the small triage model (qwen2.5:1.5b,
-// ~1 GB) if missing - it's cheap enough to grab on first boot without
-// asking. Do NOT auto-pull the reasoning model (gemma4:26b, ~16 GB);
-// announce it via toast/WebSocket and let the user click through.
-// Deferred 4 s so the WS layer is ready to receive progress.
+// Auto-install everything the brain needs. The user never has to think about
+// model installs - Symphonee handles it.
+//
+// Policy:
+//   - Ollama missing      -> toast points at the download URL (we cannot
+//                            install Ollama itself silently; it requires
+//                            an installer with admin rights).
+//   - Ollama stopped      -> auto-start via `ollama serve`.
+//   - Triage missing      -> auto-pull (~1 GB).
+//   - Reasoning missing   -> auto-pull (~16 GB). Yes it is big. It happens
+//                            once. Progress streams via the existing
+//                            ollama-pull WebSocket events so the UI can
+//                            render a real progress bar. Brain features
+//                            degrade until the pull completes but never
+//                            crash. No user click required.
+//
+// Pulls run serially so we don't slam Ollama with two concurrent
+// multi-gig streams. Deferred 4 s so the WS layer is ready.
 setTimeout(() => {
   const setupMod = require('./mind/ollama-setup');
   setupMod.detectBrainSetup().then(async (status) => {
@@ -3258,7 +3271,6 @@ setTimeout(() => {
       return;
     }
     if (!status.ollamaRunning) {
-      // Try to start it; if successful, re-detect.
       const r = await setupMod.ensureRunning({ installPath: status.installPath });
       if (!r.ok) {
         console.log('[brain/setup] Ollama installed but not running and could not be started.');
@@ -3266,27 +3278,43 @@ setTimeout(() => {
       }
       status = await setupMod.detectBrainSetup();
     }
-    if (!status.triageModelInstalled) {
-      console.log(`[brain/setup] Auto-pulling triage model "${status.triageModel}" (~1 GB)...`);
+    const toPull = [];
+    if (!status.triageModelInstalled) toPull.push({ model: status.triageModel, sizeHint: '~1 GB' });
+    if (!status.reasoningModelInstalled) toPull.push({ model: status.reasoningModel, sizeHint: '~16 GB' });
+    if (!toPull.length) {
+      console.log('[brain/setup] all brain dependencies present.');
+      return;
+    }
+    for (const { model, sizeHint } of toPull) {
+      console.log(`[brain/setup] Auto-pulling "${model}" (${sizeHint})...`);
       if (typeof broadcast === 'function') broadcast({
         type: 'notification',
-        title: 'Symphonee brain: downloading triage model',
-        body: `Pulling ${status.triageModel} (~1 GB). This happens once.`,
+        title: 'Symphonee brain: downloading ' + model,
+        body: `Pulling ${model} (${sizeHint}). One-time. Watch the progress in the activity feed.`,
         level: 'info', icon: 'download',
       });
-      setupMod.ensureModel({ model: status.triageModel, broadcast }).catch(() => {});
-    }
-    if (!status.reasoningModelInstalled) {
-      console.log(`[brain/setup] Reasoning model "${status.reasoningModel}" (~16 GB) is missing. Brain features will degrade.`);
-      if (typeof broadcast === 'function') broadcast({
-        type: 'notification',
-        title: 'Symphonee brain: reasoning model not installed',
-        body: `The brain needs ${status.reasoningModel} (~16 GB). Click to download, or POST /api/symphonee/setup/pull. Intent recompute, local-first answers, and self-iteration will not work until it is installed.`,
-        level: 'warning', icon: 'brain',
-        action: { type: 'pull-brain-reasoning-model', model: status.reasoningModel },
-      });
-    } else {
-      console.log('[brain/setup] all brain dependencies present.');
+      try {
+        const r = await setupMod.ensureModel({ model, broadcast });
+        if (r && r.ok) {
+          console.log(`[brain/setup] "${model}" installed.`);
+          if (typeof broadcast === 'function') broadcast({
+            type: 'notification',
+            title: 'Symphonee brain: ' + model + ' ready',
+            body: 'Download complete. Brain features now active.',
+            level: 'success', icon: 'check-circle',
+          });
+        } else {
+          console.warn(`[brain/setup] failed to pull "${model}":`, r && r.error);
+          if (typeof broadcast === 'function') broadcast({
+            type: 'notification',
+            title: 'Symphonee brain: ' + model + ' pull failed',
+            body: (r && r.error) || 'Pull failed; retry on next boot or POST /api/symphonee/setup/pull.',
+            level: 'warning', icon: 'alert-triangle',
+          });
+        }
+      } catch (err) {
+        console.warn(`[brain/setup] error pulling "${model}":`, err.message);
+      }
     }
   }).catch((err) => {
     console.warn('[brain/setup] error:', err.message);
