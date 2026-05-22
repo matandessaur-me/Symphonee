@@ -28,6 +28,7 @@ const intentModule = require('./intent');
 const planner = require('./planner');
 const sequencesModule = require('./sequences');
 const synthesizeModule = require('./synthesize');
+const answerModule = require('./answer');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -158,6 +159,34 @@ function mountBrain(addRoute, json, ctx) {
     });
   });
 
+  // ── POST /api/symphonee/answer ──────────────────────────────────────────
+  // The local-first answer pipeline. Plans, tries Mind, tries local gemma,
+  // then signals "escalate" if a frontier CLI is the right tool.
+  // Returns { source, answer?, decision, citedNodeIds?, tookMs }.
+  addRoute('POST', '/api/symphonee/answer', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') {
+      return json(res, { error: 'input required' }, 400);
+    }
+    const ui = getUiContext ? getUiContext() : {};
+    const current = intent.get();
+    try {
+      const result = await answerModule.answer(input, {
+        repoRoot,
+        space: (ctx.getUiContext && ctx.getUiContext().activeSpace) || (ui && ui.activeSpace) || '_global',
+        intent: current,
+        ui,
+      });
+      if (broadcast && result && result.source) {
+        broadcast({ type: 'symphonee-answer', payload: { source: result.source, intent: result.decision && result.decision.intent, tookMs: result.tookMs } });
+      }
+      return json(res, result);
+    } catch (err) {
+      return json(res, { error: err.message }, 500);
+    }
+  });
+
   // ── POST /api/symphonee/synthesize ──────────────────────────────────────
   // Read recent sessions from .symphonee/sequences.jsonl, cluster by shape,
   // and ask gemma to draft a recipe per mature cluster. Returns drafts
@@ -251,11 +280,27 @@ function mountBrain(addRoute, json, ctx) {
     return { ...result, tookMs };
   }
 
+  // Public surface: the in-process answer() entrypoint the orchestrator
+  // calls when /spawn has no explicit cli. Wraps answerModule.answer with
+  // the brain's live intent + UI context so callers do not have to
+  // reconstruct that themselves.
+  async function answer(input, opts = {}) {
+    const ui = getUiContext ? getUiContext() : {};
+    return answerModule.answer(input, {
+      repoRoot,
+      space: (ui && ui.activeSpace) || '_global',
+      intent: intent.get(),
+      ui,
+      ...opts,
+    });
+  }
+
   return {
     notifyIntent: (ev) => intent.notify(ev),
     getIntent: () => intent.get(),
     forceRecomputeIntent: () => intent.forceRecompute(),
     plan,
+    answer,
     synthesize: (o) => synthesizeModule.synthesize(repoRoot, o || {}),
     acceptDraft: (d) => synthesizeModule.acceptDraft(repoRoot, d),
     recordEvent: (ev) => sequencesModule.recordEvent(repoRoot, ev),

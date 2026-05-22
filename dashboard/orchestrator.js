@@ -2231,29 +2231,47 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   addRoute('POST', '/api/orchestrator/spawn', async (req, res) => {
     let { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
     if (!prompt) return json(res, { error: 'prompt required' }, 400);
-    // Symphonee brain consultation: when cli is omitted, the brain picks.
-    // The brain is always on -- there is no mode toggle. The brain.plan
-    // call adds ~3-5s of qwen latency; that is the cost of letting
-    // Symphonee route work for you. Pass cli explicitly to bypass.
+    // Symphonee brain consultation: when cli is omitted, the brain tries
+    // to answer locally FIRST (Mind recall or gemma synthesis). Frontier
+    // dispatch only happens if the brain says source === 'escalate'.
+    // This is the local-first answering path - the user-visible
+    // productivity / token-saving win. Pass cli explicitly to bypass.
     let brainPickedCli = null;
     let brainDecision = null;
-    if (!cli && orch.brain && typeof orch.brain.plan === 'function') {
+    let brainAnswered = null;     // populated when source != 'escalate'
+    if (!cli && orch.brain && typeof orch.brain.answer === 'function') {
       try {
-        const result = await orch.brain.plan(prompt, { source: 'orchestrator/spawn' });
-        if (result && result.ok && result.decision) {
-          brainDecision = result.decision;
-          const pick = result.decision.primary_cli;
-          if (pick && pick !== 'none') {
-            cli = pick;
-            brainPickedCli = pick;
-          }
+        const result = await orch.brain.answer(prompt, { source: 'orchestrator/spawn' });
+        brainDecision = result && result.decision || null;
+        if (result && result.source && result.source !== 'escalate') {
+          // Local handled it - return the answer directly. No worker spawn,
+          // no frontier tokens spent. Shape mirrors a successful task so
+          // callers can treat it uniformly.
+          return json(res, {
+            ok: true,
+            handledLocally: true,
+            source: result.source,
+            answer: result.answer || null,
+            citedNodeIds: result.citedNodeIds || [],
+            confidence: result.confidence,
+            model: result.model,
+            decision: brainDecision,
+            tookMs: result.tookMs,
+            reason: result.reason || null,
+          });
+        }
+        // Escalate path: use the brain's primary_cli pick to fill in.
+        const pick = brainDecision && brainDecision.primary_cli;
+        if (pick && pick !== 'none') {
+          cli = pick;
+          brainPickedCli = pick;
         }
       } catch (_) { /* fall through to the standard error below */ }
     }
     if (!cli) {
       return json(res, {
         error: 'cli is required (the brain classified this input as not needing a worker; pass cli explicitly to override)',
-        brainAvailable: !!(orch.brain && typeof orch.brain.plan === 'function'),
+        brainAvailable: !!(orch.brain && typeof orch.brain.answer === 'function'),
         brainDecision,
       }, 400);
     }

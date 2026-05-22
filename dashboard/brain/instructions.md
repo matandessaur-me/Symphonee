@@ -62,6 +62,32 @@ Updated by `intent.notify({ kind, detail, repo, file, source })` from:
 
 Debounced 5s so bursts of file events do not thrash `gemma4:26b`.
 
+## Local-first answering
+
+The brain tries to answer questions locally BEFORE dispatching to a
+frontier CLI worker. This is the productivity + token-saving faculty.
+
+Pipeline:
+
+  1. classify the input via the planner (qwen + sanity layer + maybe gemma)
+  2. if intent is `greeting` -> no-op acknowledgement
+  3. if intent needs tools (`code-action`, `plan`, `plugin-call`,
+     `apps-action`, `browser-action`) -> escalate, no local attempt
+  4. otherwise try Mind recall; if top hit score >= 3.5 and >= 2 hits
+     cross the floor, synthesize a short answer via gemma using those
+     hits as citations
+  5. for pure `recall` / `greeting` / `ambiguous` intents, fall through
+     to a local gemma answer (no Mind grounding) as a last attempt
+  6. only if all the above fail does the brain say `source: escalate`
+
+When source != escalate, NO frontier CLI is spawned. Zero API tokens
+spent. The orchestrator's `/spawn` endpoint integrates this: a call
+without a cli now routes through `brain.answer()` and returns the local
+answer directly when possible. Pass an explicit cli to bypass.
+
+The thresholds are conservative on purpose - we prefer escalating to a
+frontier model over returning a confidently-wrong local answer.
+
 ## Workflow synthesis
 
 The brain records every knowledge event into
@@ -83,7 +109,8 @@ learnings, file changes the watcher picks up). Nothing runs on a clock.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | /api/symphonee/think | Planner front door. Body: `{ input }`. |
+| POST | /api/symphonee/answer | Local-first answer. Tries Mind, gemma, then escalates. Body: `{ input }`. |
+| POST | /api/symphonee/think | Planner front door (decision only, no answer). Body: `{ input }`. |
 | GET  | /api/symphonee/decisions | Recent planner decisions (audit log). |
 | GET  | /api/symphonee/intent | Current intent state. |
 | POST | /api/symphonee/intent/notify | Push an event. |
