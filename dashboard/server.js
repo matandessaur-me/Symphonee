@@ -685,6 +685,28 @@ const server = http.createServer(async (req, res) => {
           const mindInstr = fs.readFileSync(path.join(__dirname, 'mind', 'instructions.md'), 'utf8');
           instructions = instructions + '\n\n---\n\n' + mindInstr;
         } catch (_) {}
+        // Symphonee brain: current intent snapshot + dependency state.
+        // Every CLI sees this so it can read the live theory of what the
+        // user is doing before answering AND know whether the brain has
+        // the local models it needs. Also appends brain instructions so
+        // CLIs know how to interact with the planner front door. The
+        // brain is always on - no mode field, no toggle.
+        let brainField = null;
+        try {
+          if (brain && typeof brain.getIntent === 'function') {
+            const brainSetup = await require('./mind/ollama-setup').detectBrainSetup();
+            brainField = {
+              intent: brain.getIntent(),
+              triageModel: require('./brain/planner').TRIAGE_MODEL,
+              reasoningModel: require('./brain/planner').REASONING_MODEL,
+              setup: brainSetup,
+            };
+          }
+        } catch (_) {}
+        try {
+          const brainInstr = fs.readFileSync(path.join(__dirname, 'brain', 'instructions.md'), 'utf8');
+          instructions = instructions + '\n\n---\n\n' + brainInstr;
+        } catch (_) {}
         // Instruction-coherence audit. Every CLI sees this on bootstrap so
         // it can warn the user if the instruction system has degraded.
         // Cached from the last writePluginHints / boot run; cheap on miss.
@@ -696,12 +718,14 @@ const server = http.createServer(async (req, res) => {
         const payload = {
           context, instructions, plugins, learnings, permissions: permissionsData,
           mind: mindField,
+          brain: brainField,
           instructionsAudit: auditField,
           loadedAt: new Date().toISOString(),
           features: {
             orchestrateMode: true,
             graphRunsMode: true,
             mindMode: true,
+            brainMode: true,
           },
         };
         // Checksum: short hash so the CLI can echo it. Computed over a stable view.
@@ -3142,6 +3166,13 @@ console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 
 // ── Mount Mind (shared knowledge graph for every dispatched CLI) ────────────
 const { mountMind } = require('./mind');
+// Brain reference holder - mountMind closes over this so it can call
+// brain.notifyIntent + sequences.recordEvent from inside its internal
+// notifyKnowledgeEvent function. We populate _brainForKnowledgeEvents
+// after mountBrain runs; the hook function only executes lazily on
+// real knowledge events, by which time the holder is set.
+let _brainForKnowledgeEvents = null;
+const _brainSequences = require('./brain/sequences');
 const mind = mountMind(addRoute, json, {
   repoRoot, broadcast,
   getUiContext: getUiContextWithPath,
@@ -3155,6 +3186,20 @@ const mind = mountMind(addRoute, json, {
   // Reflection scheduler reads EnableContinuousLearning from here. Passed
   // as a getter so settings changes take effect without restart.
   getConfig,
+  // Knowledge-event hook: fires from inside Mind on save-result, teach,
+  // /add, learnings, etc. Feeds the brain's intent model AND the sequence
+  // recorder so workflow synthesis has signal. Best-effort; must never
+  // throw or block the Mind path.
+  onKnowledgeEvent: (ev) => {
+    try {
+      if (!_brainForKnowledgeEvents) return;
+      const ui = getUiContextWithPath();
+      const kind = ev.kind || ev.reason || 'knowledge-event';
+      const repo = ui && ui.activeRepo || null;
+      _brainForKnowledgeEvents.notifyIntent({ kind, detail: ev.reason || null, repo, source: 'mind/notify' });
+      _brainSequences.recordEvent(repoRoot, { kind, repo, detail: ev.reason || null, source: 'mind/notify' });
+    } catch (_) { /* swallow */ }
+  },
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
@@ -3164,6 +3209,89 @@ if (orchestrator) {
   orchestrator.getMindHint = (opts) => mind.orchestratorHint(opts || {});
   orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
 }
+
+// ── Mount Symphonee brain (planner + live intent model) ─────────────────────
+// The brain is the reasoning layer above Mind. Mind is memory; the brain
+// classifies inputs, picks tools, and (when planner mode is "active")
+// dispatches CLIs as tools via the orchestrator. Lives at /api/symphonee/*.
+// The brain is always on. When the orchestrator gets a spawn call without
+// a cli, the brain picks; otherwise the explicit cli wins. No mode toggle.
+const { mountBrain } = require('./brain');
+const brain = mountBrain(addRoute, json, {
+  repoRoot, broadcast,
+  getUiContext: getUiContextWithPath,
+  getConfig,
+});
+console.log('  Brain mounted (/api/symphonee/*) - planner + intent');
+
+// Give the orchestrator a reference to the brain so /api/orchestrator/spawn
+// can consult brain.plan() when no cli was supplied. Set after both mount
+// so dependency direction stays one-way: orchestrator uses brain, not the
+// other way round.
+if (orchestrator && typeof brain.plan === 'function') {
+  orchestrator.brain = brain;
+}
+
+// Populate the brain holder Mind's onKnowledgeEvent hook closes over.
+// From this line forward, every knowledge event (save-result, teach,
+// learnings, /add, file watch trigger) feeds brain.notifyIntent AND
+// sequences.recordEvent. Best-effort, fail-silent.
+_brainForKnowledgeEvents = brain;
+
+// ── Boot-time brain setup check ─────────────────────────────────────────────
+// Detect what's installed. Auto-pull the small triage model (qwen2.5:1.5b,
+// ~1 GB) if missing - it's cheap enough to grab on first boot without
+// asking. Do NOT auto-pull the reasoning model (gemma4:26b, ~16 GB);
+// announce it via toast/WebSocket and let the user click through.
+// Deferred 4 s so the WS layer is ready to receive progress.
+setTimeout(() => {
+  const setupMod = require('./mind/ollama-setup');
+  setupMod.detectBrainSetup().then(async (status) => {
+    if (!status.ollamaInstalled) {
+      console.log('[brain/setup] Ollama not installed - brain features disabled until you install it from https://ollama.com/download');
+      if (typeof broadcast === 'function') broadcast({
+        type: 'notification',
+        title: 'Symphonee brain: Ollama not installed',
+        body: 'Install Ollama from https://ollama.com/download to enable the brain features.',
+        level: 'warning', icon: 'cpu',
+      });
+      return;
+    }
+    if (!status.ollamaRunning) {
+      // Try to start it; if successful, re-detect.
+      const r = await setupMod.ensureRunning({ installPath: status.installPath });
+      if (!r.ok) {
+        console.log('[brain/setup] Ollama installed but not running and could not be started.');
+        return;
+      }
+      status = await setupMod.detectBrainSetup();
+    }
+    if (!status.triageModelInstalled) {
+      console.log(`[brain/setup] Auto-pulling triage model "${status.triageModel}" (~1 GB)...`);
+      if (typeof broadcast === 'function') broadcast({
+        type: 'notification',
+        title: 'Symphonee brain: downloading triage model',
+        body: `Pulling ${status.triageModel} (~1 GB). This happens once.`,
+        level: 'info', icon: 'download',
+      });
+      setupMod.ensureModel({ model: status.triageModel, broadcast }).catch(() => {});
+    }
+    if (!status.reasoningModelInstalled) {
+      console.log(`[brain/setup] Reasoning model "${status.reasoningModel}" (~16 GB) is missing. Brain features will degrade.`);
+      if (typeof broadcast === 'function') broadcast({
+        type: 'notification',
+        title: 'Symphonee brain: reasoning model not installed',
+        body: `The brain needs ${status.reasoningModel} (~16 GB). Click to download, or POST /api/symphonee/setup/pull. Intent recompute, local-first answers, and self-iteration will not work until it is installed.`,
+        level: 'warning', icon: 'brain',
+        action: { type: 'pull-brain-reasoning-model', model: status.reasoningModel },
+      });
+    } else {
+      console.log('[brain/setup] all brain dependencies present.');
+    }
+  }).catch((err) => {
+    console.warn('[brain/setup] error:', err.message);
+  });
+}, 4000);
 
 // Auto-refresh Mind on every server boot so the graph is always current
 // when the user opens the app. Deferred 1.5s so the WebSocket layer is

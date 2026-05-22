@@ -33,6 +33,12 @@ const { URL } = require('url');
 const OLLAMA_BASE = process.env.OLLAMA_URL || 'http://localhost:11434';
 const DEFAULT_MODEL = process.env.SYMPHONEE_EMBED_MODEL || 'nomic-embed-text';
 const DEFAULT_CHAT_MODEL = process.env.SYMPHONEE_CHAT_MODEL || 'qwen2.5:1.5b';
+// Brain models. Triage is small (~1GB) and cheap; we auto-pull it.
+// Reasoning is large (gemma4:26b ~ 16GB). We do NOT auto-pull - we
+// announce it as a missing dependency and let the user (or the UI's
+// explicit "Install brain models" button) decide.
+const DEFAULT_TRIAGE_MODEL = process.env.SYMPHONEE_TRIAGE_MODEL || 'qwen2.5:1.5b';
+const DEFAULT_REASONING_MODEL = process.env.SYMPHONEE_REASONING_MODEL || 'gemma4:26b';
 const { PREFERRED_CHAT_MODELS, isEmbeddingModel } = require('./llm');
 
 function getHttp(urlStr, timeoutMs = 1500) {
@@ -197,12 +203,88 @@ async function ensureModel({ model = DEFAULT_MODEL, broadcast } = {}) {
   }
 }
 
+/**
+ * Brain-specific detection. Reports whether the planner triage model
+ * (small, auto-pullable) and the reasoning model (large, manual-pull)
+ * are installed alongside the standard Ollama + embedding detection.
+ *
+ * Returns:
+ *   {
+ *     ollamaInstalled, ollamaRunning,
+ *     triageModel, triageModelInstalled,
+ *     reasoningModel, reasoningModelInstalled,
+ *     missing: ['ollama' | 'triage' | 'reasoning' ...],
+ *     hint: 'human-readable next step' | null,
+ *   }
+ */
+async function detectBrainSetup({
+  triageModel = DEFAULT_TRIAGE_MODEL,
+  reasoningModel = DEFAULT_REASONING_MODEL,
+} = {}) {
+  const installPath = findOllamaBinary();
+  const ollamaInstalled = !!installPath;
+  let ollamaRunning = false;
+  let models = [];
+  try {
+    const r = await getHttp(OLLAMA_BASE + '/api/tags');
+    if (r.status === 200) {
+      ollamaRunning = true;
+      const data = JSON.parse(r.body);
+      models = (data.models || []).map(m => m.name);
+    }
+  } catch (_) { /* not running */ }
+
+  function _has(name) {
+    return models.some(n => n === name || n.startsWith(name + ':'));
+  }
+
+  const triageModelInstalled = _has(triageModel);
+  const reasoningModelInstalled = _has(reasoningModel);
+  const missing = [];
+  if (!ollamaInstalled) missing.push('ollama');
+  if (ollamaInstalled && ollamaRunning && !triageModelInstalled) missing.push('triage');
+  if (ollamaInstalled && ollamaRunning && !reasoningModelInstalled) missing.push('reasoning');
+
+  let hint = null;
+  if (!ollamaInstalled) {
+    hint = 'Install Ollama from https://ollama.com/download, then restart Symphonee.';
+  } else if (!ollamaRunning) {
+    hint = 'Ollama is installed but not running. Symphonee will try to start it automatically; otherwise launch it from your Start menu.';
+  } else if (!triageModelInstalled) {
+    hint = `Symphonee will auto-pull the small triage model "${triageModel}" (~1 GB). This should happen on next boot.`;
+  } else if (!reasoningModelInstalled) {
+    hint = `The brain's reasoning model "${reasoningModel}" (~16 GB) is not installed. POST /api/symphonee/setup/pull to download it (one-time, on demand) or run \`ollama pull ${reasoningModel}\` manually. Brain features (intent recompute, local-first answering, workflow synthesis, self-iteration) need this model.`;
+  }
+
+  return {
+    ollamaInstalled, ollamaRunning, installPath,
+    triageModel, triageModelInstalled,
+    reasoningModel, reasoningModelInstalled,
+    missing,
+    hint,
+    ready: missing.length === 0,
+  };
+}
+
+/**
+ * Pull a specific brain model with progress broadcast. Use for the
+ * "Install brain models" flow. Returns the same shape as ensureModel().
+ */
+async function pullBrainModel({ model, broadcast } = {}) {
+  if (!model) return { ok: false, step: 'pullBrainModel', reason: 'no-model-specified' };
+  return ensureModel({ model, broadcast });
+}
+
 module.exports = {
   OLLAMA_BASE,
   DEFAULT_MODEL,
   DEFAULT_CHAT_MODEL,
+  DEFAULT_TRIAGE_MODEL,
+  DEFAULT_REASONING_MODEL,
   detect,
+  detectBrainSetup,
   ensureRunning,
   ensureModel,
+  pullBrainModel,
   findOllamaBinary,
 };

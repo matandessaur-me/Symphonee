@@ -7321,6 +7321,18 @@ requestAnimationFrame(fitTerminalNow);
           try { window.dispatchEvent(new CustomEvent('symphonee-mind-update', { detail: msg.payload || {} })); } catch (_) {}
           break;
         }
+        case 'symphonee-intent': {
+          // Brain intent updated. Re-dispatch as a DOM event so any future
+          // listener can subscribe. No header UI consumes this today.
+          try { window.dispatchEvent(new CustomEvent('symphonee-intent', { detail: msg.payload || {} })); } catch (_) {}
+          break;
+        }
+        case 'symphonee-plan': {
+          // A planner decision was logged. Re-dispatch for any listener
+          // (decisions panel could subscribe).
+          try { window.dispatchEvent(new CustomEvent('symphonee-plan', { detail: msg.payload || {} })); } catch (_) {}
+          break;
+        }
         case 'ui-action':
           handleUiAction(msg);
           break;
@@ -27530,6 +27542,13 @@ async function setPermMode(mode) {
     refreshPermMode();
   } catch (e) { console.error('setPermMode failed', e); }
 }
+
+// The Symphonee brain is always on and intentionally has no UI surface
+// in the header. The live intent surfaces where it actually matters:
+// bootstrap.brain.intent for CLIs, wakeup banner L0, .symphonee/intent.json
+// on disk, and /api/symphonee/intent on demand. The symphonee-intent
+// WebSocket event is still dispatched on `window` so any future feature
+// (or in-app inspector) can subscribe without re-adding chip code.
 
 // ── Approval modal: polls both permission + graph-run approval queues ──
 let _approvalShown = null;

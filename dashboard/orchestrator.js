@@ -2229,14 +2229,75 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
 
   // ── POST /api/orchestrator/spawn ──────────────────────────────────────
   addRoute('POST', '/api/orchestrator/spawn', async (req, res) => {
-    const { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
-    if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
-    // Check if this CLI is allowed by the user's settings
+    let { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
+    if (!prompt) return json(res, { error: 'prompt required' }, 400);
+    // Symphonee brain consultation: when cli is omitted, the brain tries
+    // to answer locally FIRST (Mind recall or gemma synthesis). Frontier
+    // dispatch only happens if the brain says source === 'escalate'.
+    // This is the local-first answering path - the user-visible
+    // productivity / token-saving win. Pass cli explicitly to bypass.
+    let brainPickedCli = null;
+    let brainDecision = null;
+    let brainAnswered = null;     // populated when source != 'escalate'
+    if (!cli && orch.brain && typeof orch.brain.answer === 'function') {
+      try {
+        const result = await orch.brain.answer(prompt, { source: 'orchestrator/spawn' });
+        brainDecision = result && result.decision || null;
+        if (result && result.source && result.source !== 'escalate') {
+          // Local handled it - return the answer directly. No worker spawn,
+          // no frontier tokens spent. Shape mirrors a successful task so
+          // callers can treat it uniformly.
+          return json(res, {
+            ok: true,
+            handledLocally: true,
+            source: result.source,
+            answer: result.answer || null,
+            citedNodeIds: result.citedNodeIds || [],
+            confidence: result.confidence,
+            model: result.model,
+            decision: brainDecision,
+            tookMs: result.tookMs,
+            reason: result.reason || null,
+          });
+        }
+        // Escalate path: use the brain's primary_cli pick to fill in.
+        const pick = brainDecision && brainDecision.primary_cli;
+        if (pick && pick !== 'none') {
+          cli = pick;
+          brainPickedCli = pick;
+        }
+      } catch (_) { /* fall through to the standard error below */ }
+    }
+    if (!cli) {
+      return json(res, {
+        error: 'cli is required (the brain classified this input as not needing a worker; pass cli explicitly to override)',
+        brainAvailable: !!(orch.brain && typeof orch.brain.answer === 'function'),
+        brainDecision,
+      }, 400);
+    }
+    // Check if this CLI is allowed by the user's settings. When the brain
+    // picked this CLI in active mode we surface a richer error so the user
+    // knows exactly which decision led here and how to unblock it.
     if (getConfig) {
       const cfg = getConfig();
       const allowList = cfg.OrchestrateCliList;
       if (Array.isArray(allowList) && allowList.length > 0 && !allowList.includes(cli)) {
-        return json(res, { error: `CLI "${cli}" is not enabled for orchestration. Enable it in Settings > Other.` }, 403);
+        const errPayload = {
+          error: `CLI "${cli}" is not enabled for orchestration. Enable it in Settings > Other.`,
+          cli,
+          allowList,
+          settingsPath: 'Settings > Other > Orchestrate CLI List',
+        };
+        if (brainPickedCli) {
+          errPayload.error = `Symphonee brain picked "${cli}" for this task but that CLI is not in OrchestrateCliList. Add "${cli}" to Settings > Other > Orchestrate CLI List, or pass a different cli explicitly to override the brain pick.`;
+          errPayload.brainPickedCli = brainPickedCli;
+          errPayload.brainDecision = brainDecision;
+          errPayload.howToFix = [
+            `Quickest: open Settings > Other and add "${cli}" to the Orchestrate CLI List`,
+            `Or pass an explicit cli in the request body to override the brain pick`,
+          ];
+        }
+        return json(res, errPayload, 403);
       }
     }
     if (!await gateSpawn(res, { cli, cwd, label: `Spawn ${cli} worker`, wait: !autoPermit })) return;
@@ -2250,7 +2311,12 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
       const task = useVisible
         ? orch.spawnVisible({ cli, prompt, cwd, timeout, from, taskId, space: resolvedSpace })
         : orch.spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, space: resolvedSpace });
-      json(res, orch._serializeTask(task));
+      const payload = orch._serializeTask(task);
+      if (brainPickedCli) {
+        payload.brainPickedCli = brainPickedCli;
+        payload.brainDecision = brainDecision;
+      }
+      json(res, payload);
     } catch (err) {
       json(res, { error: err.message }, 400);
     }

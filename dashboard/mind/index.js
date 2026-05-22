@@ -160,6 +160,11 @@ function mountMind(addRoute, json, ctx) {
     for (const id of nodeIds) pendingNodes.add(id);
     if (reason) pendingReasons.add(reason);
     if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'knowledge-event', reason: kind || reason, nodeCount: nodeIds.length } });
+    // Out-of-band hook for layers above Mind (the brain feeds intent +
+    // sequence recorder from here). Must never throw or block.
+    if (typeof ctx.onKnowledgeEvent === 'function') {
+      try { ctx.onKnowledgeEvent({ kind, reason, nodeIds }); } catch (_) { /* swallow */ }
+    }
     if (knowledgeTimer) clearTimeout(knowledgeTimer);
     knowledgeTimer = setTimeout(async () => {
       const ids = Array.from(pendingNodes);
@@ -264,6 +269,7 @@ function mountMind(addRoute, json, ctx) {
       activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
       budgetTokens: Number.isFinite(budget) && budget > 0 ? budget : DEFAULT_BUDGET_TOKENS,
       question,
+      repoRoot,
     });
     return json(res, { space, ...wake });
   });
@@ -1939,6 +1945,7 @@ function mountMind(addRoute, json, ctx) {
           if (g) wakeup = composeWakeUp(g, {
             activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
             budgetTokens: 600,
+            repoRoot,
           });
         } catch (_) { /* graph corrupt - skip wake-up, bootstrap still ships */ }
       }
@@ -2127,6 +2134,7 @@ function mountMind(addRoute, json, ctx) {
           activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
           budgetTokens: opts.budgetTokens || 600,
           question: opts.question || '',
+          repoRoot,
         });
         return `${stamp}${appsLine}\n\n${wake.text}`;
       } catch (_) {
