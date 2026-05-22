@@ -26,6 +26,7 @@
 'use strict';
 
 const llm = require('../mind/llm');
+const promptStore = require('./prompt-store');
 
 const TRIAGE_MODEL = process.env.SYMPHONEE_TRIAGE_MODEL || 'qwen2.5:1.5b';
 const REASONING_MODEL = process.env.SYMPHONEE_REASONING_MODEL || 'gemma4:26b';
@@ -94,6 +95,13 @@ function _buildPlannerMessages(input, context) {
   const outcomeBlock = outcomeHints.length
     ? ['', 'Historical performance (advisory - tiebreaker, not a hard rule):', ...outcomeHints.map(h => '  - ' + h)]
     : [];
+  // Editable rules block: loaded from prompt-store so self-iteration can
+  // evolve the routing policy without code changes. The structural
+  // framing (output schema, JSON contract) stays in code below so we
+  // never break downstream JSON parsing.
+  const repoRoot = (context && context.repoRoot) || process.cwd();
+  const rulesPayload = promptStore.loadRules(repoRoot);
+  const rulesBlock = rulesPayload.rules.split('\n');
   const sys = [
     'You are Symphonee, the brain of a multi-CLI AI terminal.',
     'Your job is to classify the user input and pick a route.',
@@ -110,20 +118,7 @@ function _buildPlannerMessages(input, context) {
     '  confidence: 0..1',
     '  is_teaching: boolean (true if user is teaching a durable rule)',
     '',
-    'CLI selection rules - follow these strictly:',
-    '  - Use "none" ONLY for: pure greetings, trivial acknowledgements, or',
-    '    questions that can be answered from memory (recall) alone.',
-    '  - For code-question, code-action, plan, or browse-files intents,',
-    '    you MUST pick a real CLI - never "none". Default: "claude-code".',
-    '  - Prefer "codex" for SQL, schema changes, refactors, or test writing.',
-    '  - Prefer "gemini" for long-context analysis (large docs, many files).',
-    '  - Prefer "grok" only for quick summaries or off-the-cuff takes.',
-    '  - When in doubt for any non-trivial task, pick "claude-code".',
-    '',
-    'Confidence rules:',
-    '  - Only return confidence >= 0.7 when you are SURE about both intent AND primary_cli.',
-    '  - If the intent is clear but the CLI is uncertain, return confidence < 0.7.',
-    '  - High confidence with primary_cli="none" on a non-trivial task is a contradiction - lower the confidence.',
+    ...rulesBlock,
     '',
     repoLine,
     intentSummary,

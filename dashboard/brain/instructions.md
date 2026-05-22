@@ -88,6 +88,30 @@ answer directly when possible. Pass an explicit cli to bypass.
 The thresholds are conservative on purpose - we prefer escalating to a
 frontier model over returning a confidently-wrong local answer.
 
+## Self-iteration on routing rules
+
+The brain can edit its own routing-rules section. The flow:
+
+  1. The user runs `POST /api/symphonee/self-iterate` (or
+     `./scripts/SelfIterate.ps1`).
+  2. The brain reads the outcome stats, detects failure patterns
+     (low-validatedRate intent x cli pairs, CLIs with poor global rate),
+     and asks gemma to propose a revised rules block.
+  3. The proposal comes back as JSON: `{ ok, proposal: { rules, summary,
+     changes }, currentRules, patterns, totalSamples }`. NOT applied yet.
+  4. The user reviews. If accepted, `POST /api/symphonee/self-iterate/accept
+     { rules }` writes the new block to `.symphonee/planner-rules.md`.
+     Previous state goes to `.symphonee/planner-rules-history.jsonl`.
+  5. `POST /api/symphonee/self-iterate/revert` rolls back one step.
+
+Safety:
+  - The output schema and JSON contract stay hard-coded in `planner.js`.
+    Only the routing-rules text is editable. Self-iteration cannot break
+    downstream JSON parsing.
+  - Auto-apply is never on. Every change requires an explicit accept.
+  - Below `MIN_SAMPLES_FOR_ITERATION` (15) outcomes the brain refuses
+    to propose - it will not self-modify on noise.
+
 ## Outcome tracking (feedback loop)
 
 The brain records every routing decision in an in-memory audit log
@@ -139,6 +163,11 @@ learnings, file changes the watcher picks up). Nothing runs on a clock.
 | POST | /api/symphonee/outcome | Tag a decision. Body: `{ decisionId, outcome, detail? }`. |
 | GET  | /api/symphonee/outcomes | Raw outcome stream. |
 | GET  | /api/symphonee/outcomes/stats | Aggregated per-intent / per-cli win rates. |
+| GET  | /api/symphonee/prompt | Active routing-rules block + source. |
+| GET  | /api/symphonee/prompt/history | Rules-edit history (newest first). |
+| POST | /api/symphonee/self-iterate | Propose an edit to the routing rules. |
+| POST | /api/symphonee/self-iterate/accept | Apply a proposed rules block. Body: `{ rules, note? }`. |
+| POST | /api/symphonee/self-iterate/revert | Roll back one rules edit. |
 | GET  | /api/symphonee/decisions | Recent planner decisions (audit log). |
 | GET  | /api/symphonee/intent | Current intent state. |
 | POST | /api/symphonee/intent/notify | Push an event. |

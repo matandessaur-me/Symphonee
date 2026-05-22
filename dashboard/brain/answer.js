@@ -265,6 +265,7 @@ async function answer(input, ctx = {}) {
     ui: ctx.ui,
     intent: ctx.intent,
     outcomeHints: ctx.outcomeHints || [],
+    repoRoot: ctx.repoRoot,
   });
   const decision = planResult && planResult.decision || {};
   const intent = decision.intent || 'ambiguous';

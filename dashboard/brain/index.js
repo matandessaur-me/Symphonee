@@ -30,6 +30,8 @@ const sequencesModule = require('./sequences');
 const synthesizeModule = require('./synthesize');
 const answerModule = require('./answer');
 const outcomesModule = require('./outcomes');
+const promptStoreModule = require('./prompt-store');
+const selfIterateModule = require('./self-iterate');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -103,7 +105,7 @@ function mountBrain(addRoute, json, ctx) {
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
-    const plan = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints() });
+    const plan = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints(), repoRoot });
     const tookMs = Date.now() - startedAt;
     const entry = {
       input: input.slice(0, 240),
@@ -237,6 +239,52 @@ function mountBrain(addRoute, json, ctx) {
     return json(res, { ...stats, minSamplesForRate: outcomesModule.MIN_SAMPLES_FOR_STATS });
   });
 
+  // ── GET /api/symphonee/prompt ───────────────────────────────────────────
+  // Returns the active routing-rules block + source (default | override).
+  addRoute('GET', '/api/symphonee/prompt', (req, res) => {
+    const cur = promptStoreModule.loadRules(repoRoot);
+    return json(res, cur);
+  });
+
+  // ── GET /api/symphonee/prompt/history ───────────────────────────────────
+  addRoute('GET', '/api/symphonee/prompt/history', (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+    return json(res, { history: promptStoreModule.readHistory(repoRoot, { limit }) });
+  });
+
+  // ── POST /api/symphonee/self-iterate ────────────────────────────────────
+  // Propose a revised rules block from observed outcomes. Never auto-applies.
+  addRoute('POST', '/api/symphonee/self-iterate', async (req, res) => {
+    try {
+      const r = await selfIterateModule.propose(repoRoot);
+      if (broadcast && r.ok) broadcast({ type: 'symphonee-self-iterate', payload: { summary: r.proposal && r.proposal.summary, totalSamples: r.totalSamples } });
+      return json(res, r);
+    } catch (err) {
+      return json(res, { ok: false, error: err.message }, 500);
+    }
+  });
+
+  // ── POST /api/symphonee/self-iterate/accept ─────────────────────────────
+  // Apply a proposed rules block. Body: { rules, note? }. Previous state
+  // goes to prompt-store history so revert works.
+  addRoute('POST', '/api/symphonee/self-iterate/accept', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.rules) return json(res, { error: 'rules required' }, 400);
+    const r = selfIterateModule.accept(repoRoot, body.rules, { note: body.note || null });
+    if (!r.ok) return json(res, r, 400);
+    if (broadcast) broadcast({ type: 'symphonee-self-iterate', payload: { event: 'accepted' } });
+    return json(res, r);
+  });
+
+  // ── POST /api/symphonee/self-iterate/revert ─────────────────────────────
+  // One step back in rules history.
+  addRoute('POST', '/api/symphonee/self-iterate/revert', async (req, res) => {
+    const r = selfIterateModule.revert(repoRoot);
+    if (broadcast) broadcast({ type: 'symphonee-self-iterate', payload: { event: 'reverted', source: r.source } });
+    return json(res, r);
+  });
+
   // ── POST /api/symphonee/answer ──────────────────────────────────────────
   // The local-first answer pipeline. Plans, tries Mind, tries local gemma,
   // then signals "escalate" if a frontier CLI is the right tool.
@@ -334,7 +382,7 @@ function mountBrain(addRoute, json, ctx) {
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
-    const result = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints() });
+    const result = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints(), repoRoot });
     const tookMs = Date.now() - startedAt;
     const logged = logDecision({
       input: input.slice(0, 240),
@@ -383,6 +431,10 @@ function mountBrain(addRoute, json, ctx) {
     synthesize: (o) => synthesizeModule.synthesize(repoRoot, o || {}),
     acceptDraft: (d) => synthesizeModule.acceptDraft(repoRoot, d),
     recordEvent: (ev) => sequencesModule.recordEvent(repoRoot, ev),
+    proposeRulesEdit: () => selfIterateModule.propose(repoRoot),
+    acceptRulesEdit: (rules, opts) => selfIterateModule.accept(repoRoot, rules, opts || {}),
+    revertRulesEdit: () => selfIterateModule.revert(repoRoot),
+    getRules: () => promptStoreModule.loadRules(repoRoot),
   };
 }
 
