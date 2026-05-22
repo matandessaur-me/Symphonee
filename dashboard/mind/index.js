@@ -160,6 +160,11 @@ function mountMind(addRoute, json, ctx) {
     for (const id of nodeIds) pendingNodes.add(id);
     if (reason) pendingReasons.add(reason);
     if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'knowledge-event', reason: kind || reason, nodeCount: nodeIds.length } });
+    // Out-of-band hook for layers above Mind (the brain feeds intent +
+    // sequence recorder from here). Must never throw or block.
+    if (typeof ctx.onKnowledgeEvent === 'function') {
+      try { ctx.onKnowledgeEvent({ kind, reason, nodeIds }); } catch (_) { /* swallow */ }
+    }
     if (knowledgeTimer) clearTimeout(knowledgeTimer);
     knowledgeTimer = setTimeout(async () => {
       const ids = Array.from(pendingNodes);

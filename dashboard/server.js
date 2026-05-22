@@ -3163,6 +3163,13 @@ console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 
 // ── Mount Mind (shared knowledge graph for every dispatched CLI) ────────────
 const { mountMind } = require('./mind');
+// Brain reference holder - mountMind closes over this so it can call
+// brain.notifyIntent + sequences.recordEvent from inside its internal
+// notifyKnowledgeEvent function. We populate _brainForKnowledgeEvents
+// after mountBrain runs; the hook function only executes lazily on
+// real knowledge events, by which time the holder is set.
+let _brainForKnowledgeEvents = null;
+const _brainSequences = require('./brain/sequences');
 const mind = mountMind(addRoute, json, {
   repoRoot, broadcast,
   getUiContext: getUiContextWithPath,
@@ -3176,6 +3183,20 @@ const mind = mountMind(addRoute, json, {
   // Reflection scheduler reads EnableContinuousLearning from here. Passed
   // as a getter so settings changes take effect without restart.
   getConfig,
+  // Knowledge-event hook: fires from inside Mind on save-result, teach,
+  // /add, learnings, etc. Feeds the brain's intent model AND the sequence
+  // recorder so workflow synthesis has signal. Best-effort; must never
+  // throw or block the Mind path.
+  onKnowledgeEvent: (ev) => {
+    try {
+      if (!_brainForKnowledgeEvents) return;
+      const ui = getUiContextWithPath();
+      const kind = ev.kind || ev.reason || 'knowledge-event';
+      const repo = ui && ui.activeRepo || null;
+      _brainForKnowledgeEvents.notifyIntent({ kind, detail: ev.reason || null, repo, source: 'mind/notify' });
+      _brainSequences.recordEvent(repoRoot, { kind, repo, detail: ev.reason || null, source: 'mind/notify' });
+    } catch (_) { /* swallow */ }
+  },
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
@@ -3201,40 +3222,18 @@ const brain = mountBrain(addRoute, json, {
 console.log('  Brain mounted (/api/symphonee/*) - planner + intent');
 
 // Give the orchestrator a reference to the brain so /api/orchestrator/spawn
-// can consult brain.plan() when active mode is on and no cli was supplied.
-// Set after both mount so dependency direction stays one-way: orchestrator
-// uses brain, not the other way round.
+// can consult brain.plan() when no cli was supplied. Set after both mount
+// so dependency direction stays one-way: orchestrator uses brain, not the
+// other way round.
 if (orchestrator && typeof brain.plan === 'function') {
   orchestrator.brain = brain;
 }
 
-// Wrap mind.notifyKnowledgeEvent so every knowledge event also feeds the
-// brain's intent manager AND the sequence recorder. Keeps a single
-// fan-in point: anything that calls notifyKnowledgeEvent (save-result,
-// teach, learnings, manual ingest) now also pushes evidence into the
-// intent model AND appends a record to .symphonee/sequences.jsonl for
-// workflow synthesis. Both are best-effort and never block the
-// existing knowledge path.
-if (mind && typeof mind.notifyKnowledgeEvent === 'function' && brain && typeof brain.notifyIntent === 'function') {
-  const sequences = require('./brain/sequences');
-  const _origNotify = mind.notifyKnowledgeEvent.bind(mind);
-  mind.notifyKnowledgeEvent = (ev) => {
-    try {
-      const ui = getUiContextWithPath();
-      const kind = ev.kind || ev.reason || 'knowledge-event';
-      const repo = ui && ui.activeRepo || null;
-      brain.notifyIntent({ kind, detail: ev.reason || null, repo, source: 'mind/notify' });
-      sequences.recordEvent(repoRoot, { kind, repo, detail: ev.reason || null, source: 'mind/notify' });
-    } catch (_) { /* never block the existing path */ }
-    return _origNotify(ev);
-  };
-}
-
-// File-change evidence reaches the brain via the knowledge-event wrapper
-// above: MindWatcher debounces file events, the engine fires
-// notifyKnowledgeEvent on incremental updates, and that wrapper now also
-// pushes evidence into intent. No direct broadcast wrap needed - keeps the
-// integration small and reversible.
+// Populate the brain holder Mind's onKnowledgeEvent hook closes over.
+// From this line forward, every knowledge event (save-result, teach,
+// learnings, /add, file watch trigger) feeds brain.notifyIntent AND
+// sequences.recordEvent. Best-effort, fail-silent.
+_brainForKnowledgeEvents = brain;
 
 // Auto-refresh Mind on every server boot so the graph is always current
 // when the user opens the app. Deferred 1.5s so the WebSocket layer is
