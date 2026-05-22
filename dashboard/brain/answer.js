@@ -36,6 +36,7 @@ const planner = require('./planner');
 const llm = require('../mind/llm');
 const store = require('../mind/store');
 const recallMod = require('../mind/recall');
+const perf = require('./perf');
 
 const MIN_MIND_SCORE = 3.5;     // top hit must beat this to ground a local answer
 const MIN_GROUND_HITS = 2;      // need at least N hits above floor to synthesize
@@ -180,12 +181,14 @@ async function _answerFromMind({ input, intent, repoRoot, space }) {
   const messages = _buildSynthesisMessages(input, strong, intent);
   let llmRes;
   try {
+    const _start = Date.now();
     llmRes = await llm.chatOllama(messages, {
       model: SYNTHESIS_MODEL,
       format: 'json',
       timeoutMs: SYNTHESIS_TIMEOUT_MS,
       numPredict: 4096,
     });
+    perf.recordLatency('answer.synth', Date.now() - _start);
   } catch (err) {
     return { ok: false, reason: 'synthesis-error', error: err.message, mindHitsTotal: r.hits.length, topScore };
   }
@@ -228,12 +231,14 @@ async function _answerFromLocal({ input, intent }) {
   const messages = _buildLocalMessages(input, intent);
   let llmRes;
   try {
+    const _start = Date.now();
     llmRes = await llm.chatOllama(messages, {
       model: SYNTHESIS_MODEL,
       format: 'json',
       timeoutMs: SYNTHESIS_TIMEOUT_MS,
       numPredict: 4096,
     });
+    perf.recordLatency('answer.synth', Date.now() - _start);
   } catch (err) {
     return { ok: false, reason: 'local-error', error: err.message };
   }

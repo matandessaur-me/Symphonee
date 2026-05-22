@@ -21,6 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const perf = require('./perf');
 
 const DEBOUNCE_MS = 5000;
 const MAX_EVIDENCE = 12;
@@ -48,22 +49,36 @@ function emptyIntent() {
   };
 }
 
+// In-memory mirror of the latest intent state. brain.getIntent() is on the
+// hot path of every plan/answer/synthesize call - without a cache that's
+// a fs.readFileSync per call. Population: lazy on first read, then
+// updated whenever write() runs.
+const _stateCache = new Map(); // repoRoot -> state
+
 function read(repoRoot) {
-  const file = intentFile(repoRoot);
-  try {
-    if (!fs.existsSync(file)) return emptyIntent();
-    const raw = fs.readFileSync(file, 'utf8');
-    const parsed = JSON.parse(raw);
-    return { ...emptyIntent(), ...parsed };
-  } catch (_) {
-    return emptyIntent();
+  if (_stateCache.has(repoRoot)) {
+    perf.bump('intent.cache.hit');
+    return _stateCache.get(repoRoot);
   }
+  perf.bump('intent.cache.miss');
+  const file = intentFile(repoRoot);
+  let state = emptyIntent();
+  try {
+    if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, 'utf8');
+      const parsed = JSON.parse(raw);
+      state = { ...emptyIntent(), ...parsed };
+    }
+  } catch (_) { /* fall through to empty */ }
+  _stateCache.set(repoRoot, state);
+  return state;
 }
 
 function write(repoRoot, state) {
   const file = intentFile(repoRoot);
   ensureDir(file);
   fs.writeFileSync(file, JSON.stringify(state, null, 2), 'utf8');
+  _stateCache.set(repoRoot, state);
   return state;
 }
 
@@ -87,12 +102,21 @@ function createIntentManager({ repoRoot, onRecompute, broadcast, getUiContext })
   }
 
   async function _recompute(force = false) {
+    // If a recompute is already running (gemma can take 30+ s), we
+    // skip this call. The events we would have processed STAY in
+    // pendingEvidence so the post-run drain picks them up. Without
+    // this, events arriving during a gemma run got silently dropped.
     if (inFlight && !force) return;
     if (pausedReason && !force) return;
     inFlight = true;
-    const batch = pendingEvidence.slice();
-    pendingEvidence = [];
+    let writtenState = null;
     try {
+      // Pull whatever is queued NOW. New events that arrive while
+      // onRecompute is running stay in pendingEvidence and are
+      // handled by the post-run drain below.
+      const batch = pendingEvidence.slice();
+      pendingEvidence = [];
+      if (!batch.length && !force) return;
       const ui = getUiContext ? getUiContext() : {};
       const current = read(repoRoot);
       const result = await onRecompute({
@@ -118,15 +142,25 @@ function createIntentManager({ repoRoot, onRecompute, broadcast, getUiContext })
         updateCount: (current.updateCount || 0) + 1,
       };
       write(repoRoot, next);
+      writtenState = next;
       if (broadcast) {
         broadcast({ type: 'symphonee-intent', payload: { summary: next.summary, confidence: next.confidence, currentRepo: next.currentRepo } });
       }
-      return next;
     } catch (err) {
       console.warn('[brain/intent] recompute error:', err.message);
     } finally {
       inFlight = false;
+      // Drain: if new events arrived during the run, schedule another
+      // recompute. We use the debounce timer so a burst still
+      // coalesces; setting timer to fire immediately would thrash gemma.
+      if (pendingEvidence.length > 0 && !pendingTimer && !pausedReason) {
+        pendingTimer = setTimeout(() => {
+          pendingTimer = null;
+          _recompute().catch(() => {});
+        }, DEBOUNCE_MS);
+      }
     }
+    return writtenState;
   }
 
   function notify(evidence) {

@@ -32,6 +32,7 @@ const answerModule = require('./answer');
 const outcomesModule = require('./outcomes');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
+const perfModule = require('./perf');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -237,6 +238,20 @@ function mountBrain(addRoute, json, ctx) {
   addRoute('GET', '/api/symphonee/outcomes/stats', (req, res) => {
     const stats = outcomesModule.getStats(repoRoot);
     return json(res, { ...stats, minSamplesForRate: outcomesModule.MIN_SAMPLES_FOR_STATS });
+  });
+
+  // ── GET /api/symphonee/perf ─────────────────────────────────────────────
+  // Rolling latency p50/p95/max + cache hit/miss counters per faculty.
+  // The honest answer to "is the brain making Symphonee slower" -- with
+  // numbers, not vibes.
+  addRoute('GET', '/api/symphonee/perf', (req, res) => {
+    return json(res, perfModule.snapshot());
+  });
+
+  // ── POST /api/symphonee/perf/reset ──────────────────────────────────────
+  addRoute('POST', '/api/symphonee/perf/reset', (req, res) => {
+    perfModule.reset();
+    return json(res, { ok: true });
   });
 
   // ── GET /api/symphonee/prompt ───────────────────────────────────────────

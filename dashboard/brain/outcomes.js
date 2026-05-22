@@ -29,6 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const perf = require('./perf');
 
 const VALID_OUTCOMES = new Set(['validated', 'contradicted', 'corrected', 'unused']);
 const MAX_LINES_KEPT = 20_000;
@@ -72,6 +73,7 @@ function recordOutcome(repoRoot, decisionId, outcome, snapshot = {}) {
   };
   try {
     fs.appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
+    _invalidateStats(repoRoot);
     return true;
   } catch (_) {
     return false;
@@ -103,6 +105,13 @@ function readOutcomes(repoRoot, { sinceMs = null, untilMs = null } = {}) {
   return out;
 }
 
+// Module-level cache. getStats() reads + parses the entire outcomes file;
+// without a cache that's an O(n) disk + parse hit on every planner call.
+// We invalidate on every successful recordOutcome and on pruneOld, so the
+// cache is exact, not eventually-consistent.
+const _statsCache = new Map();  // repoRoot -> { stats, builtAt }
+function _invalidateStats(repoRoot) { _statsCache.delete(repoRoot); }
+
 /**
  * Aggregate stats. Returns four views over the outcome stream:
  *
@@ -116,6 +125,14 @@ function readOutcomes(repoRoot, { sinceMs = null, untilMs = null } = {}) {
  * data points to bias anything on.
  */
 function getStats(repoRoot, opts = {}) {
+  // Cache key: only the unfiltered view is cached. If a caller passes a
+  // date filter, recompute on the fly (rare).
+  const isFiltered = (opts && (opts.sinceMs != null || opts.untilMs != null));
+  if (!isFiltered && _statsCache.has(repoRoot)) {
+    perf.bump('outcomes.stats.cache.hit');
+    return _statsCache.get(repoRoot).stats;
+  }
+  perf.bump('outcomes.stats.cache.miss');
   const records = readOutcomes(repoRoot, opts);
   const total = { validated: 0, contradicted: 0, corrected: 0, unused: 0, n: 0 };
   const byIntent = Object.create(null);
@@ -158,7 +175,11 @@ function getStats(repoRoot, opts = {}) {
     }
   }
 
-  return { total, byIntent, byCli, byIntentCli };
+  const stats = { total, byIntent, byCli, byIntentCli };
+  if (!isFiltered) {
+    _statsCache.set(repoRoot, { stats, builtAt: Date.now() });
+  }
+  return stats;
 }
 
 /**
@@ -214,6 +235,7 @@ function pruneOld(repoRoot, { olderThanDays = 180, maxLines = MAX_LINES_KEPT } =
   const dropped = all.length - kept.length;
   const next = kept.map(r => JSON.stringify(r)).join('\n') + (kept.length ? '\n' : '');
   fs.writeFileSync(file, next, 'utf8');
+  _invalidateStats(repoRoot);
   return { kept: kept.length, dropped };
 }
 

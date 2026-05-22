@@ -20,6 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const perf = require('./perf');
 
 const RULES_FILE_NAME = 'planner-rules.md';
 const HISTORY_FILE_NAME = 'planner-rules-history.jsonl';
@@ -47,6 +48,12 @@ const DEFAULT_RULES = [
   '  - High confidence with primary_cli="none" on a non-trivial task is a contradiction - lower the confidence.',
 ].join('\n');
 
+// Module-level cache. planner.planRoute calls loadRules() on every triage
+// call - without a cache that's a synchronous fs.readFileSync on every
+// hot-path request. We invalidate on every saveRules/revertRules.
+const _rulesCache = new Map(); // repoRoot -> { rules, source, version }
+function _invalidateRules(repoRoot) { _rulesCache.delete(repoRoot); }
+
 function _rulesFile(repoRoot) {
   return path.join(repoRoot, '.symphonee', RULES_FILE_NAME);
 }
@@ -63,17 +70,24 @@ function _ensureDir(file) {
  *   version is 'override' or DEFAULT_VERSION
  */
 function loadRules(repoRoot) {
+  if (_rulesCache.has(repoRoot)) {
+    perf.bump('prompt.rules.cache.hit');
+    return _rulesCache.get(repoRoot);
+  }
+  perf.bump('prompt.rules.cache.miss');
   const file = _rulesFile(repoRoot);
+  let payload = { rules: DEFAULT_RULES, source: 'default', version: DEFAULT_VERSION };
   if (fs.existsSync(file)) {
     try {
       const text = fs.readFileSync(file, 'utf8');
       const trimmed = text.trim();
       if (trimmed.length > 0) {
-        return { rules: trimmed, source: 'override', version: 'override' };
+        payload = { rules: trimmed, source: 'override', version: 'override' };
       }
     } catch (_) { /* fall through to default */ }
   }
-  return { rules: DEFAULT_RULES, source: 'default', version: DEFAULT_VERSION };
+  _rulesCache.set(repoRoot, payload);
+  return payload;
 }
 
 /**
@@ -113,6 +127,7 @@ function saveRules(repoRoot, newRules, { source = 'manual', note = null } = {}) 
     }
   } catch (_) { /* non-fatal */ }
   fs.writeFileSync(file, newRules.trim() + '\n', 'utf8');
+  _invalidateRules(repoRoot);
   return { ok: true, previous: previous.rules, file };
 }
 
@@ -123,6 +138,8 @@ function saveRules(repoRoot, newRules, { source = 'manual', note = null } = {}) 
 function revertRules(repoRoot) {
   const history = _historyFile(repoRoot);
   const file = _rulesFile(repoRoot);
+  // Cache invalidation regardless of which branch wins below.
+  _invalidateRules(repoRoot);
   if (!fs.existsSync(history)) {
     // no history - just delete the override so we fall back to default
     if (fs.existsSync(file)) {

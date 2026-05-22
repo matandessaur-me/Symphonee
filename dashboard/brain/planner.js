@@ -27,6 +27,7 @@
 
 const llm = require('../mind/llm');
 const promptStore = require('./prompt-store');
+const perf = require('./perf');
 
 const TRIAGE_MODEL = process.env.SYMPHONEE_TRIAGE_MODEL || 'qwen2.5:1.5b';
 const REASONING_MODEL = process.env.SYMPHONEE_REASONING_MODEL || 'gemma4:26b';
@@ -177,9 +178,13 @@ function _sanityCheckDecision(decision) {
 async function planRoute(input, context = {}) {
   const messages = _buildPlannerMessages(input, context);
   let triage;
+  const triageStart = Date.now();
   try {
     triage = await llm.chatOllama(messages, { model: TRIAGE_MODEL, format: 'json', timeoutMs: 8000 });
+    perf.recordLatency('planner.triage', Date.now() - triageStart);
   } catch (err) {
+    perf.recordLatency('planner.triage.error', Date.now() - triageStart);
+    perf.bump('planner.triage.errors');
     return {
       ok: false,
       stage: 'triage',
@@ -209,9 +214,13 @@ async function planRoute(input, context = {}) {
   // want the bigger model's read, even though triage "confidence" looked
   // high. The triage confidence is unreliable in exactly these cases.
   let escalation;
+  const escStart = Date.now();
   try {
     escalation = await llm.chatOllama(messages, { model: REASONING_MODEL, format: 'json', timeoutMs: 60000 });
+    perf.recordLatency('planner.escalation', Date.now() - escStart);
   } catch (err) {
+    perf.recordLatency('planner.escalation.error', Date.now() - escStart);
+    perf.bump('planner.escalation.errors');
     return {
       ok: true,
       stage: 'triage-only',
@@ -246,6 +255,7 @@ async function planRoute(input, context = {}) {
  */
 async function recomputeIntent({ ui, current, evidence }) {
   if (!evidence || !evidence.length) return null;
+  const start = Date.now();
   const lines = evidence.slice(-12).map(ev => {
     const kind = ev.kind || 'event';
     const where = ev.repo ? ` [${ev.repo}]` : '';
@@ -280,6 +290,7 @@ async function recomputeIntent({ ui, current, evidence }) {
       [{ role: 'system', content: sys }, { role: 'user', content: user }],
       { model: REASONING_MODEL, format: 'json', timeoutMs: 60000 }
     );
+    perf.recordLatency('intent.recompute', Date.now() - start);
     const out = r.json || {};
     return {
       summary: typeof out.summary === 'string' ? out.summary.slice(0, 280) : null,
@@ -288,6 +299,8 @@ async function recomputeIntent({ ui, current, evidence }) {
       model: r.model,
     };
   } catch (err) {
+    perf.recordLatency('intent.recompute.error', Date.now() - start);
+    perf.bump('intent.recompute.errors');
     console.warn('[brain/planner] recomputeIntent error:', err.message);
     return null;
   }

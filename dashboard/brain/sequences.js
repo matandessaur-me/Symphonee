@@ -59,10 +59,44 @@ function _safeStr(v, max = 200) {
   return s.length > max ? s.slice(0, max) : s;
 }
 
+// Per-repo append queue. recordEvent() is called from hot event paths
+// (mind.notifyKnowledgeEvent, file watcher, drawer writes). A synchronous
+// fs.appendFileSync there would block the Node event loop for every
+// burst. Instead we buffer in memory and flush via async fs.appendFile;
+// when the in-flight write resolves we flush whatever else queued up.
+// Order is preserved per repo because each repo's queue serializes its
+// own writes.
+//
+// Invariant: every recorded event lives in EITHER `buffer` (queued, not
+// yet handed to disk) OR `inFlight` (handed off to fs.appendFile, not
+// yet confirmed) OR on disk. loadEvents reads all three so synchronous
+// readers immediately after a recordEvent see the new record.
+const _writeQueues = new Map();   // repoRoot -> { buffer: [], inFlight: [], flushing: bool }
+function _scheduleFlush(repoRoot, file) {
+  const q = _writeQueues.get(repoRoot);
+  if (!q || q.flushing || !q.buffer.length) return;
+  q.flushing = true;
+  q.inFlight = q.buffer;
+  q.buffer = [];
+  const chunk = q.inFlight.join('');
+  fs.appendFile(file, chunk, 'utf8', (err) => {
+    q.flushing = false;
+    q.inFlight = [];
+    if (err) {
+      // never throw - sequence recording must never break the caller.
+      // We DO swallow silently because the alternative (logging on every
+      // failed write) would itself spam the console during disk pressure.
+    }
+    // If more arrived during the write, flush again.
+    if (q.buffer.length) _scheduleFlush(repoRoot, file);
+  });
+}
+
 /**
- * Record a single event. Writes one JSONL line. Cheap (millisecond-scale
- * synchronous file append). If the write fails we swallow - sequence
- * recording must never block the calling code path.
+ * Record a single event. Buffers in memory and flushes asynchronously so
+ * the calling event path returns immediately. Order is preserved per
+ * repo. If the disk write fails we swallow - sequence recording is
+ * advisory; never block the caller.
  */
 function recordEvent(repoRoot, event) {
   if (!repoRoot || !event) return false;
@@ -76,37 +110,74 @@ function recordEvent(repoRoot, event) {
     detail: _safeStr(event.detail, 400),
     source: _safeStr(event.source, 64),
   };
-  try {
-    fs.appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
-    return true;
-  } catch (_) {
-    return false;
-  }
+  let q = _writeQueues.get(repoRoot);
+  if (!q) { q = { buffer: [], inFlight: [], flushing: false }; _writeQueues.set(repoRoot, q); }
+  q.buffer.push(JSON.stringify(record) + '\n');
+  _scheduleFlush(repoRoot, file);
+  return true;
 }
 
 /**
- * Load all events from disk. Returns an array sorted by ts ascending.
- * Tolerates partial / malformed lines (skips them). For a 50k-line file
- * this is tens of milliseconds on disk plus a single JSON.parse per line.
+ * Load all events from disk PLUS any records still sitting in the
+ * in-memory write queue (so immediate reads after a recordEvent see the
+ * just-recorded event even before the async flush completes). Returns an
+ * array sorted by ts ascending. Tolerates partial / malformed lines.
  */
 function loadEvents(repoRoot, { sinceMs = null, untilMs = null } = {}) {
   const file = sequencesFile(repoRoot);
-  if (!fs.existsSync(file)) return [];
-  const text = fs.readFileSync(file, 'utf8');
   const out = [];
-  for (const line of text.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const rec = JSON.parse(t);
-      if (typeof rec.ts !== 'number') continue;
-      if (sinceMs && rec.ts < sinceMs) continue;
-      if (untilMs && rec.ts > untilMs) continue;
-      out.push(rec);
-    } catch (_) { /* skip malformed */ }
+  if (fs.existsSync(file)) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const line of text.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const rec = JSON.parse(t);
+        if (typeof rec.ts !== 'number') continue;
+        if (sinceMs && rec.ts < sinceMs) continue;
+        if (untilMs && rec.ts > untilMs) continue;
+        out.push(rec);
+      } catch (_) { /* skip malformed */ }
+    }
+  }
+  // Also drain anything not yet flushed - both queued AND in-flight, so
+  // a synchronous reader immediately after recordEvent never misses a
+  // record. Order: in-flight records were pushed before queued ones,
+  // and the final sort by ts handles ordering anyway.
+  const q = _writeQueues.get(repoRoot);
+  if (q) {
+    const pending = q.inFlight.concat(q.buffer);
+    for (const line of pending) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const rec = JSON.parse(t);
+        if (typeof rec.ts !== 'number') continue;
+        if (sinceMs && rec.ts < sinceMs) continue;
+        if (untilMs && rec.ts > untilMs) continue;
+        out.push(rec);
+      } catch (_) { /* skip */ }
+    }
   }
   out.sort((a, b) => a.ts - b.ts);
   return out;
+}
+
+/**
+ * Wait for the pending write queue for `repoRoot` to drain. Tests use
+ * this to assert deterministically after recordEvent. Production callers
+ * never need to wait - reads include the buffer.
+ */
+function flushPending(repoRoot) {
+  return new Promise((resolve) => {
+    const isIdle = (q) => !q || (!q.flushing && !q.buffer.length && (!q.inFlight || !q.inFlight.length));
+    if (isIdle(_writeQueues.get(repoRoot))) return resolve();
+    const check = () => {
+      if (isIdle(_writeQueues.get(repoRoot))) return resolve();
+      setImmediate(check);
+    };
+    check();
+  });
 }
 
 /**
@@ -161,6 +232,13 @@ function getRecentSessions(repoRoot, { days = 30, idleGapMs = IDLE_GAP_MS } = {}
  */
 function pruneOld(repoRoot, { olderThanDays = PRUNE_DEFAULT_DAYS, maxLines = MAX_LINES_KEPT } = {}) {
   const file = sequencesFile(repoRoot);
+  // Clear the in-memory buffer for this repo - prune is going to fully
+  // rewrite the file from a loaded set. If we left buffered lines they
+  // would be re-appended after the rewrite, duplicating records. The
+  // inFlight slot is allowed to keep its values - those writes are
+  // already in-flight to the OS and will land before our rewrite.
+  const q = _writeQueues.get(repoRoot);
+  if (q) q.buffer = [];
   if (!fs.existsSync(file)) return { kept: 0, dropped: 0 };
   const sinceMs = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
   const events = loadEvents(repoRoot, {});
@@ -258,4 +336,5 @@ module.exports = {
   shapeSignature,
   shapeTokens,
   clusterSessions,
+  flushPending,
 };
