@@ -3303,6 +3303,31 @@ setTimeout(() => {
             body: 'Download complete. Brain features now active.',
             level: 'success', icon: 'check-circle',
           });
+          // When the heavy reasoning model lands, Symphonee restarts so
+          // every cached chat-status / llm-status / brain-faculty state
+          // starts fresh against the upgraded model. We notify the user
+          // first and wait 10 s so they see what is about to happen and
+          // can save any in-flight work.
+          if (model === status.reasoningModel) {
+            console.log('[brain/setup] reasoning model installed -- scheduling restart in 10 s.');
+            if (typeof broadcast === 'function') broadcast({
+              type: 'notification',
+              title: 'Restarting Symphonee in 10 s',
+              body: `Reasoning model ${model} just installed. Symphonee will restart to activate brain features fully. Save any unfinished work.`,
+              level: 'info', icon: 'rotate-cw',
+            });
+            setTimeout(() => {
+              try {
+                const req = http.request({
+                  hostname: '127.0.0.1', port: PORT, path: '/api/restart-app', method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Content-Length': 2 },
+                });
+                req.on('error', () => { /* server already going down */ });
+                req.write('{}');
+                req.end();
+              } catch (_) { /* swallow */ }
+            }, 10_000);
+          }
         } else {
           console.warn(`[brain/setup] failed to pull "${model}":`, r && r.error);
           if (typeof broadcast === 'function') broadcast({
