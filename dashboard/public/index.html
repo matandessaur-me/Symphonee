@@ -4922,6 +4922,27 @@
         <div class="perm-opt" data-mode="bypass" onclick="setPermMode('bypass')" style="padding:6px 10px;cursor:pointer;border-radius:4px;color:var(--accent);"><strong>Bypass</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Allow everything. Use with care.</div></div>
       </div>
     </div>
+    <div id="brainSlot" style="display:inline-flex;align-items:center;flex-shrink:0;position:relative;margin-left:6px;">
+      <div id="brainChip" title="Symphonee brain (planner + live intent). Click for details." onclick="openBrainMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;max-width:280px;overflow:hidden;">
+        <i data-lucide="brain" style="width:13px;height:13px;flex-shrink:0;"></i>
+        <span id="brainChipMode" style="text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0;">SHADOW</span>
+        <span id="brainChipDivider" style="opacity:0.4;display:none;">|</span>
+        <span id="brainChipIntent" style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--subtext1);"></span>
+      </div>
+      <div id="brainMenu" style="display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:2000;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);padding:8px;min-width:340px;max-width:420px;font-family:var(--font-ui);font-size:11px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <div style="color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Planner mode</div>
+        <div class="brain-opt" data-mode="off" onclick="setPlannerMode('off')" style="padding:6px 10px;cursor:pointer;border-radius:4px;"><strong>Off</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Planner endpoints are no-ops.</div></div>
+        <div class="brain-opt" data-mode="shadow" onclick="setPlannerMode('shadow')" style="padding:6px 10px;cursor:pointer;border-radius:4px;"><strong>Shadow</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Plan, log, do not dispatch (default).</div></div>
+        <div class="brain-opt" data-mode="active" onclick="setPlannerMode('active')" style="padding:6px 10px;cursor:pointer;border-radius:4px;color:var(--accent);"><strong>Active</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Orchestrator honors brain picks.</div></div>
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--surface2);color:var(--subtext0);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Current intent</div>
+        <div id="brainIntentBody" style="font-size:11px;line-height:1.5;color:var(--text);margin-bottom:6px;">(unknown - no events yet)</div>
+        <div id="brainIntentMeta" style="font-size:10px;color:var(--subtext0);margin-bottom:8px;"></div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="forceBrainIntentRecompute()" style="flex:1;padding:5px 8px;background:var(--surface2);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:10px;">Recompute intent</button>
+          <button onclick="openBrainDecisions()" style="flex:1;padding:5px 8px;background:var(--surface2);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:10px;">Decisions log</button>
+        </div>
+      </div>
+    </div>
     <div class="notif-bell" id="notifBell" onclick="toggleNotifPanel(event)" title="Notifications">
       <i data-lucide="bell"></i>
       <span class="notif-badge" id="notifBadge">0</span>
@@ -7319,6 +7340,20 @@ requestAnimationFrame(fitTerminalNow);
           // Search setup progress, mind-ui graph refresh, etc.) can hook
           // in without each having their own WebSocket.
           try { window.dispatchEvent(new CustomEvent('symphonee-mind-update', { detail: msg.payload || {} })); } catch (_) {}
+          break;
+        }
+        case 'symphonee-intent': {
+          // Live intent update from the brain. Update the topbar chip.
+          try { window.dispatchEvent(new CustomEvent('symphonee-intent', { detail: msg.payload || {} })); } catch (_) {}
+          if (typeof refreshBrainChipFromPayload === 'function') {
+            try { refreshBrainChipFromPayload(msg.payload || {}); } catch (_) {}
+          }
+          break;
+        }
+        case 'symphonee-plan': {
+          // A planner decision was logged. Re-dispatch for any listener
+          // (decisions panel could subscribe).
+          try { window.dispatchEvent(new CustomEvent('symphonee-plan', { detail: msg.payload || {} })); } catch (_) {}
           break;
         }
         case 'ui-action':
@@ -27530,6 +27565,147 @@ async function setPermMode(mode) {
     refreshPermMode();
   } catch (e) { console.error('setPermMode failed', e); }
 }
+
+// ── Brain chip (planner mode + live intent) ────────────────────────────────
+// Mounted in the header next to permModeChip. Reads /api/symphonee/status
+// on boot, then keeps itself in sync via the symphonee-intent WebSocket
+// event. Click opens a menu that exposes mode toggles + the full current
+// intent + a button to force recompute.
+const _BRAIN_MODE_COLORS = {
+  off:    { bg: 'var(--surface1)', accent: 'var(--subtext0)' },
+  shadow: { bg: 'var(--surface1)', accent: 'var(--text)' },
+  active: { bg: 'color-mix(in srgb, var(--accent) 14%, var(--surface1))', accent: 'var(--accent)' },
+};
+function _renderBrainChip(mode, intent) {
+  const chip = document.getElementById('brainChip');
+  const modeEl = document.getElementById('brainChipMode');
+  const dividerEl = document.getElementById('brainChipDivider');
+  const intentEl = document.getElementById('brainChipIntent');
+  if (!chip || !modeEl) return;
+  const safeMode = mode && _BRAIN_MODE_COLORS[mode] ? mode : 'shadow';
+  modeEl.textContent = safeMode.toUpperCase();
+  const c = _BRAIN_MODE_COLORS[safeMode];
+  chip.style.background = c.bg;
+  modeEl.style.color = c.accent;
+  if (intent && intent.summary) {
+    const truncated = String(intent.summary).slice(0, 80);
+    intentEl.textContent = truncated + (intent.summary.length > 80 ? '...' : '');
+    intentEl.style.display = '';
+    if (dividerEl) dividerEl.style.display = '';
+  } else {
+    intentEl.textContent = '';
+    intentEl.style.display = 'none';
+    if (dividerEl) dividerEl.style.display = 'none';
+  }
+  // Also update the menu body if open
+  const body = document.getElementById('brainIntentBody');
+  if (body) {
+    body.textContent = (intent && intent.summary) ? intent.summary : '(unknown - no events yet)';
+  }
+  const meta = document.getElementById('brainIntentMeta');
+  if (meta) {
+    const parts = [];
+    if (intent && typeof intent.confidence === 'number') parts.push(`confidence ${intent.confidence.toFixed(2)}`);
+    if (intent && intent.currentRepo) parts.push(intent.currentRepo);
+    if (intent && intent.lastUpdated) {
+      try { parts.push('updated ' + new Date(intent.lastUpdated).toLocaleString()); } catch (_) {}
+    }
+    meta.textContent = parts.join(' - ');
+  }
+  // Highlight the active mode in the menu
+  document.querySelectorAll('.brain-opt').forEach(el => {
+    el.style.background = el.getAttribute('data-mode') === safeMode ? 'var(--surface2)' : '';
+  });
+}
+function refreshBrainChipFromPayload(payload) {
+  // Payload shape from /api/symphonee/intent broadcast: { summary, confidence, currentRepo }
+  const existing = window._brainState || { mode: 'shadow', intent: {} };
+  existing.intent = { ...existing.intent, ...(payload || {}) };
+  window._brainState = existing;
+  _renderBrainChip(existing.mode, existing.intent);
+}
+async function refreshBrainChip() {
+  try {
+    const r = await fetch('/api/symphonee/status');
+    if (!r.ok) return;
+    const j = await r.json();
+    window._brainState = { mode: j.mode || 'shadow', intent: j.intent || {} };
+    _renderBrainChip(window._brainState.mode, window._brainState.intent);
+  } catch (_) { /* brain not mounted yet - leave default */ }
+}
+function openBrainMenu(ev) {
+  ev.stopPropagation();
+  const m = document.getElementById('brainMenu');
+  if (!m) return;
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  if (m.style.display === 'block') {
+    // Refresh content when opening so the user sees the latest state.
+    refreshBrainChip();
+    setTimeout(() => document.addEventListener('click', closeBrainMenuOnce, { once: true }), 0);
+  }
+}
+function closeBrainMenuOnce() { const m = document.getElementById('brainMenu'); if (m) m.style.display = 'none'; }
+async function setPlannerMode(mode) {
+  try {
+    // Read current config, set SymphoneeBrain.plannerMode, write back.
+    const cur = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
+    if (!cur.SymphoneeBrain) cur.SymphoneeBrain = {};
+    cur.SymphoneeBrain.plannerMode = mode;
+    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cur) });
+    closeBrainMenuOnce();
+    refreshBrainChip();
+  } catch (e) { console.error('setPlannerMode failed', e); }
+}
+async function forceBrainIntentRecompute() {
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Recomputing...'; }
+  try {
+    await fetch('/api/symphonee/intent/recompute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    refreshBrainChip();
+  } catch (e) {
+    console.error('forceBrainIntentRecompute failed', e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Recompute intent'; }
+  }
+}
+async function openBrainDecisions() {
+  // Lightweight inline viewer - fetches the last 20 decisions and shows them
+  // in the menu body. Good enough for v1; a dedicated panel can come later.
+  const body = document.getElementById('brainIntentBody');
+  if (!body) return;
+  body.innerHTML = '<div style="color:var(--subtext0);">Loading...</div>';
+  try {
+    const r = await fetch('/api/symphonee/decisions?limit=20');
+    const j = await r.json();
+    if (!j.decisions || !j.decisions.length) {
+      body.innerHTML = '<div style="color:var(--subtext0);">No decisions logged yet. Call POST /api/symphonee/think or run in active mode.</div>';
+      return;
+    }
+    const rows = j.decisions.map(d => {
+      const dec = d.decision || {};
+      const escalated = d.escalated ? ' <span style="color:var(--accent);">(escalated)</span>' : '';
+      const patched = (d.patches && d.patches.length) ? ' <span style="color:var(--yellow);">(patched)</span>' : '';
+      return `<div style="border-bottom:1px solid var(--surface2);padding:6px 0;font-size:10px;">
+        <div style="color:var(--subtext0);">${escapeHtml(d.at || '')} - ${escapeHtml(d.model || '?')}${escalated}${patched}</div>
+        <div style="color:var(--text);margin:2px 0;"><strong>${escapeHtml(dec.intent || '?')}</strong> -> ${escapeHtml(dec.primary_cli || 'none')} (conf ${(dec.confidence ?? '?')})</div>
+        <div style="color:var(--subtext0);font-family:var(--font-mono);">${escapeHtml((d.input || '').slice(0, 120))}</div>
+      </div>`;
+    }).join('');
+    body.innerHTML = rows;
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red);">Failed to load decisions.</div>';
+  }
+}
+// Initial render on DOM ready.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', refreshBrainChip);
+} else {
+  refreshBrainChip();
+}
+// Re-render on intent updates.
+window.addEventListener('symphonee-intent', (ev) => {
+  refreshBrainChipFromPayload(ev.detail || {});
+});
 
 // ── Approval modal: polls both permission + graph-run approval queues ──
 let _approvalShown = null;

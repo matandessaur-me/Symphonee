@@ -2258,12 +2258,30 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
         plannerMode: orch.brain && typeof orch.brain.plannerMode === 'function' ? orch.brain.plannerMode() : null,
       }, 400);
     }
-    // Check if this CLI is allowed by the user's settings
+    // Check if this CLI is allowed by the user's settings. When the brain
+    // picked this CLI in active mode we surface a richer error so the user
+    // knows exactly which decision led here and how to unblock it.
     if (getConfig) {
       const cfg = getConfig();
       const allowList = cfg.OrchestrateCliList;
       if (Array.isArray(allowList) && allowList.length > 0 && !allowList.includes(cli)) {
-        return json(res, { error: `CLI "${cli}" is not enabled for orchestration. Enable it in Settings > Other.` }, 403);
+        const errPayload = {
+          error: `CLI "${cli}" is not enabled for orchestration. Enable it in Settings > Other.`,
+          cli,
+          allowList,
+          settingsPath: 'Settings > Other > Orchestrate CLI List',
+        };
+        if (brainPickedCli) {
+          errPayload.error = `Symphonee planner picked "${cli}" for this task but that CLI is not in OrchestrateCliList. Add "${cli}" to Settings > Other > Orchestrate CLI List, or pass a different cli explicitly to override the brain pick.`;
+          errPayload.brainPickedCli = brainPickedCli;
+          errPayload.brainDecision = brainDecision;
+          errPayload.howToFix = [
+            `Quickest: open Settings > Other and add "${cli}" to the Orchestrate CLI List`,
+            `Or pass an explicit cli in the request body to override the brain pick`,
+            `Or flip planner mode back to shadow: Set-PlannerMode.ps1 -Mode shadow`,
+          ];
+        }
+        return json(res, errPayload, 403);
       }
     }
     if (!await gateSpawn(res, { cli, cwd, label: `Spawn ${cli} worker`, wait: !autoPermit })) return;
