@@ -33,6 +33,7 @@ const outcomesModule = require('./outcomes');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
 const perfModule = require('./perf');
+const ollamaSetup = require('../mind/ollama-setup');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -180,7 +181,9 @@ function mountBrain(addRoute, json, ctx) {
   });
 
   // ── GET /api/symphonee/status ───────────────────────────────────────────
-  addRoute('GET', '/api/symphonee/status', (req, res) => {
+  addRoute('GET', '/api/symphonee/status', async (req, res) => {
+    let setup = null;
+    try { setup = await ollamaSetup.detectBrainSetup(); } catch (_) {}
     return json(res, {
       triageModel: planner.TRIAGE_MODEL,
       reasoningModel: planner.REASONING_MODEL,
@@ -188,6 +191,7 @@ function mountBrain(addRoute, json, ctx) {
       knownIntents: planner.KNOWN_INTENTS,
       intent: intent.get(),
       decisionCount: decisionLog.length,
+      setup,
     });
   });
 
@@ -238,6 +242,38 @@ function mountBrain(addRoute, json, ctx) {
   addRoute('GET', '/api/symphonee/outcomes/stats', (req, res) => {
     const stats = outcomesModule.getStats(repoRoot);
     return json(res, { ...stats, minSamplesForRate: outcomesModule.MIN_SAMPLES_FOR_STATS });
+  });
+
+  // ── GET /api/symphonee/setup/check ──────────────────────────────────────
+  // First-PC onboarding: does this machine have everything the brain
+  // needs to actually work? Returns { ollamaInstalled, ollamaRunning,
+  // triageModelInstalled, reasoningModelInstalled, missing, hint, ready }.
+  addRoute('GET', '/api/symphonee/setup/check', async (req, res) => {
+    try {
+      const r = await ollamaSetup.detectBrainSetup();
+      return json(res, r);
+    } catch (err) {
+      return json(res, { ready: false, error: err.message }, 500);
+    }
+  });
+
+  // ── POST /api/symphonee/setup/pull ──────────────────────────────────────
+  // Pull a brain model on demand. Body: { model? } (defaults to the
+  // reasoning model, the only large one users actually have to opt into).
+  // Streams progress via the ollama-pull mind-update WebSocket events.
+  addRoute('POST', '/api/symphonee/setup/pull', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const model = body.model || ollamaSetup.DEFAULT_REASONING_MODEL;
+    // Fire-and-forget so the HTTP request returns immediately; the UI
+    // watches the WS stream for progress chunks.
+    json(res, { ok: true, started: true, model });
+    Promise.resolve().then(() => ollamaSetup.pullBrainModel({ model, broadcast }))
+      .then((r) => {
+        if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'ollama-pull', model, status: r.ok ? 'success' : 'error', error: r.error || null } });
+      })
+      .catch((err) => {
+        if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'ollama-pull', model, status: 'error', error: err.message } });
+      });
   });
 
   // ── GET /api/symphonee/perf ─────────────────────────────────────────────
