@@ -62,6 +62,23 @@ Updated by `intent.notify({ kind, detail, repo, file, source })` from:
 
 Debounced 5s so bursts of file events do not thrash `gemma4:26b`.
 
+## Workflow synthesis
+
+The brain records every knowledge event into
+`.symphonee/sequences.jsonl` (append-only). Idle gaps of 10+ minutes
+split sessions. On-demand, the synthesizer clusters recent sessions by
+shape similarity (Jaccard on `kind:simplified-path` tokens) and asks
+gemma to draft a recipe for any cluster with >=3 occurrences that does
+not already have a covering recipe.
+
+Drafts are NOT auto-accepted. The user (or another tool) decides which
+to materialize. Accepting a draft writes `recipes/<slug>.md` and never
+overwrites an existing file.
+
+This is fully event-driven. Sequences only get recorded when events
+flow through `mind.notifyKnowledgeEvent` (save-result, teach,
+learnings, file changes the watcher picks up). Nothing runs on a clock.
+
 ## Endpoints
 
 | Method | Path | Purpose |
@@ -73,6 +90,9 @@ Debounced 5s so bursts of file events do not thrash `gemma4:26b`.
 | POST | /api/symphonee/intent/recompute | Force recompute (uses pending evidence). |
 | POST | /api/symphonee/intent/pause | Pause auto-recompute. |
 | POST | /api/symphonee/intent/resume | Resume. |
+| GET  | /api/symphonee/sequences | Inspect recent recorded sessions. |
+| POST | /api/symphonee/synthesize | Draft recipes from observed shapes. |
+| POST | /api/symphonee/synthesize/accept | Materialize a draft as recipes/<slug>.md. |
 | GET  | /api/symphonee/status | Models + decision count + current intent. |
 | GET  | /api/symphonee/instructions | This file. |
 

@@ -3209,20 +3209,22 @@ if (orchestrator && typeof brain.plan === 'function') {
 }
 
 // Wrap mind.notifyKnowledgeEvent so every knowledge event also feeds the
-// brain's intent manager. Keeps a single fan-in point: anything that calls
-// notifyKnowledgeEvent (save-result, teach, learnings, manual ingest) now
-// also pushes evidence into the intent model. Debounced inside the brain.
+// brain's intent manager AND the sequence recorder. Keeps a single
+// fan-in point: anything that calls notifyKnowledgeEvent (save-result,
+// teach, learnings, manual ingest) now also pushes evidence into the
+// intent model AND appends a record to .symphonee/sequences.jsonl for
+// workflow synthesis. Both are best-effort and never block the
+// existing knowledge path.
 if (mind && typeof mind.notifyKnowledgeEvent === 'function' && brain && typeof brain.notifyIntent === 'function') {
+  const sequences = require('./brain/sequences');
   const _origNotify = mind.notifyKnowledgeEvent.bind(mind);
   mind.notifyKnowledgeEvent = (ev) => {
     try {
       const ui = getUiContextWithPath();
-      brain.notifyIntent({
-        kind: ev.kind || ev.reason || 'knowledge-event',
-        detail: ev.reason || null,
-        repo: ui && ui.activeRepo || null,
-        source: 'mind/notify',
-      });
+      const kind = ev.kind || ev.reason || 'knowledge-event';
+      const repo = ui && ui.activeRepo || null;
+      brain.notifyIntent({ kind, detail: ev.reason || null, repo, source: 'mind/notify' });
+      sequences.recordEvent(repoRoot, { kind, repo, detail: ev.reason || null, source: 'mind/notify' });
     } catch (_) { /* never block the existing path */ }
     return _origNotify(ev);
   };

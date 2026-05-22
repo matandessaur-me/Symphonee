@@ -26,6 +26,8 @@ const fs = require('fs');
 const path = require('path');
 const intentModule = require('./intent');
 const planner = require('./planner');
+const sequencesModule = require('./sequences');
+const synthesizeModule = require('./synthesize');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -156,6 +158,53 @@ function mountBrain(addRoute, json, ctx) {
     });
   });
 
+  // ── POST /api/symphonee/synthesize ──────────────────────────────────────
+  // Read recent sessions from .symphonee/sequences.jsonl, cluster by shape,
+  // and ask gemma to draft a recipe per mature cluster. Returns drafts
+  // (some accepted, some skipped with a reason). Explicit on-demand call;
+  // nothing autonomous about this.
+  addRoute('POST', '/api/symphonee/synthesize', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const days = Number.isFinite(body.days) ? body.days : 30;
+    const minClusterSize = Number.isFinite(body.minClusterSize) ? body.minClusterSize : 3;
+    const maxDrafts = Number.isFinite(body.maxDrafts) ? body.maxDrafts : 5;
+    try {
+      const r = await synthesizeModule.synthesize(repoRoot, { days, minClusterSize, maxDrafts });
+      return json(res, r);
+    } catch (err) {
+      return json(res, { error: err.message }, 500);
+    }
+  });
+
+  // ── POST /api/symphonee/synthesize/accept ───────────────────────────────
+  // Materialize a draft as recipes/<slug>.md. Body: { draft }. Refuses to
+  // overwrite an existing file.
+  addRoute('POST', '/api/symphonee/synthesize/accept', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.draft) return json(res, { error: 'draft required' }, 400);
+    const file = synthesizeModule.acceptDraft(repoRoot, body.draft);
+    if (!file) return json(res, { error: 'could not materialize draft (already exists or malformed)' }, 409);
+    return json(res, { ok: true, file });
+  });
+
+  // ── GET /api/symphonee/sequences ────────────────────────────────────────
+  // Inspect recent recorded events. Read-only debug surface.
+  addRoute('GET', '/api/symphonee/sequences', (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const days = parseInt(url.searchParams.get('days') || '7', 10);
+    const sess = sequencesModule.getRecentSessions(repoRoot, { days: Math.max(1, days) });
+    return json(res, {
+      sessions: sess.slice(0, 50).map(s => ({
+        repo: s.repo,
+        startTs: s.startTs,
+        endTs: s.endTs,
+        events: s.events.length,
+        kinds: [...new Set(s.events.map(e => e.kind))],
+      })),
+      total: sess.length,
+    });
+  });
+
   // ── GET /api/symphonee/instructions ─────────────────────────────────────
   addRoute('GET', '/api/symphonee/instructions', (req, res) => {
     const p = path.join(__dirname, 'instructions.md');
@@ -207,6 +256,9 @@ function mountBrain(addRoute, json, ctx) {
     getIntent: () => intent.get(),
     forceRecomputeIntent: () => intent.forceRecompute(),
     plan,
+    synthesize: (o) => synthesizeModule.synthesize(repoRoot, o || {}),
+    acceptDraft: (d) => synthesizeModule.acceptDraft(repoRoot, d),
+    recordEvent: (ev) => sequencesModule.recordEvent(repoRoot, ev),
   };
 }
 
