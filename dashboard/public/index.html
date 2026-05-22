@@ -28493,5 +28493,141 @@ function showRecipePreviewModal(id, fm, prompt) {
   }
 </script>
 <script src="/mind-ui.js"></script>
+
+<!-- ═══ Brain setup blocking overlay ═════════════════════════════════════════
+     Shown when the brain's reasoning model is still being installed on
+     first boot. Blocks ALL interaction until the download lands and
+     Symphonee restarts. No close button, no escape handler. -->
+<div id="brainSetupOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.78);backdrop-filter:blur(8px);align-items:center;justify-content:center;font-family:var(--font-ui);">
+  <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:28px 32px;min-width:480px;max-width:560px;box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;color:var(--accent);font-weight:600;font-size:14px;">
+      <i data-lucide="brain" style="width:18px;height:18px;"></i>
+      <span id="brainSetupOverlayTitle">Symphonee is preparing</span>
+    </div>
+    <div id="brainSetupOverlayBody" style="font-size:12.5px;color:var(--text);line-height:1.55;margin-bottom:16px;">
+      Downloading the brain's reasoning model. This is a one-time setup.
+    </div>
+    <div id="brainSetupOverlayModel" style="font-family:var(--font-mono);font-size:11px;color:var(--subtext1);margin-bottom:8px;"></div>
+    <div style="background:var(--surface1);height:10px;border-radius:5px;overflow:hidden;margin-bottom:6px;">
+      <div id="brainSetupOverlayBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.4s ease;"></div>
+    </div>
+    <div id="brainSetupOverlayStatus" style="font-size:11px;color:var(--subtext0);font-family:var(--font-mono);min-height:14px;"></div>
+    <div id="brainSetupOverlayHint" style="font-size:11px;color:var(--subtext0);margin-top:14px;">
+      Symphonee will restart automatically when the download completes. You can leave this window open.
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Blocking-overlay controller. Activates when the brain's reasoning model
+  // is being installed on first boot. Drives state purely from
+  // /api/symphonee/setup/check + ollama-pull WebSocket events. Cannot be
+  // dismissed - the user must wait for the download + restart.
+  const overlay = document.getElementById('brainSetupOverlay');
+  const titleEl = document.getElementById('brainSetupOverlayTitle');
+  const bodyEl = document.getElementById('brainSetupOverlayBody');
+  const modelEl = document.getElementById('brainSetupOverlayModel');
+  const barEl = document.getElementById('brainSetupOverlayBar');
+  const statusEl = document.getElementById('brainSetupOverlayStatus');
+  const hintEl = document.getElementById('brainSetupOverlayHint');
+  let reasoningModelName = null;
+  let shown = false;
+  let restarting = false;
+
+  function show() {
+    if (shown) return;
+    overlay.style.display = 'flex';
+    shown = true;
+    // Lock background scroll + interaction. The fixed overlay already
+    // blocks pointer events; locking body overflow stops accidental
+    // scrolling behind the modal.
+    document.body.style.overflow = 'hidden';
+  }
+  function fmtBytes(n) {
+    if (typeof n !== 'number' || !isFinite(n) || n <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0; let v = n;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v < 10 ? 1 : 0) + ' ' + units[i];
+  }
+  function updateProgress(p) {
+    if (!shown) show();
+    if (p.model) modelEl.textContent = p.model;
+    if (typeof p.completed === 'number' && typeof p.total === 'number' && p.total > 0) {
+      const pct = Math.min(100, Math.max(0, (p.completed / p.total) * 100));
+      barEl.style.width = pct.toFixed(1) + '%';
+      statusEl.textContent = `${(p.status || 'downloading')} - ${fmtBytes(p.completed)} / ${fmtBytes(p.total)} (${pct.toFixed(0)}%)`;
+    } else if (p.status) {
+      statusEl.textContent = p.status;
+    }
+  }
+  function markSuccessAndRestartCountdown() {
+    if (restarting) return;
+    restarting = true;
+    titleEl.textContent = 'Brain ready - restarting';
+    bodyEl.textContent = 'Download complete. Symphonee will restart in a moment to activate brain features.';
+    barEl.style.width = '100%';
+    statusEl.textContent = 'success';
+    let n = 10;
+    hintEl.textContent = `Restarting in ${n} seconds...`;
+    const tick = () => {
+      n -= 1;
+      if (n <= 0) {
+        hintEl.textContent = 'Restarting...';
+        return;
+      }
+      hintEl.textContent = `Restarting in ${n} seconds...`;
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  }
+
+  // On load: ask the server whether the brain is set up. If the reasoning
+  // model is missing, show the overlay immediately. This also handles the
+  // case where the user reloads the page mid-download.
+  async function checkAndShow() {
+    try {
+      const r = await fetch('/api/symphonee/setup/check');
+      if (!r.ok) return;
+      const j = await r.json();
+      reasoningModelName = j.reasoningModel;
+      if (!j.reasoningModelInstalled && j.ollamaInstalled && j.ollamaRunning) {
+        modelEl.textContent = reasoningModelName || '';
+        show();
+      }
+    } catch (_) { /* server still booting; ignore */ }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkAndShow);
+  } else {
+    checkAndShow();
+  }
+
+  // Hook the WebSocket re-dispatched events. The brain uses
+  // 'mind-update' for ollama-pull progress (kind:'ollama-pull') and we
+  // also listen for the brain's restart-notification toast to switch
+  // into the countdown state.
+  window.addEventListener('symphonee-mind-update', (ev) => {
+    const p = ev.detail || {};
+    if (p.kind !== 'ollama-pull') return;
+    // Only react to the reasoning model. Triage downloads are silent.
+    if (reasoningModelName && p.model && p.model !== reasoningModelName) return;
+    if (p.status === 'success') {
+      markSuccessAndRestartCountdown();
+      return;
+    }
+    if (p.status === 'error') {
+      titleEl.textContent = 'Brain setup failed';
+      bodyEl.textContent = 'The reasoning model download failed. Symphonee will retry on the next boot. You can use the app, but brain features will be limited.';
+      statusEl.textContent = p.error || 'error';
+      hintEl.innerHTML = '<button onclick="document.getElementById(\'brainSetupOverlay\').style.display=\'none\';document.body.style.overflow=\'\';" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;font-family:var(--font-ui);">Dismiss</button>';
+      return;
+    }
+    updateProgress(p);
+  });
+})();
+</script>
+
 </body>
 </html>
