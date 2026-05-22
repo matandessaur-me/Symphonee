@@ -261,7 +261,11 @@ async function answer(input, ctx = {}) {
   if (!input || typeof input !== 'string') {
     return { source: 'no-op', error: 'input required', tookMs: 0 };
   }
-  const planResult = await planner.planRoute(input, { ui: ctx.ui, intent: ctx.intent });
+  const planResult = await planner.planRoute(input, {
+    ui: ctx.ui,
+    intent: ctx.intent,
+    outcomeHints: ctx.outcomeHints || [],
+  });
   const decision = planResult && planResult.decision || {};
   const intent = decision.intent || 'ambiguous';
 

@@ -86,6 +86,14 @@ function _buildPlannerMessages(input, context) {
   const repoLine = context && context.ui && context.ui.activeRepo
     ? `Active repo: ${context.ui.activeRepo}`
     : 'Active repo: none';
+  // Outcome hints: when the brain has enough sample data, surface a short
+  // advisory line telling the model which CLI has historically performed
+  // best on similar intents. Caller passes these as plain strings - no
+  // logic here, just splice them in. Empty array = no hints, no token cost.
+  const outcomeHints = Array.isArray(context && context.outcomeHints) ? context.outcomeHints : [];
+  const outcomeBlock = outcomeHints.length
+    ? ['', 'Historical performance (advisory - tiebreaker, not a hard rule):', ...outcomeHints.map(h => '  - ' + h)]
+    : [];
   const sys = [
     'You are Symphonee, the brain of a multi-CLI AI terminal.',
     'Your job is to classify the user input and pick a route.',
@@ -119,6 +127,7 @@ function _buildPlannerMessages(input, context) {
     '',
     repoLine,
     intentSummary,
+    ...outcomeBlock,
   ].join('\n');
   return [
     { role: 'system', content: sys },

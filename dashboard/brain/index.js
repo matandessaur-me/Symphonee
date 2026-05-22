@@ -29,6 +29,7 @@ const planner = require('./planner');
 const sequencesModule = require('./sequences');
 const synthesizeModule = require('./synthesize');
 const answerModule = require('./answer');
+const outcomesModule = require('./outcomes');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -56,12 +57,40 @@ function mountBrain(addRoute, json, ctx) {
 
   // Planning-decision log (in-memory ring buffer). Persisted across the
   // session lifetime so /api/symphonee/decisions can show what the brain
-  // routed and why.
+  // routed and why. Each entry gets a stable `id` so the outcomes module
+  // can later attach feedback (validated / contradicted / corrected /
+  // unused) to a specific decision.
   const decisionLog = [];
   const DECISION_LOG_MAX = 200;
+  function _makeDecisionId() {
+    return 'dec_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+  }
   function logDecision(entry) {
-    decisionLog.push({ at: new Date().toISOString(), ...entry });
+    const id = entry.id || _makeDecisionId();
+    const record = { id, at: new Date().toISOString(), ...entry };
+    decisionLog.push(record);
     if (decisionLog.length > DECISION_LOG_MAX) decisionLog.shift();
+    return record;
+  }
+  function findDecision(id) {
+    return decisionLog.find(d => d.id === id) || null;
+  }
+
+  // Compose a small set of advisory hints derived from past outcome stats.
+  // Returns at most one hint per intent class for which we have enough
+  // sample data (>= MIN_SAMPLES_FOR_STATS). Empty array if the brain has
+  // no usable feedback yet - the planner prompt stays unchanged in that
+  // case, no token cost.
+  function getOutcomeHints() {
+    try {
+      const stats = outcomesModule.getStats(repoRoot);
+      const hints = [];
+      for (const intent of Object.keys(stats.byIntentCli || {})) {
+        const hint = outcomesModule.buildPromptHint(stats, intent);
+        if (hint) hints.push(hint);
+      }
+      return hints;
+    } catch (_) { return []; }
   }
 
   // ── POST /api/symphonee/think ───────────────────────────────────────────
@@ -74,7 +103,7 @@ function mountBrain(addRoute, json, ctx) {
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
-    const plan = await planner.planRoute(input, { ui, intent: current });
+    const plan = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints() });
     const tookMs = Date.now() - startedAt;
     const entry = {
       input: input.slice(0, 240),
@@ -91,11 +120,11 @@ function mountBrain(addRoute, json, ctx) {
       error: plan.error,
       tookMs,
     };
-    logDecision(entry);
+    const logged = logDecision(entry);
     if (broadcast) {
-      broadcast({ type: 'symphonee-plan', payload: entry });
+      broadcast({ type: 'symphonee-plan', payload: logged });
     }
-    return json(res, { ...plan, tookMs });
+    return json(res, { ...plan, tookMs, decisionId: logged.id });
   });
 
   // ── GET /api/symphonee/decisions ────────────────────────────────────────
@@ -157,6 +186,55 @@ function mountBrain(addRoute, json, ctx) {
       intent: intent.get(),
       decisionCount: decisionLog.length,
     });
+  });
+
+  // ── POST /api/symphonee/outcome ─────────────────────────────────────────
+  // Attach an outcome to a previously-logged decision. Body:
+  //   { decisionId, outcome: validated|contradicted|corrected|unused, detail? }
+  // The brain looks up the decision (in the in-memory ring buffer) to
+  // snapshot its intent + primary_cli at outcome-record time. If the
+  // decision has aged out, we accept the outcome but record null snapshot
+  // fields - the stats aggregator handles that cleanly.
+  addRoute('POST', '/api/symphonee/outcome', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const id = body.decisionId;
+    const outcome = body.outcome;
+    if (!id) return json(res, { error: 'decisionId required' }, 400);
+    if (!outcome || !outcomesModule.VALID_OUTCOMES.has(outcome)) {
+      return json(res, {
+        error: 'outcome must be one of ' + Array.from(outcomesModule.VALID_OUTCOMES).join(' | '),
+      }, 400);
+    }
+    const dec = findDecision(id);
+    const snapshot = {
+      intent: dec && dec.decision && dec.decision.intent || null,
+      primaryCli: dec && dec.decision && dec.decision.primary_cli || null,
+      detail: body.detail || null,
+    };
+    const ok = outcomesModule.recordOutcome(repoRoot, id, outcome, snapshot);
+    if (!ok) return json(res, { error: 'failed to record outcome' }, 500);
+    if (broadcast) broadcast({ type: 'symphonee-outcome', payload: { decisionId: id, outcome, snapshot } });
+    return json(res, { ok: true, decisionId: id, outcome, snapshot, decisionFound: !!dec });
+  });
+
+  // ── GET /api/symphonee/outcomes ─────────────────────────────────────────
+  // Raw outcome stream, newest first.
+  addRoute('GET', '/api/symphonee/outcomes', (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+    const safeLimit = Math.max(1, Math.min(500, limit));
+    const all = outcomesModule.readOutcomes(repoRoot);
+    return json(res, {
+      total: all.length,
+      outcomes: all.slice(-safeLimit).reverse(),
+    });
+  });
+
+  // ── GET /api/symphonee/outcomes/stats ───────────────────────────────────
+  // Aggregated win-rates per intent / per cli / per (intent, cli).
+  addRoute('GET', '/api/symphonee/outcomes/stats', (req, res) => {
+    const stats = outcomesModule.getStats(repoRoot);
+    return json(res, { ...stats, minSamplesForRate: outcomesModule.MIN_SAMPLES_FOR_STATS });
   });
 
   // ── POST /api/symphonee/answer ──────────────────────────────────────────
@@ -256,9 +334,9 @@ function mountBrain(addRoute, json, ctx) {
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
-    const result = await planner.planRoute(input, { ui, intent: current });
+    const result = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints() });
     const tookMs = Date.now() - startedAt;
-    logDecision({
+    const logged = logDecision({
       input: input.slice(0, 240),
       ok: result.ok,
       stage: result.stage,
@@ -275,15 +353,15 @@ function mountBrain(addRoute, json, ctx) {
       source: opts.source || 'plan',
     });
     if (broadcast) {
-      broadcast({ type: 'symphonee-plan', payload: { ...result, tookMs, source: opts.source || 'plan' } });
+      broadcast({ type: 'symphonee-plan', payload: { ...logged, tookMs } });
     }
-    return { ...result, tookMs };
+    return { ...result, tookMs, decisionId: logged.id };
   }
 
   // Public surface: the in-process answer() entrypoint the orchestrator
   // calls when /spawn has no explicit cli. Wraps answerModule.answer with
-  // the brain's live intent + UI context so callers do not have to
-  // reconstruct that themselves.
+  // the brain's live intent + UI context + outcome hints so callers do
+  // not have to reconstruct that themselves.
   async function answer(input, opts = {}) {
     const ui = getUiContext ? getUiContext() : {};
     return answerModule.answer(input, {
@@ -291,6 +369,7 @@ function mountBrain(addRoute, json, ctx) {
       space: (ui && ui.activeSpace) || '_global',
       intent: intent.get(),
       ui,
+      outcomeHints: getOutcomeHints(),
       ...opts,
     });
   }

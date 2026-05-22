@@ -88,6 +88,31 @@ answer directly when possible. Pass an explicit cli to bypass.
 The thresholds are conservative on purpose - we prefer escalating to a
 frontier model over returning a confidently-wrong local answer.
 
+## Outcome tracking (feedback loop)
+
+The brain records every routing decision in an in-memory audit log
+(each entry has a stable `id`). After the work happens, callers tag
+that decision with an outcome:
+
+  - `validated`    - the decision led to a useful answer the user kept
+  - `contradicted` - the user later said the decision was wrong
+  - `corrected`    - the user re-ran with a different cli; the brain
+                     mis-routed
+  - `unused`       - the answer was ignored / not saved / not acted on
+
+Outcomes persist at `.symphonee/outcomes.jsonl` and are aggregated by
+intent and by CLI. Once a bucket has >= 10 samples, its validated rate
+becomes available; the planner prompt receives an advisory hint like
+"Historical note: codex has 8/10 validated on code-action (80%)". This
+is a tiebreaker, not a hard rule - the sanity layer still applies.
+
+Endpoints:
+  - `POST /api/symphonee/outcome { decisionId, outcome, detail? }`
+  - `GET  /api/symphonee/outcomes` - raw stream
+  - `GET  /api/symphonee/outcomes/stats` - aggregated win-rates
+
+Script: `./scripts/Outcome.ps1 -DecisionId <id> -Outcome validated`.
+
 ## Workflow synthesis
 
 The brain records every knowledge event into
@@ -111,6 +136,9 @@ learnings, file changes the watcher picks up). Nothing runs on a clock.
 |---|---|---|
 | POST | /api/symphonee/answer | Local-first answer. Tries Mind, gemma, then escalates. Body: `{ input }`. |
 | POST | /api/symphonee/think | Planner front door (decision only, no answer). Body: `{ input }`. |
+| POST | /api/symphonee/outcome | Tag a decision. Body: `{ decisionId, outcome, detail? }`. |
+| GET  | /api/symphonee/outcomes | Raw outcome stream. |
+| GET  | /api/symphonee/outcomes/stats | Aggregated per-intent / per-cli win rates. |
 | GET  | /api/symphonee/decisions | Recent planner decisions (audit log). |
 | GET  | /api/symphonee/intent | Current intent state. |
 | POST | /api/symphonee/intent/notify | Push an event. |
