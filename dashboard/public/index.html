@@ -4922,11 +4922,6 @@
         <div class="perm-opt" data-mode="bypass" onclick="setPermMode('bypass')" style="padding:6px 10px;cursor:pointer;border-radius:4px;color:var(--accent);"><strong>Bypass</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Allow everything. Use with care.</div></div>
       </div>
     </div>
-    <div id="brainSlot" style="display:inline-flex;align-items:center;flex-shrink:0;margin-left:6px;">
-      <div id="brainChip" title="Symphonee brain" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;box-sizing:border-box;border-radius:50%;background:color-mix(in srgb, var(--accent) 14%, transparent);border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);color:var(--accent);transition:opacity 0.15s;">
-        <i data-lucide="brain" style="width:14px;height:14px;"></i>
-      </div>
-    </div>
     <div class="notif-bell" id="notifBell" onclick="toggleNotifPanel(event)" title="Notifications">
       <i data-lucide="bell"></i>
       <span class="notif-badge" id="notifBadge">0</span>
@@ -7327,11 +7322,9 @@ requestAnimationFrame(fitTerminalNow);
           break;
         }
         case 'symphonee-intent': {
-          // Live intent update from the brain. Update the topbar chip.
+          // Brain intent updated. Re-dispatch as a DOM event so any future
+          // listener can subscribe. No header UI consumes this today.
           try { window.dispatchEvent(new CustomEvent('symphonee-intent', { detail: msg.payload || {} })); } catch (_) {}
-          if (typeof refreshBrainChipFromPayload === 'function') {
-            try { refreshBrainChipFromPayload(msg.payload || {}); } catch (_) {}
-          }
           break;
         }
         case 'symphonee-plan': {
@@ -27550,48 +27543,12 @@ async function setPermMode(mode) {
   } catch (e) { console.error('setPermMode failed', e); }
 }
 
-// ── Brain chip (passive status indicator) ──────────────────────────────────
-// A single small accent-colored brain icon in the header. There is no
-// off switch and no mode toggle - the brain is always on. The icon's
-// only job is to surface the live intent on hover via the native title.
-function _renderBrainChip(intent) {
-  const chip = document.getElementById('brainChip');
-  if (!chip) return;
-  const lines = ['Symphonee brain'];
-  if (intent && intent.summary) {
-    lines.push('');
-    let line = 'Intent: ' + String(intent.summary);
-    if (typeof intent.confidence === 'number') {
-      line += ' (' + intent.confidence.toFixed(2) + ')';
-    }
-    lines.push(line);
-  }
-  chip.title = lines.join('\n');
-}
-function refreshBrainChipFromPayload(payload) {
-  const intent = { ...(window._brainIntent || {}), ...(payload || {}) };
-  window._brainIntent = intent;
-  _renderBrainChip(intent);
-}
-async function refreshBrainChip() {
-  try {
-    const r = await fetch('/api/symphonee/status');
-    if (!r.ok) return;
-    const j = await r.json();
-    window._brainIntent = j.intent || {};
-    _renderBrainChip(window._brainIntent);
-  } catch (_) { /* brain not mounted yet - leave default */ }
-}
-// Initial render on DOM ready.
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', refreshBrainChip);
-} else {
-  refreshBrainChip();
-}
-// Re-render on intent updates.
-window.addEventListener('symphonee-intent', (ev) => {
-  refreshBrainChipFromPayload(ev.detail || {});
-});
+// The Symphonee brain is always on and intentionally has no UI surface
+// in the header. The live intent surfaces where it actually matters:
+// bootstrap.brain.intent for CLIs, wakeup banner L0, .symphonee/intent.json
+// on disk, and /api/symphonee/intent on demand. The symphonee-intent
+// WebSocket event is still dispatched on `window` so any future feature
+// (or in-app inspector) can subscribe without re-adding chip code.
 
 // ── Approval modal: polls both permission + graph-run approval queues ──
 let _approvalShown = null;
