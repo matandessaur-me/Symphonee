@@ -1,42 +1,22 @@
 <#
 .SYNOPSIS
-  Set Symphonee's planner mode.
+  Deprecated. The Symphonee brain is always on; there is no mode to set.
 
 .DESCRIPTION
-  Writes SymphoneeBrain.plannerMode in the config. Two modes:
-  - smart  -> brain observes, maintains intent, logs decisions (default).
-              Does NOT override the orchestrator's CLI selection.
-  - active -> brain also fills in the missing cli on orchestrator/spawn
-              when the caller does not specify one.
+  Earlier versions of this script flipped SymphoneeBrain.plannerMode in the
+  config (off / shadow / smart / active). The brain no longer has modes:
+  it always observes intent and always fills in the missing cli on
+  /api/orchestrator/spawn when the caller does not specify one.
 
-  Legacy values ("off", "shadow") read as "smart" so old configs keep
-  working without a migration.
+  Any SymphoneeBrain.plannerMode value left in the config is ignored.
 
-.PARAMETER Mode
-  smart | active
-
-.EXAMPLE
-  ./scripts/Set-PlannerMode.ps1 -Mode active
+  This stub exists so older muscle memory does not error out silently. It
+  prints a one-line notice and returns success.
 #>
 param(
-  [Parameter(Mandatory = $true, Position = 0)]
-  [ValidateSet('smart', 'active')]
+  [Parameter(Position = 0)]
   [string]$Mode
 )
 
-$ErrorActionPreference = 'Stop'
-try {
-  $current = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:3800/api/config'
-  if (-not $current.SymphoneeBrain) {
-    $current | Add-Member -NotePropertyName SymphoneeBrain -NotePropertyValue (@{}) -Force
-  }
-  $current.SymphoneeBrain.plannerMode = $Mode
-  $payload = $current | ConvertTo-Json -Depth 10
-  Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/config' -ContentType 'application/json' -Body $payload | Out-Null
-  $status = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:3800/api/symphonee/status'
-  Write-Host ("Planner mode set: " + $status.mode)
-  $status | ConvertTo-Json -Depth 5
-} catch {
-  Write-Error ("Set-PlannerMode failed: " + $_.Exception.Message)
-  exit 1
-}
+Write-Host "Set-PlannerMode is deprecated -- the brain is always on. No action taken."
+exit 0

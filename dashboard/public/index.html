@@ -4923,9 +4923,9 @@
       </div>
     </div>
     <div id="brainSlot" style="display:inline-flex;align-items:center;flex-shrink:0;margin-left:6px;">
-      <button id="brainChip" type="button" onclick="toggleBrainMode(event)" title="Symphonee brain" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;box-sizing:border-box;border-radius:50%;background:transparent;border:1px solid transparent;color:var(--subtext0);cursor:pointer;transition:color 0.15s, background 0.15s, border-color 0.15s;">
+      <div id="brainChip" title="Symphonee brain" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;box-sizing:border-box;border-radius:50%;background:color-mix(in srgb, var(--accent) 14%, transparent);border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);color:var(--accent);transition:opacity 0.15s;">
         <i data-lucide="brain" style="width:14px;height:14px;"></i>
-      </button>
+      </div>
     </div>
     <div class="notif-bell" id="notifBell" onclick="toggleNotifPanel(event)" title="Notifications">
       <i data-lucide="bell"></i>
@@ -27551,70 +27551,36 @@ async function setPermMode(mode) {
 }
 
 // ── Brain chip (passive status indicator) ──────────────────────────────────
-// A single small brain icon in the header. Color shows the planner mode:
-// dim subtext for "smart" (the brain is observing), accent for "active"
-// (the brain is also routing). Hover shows the live intent summary in the
-// native tooltip. Click toggles smart <-> active. No menu, no buttons,
-// no panels - the brain should require less interaction, not more.
-const _BRAIN_MODE_ALIAS = { off: 'smart', shadow: 'smart' };
-function _normalizeBrainMode(mode) {
-  const m = (mode && _BRAIN_MODE_ALIAS[mode]) || mode;
-  return (m === 'smart' || m === 'active') ? m : 'smart';
-}
-function _renderBrainChip(mode, intent) {
+// A single small accent-colored brain icon in the header. There is no
+// off switch and no mode toggle - the brain is always on. The icon's
+// only job is to surface the live intent on hover via the native title.
+function _renderBrainChip(intent) {
   const chip = document.getElementById('brainChip');
   if (!chip) return;
-  const safeMode = _normalizeBrainMode(mode);
-  // Color-only mode signal: dim for smart, accent for active.
-  chip.style.color = safeMode === 'active' ? 'var(--accent)' : 'var(--subtext0)';
-  chip.style.background = safeMode === 'active'
-    ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-    : 'transparent';
-  chip.style.borderColor = safeMode === 'active'
-    ? 'color-mix(in srgb, var(--accent) 40%, transparent)'
-    : 'transparent';
-  // Compose the title (browser tooltip). Lightweight, native, zero-DOM.
-  const lines = [
-    'Symphonee brain - ' + safeMode.toUpperCase() + ' mode',
-    safeMode === 'active'
-      ? 'Fills in missing cli on spawn. Click to switch to SMART.'
-      : 'Observes and maintains intent. Click to switch to ACTIVE.',
-  ];
+  const lines = ['Symphonee brain'];
   if (intent && intent.summary) {
     lines.push('');
-    lines.push('Intent: ' + String(intent.summary));
+    let line = 'Intent: ' + String(intent.summary);
     if (typeof intent.confidence === 'number') {
-      lines[lines.length - 1] += ' (' + intent.confidence.toFixed(2) + ')';
+      line += ' (' + intent.confidence.toFixed(2) + ')';
     }
+    lines.push(line);
   }
   chip.title = lines.join('\n');
 }
 function refreshBrainChipFromPayload(payload) {
-  const existing = window._brainState || { mode: 'smart', intent: {} };
-  existing.intent = { ...existing.intent, ...(payload || {}) };
-  window._brainState = existing;
-  _renderBrainChip(existing.mode, existing.intent);
+  const intent = { ...(window._brainIntent || {}), ...(payload || {}) };
+  window._brainIntent = intent;
+  _renderBrainChip(intent);
 }
 async function refreshBrainChip() {
   try {
     const r = await fetch('/api/symphonee/status');
     if (!r.ok) return;
     const j = await r.json();
-    window._brainState = { mode: j.mode || 'smart', intent: j.intent || {} };
-    _renderBrainChip(window._brainState.mode, window._brainState.intent);
+    window._brainIntent = j.intent || {};
+    _renderBrainChip(window._brainIntent);
   } catch (_) { /* brain not mounted yet - leave default */ }
-}
-async function toggleBrainMode(ev) {
-  if (ev) ev.stopPropagation();
-  const current = _normalizeBrainMode(window._brainState && window._brainState.mode);
-  const next = current === 'active' ? 'smart' : 'active';
-  try {
-    const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
-    if (!cfg.SymphoneeBrain) cfg.SymphoneeBrain = {};
-    cfg.SymphoneeBrain.plannerMode = next;
-    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
-    refreshBrainChip();
-  } catch (e) { console.error('toggleBrainMode failed', e); }
 }
 // Initial render on DOM ready.
 if (document.readyState === 'loading') {

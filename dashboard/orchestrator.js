@@ -2231,14 +2231,13 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   addRoute('POST', '/api/orchestrator/spawn', async (req, res) => {
     let { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
     if (!prompt) return json(res, { error: 'prompt required' }, 400);
-    // Symphonee brain consultation: when cli is omitted and the brain is in
-    // active planner mode, ask the brain to pick. In smart mode (default)
-    // the caller still has to supply cli explicitly - the brain only takes
-    // over when the user has opted in to active. The brain.plan call adds
-    // ~3-5s of qwen latency; that is the cost of letting Symphonee route.
+    // Symphonee brain consultation: when cli is omitted, the brain picks.
+    // The brain is always on -- there is no mode toggle. The brain.plan
+    // call adds ~3-5s of qwen latency; that is the cost of letting
+    // Symphonee route work for you. Pass cli explicitly to bypass.
     let brainPickedCli = null;
     let brainDecision = null;
-    if (!cli && orch.brain && typeof orch.brain.plan === 'function' && orch.brain.plannerMode() === 'active') {
+    if (!cli && orch.brain && typeof orch.brain.plan === 'function') {
       try {
         const result = await orch.brain.plan(prompt, { source: 'orchestrator/spawn' });
         if (result && result.ok && result.decision) {
@@ -2253,9 +2252,9 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     }
     if (!cli) {
       return json(res, {
-        error: 'cli is required (or enable active planner mode so the brain can pick)',
+        error: 'cli is required (the brain classified this input as not needing a worker; pass cli explicitly to override)',
         brainAvailable: !!(orch.brain && typeof orch.brain.plan === 'function'),
-        plannerMode: orch.brain && typeof orch.brain.plannerMode === 'function' ? orch.brain.plannerMode() : null,
+        brainDecision,
       }, 400);
     }
     // Check if this CLI is allowed by the user's settings. When the brain
@@ -2272,13 +2271,12 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
           settingsPath: 'Settings > Other > Orchestrate CLI List',
         };
         if (brainPickedCli) {
-          errPayload.error = `Symphonee planner picked "${cli}" for this task but that CLI is not in OrchestrateCliList. Add "${cli}" to Settings > Other > Orchestrate CLI List, or pass a different cli explicitly to override the brain pick.`;
+          errPayload.error = `Symphonee brain picked "${cli}" for this task but that CLI is not in OrchestrateCliList. Add "${cli}" to Settings > Other > Orchestrate CLI List, or pass a different cli explicitly to override the brain pick.`;
           errPayload.brainPickedCli = brainPickedCli;
           errPayload.brainDecision = brainDecision;
           errPayload.howToFix = [
             `Quickest: open Settings > Other and add "${cli}" to the Orchestrate CLI List`,
             `Or pass an explicit cli in the request body to override the brain pick`,
-            `Or flip planner mode back to smart: Set-PlannerMode.ps1 -Mode smart`,
           ];
         }
         return json(res, errPayload, 403);

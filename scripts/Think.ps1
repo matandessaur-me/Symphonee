@@ -3,9 +3,11 @@
   Ask Symphonee's planner what to do with an input.
 
 .DESCRIPTION
-  Calls POST /api/symphonee/think. By default planner runs in smart mode -
-  it returns a routing decision but does NOT dispatch. Flip planner mode to
-  "active" to have the orchestrator honor the decision.
+  Calls POST /api/symphonee/think. Returns a routing decision (intent,
+  primary_cli, needed_tools, rationale, confidence). The brain is always
+  on; the orchestrator already consults it for /spawn calls without a
+  cli, so you usually do not need to call Think.ps1 directly -- it is
+  useful for inspecting what the brain WOULD route a prompt to.
 
 .PARAMETER Input
   The user input to classify.

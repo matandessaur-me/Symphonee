@@ -5,14 +5,18 @@
  * picks tools, and (eventually) acts. CLIs become tools the brain dispatches
  * via the orchestrator; the brain itself never replaces the frontier models.
  *
+ * There is no off switch. The brain is always on, always maintaining intent,
+ * always available for the orchestrator to consult. Making Symphonee smarter
+ * is not an option the user has to opt into.
+ *
  * Endpoints:
- *   POST /api/symphonee/think           - planner front door (smart by default)
+ *   POST /api/symphonee/think           - planner front door
  *   GET  /api/symphonee/intent          - current intent state
  *   POST /api/symphonee/intent/notify   - push evidence (file edit, drawer, etc)
  *   POST /api/symphonee/intent/recompute- force a recompute with pending evidence
  *   POST /api/symphonee/intent/pause    - pause auto-recompute
  *   POST /api/symphonee/intent/resume   - resume auto-recompute
- *   GET  /api/symphonee/status          - brain config + planner mode
+ *   GET  /api/symphonee/status          - brain config + intent snapshot
  *   GET  /api/symphonee/instructions    - markdown doc for CLIs
  */
 
@@ -22,18 +26,6 @@ const fs = require('fs');
 const path = require('path');
 const intentModule = require('./intent');
 const planner = require('./planner');
-
-// Two modes only:
-//   smart  - brain observes, maintains intent, logs decisions when asked.
-//            Does NOT override the orchestrator's CLI selection. Default.
-//   active - brain also fills in the missing cli when the caller of
-//            /api/orchestrator/spawn does not specify one.
-// Legacy values ("off", "shadow") map to "smart" on read so existing
-// config files keep working without an explicit migration.
-const MODE_SMART = 'smart';
-const LEGACY_MODE_ALIASES = { off: MODE_SMART, shadow: MODE_SMART };
-const MODE_ACTIVE = 'active';
-const VALID_MODES = new Set([MODE_SMART, MODE_ACTIVE]);
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -47,20 +39,7 @@ function readBody(req) {
 }
 
 function mountBrain(addRoute, json, ctx) {
-  const { repoRoot, broadcast, getUiContext, getConfig } = ctx;
-
-  function plannerMode() {
-    try {
-      const cfg = getConfig ? (getConfig() || {}) : {};
-      const raw = (cfg.SymphoneeBrain && cfg.SymphoneeBrain.plannerMode) || MODE_SMART;
-      // Map legacy values ("off", "shadow") to the closest current mode so
-      // existing configs do not need an explicit migration.
-      const m = LEGACY_MODE_ALIASES[raw] || raw;
-      return VALID_MODES.has(m) ? m : MODE_SMART;
-    } catch (_) {
-      return MODE_SMART;
-    }
-  }
+  const { repoRoot, broadcast, getUiContext } = ctx;
 
   // Singleton intent manager bound to onRecompute -> planner.recomputeIntent
   const intent = intentModule.createIntentManager({
@@ -72,9 +51,9 @@ function mountBrain(addRoute, json, ctx) {
     },
   });
 
-  // Planning-decision log (in-memory ring buffer). Shadow mode writes here
-  // so the user can audit what the planner WOULD have done before flipping
-  // mode to active.
+  // Planning-decision log (in-memory ring buffer). Persisted across the
+  // session lifetime so /api/symphonee/decisions can show what the brain
+  // routed and why.
   const decisionLog = [];
   const DECISION_LOG_MAX = 200;
   function logDecision(entry) {
@@ -89,14 +68,12 @@ function mountBrain(addRoute, json, ctx) {
     if (!input || typeof input !== 'string') {
       return json(res, { error: 'input required' }, 400);
     }
-    const mode = plannerMode();
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
     const plan = await planner.planRoute(input, { ui, intent: current });
     const tookMs = Date.now() - startedAt;
     const entry = {
-      mode,
       input: input.slice(0, 240),
       ok: plan.ok,
       stage: plan.stage,
@@ -112,14 +89,10 @@ function mountBrain(addRoute, json, ctx) {
       tookMs,
     };
     logDecision(entry);
-    // In smart mode we never dispatch; we only record the decision so the
-    // user can audit whether the planner is making good calls. In active
-    // mode the caller (orchestrator, UI) is responsible for honoring
-    // plan.decision.needed_tools.
     if (broadcast) {
       broadcast({ type: 'symphonee-plan', payload: entry });
     }
-    return json(res, { ...plan, mode, tookMs });
+    return json(res, { ...plan, tookMs });
   });
 
   // ── GET /api/symphonee/decisions ────────────────────────────────────────
@@ -128,7 +101,6 @@ function mountBrain(addRoute, json, ctx) {
     const limit = parseInt(url.searchParams.get('limit') || '50', 10);
     const safeLimit = Math.max(1, Math.min(DECISION_LOG_MAX, limit));
     return json(res, {
-      mode: plannerMode(),
       total: decisionLog.length,
       decisions: decisionLog.slice(-safeLimit).reverse(),
     });
@@ -175,7 +147,6 @@ function mountBrain(addRoute, json, ctx) {
   // ── GET /api/symphonee/status ───────────────────────────────────────────
   addRoute('GET', '/api/symphonee/status', (req, res) => {
     return json(res, {
-      mode: plannerMode(),
       triageModel: planner.TRIAGE_MODEL,
       reasoningModel: planner.REASONING_MODEL,
       escalationThreshold: planner.ESCALATION_THRESHOLD,
@@ -197,22 +168,19 @@ function mountBrain(addRoute, json, ctx) {
   });
 
   // Public surface the rest of server.js needs to wire into event paths.
-  // plan(input) is what the orchestrator calls when active mode is on and
-  // no CLI was specified - lets the brain pick. We also log the decision
-  // here so the audit trail captures orchestrator-driven calls the same as
-  // /api/symphonee/think.
+  // plan(input) is what the orchestrator calls when no CLI was specified -
+  // the brain picks. We log the decision here so the audit trail captures
+  // orchestrator-driven calls the same as /api/symphonee/think.
   async function plan(input, opts = {}) {
     if (!input || typeof input !== 'string') {
       return { ok: false, error: 'input required', decision: null };
     }
-    const mode = plannerMode();
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
     const result = await planner.planRoute(input, { ui, intent: current });
     const tookMs = Date.now() - startedAt;
     logDecision({
-      mode,
       input: input.slice(0, 240),
       ok: result.ok,
       stage: result.stage,
@@ -229,18 +197,17 @@ function mountBrain(addRoute, json, ctx) {
       source: opts.source || 'plan',
     });
     if (broadcast) {
-      broadcast({ type: 'symphonee-plan', payload: { ...result, mode, tookMs, source: opts.source || 'plan' } });
+      broadcast({ type: 'symphonee-plan', payload: { ...result, tookMs, source: opts.source || 'plan' } });
     }
-    return { ...result, mode, tookMs };
+    return { ...result, tookMs };
   }
 
   return {
     notifyIntent: (ev) => intent.notify(ev),
     getIntent: () => intent.get(),
-    plannerMode,
     forceRecomputeIntent: () => intent.forceRecompute(),
     plan,
   };
 }
 
-module.exports = { mountBrain, MODE_SMART, MODE_ACTIVE };
+module.exports = { mountBrain };

@@ -685,15 +685,15 @@ const server = http.createServer(async (req, res) => {
           const mindInstr = fs.readFileSync(path.join(__dirname, 'mind', 'instructions.md'), 'utf8');
           instructions = instructions + '\n\n---\n\n' + mindInstr;
         } catch (_) {}
-        // Symphonee brain: planner mode + current intent snapshot. Every CLI
-        // sees this so it can read the live theory of what the user is
-        // doing before answering. Also appends brain instructions so CLIs
-        // know how to interact with the planner front door.
+        // Symphonee brain: current intent snapshot. Every CLI sees this so
+        // it can read the live theory of what the user is doing before
+        // answering. Also appends brain instructions so CLIs know how to
+        // interact with the planner front door. The brain is always on -
+        // no mode field, no toggle.
         let brainField = null;
         try {
           if (brain && typeof brain.getIntent === 'function') {
             brainField = {
-              plannerMode: brain.plannerMode(),
               intent: brain.getIntent(),
               triageModel: require('./brain/planner').TRIAGE_MODEL,
               reasoningModel: require('./brain/planner').REASONING_MODEL,
@@ -3190,8 +3190,8 @@ if (orchestrator) {
 // The brain is the reasoning layer above Mind. Mind is memory; the brain
 // classifies inputs, picks tools, and (when planner mode is "active")
 // dispatches CLIs as tools via the orchestrator. Lives at /api/symphonee/*.
-// Default planner mode is "smart" so existing CLI behaviour is unchanged
-// while we audit decisions.
+// The brain is always on. When the orchestrator gets a spawn call without
+// a cli, the brain picks; otherwise the explicit cli wins. No mode toggle.
 const { mountBrain } = require('./brain');
 const brain = mountBrain(addRoute, json, {
   repoRoot, broadcast,
