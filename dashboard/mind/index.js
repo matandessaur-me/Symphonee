@@ -264,6 +264,7 @@ function mountMind(addRoute, json, ctx) {
       activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
       budgetTokens: Number.isFinite(budget) && budget > 0 ? budget : DEFAULT_BUDGET_TOKENS,
       question,
+      repoRoot,
     });
     return json(res, { space, ...wake });
   });
@@ -1939,6 +1940,7 @@ function mountMind(addRoute, json, ctx) {
           if (g) wakeup = composeWakeUp(g, {
             activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
             budgetTokens: 600,
+            repoRoot,
           });
         } catch (_) { /* graph corrupt - skip wake-up, bootstrap still ships */ }
       }
@@ -2127,6 +2129,7 @@ function mountMind(addRoute, json, ctx) {
           activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
           budgetTokens: opts.budgetTokens || 600,
           question: opts.question || '',
+          repoRoot,
         });
         return `${stamp}${appsLine}\n\n${wake.text}`;
       } catch (_) {

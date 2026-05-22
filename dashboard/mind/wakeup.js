@@ -62,11 +62,30 @@ function stripRegenHeader(text) {
   return text.replace(REGEN_HEADER, '').replace(/\{\{\s*FILENAME\s*\}\}/g, '').trim();
 }
 
-function renderL0({ activeRepo, activeRepoPath, space }) {
+function readIntentSnapshot(repoRoot) {
+  if (!repoRoot) return null;
+  try {
+    const file = path.join(repoRoot, '.symphonee', 'intent.json');
+    if (!fs.existsSync(file)) return null;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!parsed || !parsed.summary) return null;
+    return parsed;
+  } catch (_) { return null; }
+}
+
+function renderL0({ activeRepo, activeRepoPath, space, repoRoot }) {
   const lines = ['## L0 - IDENTITY'];
   lines.push(`active_repo: ${activeRepo || '(none selected)'}`);
   if (activeRepoPath) lines.push(`active_repo_path: ${activeRepoPath}`);
   lines.push(`mind_space: ${space || '_global'}`);
+
+  // Symphonee brain intent - the live theory of what the user is doing.
+  // One line, capped, only emitted when there's a real summary.
+  const intent = readIntentSnapshot(repoRoot);
+  if (intent && intent.summary) {
+    const confTag = typeof intent.confidence === 'number' ? ` (conf ${intent.confidence.toFixed(2)})` : '';
+    lines.push(`intent: ${String(intent.summary).slice(0, 200)}${confTag}`);
+  }
 
   if (activeRepoPath) {
     // Try AI-instruction files in alphabetical order so no single CLI is
@@ -335,9 +354,9 @@ function renderL1QueryAware(graph, { maxChars, question, activeRepo = null }) {
 
 // Composition --------------------------------------------------------------
 
-function composeWakeUp(graph, { activeRepo, activeRepoPath, space, budgetTokens = DEFAULT_BUDGET_TOKENS, question = '' } = {}) {
+function composeWakeUp(graph, { activeRepo, activeRepoPath, space, budgetTokens = DEFAULT_BUDGET_TOKENS, question = '', repoRoot } = {}) {
   const budgetChars = Math.max(200, budgetTokens * APPROX_CHARS_PER_TOKEN);
-  const l0 = renderL0({ activeRepo, activeRepoPath, space });
+  const l0 = renderL0({ activeRepo, activeRepoPath, space, repoRoot });
   const l0Chars = l0.length + 2;
   const l1Budget = Math.max(300, budgetChars - l0Chars);
   const l1 = renderL1(graph, { maxChars: l1Budget, question, activeRepo });

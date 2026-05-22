@@ -685,6 +685,25 @@ const server = http.createServer(async (req, res) => {
           const mindInstr = fs.readFileSync(path.join(__dirname, 'mind', 'instructions.md'), 'utf8');
           instructions = instructions + '\n\n---\n\n' + mindInstr;
         } catch (_) {}
+        // Symphonee brain: planner mode + current intent snapshot. Every CLI
+        // sees this so it can read the live theory of what the user is
+        // doing before answering. Also appends brain instructions so CLIs
+        // know how to interact with the planner front door.
+        let brainField = null;
+        try {
+          if (brain && typeof brain.getIntent === 'function') {
+            brainField = {
+              plannerMode: brain.plannerMode(),
+              intent: brain.getIntent(),
+              triageModel: require('./brain/planner').TRIAGE_MODEL,
+              reasoningModel: require('./brain/planner').REASONING_MODEL,
+            };
+          }
+        } catch (_) {}
+        try {
+          const brainInstr = fs.readFileSync(path.join(__dirname, 'brain', 'instructions.md'), 'utf8');
+          instructions = instructions + '\n\n---\n\n' + brainInstr;
+        } catch (_) {}
         // Instruction-coherence audit. Every CLI sees this on bootstrap so
         // it can warn the user if the instruction system has degraded.
         // Cached from the last writePluginHints / boot run; cheap on miss.
@@ -696,12 +715,14 @@ const server = http.createServer(async (req, res) => {
         const payload = {
           context, instructions, plugins, learnings, permissions: permissionsData,
           mind: mindField,
+          brain: brainField,
           instructionsAudit: auditField,
           loadedAt: new Date().toISOString(),
           features: {
             orchestrateMode: true,
             graphRunsMode: true,
             mindMode: true,
+            brainMode: true,
           },
         };
         // Checksum: short hash so the CLI can echo it. Computed over a stable view.
@@ -3164,6 +3185,54 @@ if (orchestrator) {
   orchestrator.getMindHint = (opts) => mind.orchestratorHint(opts || {});
   orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
 }
+
+// ── Mount Symphonee brain (planner + live intent model) ─────────────────────
+// The brain is the reasoning layer above Mind. Mind is memory; the brain
+// classifies inputs, picks tools, and (when planner mode is "active")
+// dispatches CLIs as tools via the orchestrator. Lives at /api/symphonee/*.
+// Default planner mode is "shadow" so existing CLI behaviour is unchanged
+// while we audit decisions.
+const { mountBrain } = require('./brain');
+const brain = mountBrain(addRoute, json, {
+  repoRoot, broadcast,
+  getUiContext: getUiContextWithPath,
+  getConfig,
+});
+console.log('  Brain mounted (/api/symphonee/*) - planner + intent');
+
+// Give the orchestrator a reference to the brain so /api/orchestrator/spawn
+// can consult brain.plan() when active mode is on and no cli was supplied.
+// Set after both mount so dependency direction stays one-way: orchestrator
+// uses brain, not the other way round.
+if (orchestrator && typeof brain.plan === 'function') {
+  orchestrator.brain = brain;
+}
+
+// Wrap mind.notifyKnowledgeEvent so every knowledge event also feeds the
+// brain's intent manager. Keeps a single fan-in point: anything that calls
+// notifyKnowledgeEvent (save-result, teach, learnings, manual ingest) now
+// also pushes evidence into the intent model. Debounced inside the brain.
+if (mind && typeof mind.notifyKnowledgeEvent === 'function' && brain && typeof brain.notifyIntent === 'function') {
+  const _origNotify = mind.notifyKnowledgeEvent.bind(mind);
+  mind.notifyKnowledgeEvent = (ev) => {
+    try {
+      const ui = getUiContextWithPath();
+      brain.notifyIntent({
+        kind: ev.kind || ev.reason || 'knowledge-event',
+        detail: ev.reason || null,
+        repo: ui && ui.activeRepo || null,
+        source: 'mind/notify',
+      });
+    } catch (_) { /* never block the existing path */ }
+    return _origNotify(ev);
+  };
+}
+
+// File-change evidence reaches the brain via the knowledge-event wrapper
+// above: MindWatcher debounces file events, the engine fires
+// notifyKnowledgeEvent on incremental updates, and that wrapper now also
+// pushes evidence into intent. No direct broadcast wrap needed - keeps the
+// integration small and reversible.
 
 // Auto-refresh Mind on every server boot so the graph is always current
 // when the user opens the app. Deferred 1.5s so the WebSocket layer is

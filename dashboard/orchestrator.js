@@ -2229,8 +2229,35 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
 
   // ── POST /api/orchestrator/spawn ──────────────────────────────────────
   addRoute('POST', '/api/orchestrator/spawn', async (req, res) => {
-    const { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
-    if (!cli || !prompt) return json(res, { error: 'cli and prompt required' }, 400);
+    let { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
+    if (!prompt) return json(res, { error: 'prompt required' }, 400);
+    // Symphonee brain consultation: when cli is omitted and the brain is in
+    // active planner mode, ask the brain to pick. In shadow/off mode the
+    // caller still has to supply cli explicitly - the brain only takes
+    // over when the user has opted in. The brain.plan call adds ~3-5s of
+    // qwen latency; that is the cost of letting Symphonee route work.
+    let brainPickedCli = null;
+    let brainDecision = null;
+    if (!cli && orch.brain && typeof orch.brain.plan === 'function' && orch.brain.plannerMode() === 'active') {
+      try {
+        const result = await orch.brain.plan(prompt, { source: 'orchestrator/spawn' });
+        if (result && result.ok && result.decision) {
+          brainDecision = result.decision;
+          const pick = result.decision.primary_cli;
+          if (pick && pick !== 'none') {
+            cli = pick;
+            brainPickedCli = pick;
+          }
+        }
+      } catch (_) { /* fall through to the standard error below */ }
+    }
+    if (!cli) {
+      return json(res, {
+        error: 'cli is required (or enable active planner mode so the brain can pick)',
+        brainAvailable: !!(orch.brain && typeof orch.brain.plan === 'function'),
+        plannerMode: orch.brain && typeof orch.brain.plannerMode === 'function' ? orch.brain.plannerMode() : null,
+      }, 400);
+    }
     // Check if this CLI is allowed by the user's settings
     if (getConfig) {
       const cfg = getConfig();
@@ -2250,7 +2277,12 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
       const task = useVisible
         ? orch.spawnVisible({ cli, prompt, cwd, timeout, from, taskId, space: resolvedSpace })
         : orch.spawnHeadless({ cli, prompt, cwd, timeout, from, taskId, model, effort, autoPermit, space: resolvedSpace });
-      json(res, orch._serializeTask(task));
+      const payload = orch._serializeTask(task);
+      if (brainPickedCli) {
+        payload.brainPickedCli = brainPickedCli;
+        payload.brainDecision = brainDecision;
+      }
+      json(res, payload);
     } catch (err) {
       json(res, { error: err.message }, 400);
     }
