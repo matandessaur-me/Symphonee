@@ -156,7 +156,17 @@ async function chatOllama(messages, opts = {}) {
   };
   if (format) body.format = format;
   const r = await postJson(OLLAMA_BASE + '/api/chat', body, { timeoutMs: opts.timeoutMs });
-  const content = r && r.message && r.message.content;
+  const msg = r && r.message || {};
+  let content = msg.content;
+  // Thinking-mode fallback: some models (gemma4 family) put their full
+  // reasoning into message.thinking and leave message.content empty when
+  // num_predict is exhausted by the thinking pass. As a defense, scan
+  // message.thinking for a JSON object/array and use that instead. Caller
+  // can always pass a larger numPredict to avoid the situation entirely.
+  if ((typeof content !== 'string' || !content.trim()) && typeof msg.thinking === 'string') {
+    const m = msg.thinking.match(/\{[\s\S]*\}/);
+    if (m) content = m[0];
+  }
   if (typeof content !== 'string' || !content.trim()) throw new Error('empty chat response');
   if (format === 'json') {
     try { return { ok: true, model, json: JSON.parse(content) }; }

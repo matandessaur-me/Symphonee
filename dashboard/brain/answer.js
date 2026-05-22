@@ -44,11 +44,18 @@ const MAX_CITED = 5;            // how many hits feed into the synthesis prompt
 const SYNTHESIS_MODEL = process.env.SYMPHONEE_REASONING_MODEL || 'gemma4:26b';
 const SYNTHESIS_TIMEOUT_MS = 90_000;
 
-// Intents the brain handles locally vs escalates. Anything that needs a
-// real workspace action (code edits, plugin calls, app automation) MUST
-// escalate - we never silently swallow those.
-const LOCAL_INTENTS = new Set(['recall', 'greeting', 'ambiguous']);
-const MIND_FIRST_INTENTS = new Set(['code-question', 'browse-files']);
+// Intent taxonomy:
+//   ALWAYS_ESCALATE - needs a real workspace action; never answer locally
+//   MIND_FIRST      - try Mind synthesis; escalate if Mind can't ground
+//   LOCAL_TRY       - try local gemma with no grounding (for genuinely
+//                     general questions where Mind has nothing useful)
+//
+// Note: "recall" is MIND_FIRST, NOT LOCAL_TRY. If Mind cannot ground a
+// recall question, escalating to a frontier CLI is strictly better than
+// having gemma hallucinate "I don't know" - the frontier model can at
+// least search the codebase and check git history. We never want the
+// brain to confidently say "no information" when the user explicitly
+// asked Mind a question.
 const ALWAYS_ESCALATE = new Set([
   'code-action',
   'plan',
@@ -56,6 +63,10 @@ const ALWAYS_ESCALATE = new Set([
   'apps-action',
   'browser-action',
 ]);
+const MIND_FIRST_INTENTS = new Set(['recall', 'code-question', 'browse-files']);
+const LOCAL_TRY_INTENTS = new Set(['ambiguous']);
+// Backwards-compat export: anything that COULD try the local path.
+const LOCAL_INTENTS = new Set([...LOCAL_TRY_INTENTS, 'greeting']);
 
 function _safeSlice(s, n) {
   if (s == null) return '';
@@ -68,18 +79,27 @@ function _buildSynthesisMessages(input, hits, intent) {
     ? `User's current intent (background): ${intent.summary}`
     : 'User intent: unknown';
   const sys = [
-    'You are Symphonee answering a question from memory.',
-    'You will be given the user\'s question and a ranked list of memory',
-    'snippets the brain has retrieved. Synthesize a SHORT, factual answer.',
+    'You are Symphonee answering from the user\'s OWN memory.',
     '',
-    'Rules:',
-    '  - Only use facts from the snippets. Do NOT invent details.',
-    '  - If the snippets do not actually answer the question, return',
-    '    JSON { "answer": null, "reason": "snippets do not answer" }.',
-    '  - When you cite a snippet, reference it by its id (e.g. [id]).',
-    '  - Be terse. 1-3 sentences usually. No preamble like "Based on the',
-    '    snippets..." - just the answer.',
-    '  - Plain ASCII. No emojis, em dashes, smart quotes.',
+    'The snippets below are the user\'s own notes, prior conversations,',
+    'memory cards, and work logs about the topic in their question.',
+    'Your job is to SUMMARIZE what those snippets say in 1-4 sentences.',
+    '',
+    'MANDATORY RULES (read carefully):',
+    '  1. If you see 2 or more snippets that touch on the topic, you MUST',
+    '     produce a non-null answer summarizing what they describe. Do',
+    '     NOT return answer: null in that case. The snippets ARE the',
+    '     answer material - even if they look like conversation excerpts,',
+    '     status updates, or partial logs.',
+    '  2. Treat snippets as facts the user already knows. Rephrase and',
+    '     condense them. Never claim "no information was provided" if',
+    '     the snippets exist - that contradicts the input.',
+    '  3. Only return answer: null when the snippets are genuinely about',
+    '     a different topic. In that case set reason to "off-topic".',
+    '  4. Do NOT invent details not present in the snippets.',
+    '  5. Cite snippet ids you used (e.g. [n1]).',
+    '  6. Be terse. 1-4 sentences. No preamble.',
+    '  7. Plain ASCII. No emojis, em dashes, smart quotes.',
     '',
     intentLine,
     '',
@@ -133,18 +153,30 @@ function _buildLocalMessages(input, intent) {
 }
 
 /**
- * Try to answer from Mind. Returns null if there is no graph, no hits,
- * or the top hit is below the grounding threshold. Otherwise returns
- * { answer, citedNodeIds, hits, model } from a synthesis pass.
+ * Try to answer from Mind. Returns a result object with explicit reason
+ * codes so callers can surface diagnostics. Shape:
+ *
+ *   { ok: true, answer, confidence, citedNodeIds, hitsUsed, model }
+ *   OR
+ *   { ok: false, reason, mindHitsTotal, topScore }
  */
-async function _answerFromMind({ input, intent, repoRoot, space, ctx }) {
+async function _answerFromMind({ input, intent, repoRoot, space }) {
   const graph = store.loadGraph(repoRoot, space);
-  if (!graph || !graph.nodes || !graph.nodes.length) return null;
+  if (!graph || !graph.nodes || !graph.nodes.length) {
+    return { ok: false, reason: 'mind-empty', mindHitsTotal: 0 };
+  }
   const r = recallMod.recall(graph, { question: input, limit: MAX_CITED * 2 });
-  if (!r || !r.hits || !r.hits.length) return null;
+  if (!r || !r.hits || !r.hits.length) {
+    return { ok: false, reason: 'no-mind-hits', mindHitsTotal: 0 };
+  }
   const strong = r.hits.filter(h => h.score >= MIND_FLOOR);
-  if (strong.length < MIN_GROUND_HITS) return null;
-  if (strong[0].score < MIN_MIND_SCORE) return null;
+  const topScore = r.hits[0].score;
+  if (strong.length < MIN_GROUND_HITS) {
+    return { ok: false, reason: 'too-few-strong-hits', mindHitsTotal: r.hits.length, strongCount: strong.length, topScore };
+  }
+  if (topScore < MIN_MIND_SCORE) {
+    return { ok: false, reason: 'top-hit-below-threshold', mindHitsTotal: r.hits.length, topScore };
+  }
   const messages = _buildSynthesisMessages(input, strong, intent);
   let llmRes;
   try {
@@ -152,12 +184,23 @@ async function _answerFromMind({ input, intent, repoRoot, space, ctx }) {
       model: SYNTHESIS_MODEL,
       format: 'json',
       timeoutMs: SYNTHESIS_TIMEOUT_MS,
+      numPredict: 4096,
     });
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, reason: 'synthesis-error', error: err.message, mindHitsTotal: r.hits.length, topScore };
   }
   const payload = llmRes.json || {};
-  if (!payload.answer) return null;
+  if (!payload.answer) {
+    return {
+      ok: false,
+      reason: 'synthesis-returned-null',
+      synthesisModel: llmRes.model,
+      synthesisReason: payload.reason || null,
+      mindHitsTotal: r.hits.length,
+      strongCount: strong.length,
+      topScore,
+    };
+  }
   const citedNodeIds = Array.isArray(payload.cited)
     ? payload.cited.filter(id => strong.find(h => h.id === id))
     : strong.slice(0, MIN_GROUND_HITS).map(h => h.id);
@@ -167,14 +210,19 @@ async function _answerFromMind({ input, intent, repoRoot, space, ctx }) {
     confidence: typeof payload.confidence === 'number' ? payload.confidence : 0.6,
     citedNodeIds,
     hitsUsed: strong.length,
+    topScore,
     model: llmRes.model,
   };
 }
 
 /**
  * Local-only answer (no Mind grounding). Cheaper escalation gate -
- * gemma decides if it can answer at all without tools, otherwise
- * returns null (caller escalates).
+ * gemma decides if it can answer at all without tools.
+ *
+ * Shape:
+ *   { ok: true, answer, confidence, model }
+ *   OR
+ *   { ok: false, reason, ... }
  */
 async function _answerFromLocal({ input, intent }) {
   const messages = _buildLocalMessages(input, intent);
@@ -184,12 +232,15 @@ async function _answerFromLocal({ input, intent }) {
       model: SYNTHESIS_MODEL,
       format: 'json',
       timeoutMs: SYNTHESIS_TIMEOUT_MS,
+      numPredict: 4096,
     });
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, reason: 'local-error', error: err.message };
   }
   const payload = llmRes.json || {};
-  if (!payload.answer) return null;
+  if (!payload.answer) {
+    return { ok: false, reason: 'local-declined', localReason: payload.reason || null, model: llmRes.model };
+  }
   return {
     ok: true,
     answer: String(payload.answer).slice(0, 4000),
@@ -235,9 +286,13 @@ async function answer(input, ctx = {}) {
     };
   }
 
-  // Mind-first path: recall, code-question, browse-files, ambiguous.
-  // We always try Mind before any LLM call - cheapest path.
-  if (LOCAL_INTENTS.has(intent) || MIND_FIRST_INTENTS.has(intent)) {
+  const diagnostics = { mindAttempted: false, localAttempted: false };
+
+  // Mind-first path: recall, code-question, browse-files. These ask
+  // about specific stored content - if Mind cannot ground, escalate to
+  // a frontier CLI rather than letting local gemma hallucinate.
+  if (MIND_FIRST_INTENTS.has(intent)) {
+    diagnostics.mindAttempted = true;
     let mindResult = null;
     try {
       mindResult = await _answerFromMind({
@@ -247,8 +302,9 @@ async function answer(input, ctx = {}) {
         space: ctx.space,
       });
     } catch (err) {
-      mindResult = { ok: false, error: err.message };
+      mindResult = { ok: false, reason: 'mind-threw', error: err.message };
     }
+    diagnostics.mind = mindResult;
     if (mindResult && mindResult.ok) {
       return {
         source: 'mind',
@@ -258,32 +314,37 @@ async function answer(input, ctx = {}) {
         hitsUsed: mindResult.hitsUsed,
         model: mindResult.model,
         decision,
+        diagnostics,
         tookMs: Date.now() - startedAt,
       };
     }
+    // Mind couldn't ground - escalate directly. No local fallback for
+    // memory-style questions; frontier model has tools we don't.
+  }
 
-    // No useful Mind grounding. For pure recall / greeting / ambiguous
-    // we try local gemma as a last attempt before escalating.
-    if (LOCAL_INTENTS.has(intent)) {
-      let localResult = null;
-      try {
-        localResult = await _answerFromLocal({ input, intent: ctx.intent });
-      } catch (err) {
-        localResult = { ok: false, error: err.message };
-      }
-      if (localResult && localResult.ok) {
-        return {
-          source: 'local',
-          answer: localResult.answer,
-          confidence: localResult.confidence,
-          citedNodeIds: [],
-          model: localResult.model,
-          decision,
-          tookMs: Date.now() - startedAt,
-        };
-      }
+  // Local-try path: ambiguous prompts where Mind has nothing useful and
+  // a general gemma answer might still help.
+  if (LOCAL_TRY_INTENTS.has(intent)) {
+    diagnostics.localAttempted = true;
+    let localResult = null;
+    try {
+      localResult = await _answerFromLocal({ input, intent: ctx.intent });
+    } catch (err) {
+      localResult = { ok: false, reason: 'local-threw', error: err.message };
     }
-    // Fall through to escalate - Mind couldn't ground, local couldn't help.
+    diagnostics.local = localResult;
+    if (localResult && localResult.ok) {
+      return {
+        source: 'local',
+        answer: localResult.answer,
+        confidence: localResult.confidence,
+        citedNodeIds: [],
+        model: localResult.model,
+        decision,
+        diagnostics,
+        tookMs: Date.now() - startedAt,
+      };
+    }
   }
 
   // Default: escalate. The orchestrator decides which CLI to dispatch
@@ -292,6 +353,7 @@ async function answer(input, ctx = {}) {
     source: 'escalate',
     reason: 'local could not handle',
     decision,
+    diagnostics,
     tookMs: Date.now() - startedAt,
   };
 }

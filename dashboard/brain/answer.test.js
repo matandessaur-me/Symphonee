@@ -30,6 +30,14 @@ test('code-question and browse-files are mind-first (try Mind, may fall to escal
   assert.ok(answer.MIND_FIRST_INTENTS.has('browse-files'));
 });
 
+test('recall is mind-first (never falls back to local hallucination)', () => {
+  // recall asks about specific stored content. If Mind cannot ground it,
+  // we escalate to a frontier CLI rather than letting gemma fabricate.
+  assert.ok(answer.MIND_FIRST_INTENTS.has('recall'));
+  assert.ok(!answer.LOCAL_INTENTS.has('recall'),
+    'recall must NOT be in LOCAL_INTENTS - local fallback would hallucinate "no info"');
+});
+
 test('thresholds are sane', () => {
   assert.ok(answer.MIN_MIND_SCORE > 0);
   assert.ok(answer.MIN_GROUND_HITS >= 1);
