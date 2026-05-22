@@ -3190,7 +3190,7 @@ if (orchestrator) {
 // The brain is the reasoning layer above Mind. Mind is memory; the brain
 // classifies inputs, picks tools, and (when planner mode is "active")
 // dispatches CLIs as tools via the orchestrator. Lives at /api/symphonee/*.
-// Default planner mode is "shadow" so existing CLI behaviour is unchanged
+// Default planner mode is "smart" so existing CLI behaviour is unchanged
 // while we audit decisions.
 const { mountBrain } = require('./brain');
 const brain = mountBrain(addRoute, json, {

@@ -3,9 +3,9 @@
   Ask Symphonee's planner what to do with an input.
 
 .DESCRIPTION
-  Calls POST /api/symphonee/think. By default planner runs in shadow mode -
+  Calls POST /api/symphonee/think. By default planner runs in smart mode -
   it returns a routing decision but does NOT dispatch. Flip planner mode to
-  "active" in settings to have the orchestrator honor the decision.
+  "active" to have the orchestrator honor the decision.
 
 .PARAMETER Input
   The user input to classify.

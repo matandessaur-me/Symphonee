@@ -6,7 +6,7 @@
  * via the orchestrator; the brain itself never replaces the frontier models.
  *
  * Endpoints:
- *   POST /api/symphonee/think           - planner front door (shadow by default)
+ *   POST /api/symphonee/think           - planner front door (smart by default)
  *   GET  /api/symphonee/intent          - current intent state
  *   POST /api/symphonee/intent/notify   - push evidence (file edit, drawer, etc)
  *   POST /api/symphonee/intent/recompute- force a recompute with pending evidence
@@ -23,10 +23,17 @@ const path = require('path');
 const intentModule = require('./intent');
 const planner = require('./planner');
 
-const MODE_OFF = 'off';
-const MODE_SHADOW = 'shadow';
+// Two modes only:
+//   smart  - brain observes, maintains intent, logs decisions when asked.
+//            Does NOT override the orchestrator's CLI selection. Default.
+//   active - brain also fills in the missing cli when the caller of
+//            /api/orchestrator/spawn does not specify one.
+// Legacy values ("off", "shadow") map to "smart" on read so existing
+// config files keep working without an explicit migration.
+const MODE_SMART = 'smart';
+const LEGACY_MODE_ALIASES = { off: MODE_SMART, shadow: MODE_SMART };
 const MODE_ACTIVE = 'active';
-const VALID_MODES = new Set([MODE_OFF, MODE_SHADOW, MODE_ACTIVE]);
+const VALID_MODES = new Set([MODE_SMART, MODE_ACTIVE]);
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -45,10 +52,13 @@ function mountBrain(addRoute, json, ctx) {
   function plannerMode() {
     try {
       const cfg = getConfig ? (getConfig() || {}) : {};
-      const m = (cfg.SymphoneeBrain && cfg.SymphoneeBrain.plannerMode) || MODE_SHADOW;
-      return VALID_MODES.has(m) ? m : MODE_SHADOW;
+      const raw = (cfg.SymphoneeBrain && cfg.SymphoneeBrain.plannerMode) || MODE_SMART;
+      // Map legacy values ("off", "shadow") to the closest current mode so
+      // existing configs do not need an explicit migration.
+      const m = LEGACY_MODE_ALIASES[raw] || raw;
+      return VALID_MODES.has(m) ? m : MODE_SMART;
     } catch (_) {
-      return MODE_SHADOW;
+      return MODE_SMART;
     }
   }
 
@@ -80,9 +90,6 @@ function mountBrain(addRoute, json, ctx) {
       return json(res, { error: 'input required' }, 400);
     }
     const mode = plannerMode();
-    if (mode === MODE_OFF) {
-      return json(res, { mode, skipped: true, reason: 'planner disabled' });
-    }
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
@@ -105,7 +112,7 @@ function mountBrain(addRoute, json, ctx) {
       tookMs,
     };
     logDecision(entry);
-    // In shadow mode we never dispatch; we only record the decision so the
+    // In smart mode we never dispatch; we only record the decision so the
     // user can audit whether the planner is making good calls. In active
     // mode the caller (orchestrator, UI) is responsible for honoring
     // plan.decision.needed_tools.
@@ -199,9 +206,6 @@ function mountBrain(addRoute, json, ctx) {
       return { ok: false, error: 'input required', decision: null };
     }
     const mode = plannerMode();
-    if (mode === MODE_OFF) {
-      return { ok: false, mode, skipped: true, decision: null };
-    }
     const ui = getUiContext ? getUiContext() : {};
     const current = intent.get();
     const startedAt = Date.now();
@@ -239,4 +243,4 @@ function mountBrain(addRoute, json, ctx) {
   };
 }
 
-module.exports = { mountBrain, MODE_OFF, MODE_SHADOW, MODE_ACTIVE };
+module.exports = { mountBrain, MODE_SMART, MODE_ACTIVE };

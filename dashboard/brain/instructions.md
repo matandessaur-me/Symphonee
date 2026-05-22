@@ -21,13 +21,22 @@ Both go through `dashboard/mind/llm.js`. Models can be overridden with
 
 ## Planner modes
 
-- `off` - planner endpoints are no-ops. Existing CLI behavior unchanged.
-- `shadow` (default) - planner runs and logs decisions; no dispatch.
-  Audit via `GET /api/symphonee/decisions`.
-- `active` - planner decisions are surfaced; the orchestrator can honor
-  `needed_tools` and `primary_cli`.
+Two modes:
 
-Flip mode in settings (`SymphoneeBrain.plannerMode`) or via the topbar chip.
+- `smart` (default) - brain observes, maintains intent, classifies inputs,
+  logs decisions when asked. Does NOT override the orchestrator's CLI
+  selection. The `/api/symphonee/think` endpoint and the brain-driven
+  intent updates are fully active. Audit decisions via
+  `GET /api/symphonee/decisions`.
+- `active` - everything `smart` does, plus the orchestrator consults
+  `brain.plan()` when `/api/orchestrator/spawn` is called without a
+  `cli`. The brain's `primary_cli` choice fills in the gap.
+
+Legacy values ("off", "shadow") in existing configs are read as `smart`
+so the brain keeps working without a migration step.
+
+Flip mode in settings (`SymphoneeBrain.plannerMode`) or via the topbar
+brain chip.
 
 ## Intent state
 

@@ -2232,10 +2232,10 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
     let { cli, prompt, cwd, timeout, from, taskId, visible, model, effort, autoPermit, space } = await readBody(req);
     if (!prompt) return json(res, { error: 'prompt required' }, 400);
     // Symphonee brain consultation: when cli is omitted and the brain is in
-    // active planner mode, ask the brain to pick. In shadow/off mode the
-    // caller still has to supply cli explicitly - the brain only takes
-    // over when the user has opted in. The brain.plan call adds ~3-5s of
-    // qwen latency; that is the cost of letting Symphonee route work.
+    // active planner mode, ask the brain to pick. In smart mode (default)
+    // the caller still has to supply cli explicitly - the brain only takes
+    // over when the user has opted in to active. The brain.plan call adds
+    // ~3-5s of qwen latency; that is the cost of letting Symphonee route.
     let brainPickedCli = null;
     let brainDecision = null;
     if (!cli && orch.brain && typeof orch.brain.plan === 'function' && orch.brain.plannerMode() === 'active') {
@@ -2278,7 +2278,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
           errPayload.howToFix = [
             `Quickest: open Settings > Other and add "${cli}" to the Orchestrate CLI List`,
             `Or pass an explicit cli in the request body to override the brain pick`,
-            `Or flip planner mode back to shadow: Set-PlannerMode.ps1 -Mode shadow`,
+            `Or flip planner mode back to smart: Set-PlannerMode.ps1 -Mode smart`,
           ];
         }
         return json(res, errPayload, 403);

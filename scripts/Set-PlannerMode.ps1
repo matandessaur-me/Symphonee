@@ -3,20 +3,24 @@
   Set Symphonee's planner mode.
 
 .DESCRIPTION
-  Writes SymphoneeBrain.plannerMode in the config. Three modes:
-  - off    -> planner endpoints are no-ops
-  - shadow -> planner logs decisions, no dispatch (default)
-  - active -> planner decisions surface to the orchestrator
+  Writes SymphoneeBrain.plannerMode in the config. Two modes:
+  - smart  -> brain observes, maintains intent, logs decisions (default).
+              Does NOT override the orchestrator's CLI selection.
+  - active -> brain also fills in the missing cli on orchestrator/spawn
+              when the caller does not specify one.
+
+  Legacy values ("off", "shadow") read as "smart" so old configs keep
+  working without a migration.
 
 .PARAMETER Mode
-  off | shadow | active
+  smart | active
 
 .EXAMPLE
   ./scripts/Set-PlannerMode.ps1 -Mode active
 #>
 param(
   [Parameter(Mandatory = $true, Position = 0)]
-  [ValidateSet('off', 'shadow', 'active')]
+  [ValidateSet('smart', 'active')]
   [string]$Mode
 )
 
