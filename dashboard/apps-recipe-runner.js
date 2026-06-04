@@ -23,7 +23,7 @@
  */
 
 const recipesStore = require('./apps-recipes');
-const { httpJson } = require('./apps-agent-chat');
+const { httpJson } = require('./apps-http');
 
 function emitter(broadcast, sessionId) {
   return (step) => {

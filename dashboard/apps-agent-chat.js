@@ -10,7 +10,7 @@
  * research sub-tasks, and goal decomposition land in later phases.
  */
 
-const https = require('https');
+const { httpJson, httpJsonWithRetry, httpStream, bindAbort, isTransientError, isAbortError } = require('./apps-http');
 const memory = require('./apps-memory');
 const learning = require('./apps-learning-loop');
 const planner = require('./apps-goal-planner');
@@ -24,18 +24,6 @@ const { diffFrames } = require('./apps-frame-diff');
 // 'changed: false' readout tells the model its action was a no-op.
 const LIVE_POLL_INTERVAL_MS = 150;
 const LIVE_POLL_MAX_WAIT_MS = 1500;
-
-// Shared keep-alive agent. agent:false opens a fresh TCP+TLS handshake per
-// request, which on Windows occasionally surfaces a spurious
-// SSLV3_ALERT_BAD_RECORD_MAC when a handshake races a pending socket close.
-// Reusing sockets removes that window and cuts per-step latency too.
-const SHARED_HTTPS_AGENT = new https.Agent({
-  keepAlive: true,
-  keepAliveMsecs: 30000,
-  maxSockets: 4,
-  maxFreeSockets: 2,
-  timeout: 120000,
-});
 
 // Hard cap so a runaway loop can't burn unlimited tokens, but high enough
 // that a multi-stage real task (search -> scroll -> pick -> confirm -> verify)
@@ -249,133 +237,6 @@ function buildSystemPrompt({ targetApp, targetTitle, plan } = {}) {
   if (targetApp) p += memory.buildSystemPromptAddition(targetApp);
   if (plan) p += planner.summarizeForPrompt(plan);
   return p;
-}
-
-// ---- HTTP helpers (same shape as browser-agent-chat) ----
-
-function bindAbort(req, signal, reject, label) {
-  if (!signal) return () => {};
-  const onAbort = () => {
-    try { req.destroy(new Error(label || 'Request aborted')); } catch (_) {}
-    try { reject(new Error(label || 'Request aborted')); } catch (_) {}
-  };
-  if (signal.aborted) { onAbort(); return () => {}; }
-  signal.addEventListener('abort', onAbort, { once: true });
-  return () => { try { signal.removeEventListener('abort', onAbort); } catch (_) {} };
-}
-
-function isAbortError(err) {
-  const msg = String((err && err.message) || err || '');
-  return msg.includes('request aborted') || msg.includes('stream aborted') || msg.includes('aborted');
-}
-
-function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeoutMs = 90000, signal }) {
-  return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : '';
-    const req = https.request({
-      method, hostname, path,
-      headers: { 'content-type': 'application/json', ...headers, 'content-length': Buffer.byteLength(payload) },
-      timeout: timeoutMs,
-      agent: SHARED_HTTPS_AGENT,
-    }, (res) => {
-      let data = '';
-      res.on('data', c => { data += c; });
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
-        } else {
-          reject(new Error(`${hostname} ${res.statusCode}: ${data.slice(0, 600)}`));
-        }
-      });
-    });
-    const cleanup = bindAbort(req, signal, reject, `${hostname} request aborted`);
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error(hostname + ' request timed out')));
-    if (payload) req.write(payload);
-    req.end();
-    req.on('close', cleanup);
-  });
-}
-
-function httpStreamOnce(opts, onStreamStarted) {
-  const { hostname, path, method = 'POST', headers = {}, body, onChunk, timeoutMs = 180000, signal } = opts;
-  return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : '';
-    const req = https.request({
-      method, hostname, path,
-      headers: { 'content-type': 'application/json', ...headers, 'content-length': Buffer.byteLength(payload) },
-      timeout: timeoutMs,
-      agent: SHARED_HTTPS_AGENT,
-    }, (res) => {
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        let err = '';
-        res.on('data', c => { err += c; });
-        res.on('end', () => reject(new Error(`${hostname} ${res.statusCode}: ${err.slice(0, 600)}`)));
-        return;
-      }
-      let buf = '';
-      res.on('data', chunk => {
-        if (onStreamStarted) { try { onStreamStarted(); } catch (_) {} }
-        buf += chunk.toString();
-        const parts = buf.split('\n');
-        buf = parts.pop();
-        for (const line of parts) { try { onChunk(line); } catch (_) {} }
-      });
-      res.on('end', () => { if (buf.trim()) { try { onChunk(buf); } catch (_) {} } resolve(); });
-      res.on('error', reject);
-    });
-    const cleanup = bindAbort(req, signal, reject, `${hostname} stream aborted`);
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error(hostname + ' stream timed out')));
-    if (payload) req.write(payload);
-    req.end();
-    req.on('close', cleanup);
-  });
-}
-
-// Retry transient failures (SSL BAD_RECORD_MAC, ECONNRESET, 429) that happen
-// before any stream data arrives. Once the server has started emitting
-// tokens, restarting would double-emit, so we give up and surface the error.
-async function httpStream(opts, maxRetries = 3) {
-  let lastErr;
-  for (let i = 0; i <= maxRetries; i++) {
-    let started = false;
-    try {
-      return await httpStreamOnce(opts, () => { started = true; });
-    } catch (e) {
-      lastErr = e;
-      if (!started && isTransientError(e) && i < maxRetries) {
-        const wait = e.message && e.message.includes('429') ? (i + 1) * 15000 : (i + 1) * 1500;
-        await new Promise(r => setTimeout(r, wait));
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastErr;
-}
-
-function isTransientError(e) {
-  const msg = e.message || '';
-  return msg.includes('429') || msg.includes('SSL') || msg.includes('BAD_RECORD_MAC') ||
-    msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') ||
-    msg.includes('socket hang up') || msg.includes('timed out');
-}
-
-async function httpJsonWithRetry(opts, maxRetries = 3) {
-  let lastErr;
-  for (let i = 0; i <= maxRetries; i++) {
-    try { return await httpJson(opts); } catch (e) {
-      lastErr = e;
-      if (isTransientError(e) && i < maxRetries) {
-        const wait = e.message && e.message.includes('429') ? (i + 1) * 15000 : (i + 1) * 1500;
-        await new Promise(r => setTimeout(r, wait));
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastErr;
 }
 
 function trimHistory(messages, seedCount) {
