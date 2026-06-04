@@ -6948,6 +6948,7 @@ function createTermOpts() {
   return {
     allowTransparency: false,
     convertEol: true,
+    copyOnSelect: true,
     cursorBlink: true,
     fontFamily: 'Cascadia Code, Cascadia Mono, Consolas, "Courier New", monospace',
     fontSize: 14,
@@ -6992,14 +6993,82 @@ function createTermInstance(termId, label) {
     term.loadAddon(webgl);
   } catch (_) {}
 
-  // Let modifier-only keys pass through to document handlers (voice recording uses Ctrl+Shift).
+  // Let modifier-only keys pass through to document handlers (voice recording uses Ctrl+Alt).
   // Also bubble specific UI shortcuts (Ctrl+K/I/./? and their Meta counterparts) so they reach
   // the global keydown listener instead of being swallowed by the terminal.
   term.attachCustomKeyEventHandler((e) => {
-    if (e.key === 'Control' || e.key === 'Shift') return false;
+    if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt') return false;
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const k = (e.key || '').toLowerCase();
+
+      // Ctrl+Shift+C: copy selection to global clipboard.
+      // stopImmediatePropagation prevents the voice-recording document handler from firing.
+      if (e.shiftKey && k === 'c') {
+        if (e.type === 'keydown') {
+          const sel = term.getSelection();
+          if (sel) {
+            if (window.electronAPI) {
+              window.electronAPI.clipboardWrite(sel).then(() => toast('Copied', 'success', { duration: 1200 })).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(sel).then(() => toast('Copied', 'success', { duration: 1200 })).catch(() => {});
+            }
+          }
+          e.stopImmediatePropagation();
+        }
+        return false;
+      }
+
+      // Ctrl+Shift+V: paste from global clipboard into the PTY.
+      // stopImmediatePropagation prevents the voice-recording document handler from firing.
+      if (e.shiftKey && k === 'v') {
+        if (e.type === 'keydown') {
+          (async () => {
+            try {
+              const text = window.electronAPI ? await window.electronAPI.clipboardRead() : await navigator.clipboard.readText();
+              if (text) {
+                if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+              } else if (window.electronAPI) {
+                const imgPath = await window.electronAPI.clipboardReadImage().catch(() => null);
+                if (imgPath && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: imgPath }));
+              }
+            } catch (_) {}
+          })();
+          e.stopImmediatePropagation();
+        }
+        return false;
+      }
+
       if (k === 'k' || k === 'i' || k === '/' || k === '.') return false;
+
+      // Ctrl+V / Meta+V: paste from clipboard into the PTY
+      if (!e.shiftKey && k === 'v') {
+        if (e.type === 'keydown') {
+          (async () => {
+            try {
+              const text = window.electronAPI ? await window.electronAPI.clipboardRead() : await navigator.clipboard.readText();
+              if (text) {
+                if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+              } else if (window.electronAPI) {
+                const imgPath = await window.electronAPI.clipboardReadImage().catch(() => null);
+                if (imgPath && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: imgPath }));
+              }
+            } catch (_) {}
+          })();
+        }
+        return false;
+      }
+
+      // Ctrl+C: copy selection to clipboard (and still send SIGINT via return true).
+      if (!e.shiftKey && k === 'c') {
+        if (e.type === 'keydown') {
+          const sel = term.getSelection();
+          if (sel) {
+            if (window.electronAPI) window.electronAPI.clipboardWrite(sel);
+            else navigator.clipboard.writeText(sel).catch(() => {});
+          }
+        }
+        return true;
+      }
     }
     return true;
   });
@@ -7015,10 +7084,11 @@ function createTermInstance(termId, label) {
     e.stopPropagation();
     const sel = term.getSelection();
     if (sel) {
-      await navigator.clipboard.writeText(sel);
+      if (window.electronAPI) window.electronAPI.clipboardWrite(sel);
+      else navigator.clipboard.writeText(sel).catch(() => {});
     } else {
       try {
-        const text = await navigator.clipboard.readText();
+        const text = window.electronAPI ? await window.electronAPI.clipboardRead() : await navigator.clipboard.readText();
         if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
       } catch (_) {}
     }
@@ -11373,8 +11443,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Control') ctrlDown = true;
   if (e.key === 'Shift') shiftDown = true;
 
-  // Start recording when both Ctrl+Shift are held
-  if (ctrlDown && shiftDown && !voiceRecording) {
+  // Start recording only when Ctrl+Shift are the ONLY keys held — not on
+  // combos like Ctrl+Shift+C (copy) which include a non-modifier key.
+  if (ctrlDown && shiftDown && !voiceRecording && (e.key === 'Control' || e.key === 'Shift')) {
     e.preventDefault();
     _voiceFocusTarget = document.activeElement; // capture before recording
     startVoiceRecording();
@@ -19751,8 +19822,14 @@ function _renderInappBrandPanel(data) {
   _setInappToolsBodyHtml(html);
   try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
 }
-function _copyText(text) {
-  try { navigator.clipboard.writeText(text); toast('Copied ' + text, 'success', { duration: 1400 }); } catch (_) {}
+async function _copyText(text) {
+  try {
+    if (window.electronAPI) await window.electronAPI.clipboardWrite(text);
+    else await navigator.clipboard.writeText(text);
+    toast('Copied ' + text, 'success', { duration: 1400 });
+  } catch (_) {
+    toast('Copy failed', 'error', { duration: 2000 });
+  }
 }
 async function _saveBrandToNote() {
   const data = _inappToolsState.brand;

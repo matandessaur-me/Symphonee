@@ -1,11 +1,27 @@
 /**
  * Electron main process — wraps the HTTP+WS server in a desktop window.
  */
-const { app, BrowserWindow, nativeImage, nativeTheme, dialog, screen, shell, webContents: webContentsNS, globalShortcut } = require('electron');
+const { app, BrowserWindow, nativeImage, nativeTheme, dialog, screen, shell, webContents: webContentsNS, globalShortcut, ipcMain, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 process.env.ELECTRON = '1';
+
+// ── Clipboard IPC (used by preload.js -> renderer) ─────────────────────────
+ipcMain.handle('clipboard-read',  ()     => clipboard.readText());
+ipcMain.handle('clipboard-write', (_, t) => clipboard.writeText(t));
+ipcMain.handle('clipboard-read-image', () => {
+  const formats = clipboard.availableFormats();
+  if (!formats.some(f => f.startsWith('image/'))) return null;
+  const img = clipboard.readImage();
+  if (img.isEmpty()) return null;
+  const tmpDir = path.join(__dirname, '..', '.ai-workspace', 'temp');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const fname = `clipboard-${Date.now()}.png`;
+  const fpath = path.join(tmpDir, fname);
+  fs.writeFileSync(fpath, img.toPNG());
+  return fpath;
+});
 
 const PORT = 3800;
 const HOST = '127.0.0.1';
@@ -1486,6 +1502,7 @@ if (!gotLock) {
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
+          preload: path.join(__dirname, 'preload.js'),
           webviewTag: true,
           // Explicit GPU paths for the 2D / 3D Mind graph views. webgl + offscreen
           // false make sure the renderer process draws to an on-screen surface
