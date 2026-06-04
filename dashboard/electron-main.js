@@ -1,7 +1,7 @@
 /**
  * Electron main process — wraps the HTTP+WS server in a desktop window.
  */
-const { app, BrowserWindow, nativeImage, nativeTheme, dialog, screen, shell, webContents: webContentsNS, globalShortcut } = require('electron');
+const { app, BrowserWindow, nativeImage, nativeTheme, dialog, screen, shell, webContents: webContentsNS, globalShortcut, ipcMain, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -13,6 +13,10 @@ const HOST = '127.0.0.1';
 let win = null;
 let splashShownAt = 0;
 const SPLASH_MIN_MS = 1500;
+
+// ── Clipboard IPC (used by preload.js -> renderer) ─────────────────────────
+ipcMain.handle('clipboard-read',        ()     => clipboard.readText());
+ipcMain.handle('clipboard-write',       (_, t) => clipboard.writeText(t));
 
 // ── In-app browser automation driver ───────────────────────────────────────
 // Tracks the <webview> webContents inside panel-browser and exposes
@@ -1486,6 +1490,7 @@ if (!gotLock) {
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
+          preload: path.join(__dirname, 'preload.js'),
           webviewTag: true,
           // Explicit GPU paths for the 2D / 3D Mind graph views. webgl + offscreen
           // false make sure the renderer process draws to an on-screen surface

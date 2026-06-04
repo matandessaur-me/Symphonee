@@ -7004,7 +7004,8 @@ function createTermInstance(termId, label) {
       // Ctrl+V / Meta+V: paste from clipboard into the PTY
       if (k === 'v') {
         if (e.type === 'keydown') {
-          navigator.clipboard.readText().then(text => {
+          const read = window.electronAPI ? window.electronAPI.clipboardRead() : navigator.clipboard.readText();
+          read.then(text => {
             if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
           }).catch(() => {});
         }
@@ -7025,10 +7026,11 @@ function createTermInstance(termId, label) {
     e.stopImmediatePropagation();
     const sel = term.getSelection();
     if (sel) {
-      await navigator.clipboard.writeText(sel);
+      if (window.electronAPI) window.electronAPI.clipboardWrite(sel);
+      else navigator.clipboard.writeText(sel).catch(() => {});
     } else {
       try {
-        const text = await navigator.clipboard.readText();
+        const text = window.electronAPI ? await window.electronAPI.clipboardRead() : await navigator.clipboard.readText();
         if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
       } catch (_) {}
     }
