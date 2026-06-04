@@ -6948,7 +6948,6 @@ function createTermOpts() {
   return {
     allowTransparency: false,
     convertEol: true,
-    copyOnSelect: true,
     cursorBlink: true,
     fontFamily: 'Cascadia Code, Cascadia Mono, Consolas, "Courier New", monospace',
     fontSize: 14,
@@ -6986,6 +6985,14 @@ function createTermInstance(termId, label) {
   term.unicode.activeVersion = '11';
 
   term.open(container);
+
+  // Mouse-select → Windows clipboard via IPC (replaces copyOnSelect:true which bypasses electronAPI)
+  term.onSelectionChange(() => {
+    const sel = term.getSelection();
+    if (!sel) return;
+    if (window.electronAPI) window.electronAPI.clipboardWrite(sel).catch(() => {});
+    else navigator.clipboard.writeText(sel).catch(() => {});
+  });
 
   try {
     const webgl = new WebglAddon.WebglAddon();
