@@ -7011,17 +7011,6 @@ function createTermInstance(termId, label) {
         return false;
       }
     }
-    // Ctrl+Shift+C / Meta+Shift+C: copy selection to clipboard
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
-      const k = (e.key || '').toLowerCase();
-      if (k === 'c') {
-        if (e.type === 'keydown') {
-          const sel = term.getSelection();
-          if (sel) navigator.clipboard.writeText(sel).catch(() => {});
-        }
-        return false;
-      }
-    }
     return true;
   });
 
