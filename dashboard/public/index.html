@@ -6948,6 +6948,7 @@ function createTermOpts() {
   return {
     allowTransparency: false,
     convertEol: true,
+    copyOnSelect: true,
     cursorBlink: true,
     fontFamily: 'Cascadia Code, Cascadia Mono, Consolas, "Courier New", monospace',
     fontSize: 14,
@@ -7000,6 +7001,26 @@ function createTermInstance(termId, label) {
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const k = (e.key || '').toLowerCase();
       if (k === 'k' || k === 'i' || k === '/' || k === '.') return false;
+      // Ctrl+V / Meta+V: paste from clipboard into the PTY
+      if (k === 'v') {
+        if (e.type === 'keydown') {
+          navigator.clipboard.readText().then(text => {
+            if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+          }).catch(() => {});
+        }
+        return false;
+      }
+    }
+    // Ctrl+Shift+C / Meta+Shift+C: copy selection to clipboard
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+      const k = (e.key || '').toLowerCase();
+      if (k === 'c') {
+        if (e.type === 'keydown') {
+          const sel = term.getSelection();
+          if (sel) navigator.clipboard.writeText(sel).catch(() => {});
+        }
+        return false;
+      }
     }
     return true;
   });
@@ -7012,7 +7033,7 @@ function createTermInstance(termId, label) {
   // Right-click
   container.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
-    e.stopPropagation();
+    e.stopImmediatePropagation();
     const sel = term.getSelection();
     if (sel) {
       await navigator.clipboard.writeText(sel);
@@ -7022,9 +7043,14 @@ function createTermInstance(termId, label) {
         if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
       } catch (_) {}
     }
-  });
+  }, true);
 
-  container.addEventListener('paste', (e) => { e.preventDefault(); e.stopPropagation(); });
+  container.addEventListener('paste', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = ((e.clipboardData || window.clipboardData || {}).getData('text/plain')) || '';
+    if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+  }, true);
 
   termInstances.set(termId, { term, fitAddon, container, label: label || termId });
 
