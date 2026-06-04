@@ -40,6 +40,9 @@ function isAbortError(err) {
 }
 
 function isTransientError(e) {
+  if (e.statusCode === 429) return true;
+  const code = e.code || '';
+  if (code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT') return true;
   const msg = e.message || '';
   return msg.includes('429') || msg.includes('SSL') || msg.includes('BAD_RECORD_MAC') ||
     msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') ||
@@ -48,6 +51,7 @@ function isTransientError(e) {
 
 function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeoutMs = 90000, signal }) {
   return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) { reject(new Error(`${hostname} request aborted`)); return; }
     const payload = body ? JSON.stringify(body) : '';
     const req = https.request({
       method, hostname, path,
@@ -61,7 +65,9 @@ function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeout
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
         } else {
-          reject(new Error(`${hostname} ${res.statusCode}: ${data.slice(0, 600)}`));
+          const err = new Error(`${hostname} ${res.statusCode}: ${data.slice(0, 600)}`);
+          err.statusCode = res.statusCode;
+          reject(err);
         }
       });
     });
@@ -77,6 +83,7 @@ function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeout
 function httpStreamOnce(opts, onStreamStarted) {
   const { hostname, path, method = 'POST', headers = {}, body, onChunk, timeoutMs = 180000, signal } = opts;
   return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) { reject(new Error(`${hostname} stream aborted`)); return; }
     const payload = body ? JSON.stringify(body) : '';
     const req = https.request({
       method, hostname, path,
@@ -85,14 +92,22 @@ function httpStreamOnce(opts, onStreamStarted) {
       agent: SHARED_HTTPS_AGENT,
     }, (res) => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        let err = '';
-        res.on('data', c => { err += c; });
-        res.on('end', () => reject(new Error(`${hostname} ${res.statusCode}: ${err.slice(0, 600)}`)));
+        let errBody = '';
+        res.on('data', c => { errBody += c; });
+        res.on('end', () => {
+          const e = new Error(`${hostname} ${res.statusCode}: ${errBody.slice(0, 600)}`);
+          e.statusCode = res.statusCode;
+          reject(e);
+        });
         return;
       }
       let buf = '';
+      let streamStartedFired = false;
       res.on('data', chunk => {
-        if (onStreamStarted) { try { onStreamStarted(); } catch (_) {} }
+        if (onStreamStarted && !streamStartedFired) {
+          streamStartedFired = true;
+          try { onStreamStarted(); } catch (_) {}
+        }
         buf += chunk.toString();
         const parts = buf.split('\n');
         buf = parts.pop();
