@@ -5554,6 +5554,7 @@
           <button class="mind-tab mind-view-btn" data-view="impact" onclick="MindUI.setView('impact')" title="Symbol-level call graph - what breaks if I change X?">Impact</button>
           <button class="mind-tab mind-view-btn" data-view="knowledge" onclick="MindUI.setView('knowledge')" title="Project schemas, specs, ADRs declared via .symphonee/context-artifacts.json">Knowledge</button>
           <button class="mind-tab mind-view-btn" data-view="mindmap" onclick="MindUI.setView('mindmap')" title="The graph itself - switch between graph and community map">Mind map</button>
+          <button class="mind-tab mind-view-btn" data-view="specs" onclick="MindUI.setView('specs')" title="Search your knowledge, view a focused spec sub-graph, export/import as a KIT">Specs</button>
         </div>
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>
@@ -24821,86 +24822,11 @@ function renderHotkeys() {
 let _cmdSelectedIdx = 0;
 let _cmdFiltered = [];
 
-// ── KIT (Know It Too): export / ingest shareable knowledge ──────────────────
-function openKitExport() {
-  closeCmdPalette();
-  const old = document.getElementById('kitExportOverlay'); if (old) old.remove();
-  const ov = document.createElement('div');
-  ov.id = 'kitExportOverlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4600;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;font-family:var(--font-ui);';
-  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML =
-    '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:12px;width:560px;max-width:92vw;padding:18px 20px;box-shadow:0 16px 50px rgba(0,0,0,0.55);">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i data-lucide="package" style="width:16px;height:16px;color:var(--accent);"></i><strong style="font-size:13px;">Export Knowledge</strong></div>' +
-      '<div style="font-size:11px;color:var(--subtext0);margin-bottom:12px;">Pick a topic. Symphonee walks everything connected to it in your Mind and bundles it into one portable KIT file you can hand to anyone.</div>' +
-      '<input id="kitExportTopic" placeholder="e.g. Bathfitter" style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface1);border:1px solid var(--surface2);border-radius:6px;color:var(--text);font-size:13px;outline:none;" onkeydown="if(event.key===\'Enter\')kitDoExport()">' +
-      '<div id="kitExportStatus" style="font-size:11px;color:var(--subtext0);margin-top:10px;min-height:16px;"></div>' +
-      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
-        '<button class="hotkey-mini" onclick="document.getElementById(\'kitExportOverlay\').remove()">Cancel</button>' +
-        '<button class="hotkey-mini" style="background:var(--accent);color:var(--crust);border-color:var(--accent);" onclick="kitDoExport()">Export</button>' +
-      '</div>' +
-    '</div>';
-  document.body.appendChild(ov);
-  try { lucide.createIcons({ nodes: [ov] }); } catch (_) {}
-  setTimeout(() => { const i = document.getElementById('kitExportTopic'); if (i) i.focus(); }, 30);
-}
-async function kitDoExport() {
-  const topicEl = document.getElementById('kitExportTopic');
-  const status = document.getElementById('kitExportStatus');
-  const topic = (topicEl && topicEl.value || '').trim();
-  if (!topic) { if (status) status.textContent = 'Enter a topic.'; return; }
-  if (status) status.textContent = 'Walking the graph...';
-  try {
-    const r = await fetch('/api/mind/kit/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic }) });
-    const d = await r.json();
-    if (!d.ok) { if (status) status.textContent = d.reason === 'no-match' ? ('Nothing in your Mind matches "' + topic + '".') : ('Export failed: ' + (d.reason || 'unknown')); return; }
-    const blob = new Blob([JSON.stringify(d.kit, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const safe = topic.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 40);
-    a.href = url; a.download = 'kit-' + safe + '.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    if (status) status.textContent = 'Exported ' + d.kit.stats.nodes + ' nodes / ' + d.kit.stats.edges + ' edges. File downloaded.';
-    toast('KIT exported (' + d.kit.stats.nodes + ' nodes)', 'success');
-  } catch (e) { if (status) status.textContent = 'Export failed: ' + (e.message || e); }
-}
-function openKitIngest() {
-  closeCmdPalette();
-  const old = document.getElementById('kitIngestOverlay'); if (old) old.remove();
-  const ov = document.createElement('div');
-  ov.id = 'kitIngestOverlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4600;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;font-family:var(--font-ui);';
-  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML =
-    '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:12px;width:560px;max-width:92vw;padding:18px 20px;box-shadow:0 16px 50px rgba(0,0,0,0.55);">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><i data-lucide="download" style="width:16px;height:16px;color:var(--accent);"></i><strong style="font-size:13px;">Ingest Knowledge</strong></div>' +
-      '<div style="font-size:11px;color:var(--subtext0);margin-bottom:12px;">Drop a KIT into your Mind. Symphonee diffs it against what you already know and merges only the gaps - no duplicates.</div>' +
-      '<input id="kitIngestFile" type="file" accept="application/json,.json" style="width:100%;font-size:12px;color:var(--subtext1);" onchange="kitDoIngest(this)">' +
-      '<div id="kitIngestStatus" style="font-size:11px;color:var(--subtext0);margin-top:10px;min-height:16px;"></div>' +
-      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
-        '<button class="hotkey-mini" onclick="document.getElementById(\'kitIngestOverlay\').remove()">Close</button>' +
-      '</div>' +
-    '</div>';
-  document.body.appendChild(ov);
-  try { lucide.createIcons({ nodes: [ov] }); } catch (_) {}
-}
-async function kitDoIngest(input) {
-  const status = document.getElementById('kitIngestStatus');
-  const file = input && input.files && input.files[0];
-  if (!file) return;
-  if (status) status.textContent = 'Reading ' + file.name + '...';
-  try {
-    const text = await file.text();
-    const kitObj = JSON.parse(text);
-    if (!kitObj || !Array.isArray(kitObj.nodes)) { if (status) status.textContent = 'Not a valid KIT file.'; return; }
-    if (status) status.textContent = 'Merging ' + kitObj.nodes.length + ' nodes...';
-    const r = await fetch('/api/mind/kit/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kit: kitObj }) });
-    const d = await r.json();
-    if (!d.ok) { if (status) status.textContent = 'Ingest failed: ' + (d.reason || 'unknown'); return; }
-    if (status) status.textContent = 'Added ' + d.addedNodes + ' nodes, ' + d.addedEdges + ' edges. Skipped ' + d.skippedNodes + ' already-known nodes.';
-    toast('Ingested ' + d.addedNodes + ' new nodes (' + d.skippedNodes + ' already known)', 'success');
-  } catch (e) { if (status) status.textContent = 'Ingest failed: ' + (e.message || e); }
+// ── Knowledge Specs (KIT): open the Mind tab Specs view ─────────────────────
+function openMindSpecs() {
+  try { closeCmdPalette(); } catch (_) {}
+  try { switchTab("mind"); } catch (_) {}
+  setTimeout(() => { try { if (window.MindUI) MindUI.setView("specs"); } catch (_) {} }, 80);
 }
 
 function getCmdActions() {
@@ -24919,8 +24845,7 @@ function getCmdActions() {
     { label: 'Generate Repo Map', icon: 'map', action: () => openRepoMapModal(), category: 'Action', hint: 'Symbol map of the active repo' },
     { label: 'Analyze Repo', icon: 'brain', action: () => analyzeActiveRepo(), category: 'AI', hint: 'Generate a repo map and send it to the AI' },
     { label: 'Search Notes + Learnings', icon: 'search', action: () => { document.getElementById('cmdPaletteInput').value = 'find '; filterCmdPalette(); }, category: 'Action', hint: 'find <query>' },
-    { label: 'Export Knowledge (KIT)', icon: 'package', action: () => openKitExport(), category: 'Mind', hint: 'Package a topic + everything connected as a shareable file' },
-    { label: 'Ingest Knowledge (KIT)', icon: 'download', action: () => openKitIngest(), category: 'Mind', hint: 'Merge a KIT into your Mind (only the gaps)' },
+    { label: 'Knowledge Specs (KIT)', icon: 'package', action: () => openMindSpecs(), category: 'Mind', hint: 'Search your knowledge, view a spec, export/import as a KIT' },
     // Git (local ops always work; remote pull/push still listed but fail gracefully without auth)
     { label: 'Switch Branch', icon: 'git-branch', action: () => openGitModal('branches'), category: 'Git', hint: 'Check out a different branch' },
     { label: 'Commit Changes', icon: 'git-commit', action: () => openGitModal('commit'), category: 'Git', hint: 'Stage and commit working changes' },

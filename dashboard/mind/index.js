@@ -1040,6 +1040,27 @@ function mountMind(addRoute, json, ctx) {
     return json(res, r);
   });
 
+  // ── Anchors: the searchable list for the Mind > Specs UI ─────────────────
+  // Every node as a light {id, label, kind, degree}, ranked by degree so the
+  // most connected anchors (entities / repos / hot tags) surface first. The
+  // client filters this list as the user types -- no free-text topic guessing.
+  addRoute('GET', '/api/mind/anchors', (req, res) => {
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g || !Array.isArray(g.nodes)) return json(res, { anchors: [], space });
+    const deg = new Map();
+    for (const e of (g.edges || [])) {
+      if (!e) continue;
+      deg.set(e.source, (deg.get(e.source) || 0) + 1);
+      deg.set(e.target, (deg.get(e.target) || 0) + 1);
+    }
+    const anchors = g.nodes
+      .filter(n => n && n.id && n.label)
+      .map(n => ({ id: n.id, label: String(n.label).slice(0, 160), kind: n.kind || 'node', degree: deg.get(n.id) || 0 }))
+      .sort((a, b) => b.degree - a.degree);
+    return json(res, { anchors, space, total: anchors.length });
+  });
+
   // Dense-only semantic search (debug + UI smart-search). Returns ranked nodes
   // by cosine similarity. The graph has to have been embedded first via
   // /api/mind/embed (or SYMPHONEE_EMBED_AUTO=1 during build).

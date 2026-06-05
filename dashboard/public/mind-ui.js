@@ -536,10 +536,11 @@
 
   function render() {
     teardownNetwork();
-    // Mind map view always full-bleed (its own ribbon + body manage padding).
+    _specsTeardown();
+    // Mind map + Specs views are full-bleed (they manage their own layout).
     const main = $('mindMain');
     if (main) {
-      const fullBleed = (state.view === 'mindmap');
+      const fullBleed = (state.view === 'mindmap' || state.view === 'specs');
       main.style.padding = fullBleed ? '0' : '14px 18px';
       main.style.overflow = fullBleed ? 'hidden' : '';
       main.style.overflowY = fullBleed ? 'hidden' : 'auto';
@@ -561,6 +562,151 @@
     else if (state.view === 'impact') renderImpact();
     else if (state.view === 'knowledge') renderKnowledge();
     else if (state.view === 'mindmap') renderMindmap();
+    else if (state.view === 'specs') renderSpecs();
+  }
+
+  // ── Specs view: search your knowledge anchors, view a focused spec sub-graph,
+  // export/import as a KIT. The "spec" and the "KIT export" are the same bounded
+  // sub-graph produced by the KIT engine (/api/mind/kit/export). ───────────────
+  const _spec = { anchors: null, selected: null, kit: null, fg: null, filter: '' };
+  function _toast(msg, kind) { try { if (typeof window.toast === 'function') window.toast(msg, kind); } catch (_) {} }
+  function _specsTeardown() {
+    if (_spec.fg) { try { _spec.fg._destructor && _spec.fg._destructor(); } catch (_) {} _spec.fg = null; }
+  }
+  async function renderSpecs() {
+    const main = $('mindMain');
+    if (!main) return;
+    main.innerHTML =
+      '<div style="display:flex;width:100%;height:100%;min-height:0;">' +
+        '<div style="width:300px;flex-shrink:0;border-right:1px solid var(--surface0);display:flex;flex-direction:column;min-height:0;">' +
+          '<div style="padding:12px 12px 8px;display:flex;flex-direction:column;gap:8px;">' +
+            '<input id="specsSearch" placeholder="Search your knowledge..." autocomplete="off" spellcheck="false" style="background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;color:var(--text);font-size:12px;padding:9px 11px;outline:none;transition:border-color .15s,box-shadow .15s;">' +
+            '<div style="display:flex;gap:6px;">' +
+              '<button id="specsImportBtn" class="tab-bar-btn" style="flex:1;font-size:11px;">Import KIT</button>' +
+              '<input id="specsImportFile" type="file" accept="application/json,.json" style="display:none;">' +
+            '</div>' +
+          '</div>' +
+          '<div id="specsList" style="flex:1;overflow-y:auto;padding:0 8px 12px;"></div>' +
+        '</div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;">' +
+          '<div id="specsHeader" style="padding:12px 16px;border-bottom:1px solid var(--surface0);display:flex;align-items:center;gap:10px;min-height:22px;">' +
+            '<span style="font-size:12px;color:var(--subtext0);">Pick an anchor to see its knowledge spec.</span>' +
+          '</div>' +
+          '<div id="specsGraph" style="flex:1;min-height:0;position:relative;background:radial-gradient(900px 520px at 50% 28%, color-mix(in srgb, var(--accent) 7%, transparent), transparent);"></div>' +
+        '</div>' +
+      '</div>';
+    const search = $('specsSearch');
+    if (search) {
+      search.addEventListener('input', () => { _spec.filter = search.value; _renderAnchorList(); });
+      search.addEventListener('focus', () => { search.style.borderColor = 'var(--accent)'; search.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent)'; });
+      search.addEventListener('blur', () => { search.style.borderColor = 'var(--surface1)'; search.style.boxShadow = ''; });
+      setTimeout(() => { try { search.focus(); } catch (_) {} }, 60);
+    }
+    const importBtn = $('specsImportBtn'), importFile = $('specsImportFile');
+    if (importBtn && importFile) { importBtn.onclick = () => importFile.click(); importFile.onchange = () => _specsIngest(importFile); }
+    if (!_spec.anchors) {
+      $('specsList').innerHTML = '<div style="padding:12px;color:var(--subtext0);font-size:11px;">Loading anchors...</div>';
+      try { const r = await fetch('/api/mind/anchors'); const d = await r.json(); _spec.anchors = d.anchors || []; } catch (_) { _spec.anchors = []; }
+    }
+    _renderAnchorList();
+    if (_spec.selected) _specsSelect(_spec.selected, true);
+  }
+  function _renderAnchorList() {
+    const host = $('specsList'); if (!host) return;
+    const f = (_spec.filter || '').trim().toLowerCase();
+    let list = _spec.anchors || [];
+    if (f) list = list.filter(a => a.label.toLowerCase().indexOf(f) >= 0 || a.kind.toLowerCase().indexOf(f) >= 0);
+    const shown = list.slice(0, 200);
+    if (!shown.length) { host.innerHTML = '<div style="padding:12px;color:var(--subtext0);font-size:11px;">' + (f ? 'No matches.' : 'No anchors yet - build the brain first.') + '</div>'; return; }
+    host.innerHTML = shown.map(a => {
+      const sel = _spec.selected && _spec.selected.id === a.id;
+      const color = KIND_COLOR[a.kind] || '#9399b2';
+      return '<div class="specs-item" data-id="' + escapeHtml(a.id) + '" style="display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;margin-bottom:2px;' + (sel ? 'background:color-mix(in srgb, var(--accent) 20%, var(--surface0));' : '') + '">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';flex-shrink:0;box-shadow:0 0 6px ' + color + '66;"></span>' +
+        '<span style="flex:1;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(a.label) + '</span>' +
+        '<span style="font-size:9px;color:var(--subtext0);text-transform:uppercase;letter-spacing:.3px;flex-shrink:0;">' + escapeHtml(a.kind) + '</span>' +
+        '<span style="font-size:10px;color:var(--overlay1);min-width:22px;text-align:right;flex-shrink:0;">' + a.degree + '</span>' +
+      '</div>';
+    }).join('') + (list.length > shown.length ? '<div style="padding:8px 9px;color:var(--subtext0);font-size:10px;">+' + (list.length - shown.length) + ' more - keep typing to narrow</div>' : '');
+    host.querySelectorAll('.specs-item').forEach(el => {
+      const id = el.getAttribute('data-id');
+      el.addEventListener('click', () => { const a = (_spec.anchors || []).find(x => x.id === id); if (a) _specsSelect(a); });
+      el.addEventListener('mouseenter', () => { if (!(_spec.selected && _spec.selected.id === id)) el.style.background = 'var(--surface0)'; });
+      el.addEventListener('mouseleave', () => { if (!(_spec.selected && _spec.selected.id === id)) el.style.background = ''; });
+    });
+  }
+  async function _specsSelect(anchor, keepGraph) {
+    _spec.selected = anchor;
+    _renderAnchorList();
+    const header = $('specsHeader'), graphHost = $('specsGraph');
+    if (header) header.innerHTML =
+      '<span style="font-size:13px;font-weight:600;color:var(--text);">' + escapeHtml(anchor.label) + '</span>' +
+      '<span style="font-size:9px;color:var(--subtext0);text-transform:uppercase;letter-spacing:.3px;">' + escapeHtml(anchor.kind) + '</span>' +
+      '<span id="specsCounts" style="font-size:11px;color:var(--subtext0);">building...</span>' +
+      '<span style="flex:1;"></span>' +
+      '<button id="specsExportBtn" class="tab-bar-btn" style="font-size:11px;">Export KIT</button>';
+    const exportBtn = $('specsExportBtn'); if (exportBtn) exportBtn.onclick = () => _specsExport();
+    if (keepGraph && _spec.kit) { _renderSpecGraph(_spec.kit); const c = $('specsCounts'); if (c) c.textContent = _spec.kit.stats.nodes + ' nodes . ' + _spec.kit.stats.edges + ' edges'; return; }
+    if (graphHost) graphHost.innerHTML = '<div style="padding:30px;color:var(--subtext0);font-size:12px;">Building spec...</div>';
+    let kit = null;
+    try {
+      const r = await fetch('/api/mind/kit/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seedIds: [anchor.id], maxNodes: 250, maxDepth: 3 }) });
+      const d = await r.json();
+      if (d.ok) kit = d.kit;
+    } catch (_) {}
+    if (_spec.selected !== anchor) return; // selection changed while loading
+    if (!kit) { if (graphHost) graphHost.innerHTML = '<div style="padding:30px;color:var(--subtext0);font-size:12px;">No connected knowledge for this anchor.</div>'; return; }
+    _spec.kit = kit;
+    const counts = $('specsCounts'); if (counts) counts.textContent = kit.stats.nodes + ' nodes . ' + kit.stats.edges + ' edges';
+    _renderSpecGraph(kit);
+  }
+  function _renderSpecGraph(kit) {
+    const host = $('specsGraph'); if (!host) return;
+    _specsTeardown();
+    host.innerHTML = '';
+    if (typeof window.ForceGraph !== 'function') { host.innerHTML = '<div style="padding:30px;color:var(--subtext0);">Graph renderer unavailable.</div>'; return; }
+    const nodes = kit.nodes.map(n => ({ id: n.id, label: n.label, kind: n.kind, color: KIND_COLOR[n.kind] || '#9399b2' }));
+    const idset = new Set(nodes.map(n => n.id));
+    const links = (kit.edges || []).filter(e => idset.has(e.source) && idset.has(e.target)).map(e => ({ source: e.source, target: e.target }));
+    try {
+      const fg = window.ForceGraph()(host)
+        .graphData({ nodes, links })
+        .backgroundColor('rgba(0,0,0,0)')
+        .nodeRelSize(4)
+        .nodeColor(n => n.color)
+        .nodeLabel(n => escapeHtml(n.label) + '  [' + n.kind + ']')
+        .linkColor(() => 'rgba(150,150,180,0.22)')
+        .linkWidth(0.6)
+        .onNodeClick(n => { try { showNodeDetail(n.id); } catch (_) {} })
+        .width(host.clientWidth || 600)
+        .height(host.clientHeight || 400);
+      _spec.fg = fg;
+    } catch (e) { host.innerHTML = '<div style="padding:30px;color:var(--subtext0);">Could not render spec graph.</div>'; }
+  }
+  function _specsExport() {
+    const kit = _spec.kit; if (!kit) return;
+    try {
+      const blob = new Blob([JSON.stringify(kit, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safe = String((_spec.selected && _spec.selected.label) || 'kit').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 40);
+      a.href = url; a.download = 'kit-' + safe + '.json'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      _toast('KIT exported (' + kit.stats.nodes + ' nodes)', 'success');
+    } catch (_) { _toast('Export failed', 'error'); }
+  }
+  async function _specsIngest(input) {
+    const file = input.files && input.files[0]; if (!file) return;
+    try {
+      const text = await file.text();
+      const kit = JSON.parse(text);
+      if (!kit || !Array.isArray(kit.nodes)) { _toast('Not a valid KIT file', 'error'); input.value = ''; return; }
+      const r = await fetch('/api/mind/kit/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kit }) });
+      const d = await r.json();
+      if (d.ok) { _toast('Ingested ' + d.addedNodes + ' new nodes (' + d.skippedNodes + ' already known)', 'success'); _spec.anchors = null; renderSpecs(); }
+      else _toast('Ingest failed: ' + (d.reason || ''), 'error');
+    } catch (_) { _toast('Ingest failed', 'error'); }
+    input.value = '';
   }
 
   // ── Unified Search view (replaces both Query and Smart search) ──────────
