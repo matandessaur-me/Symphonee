@@ -73,6 +73,11 @@ async function tryDenseSeeds(repoRoot, space, question, k = 50) {
 
 function mountMind(addRoute, json, ctx) {
   const { repoRoot, getUiContext, getLearnings, getPlugins, getNotesDir, broadcast, getAiApiKeys, getConfig } = ctx;
+  // Startup-settle tracking: the boot loading overlay waits on this so the
+  // dashboard is revealed only once the Mind refresh (+ repo re-ingest) has
+  // actually finished -- not merely when page assets loaded.
+  let _startupTriggered = false;
+  let _startupSettled = false;
   // Make the user's configured API keys available to the embedding layer so
   // it can pick a provider automatically (OpenAI > Google) instead of
   // defaulting to Ollama. Refreshes on every request so config edits take
@@ -1151,6 +1156,18 @@ function mountMind(addRoute, json, ctx) {
 
     // `anchors` kept as an alias for any existing caller.
     return json(res, { subjects: subjectsOut, anchors: subjectsOut, space, total: subjectsOut.length });
+  });
+
+  // Startup readiness for the boot loading overlay. `ready` flips true only once
+  // the deferred startup refresh has run AND the graph build lock is free (so a
+  // 'skipped' refresh -- where the watcher's auto-resume build is the one
+  // actually running -- still waits for that build to finish). `building`
+  // reflects the live lock so the overlay can show that work is in flight.
+  addRoute('GET', '/api/startup/status', (req, res) => {
+    const space = getSpace();
+    let building = false;
+    try { building = !!(lock.status(space, 'graph') || {}).locked; } catch (_) {}
+    return json(res, { ok: true, ready: _startupSettled, triggered: _startupTriggered, building, space });
   });
 
   // Dense-only semantic search (debug + UI smart-search). Returns ranked nodes
@@ -2305,6 +2322,29 @@ function mountMind(addRoute, json, ctx) {
         if (broadcast) broadcast({ type: 'mind-startup-refresh', payload: { phase: 'error', space, error: e.message } });
         return { ok: false, error: e.message };
       }
+    },
+
+    // Run the startup refresh, then wait until the graph build lock is actually
+    // free before declaring startup settled. This is what the boot overlay gates
+    // on. The lock wait is the key: when kickoffStartupRefresh is 'skipped'
+    // (another build -- e.g. the watcher's auto-resume -- already holds the
+    // lock), we still wait for THAT build to finish, so the dashboard is not
+    // revealed mid-build. Capped so it can never hang the reveal forever.
+    async awaitStartupSettle() {
+      if (_startupTriggered) return { ok: true, already: true };
+      _startupTriggered = true;
+      const space = getSpace();
+      try { await this.kickoffStartupRefresh(); } catch (_) { /* settle regardless */ }
+      const deadline = Date.now() + 30000;
+      for (;;) {
+        let building = false;
+        try { building = !!(lock.status(space, 'graph') || {}).locked; } catch (_) {}
+        if (!building || Date.now() > deadline) break;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      _startupSettled = true;
+      if (broadcast) broadcast({ type: 'mind-startup-refresh', payload: { phase: 'settled', space } });
+      return { ok: true };
     },
 
     orchestratorHint(opts = {}) {

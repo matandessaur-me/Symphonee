@@ -7456,11 +7456,13 @@ requestAnimationFrame(fitTerminalNow);
           notifyPluginIframes('configChanged', {});
           break;
         case 'mind-startup-refresh': {
-          // Auto-refresh fired on server boot. We surface only the terminal
-          // 'done' state as a bottom-right toast so the user gets one
-          // notification per startup, not three.
+          // Auto-refresh fired on server boot. During the initial boot the
+          // loading overlay covers this work, so we suppress the toast (the user
+          // should not see "Mind refreshed" pop in right after reveal). It only
+          // shows if the overlay already revealed -- the rare build that ran past
+          // the overlay's wait cap.
           const p = msg.payload || {};
-          if (p.phase === 'done' && typeof toast === 'function') {
+          if (p.phase === 'done' && _bootOverlayDone && typeof toast === 'function') {
             const sec = p.durationMs ? Math.max(1, Math.round(p.durationMs / 1000)) : 0;
             const stat = p.stats ? ` ${p.stats.nodes} nodes` : '';
             toast(`Mind refreshed.${stat}${sec ? ' (' + sec + 's)' : ''}`, 'success', { duration: 3500, silent: true });
@@ -23536,8 +23538,15 @@ function hideLoading() {
 
 // ── Boot loading overlay ────────────────────────────────────────────────────
 // Covers the initial dashboard render with cycling Mind-generated quotes
-// (continuous with splash.html), then hides once the window has fully loaded.
+// (continuous with splash.html). It stays up until the heavy startup work the
+// user actually waits for is DONE -- the Mind incremental refresh, which also
+// re-ingests the managed repos, signalled by the 'mind-startup-refresh' WS
+// message -- not merely until the page's own assets finished loading. The few
+// extra seconds are intentional so the dashboard is fully populated on reveal.
 let _bootOverlayDone = false;
+let _bootPageLoaded = false;   // window 'load' fired (dashboard assets in)
+let _bootMindReady = false;    // mind-startup-refresh reached a terminal phase
+let _bootMinRevealAt = 0;      // earliest time we allow the reveal
 function hideBootOverlay() {
   if (_bootOverlayDone) return;
   _bootOverlayDone = true;
@@ -23548,14 +23557,56 @@ function hideBootOverlay() {
   const ov = document.getElementById('loadingOverlay');
   if (ov) setTimeout(() => ov.classList.remove('boot'), 700);
 }
+// Reveal the dashboard only when BOTH the page assets are loaded AND the Mind /
+// repos startup refresh is done -- and never before the minimum dwell. The hard
+// cap in _initBootLoading guarantees the overlay can't get stuck if a readiness
+// signal never arrives.
+function _maybeRevealDashboard() {
+  if (_bootOverlayDone || !_bootPageLoaded || !_bootMindReady) return;
+  setTimeout(hideBootOverlay, Math.max(0, _bootMinRevealAt - Date.now()));
+}
+// Poll the server's authoritative startup-readiness flag. It flips true only
+// once the Mind refresh has run AND the graph build lock is free (so a 'skipped'
+// refresh -- where the watcher's build is the one actually running -- still
+// waits for that build). Polling (not a WS event) is immune to a completion
+// that fires before this page connected, and to the early 'skipped' signal that
+// previously released the overlay mid-build.
+async function _pollStartupReady() {
+  const deadline = Date.now() + 24000;
+  for (;;) {
+    try {
+      const r = await fetch('/api/startup/status', { cache: 'no-store' });
+      if (r.ok) { const d = await r.json(); if (d && d.ready) break; }
+    } catch (_) { /* keep polling */ }
+    if (Date.now() > deadline) break;
+    await new Promise(res => setTimeout(res, 400));
+  }
+  _bootMindReady = true;
+  _maybeRevealDashboard();
+}
 async function _initBootLoading() {
   const ov = document.getElementById('loadingOverlay');
   if (!ov) return;
-  // Hard safety cap registered FIRST so the overlay can never get stuck even if
-  // something below throws.
-  setTimeout(hideBootOverlay, 12000);
-  // Pull personal quotes from the Mind; fall back to the built-in set. Mutate
-  // the existing array in place so _showRandomQuote keeps using it.
+  ov.classList.add('boot');
+  ov.classList.add('visible');
+  // Show a quote IMMEDIATELY so there is no empty gap after the splash->dashboard
+  // navigation (the old code awaited the quotes fetch before the first quote,
+  // which is why a quote appeared, vanished, then a second one rolled in). The
+  // Mind quotes are swapped into the SAME array below, so the next cycle picks
+  // them up seamlessly with no reset.
+  _showRandomQuote();
+  const MIN_REVEAL = 2500;
+  _bootMinRevealAt = Date.now() + MIN_REVEAL;
+  // Hard safety cap so the overlay can never get stuck even if a readiness
+  // signal never arrives (headless server, missed broadcast, very slow build).
+  setTimeout(hideBootOverlay, 25000);
+  // Gate 1: page assets loaded.
+  const onLoaded = () => { _bootPageLoaded = true; _maybeRevealDashboard(); };
+  if (document.readyState === 'complete') onLoaded();
+  else window.addEventListener('load', onLoaded, { once: true });
+  // Gate 2: server reports startup work settled (Mind refreshed + repos ingested).
+  _pollStartupReady();
+  // Swap in personal Mind quotes (best-effort) without resetting the cycle.
   try {
     const r = await fetch('/api/splash/quotes');
     if (r.ok) {
@@ -23566,18 +23617,6 @@ async function _initBootLoading() {
       }
     }
   } catch (_) {}
-  ov.classList.add('boot');
-  ov.classList.add('visible');
-  _showRandomQuote();
-  // Hide once the page has fully loaded, with a comfortable minimum dwell so the
-  // splash reads as intentional (logo + a quote you can actually finish reading)
-  // even when the app is fully cached and would otherwise flash by. (Hard cap
-  // already registered at the top of this fn.)
-  const MIN_REVEAL = 2500;
-  const start = Date.now();
-  const finish = () => setTimeout(hideBootOverlay, Math.max(0, MIN_REVEAL - (Date.now() - start)));
-  if (document.readyState === 'complete') finish();
-  else window.addEventListener('load', finish, { once: true });
 }
 _initBootLoading();
 async function refreshAll() {

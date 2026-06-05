@@ -3360,7 +3360,12 @@ function runDeferredBootWork(trigger) {
   _deferredBootWorkStarted = true;
   console.log(`[boot] running deferred boot work (trigger: ${trigger || 'unknown'})`);
   Promise.resolve()
-    .then(() => (typeof mind.kickoffStartupRefresh === 'function' ? mind.kickoffStartupRefresh() : null))
+    // awaitStartupSettle runs the refresh AND waits for the graph build lock to
+    // free, so /api/startup/status.ready (which the boot overlay polls) only
+    // flips true once the Mind + repos are genuinely done -- not mid-build.
+    .then(() => (typeof mind.awaitStartupSettle === 'function'
+      ? mind.awaitStartupSettle()
+      : (typeof mind.kickoffStartupRefresh === 'function' ? mind.kickoffStartupRefresh() : null)))
     .catch(() => {})
     .then(() => (typeof mind.regenerateSplashQuotes === 'function' ? mind.regenerateSplashQuotes() : null))
     .catch(() => {});
