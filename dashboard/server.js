@@ -593,8 +593,6 @@ const server = http.createServer(async (req, res) => {
     // ── Serve repo files (images, etc.) ────────────────────────────────────
     if (url.pathname === '/api/files/serve' && req.method === 'GET') return handleServeFile(url, res);
 
-    // ── Voice-to-Text (OpenAI Whisper) ────────────────────────────────────
-    if (url.pathname === '/api/voice/transcribe' && req.method === 'POST') return handleVoiceTranscribe(req, res);
 
     // ── Image Proxy (ADO images need auth) ─────────────────────────────────
     if (url.pathname === '/api/image-proxy' && req.method === 'GET') return handleImageProxy(url, res);
@@ -933,7 +931,7 @@ async function handleSaveConfig(req, res) {
 // Sensitive fields to strip from exports (PATs, API keys).
 // Core owns only its own shell-level secrets; plugins contribute their own via
 // contributions.sensitiveKeys. This keeps core zero-coupled from ADO/GH/etc.
-const CORE_SENSITIVE_KEYS = ['WhisperKey', 'AiApiKeys', 'BrowserCredentials'];
+const CORE_SENSITIVE_KEYS = ['AiApiKeys', 'BrowserCredentials'];
 function getSensitiveKeys() {
   const keys = new Set(CORE_SENSITIVE_KEYS);
   for (const p of (loadedPlugins || [])) {
@@ -2193,85 +2191,6 @@ function handleServeFile(url, res) {
   const contentType = mimeTypes[ext] || 'application/octet-stream';
   res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'max-age=60' });
   fs.createReadStream(resolved).pipe(res);
-}
-
-// ── Voice-to-Text (OpenAI Whisper) ──────────────────────────────────────────
-async function handleVoiceTranscribe(req, res) {
-  try {
-    const { audio } = await readBody(req);
-    if (!audio) return json(res, { error: 'audio (base64 WAV) required' }, 400);
-
-    const cfg = getConfig();
-    const apiKey = cfg.WhisperKey || '';
-    if (!apiKey) return json(res, { error: 'OpenAI API key not configured. Add it in Settings > Other > Voice Input.' }, 400);
-
-    // Decode base64 WAV to buffer
-    const wavBuffer = Buffer.from(audio, 'base64');
-
-    // Build multipart/form-data for OpenAI Whisper API
-    const boundary = '----SymphoneeVoice' + Date.now();
-    const parts = [];
-
-    // File part
-    parts.push(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="recording.wav"\r\n` +
-      `Content-Type: audio/wav\r\n\r\n`
-    );
-    parts.push(wavBuffer);
-    parts.push('\r\n');
-
-    // Model part
-    parts.push(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="model"\r\n\r\n` +
-      `whisper-1\r\n`
-    );
-
-    // Response format
-    parts.push(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="response_format"\r\n\r\n` +
-      `json\r\n`
-    );
-
-    parts.push(`--${boundary}--\r\n`);
-
-    // Combine into single buffer
-    const body = Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
-
-    const result = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'api.openai.com',
-        path: '/v1/audio/transcriptions',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-          'Content-Length': body.length,
-        },
-      };
-
-      const apiReq = https.request(options, (resp) => {
-        let data = '';
-        resp.on('data', chunk => { data += chunk; });
-        resp.on('end', () => {
-          if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            try { resolve(JSON.parse(data)); } catch (_) { resolve({ text: data }); }
-          } else {
-            reject(new Error(`Whisper API error (${resp.statusCode}): ${data.slice(0, 300)}`));
-          }
-        });
-      });
-      apiReq.on('error', reject);
-      apiReq.write(body);
-      apiReq.end();
-    });
-
-    json(res, { text: result.text || '', language: result.language || '' });
-  } catch (e) {
-    json(res, { error: e.message }, 502);
-  }
 }
 
 // ── Open External URL ───────────────────────────────────────────────────────

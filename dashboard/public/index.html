@@ -4295,15 +4295,6 @@
     .git-commit-file .file-status.added, .git-commit-file .file-status.new { color: var(--green); }
     .git-commit-file .file-status.deleted { color: var(--red); }
 
-    /* ── Voice recording indicator ────────────────────────────────────────── */
-    .voice-indicator {
-      display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-      z-index: 300; background: var(--accent); color: #fff; padding: 10px 20px;
-      border-radius: 99px; font: 13px var(--font-ui); font-weight: 600;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4); align-items: center; gap: 8px;
-    }
-    .voice-indicator.recording { display: flex; animation: pulse 1.5s ease infinite; }
-    .voice-dot { width: 10px; height: 10px; background: #fff; border-radius: 50%; }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 
     /* ── Sidebar bottom hints ────────────────────────────────────────────── */
@@ -4319,31 +4310,6 @@
     }
     .voice-hint.visible { display: flex; }
     .voice-hint svg { width: 13px; height: 13px; flex-shrink: 0; }
-
-    /* Voice input status indicator shown inside the Whisper settings section. */
-    .voice-status {
-      display: flex; align-items: center; gap: 8px;
-      margin: 6px 0 10px; padding: 6px 10px;
-      background: var(--surface0); border: 1px solid var(--surface1);
-      border-radius: var(--radius); font: 11px var(--font-ui); color: var(--subtext0);
-      user-select: none;
-    }
-    .voice-status svg { width: 13px; height: 13px; flex-shrink: 0; }
-    .voice-status kbd {
-      font: 10px var(--font-mono); background: var(--mantle);
-      border: 1px solid var(--surface0); border-radius: 4px;
-      padding: 3px 7px; color: var(--subtext1);
-    }
-    .voice-status .voice-status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--overlay0); flex-shrink: 0;
-      box-shadow: 0 0 0 0 transparent;
-    }
-    .voice-status.active { color: var(--text); border-color: color-mix(in srgb, var(--green) 40%, var(--surface2)); }
-    .voice-status.active .voice-status-dot {
-      background: var(--green);
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
-    }
 
     /* ── Command Palette (Ctrl+K) ────────────────────────────────────────── */
     .cmd-palette-overlay {
@@ -6621,19 +6587,6 @@
               <div style="display:flex;gap:0;"><input id="settingsGitHubPAT" type="password" placeholder="ghp_..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsGitHubPAT',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             </div>
           </div>
-          <div class="settings-section">
-            <div class="settings-section-title">Voice Input (OpenAI Whisper)</div>
-            <div class="settings-section-desc">Hold Ctrl+Shift to talk, release to transcribe. Uses OpenAI Whisper API ($0.006/min).</div>
-            <div id="voiceHint" class="voice-status" role="status">
-              <span class="voice-status-dot"></span>
-              <i data-lucide="mic"></i>
-              <span class="voice-status-text">Add a key to enable voice input</span>
-            </div>
-            <div class="modal-field">
-              <label>OpenAI API Key</label>
-              <div style="display:flex;gap:0;"><input id="settingsWispr" type="password" placeholder="sk-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsWispr',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -6908,12 +6861,6 @@
       <button class="modal-btn" onclick="closeBrowserAgentDetailModal()">Close</button>
     </div>
   </div>
-</div>
-
-<!-- ═══ Voice Recording Indicator ════════════════════════════════════════ -->
-<div class="voice-indicator" id="voiceIndicator">
-  <div class="voice-dot"></div>
-  <span>Recording... Release to send</span>
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
@@ -11389,220 +11336,6 @@ async function duplicateNoteFromContext() {
   } catch (_) { toast('Failed to duplicate', 'error'); }
 }
 
-// ── Voice Sound Effects ─────────────────────────────────────────────────
-function playTone(freq, duration, type = 'sine', volume = 0.15) {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(volume, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + duration);
-    setTimeout(() => ctx.close(), (duration + 0.1) * 1000);
-  } catch (_) {}
-}
-
-function playStartSound() {
-  // Rising two-tone chime (voice activation)
-  playTone(600, 0.12, 'sine', 0.12);
-  setTimeout(() => playTone(900, 0.15, 'sine', 0.12), 80);
-}
-
-function playStopSound() {
-  // Falling single tone
-  playTone(700, 0.15, 'sine', 0.1);
-}
-
-// ── Voice Recording (Ctrl+Shift hold) ───────────────────────────────────
-// Records raw PCM at 16kHz directly via Web Audio API — no webm conversion needed.
-let voiceRecording = false;
-let voiceStream = null;
-let voiceAudioCtx = null;
-let voiceProcessor = null;
-let voiceSamples = [];
-
-async function startVoiceRecording() {
-  if (voiceRecording) return;
-  try {
-    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-    voiceAudioCtx = new AudioContext({ sampleRate: 16000 });
-    const source = voiceAudioCtx.createMediaStreamSource(voiceStream);
-
-    // Use ScriptProcessor to capture raw PCM samples
-    voiceProcessor = voiceAudioCtx.createScriptProcessor(4096, 1, 1);
-    voiceSamples = [];
-
-    voiceProcessor.onaudioprocess = (e) => {
-      const data = e.inputBuffer.getChannelData(0);
-      voiceSamples.push(new Float32Array(data));
-    };
-
-    source.connect(voiceProcessor);
-    voiceProcessor.connect(voiceAudioCtx.destination);
-
-    voiceRecording = true;
-    document.getElementById('voiceIndicator').classList.add('recording');
-    playStartSound();
-  } catch (e) {
-    toast('Microphone access denied', 'error');
-  }
-}
-
-async function stopVoiceRecording() {
-  if (!voiceRecording) return '';
-  document.getElementById('voiceIndicator').classList.remove('recording');
-  voiceRecording = false;
-  playStopSound();
-
-  // Stop recording
-  if (voiceProcessor) { voiceProcessor.disconnect(); voiceProcessor = null; }
-  if (voiceStream) { voiceStream.getTracks().forEach(t => t.stop()); voiceStream = null; }
-  const sampleRate = voiceAudioCtx ? voiceAudioCtx.sampleRate : 16000;
-  if (voiceAudioCtx) { voiceAudioCtx.close(); voiceAudioCtx = null; }
-
-  if (voiceSamples.length === 0) return '';
-
-  // Merge all sample chunks
-  const totalLength = voiceSamples.reduce((sum, chunk) => sum + chunk.length, 0);
-  const merged = new Float32Array(totalLength);
-  let offset = 0;
-  for (const chunk of voiceSamples) { merged.set(chunk, offset); offset += chunk.length; }
-  voiceSamples = [];
-
-  // Encode to 16-bit PCM WAV
-  const wavBuffer = float32ToWav(merged, sampleRate);
-
-  // Convert to base64 in chunks (avoid call stack overflow)
-  const bytes = new Uint8Array(wavBuffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 8192) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-  }
-  const base64 = btoa(binary);
-
-  // Show transcribing state
-  document.getElementById('voiceIndicator').innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> <span>Transcribing...</span>';
-  document.getElementById('voiceIndicator').classList.add('recording');
-
-  try {
-    const res = await fetch('/api/voice/transcribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audio: base64 }),
-    });
-    const data = await res.json();
-
-    document.getElementById('voiceIndicator').classList.remove('recording');
-    document.getElementById('voiceIndicator').innerHTML = '<div class="voice-dot"></div> <span>Recording... Release to send</span>';
-
-    if (data.error) { toast(data.error, 'error'); return ''; }
-    return data.text || '';
-  } catch (e) {
-    document.getElementById('voiceIndicator').classList.remove('recording');
-    document.getElementById('voiceIndicator').innerHTML = '<div class="voice-dot"></div> <span>Recording... Release to send</span>';
-    toast('Transcription failed', 'error');
-    return '';
-  }
-}
-
-// Encode Float32 PCM samples to a WAV ArrayBuffer
-function float32ToWav(samples, sampleRate) {
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const bytesPerSample = 2;
-  const dataSize = samples.length * bytesPerSample;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  // RIFF header
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
-  w(8, 'WAVE');
-  w(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * bytesPerSample, true);
-  view.setUint16(32, bytesPerSample, true);
-  view.setUint16(34, bitsPerSample, true);
-  w(36, 'data');
-  view.setUint32(40, dataSize, true);
-
-  // PCM samples
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-  return buffer;
-}
-
-// Ctrl+Shift: hold both to record, release either to stop and transcribe
-let ctrlDown = false;
-let shiftDown = false;
-let _voiceFocusTarget = null; // element that was focused when recording started
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Control') ctrlDown = true;
-  if (e.key === 'Shift') shiftDown = true;
-
-  // Start recording when both Ctrl+Shift are held
-  if (ctrlDown && shiftDown && !voiceRecording) {
-    e.preventDefault();
-    _voiceFocusTarget = document.activeElement; // capture before recording
-    startVoiceRecording();
-  }
-});
-
-document.addEventListener('keyup', async (e) => {
-  if (e.key === 'Control') ctrlDown = false;
-  if (e.key === 'Shift') shiftDown = false;
-
-  // Stop recording when either key is released
-  if (voiceRecording && (!ctrlDown || !shiftDown)) {
-    e.preventDefault();
-    // Remember what was focused before transcription (indicator may steal focus)
-    const target = _voiceFocusTarget;
-    const text = await stopVoiceRecording();
-    if (text) {
-      const tag = target?.tagName;
-      const isTerminal = !!target?.closest('.xterm');
-      const isInput = !isTerminal && (tag === 'INPUT' || tag === 'TEXTAREA');
-      const isMonaco = target?.closest('.monaco-editor');
-
-      if (isInput) {
-        // Insert at cursor position in input/textarea
-        const start = target.selectionStart || 0;
-        const end = target.selectionEnd || 0;
-        const before = target.value.slice(0, start);
-        const after = target.value.slice(end);
-        target.value = before + text + after;
-        target.selectionStart = target.selectionEnd = start + text.length;
-        target.focus();
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-      } else if (isMonaco && monacoEditor) {
-        // Insert into Monaco editor at cursor
-        const pos = monacoEditor.getPosition();
-        monacoEditor.executeEdits('voice', [{
-          range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
-          text: text,
-        }]);
-        monacoEditor.focus();
-      } else {
-        // Default: send to terminal (just the text, never auto-launch AI)
-        sendCommand(text);
-        switchTab('terminal');
-      }
-    }
-  }
-});
-
 // ── Orchestrator ────────────────────────────────────────────────────────
 let orchTasks = [];
 let orchAgents = [];
@@ -12342,22 +12075,6 @@ function setOrchestrationMode(active) {
 }
 
 // ── Bottom Hints Visibility ─────────────────────────────────────────────
-function updateVoiceHint() {
-  const hint = document.getElementById('voiceHint');
-  if (hint) {
-    const active = !!(configData.WhisperKey);
-    hint.classList.toggle('active', active);
-    const label = hint.querySelector('.voice-status-text');
-    if (label) {
-      label.innerHTML = active
-        ? 'Hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd> to talk'
-        : 'Add a key to enable voice input';
-    }
-    try { lucide.createIcons({ nodes: [hint] }); } catch (_) {}
-  }
-  updateScreenHint();
-}
-
 async function updateScreenHint() {
   const hint = document.getElementById('switchScreenHint');
   if (!hint) return;
@@ -13112,7 +12829,7 @@ async function loadConfig(autoSelectSprint) {
       switchCli(configData.DefaultCli);
       _configLoaded = true;
     }
-    updateVoiceHint();
+    updateScreenHint();
   } catch (_) {}
 }
 
@@ -22593,7 +22310,6 @@ function openSettings(tab) {
   document.getElementById('settingsOrg').value = configData.AzureDevOpsOrg || '';
   document.getElementById('settingsPAT').value = configData.AzureDevOpsPAT || '';
   document.getElementById('settingsUser').value = configData.DefaultUser || '';
-  document.getElementById('settingsWispr').value = configData.WhisperKey || '';
   document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
   const continuousEl = document.getElementById('settingsEnableContinuousLearning');
   if (continuousEl) continuousEl.checked = configData.EnableContinuousLearning === true;
@@ -23107,7 +22823,6 @@ async function saveSettings() {
       DefaultTeam: _txt('settingsTeam'),
       DefaultUser: _txt('settingsUser'),
       GitHubPAT: _txt('settingsGitHubPAT'),
-      WhisperKey: _txt('settingsWispr'),
       OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
       EnableContinuousLearning: _chk('settingsEnableContinuousLearning'),
       AiApiKeys: {
@@ -23858,7 +23573,7 @@ function esc(str) {
 
 // ── Onboarding Wizard ───────────────────────────────────────────────────
 let _obStep = 0;
-let _obData = { displayName: '', org: '', project: '', pat: '', team: '', ghPat: '', whisperKey: '', defaultCli: 'claude', repos: {}, theme: 'industrial-blue' };
+let _obData = { displayName: '', org: '', project: '', pat: '', team: '', ghPat: '', defaultCli: 'claude', repos: {}, theme: 'industrial-blue' };
 let _obAiStatus = {};
 
 function obPickTheme(themeId) {
@@ -23988,19 +23703,17 @@ const OB_STEPS = [
       </div>`,
     onEnter: () => { obRenderRepos(); renderCloneSourceButtons('obRepoAddBtns','ob','onboarding-btn onboarding-btn-primary'); },
   }),
-  // 7: GitHub PAT + Whisper. GitHub section renders only when the github
-  // plugin is installed - plugin-absent installs see only Whisper here.
-  // Whisper is a core (non-plugin) capability and always shown.
+  // 7: GitHub PAT (optional). Renders only when the github plugin is installed.
   () => ({
     title: (function(){
       const hasGh = !!((window._loadedPluginsRaw || []).some(p => p.id === 'github'));
-      return hasGh ? 'GitHub & Voice (optional)' : 'Voice Input (optional)';
+      return hasGh ? 'GitHub (optional)' : 'Optional integrations';
     })(),
     subtitle: (function(){
       const hasGh = !!((window._loadedPluginsRaw || []).some(p => p.id === 'github'));
       return hasGh
-        ? 'GitHub unlocks the Pull Requests tab, git log, and clone-from-GitHub. Whisper enables hold-to-talk voice input. Both are optional; skip either by leaving the field blank.'
-        : 'Whisper enables hold-to-talk voice input. Optional - leave blank to skip.';
+        ? 'GitHub unlocks the Pull Requests tab, git log, and clone-from-GitHub. Optional - leave blank to skip.'
+        : 'Nothing to configure here - you are all set.';
     })(),
     html: (function(){
       const hasGh = !!((window._loadedPluginsRaw || []).some(p => p.id === 'github'));
@@ -24014,9 +23727,7 @@ const OB_STEPS = [
           4. Click Generate and copy the <code>ghp_...</code> token<br>
           5. If your org uses SAML/SSO, click <strong>Configure SSO</strong> next to the token and authorize it
         </div>` : '';
-      return ghBlock + `<div class="onboarding-section-title">Voice Input (OpenAI Whisper)</div>
-        <div class="onboarding-field"><label>OpenAI API Key (optional)</label><input id="obWispr" type="password" placeholder="sk-..." value="${esc(_obData.whisperKey)}" oninput="_obData.whisperKey=this.value"></div>
-        <div style="font-size:10px;color:var(--subtext0);margin-top:3px;">Hold Ctrl+Shift to talk, release to transcribe. Uses OpenAI Whisper ($0.006/min).</div>`;
+      return ghBlock;
     })(),
   }),
   // 8: Overview
@@ -24058,7 +23769,7 @@ function _obHasPlugin(id) { return _obInstalledPluginIds.has(id); }
 
 async function startOnboarding() {
   _obStep = 0;
-  _obData = { displayName: '', org: '', project: '', pat: '', team: '', ghPat: '', whisperKey: '', defaultCli: 'claude', repos: {}, theme: (localStorage.getItem(ACTIVE_THEME_KEY) || '').replace('__builtin_', '') || 'industrial-blue' };
+  _obData = { displayName: '', org: '', project: '', pat: '', team: '', ghPat: '', defaultCli: 'claude', repos: {}, theme: (localStorage.getItem(ACTIVE_THEME_KEY) || '').replace('__builtin_', '') || 'industrial-blue' };
   await _obRefreshInstalledPlugins();
   window._loadedPluginsRaw = Array.from(_obInstalledPluginIds).map(id => ({ id }));
   document.getElementById('onboarding').classList.add('visible');
@@ -24136,7 +23847,6 @@ async function obFinish() {
     DefaultUser: _obData.displayName.trim(),
     DefaultCli: _obData.defaultCli,
     GitHubPAT: _obData.ghPat.trim(),
-    WhisperKey: _obData.whisperKey.trim(),
     Repos: _obData.repos,
   };
   try {
