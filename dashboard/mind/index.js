@@ -204,6 +204,16 @@ function mountMind(addRoute, json, ctx) {
     return json(res, { space, stats });
   });
 
+  // ── Splash / boot-overlay quotes ─────────────────────────────────────────
+  // Instant read of the cached, brain-generated quote pool (or placeholders).
+  // Served on the boot path, so it must never block. Both splash.html and the
+  // dashboard loading overlay fetch this. Regeneration happens in the deferred
+  // boot work (see server.js runDeferredBootWork -> regenerateSplashQuotes).
+  const splashQuotes = require('./splash-quotes');
+  addRoute('GET', '/api/splash/quotes', (req, res) => {
+    return json(res, splashQuotes.getQuotes(repoRoot));
+  });
+
   // ── Mind-aware CLI routing suggestion ────────────────────────────────────
   //
   // Returns a CLI ranking based on which CLIs have previously completed
@@ -2039,6 +2049,14 @@ function mountMind(addRoute, json, ctx) {
     // recipes, new memory bullets). Fires a 'mind-startup-refresh' WS
     // event with phase: started | done | error so the UI can toast.
     // Idempotent: if a build is already in progress, this is a no-op.
+    // Best-effort regeneration of the splash/boot-overlay quote pool from the
+    // current Mind graph. Called by the deferred boot work after the graph
+    // refresh, so the next boot shows fresh, personal quotes. Fail-soft.
+    async regenerateSplashQuotes() {
+      const space = getSpace();
+      return splashQuotes.regenerate({ repoRoot, space, store, broadcast });
+    },
+
     async kickoffStartupRefresh() {
       const space = getSpace();
       const acq = lock.acquire(space, 'graph');

@@ -17,6 +17,8 @@ const { SWRCache } = require('./utils/swr-cache');
 const { atomicWriteSync } = require('./utils/atomic-write');
 const { BusyGuard } = require('./utils/busy-guard');
 const instructionAudit = require('./instruction-audit');
+const trace = require('./startup-trace');
+trace.mark('server:module-eval:start');
 
 // Core-owned SWR caches. ADO/GitHub caches moved into their plugins in v0.4.0;
 // core keeps git-branch cache + a general-purpose plugin cache.
@@ -78,6 +80,8 @@ const ROUTES = {
   '/xterm-addon-web-links.js':{ file: path.join(nodeModules, '@xterm/addon-web-links/lib/addon-web-links.js'),       type: 'application/javascript' },
   '/xterm-addon-unicode11.js':{ file: path.join(nodeModules, '@xterm/addon-unicode11/lib/addon-unicode11.js'),       type: 'application/javascript' },
   '/logo.svg':                { file: path.join(publicDir, 'logo.svg'),                                            type: 'image/svg+xml' },
+  '/launch.png':              { file: path.join(publicDir, 'launch.png'),                                          type: 'image/png' },
+  '/launch-logo.png':         { file: path.join(publicDir, 'launch-logo.png'),                                     type: 'image/png' },
   '/contributions-client.js': { file: path.join(publicDir, 'contributions-client.js'),                             type: 'application/javascript' },
   '/mind-ui.js':              { file: path.join(publicDir, 'mind-ui.js'),                                          type: 'application/javascript' },
   '/vis-network.min.js':      { file: path.join(nodeModules, 'vis-network/standalone/umd/vis-network.min.js'),     type: 'application/javascript' },
@@ -138,6 +142,7 @@ async function permGate(res, type, value, label) {
 // ── Learnings (collective intelligence) ──────────────────────────────────────
 const { mountLearnings } = require('./learnings');
 let _learningsInstance = null;
+trace.mark('server:top-requires-done');
 
 // ── Helper: read JSON body ────────────────────────────────────────────────────
 function readBody(req) {
@@ -3163,6 +3168,7 @@ const orchestrator = mountOrchestrator(addRoute, json, { terminals, broadcast, r
 const { mountJobs } = require('./jobs-scheduler');
 mountJobs(addRoute, json, { repoRoot, orchestrator, broadcast });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
+trace.mark('server:orchestrator-mounted');
 
 // ── Mount Mind (shared knowledge graph for every dispatched CLI) ────────────
 const { mountMind } = require('./mind');
@@ -3202,6 +3208,7 @@ const mind = mountMind(addRoute, json, {
   },
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
+trace.mark('server:mind-mounted');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
 // with the brain's current state (node count, staleness, query URL), and
 // every completed task gets saved back as a shared conversation node.
@@ -3223,6 +3230,7 @@ const brain = mountBrain(addRoute, json, {
   getConfig,
 });
 console.log('  Brain mounted (/api/symphonee/*) - planner + intent');
+trace.mark('server:brain-mounted');
 
 // Give the orchestrator a reference to the brain so /api/orchestrator/spawn
 // can consult brain.plan() when no cli was supplied. Set after both mount
@@ -3257,9 +3265,13 @@ _brainForKnowledgeEvents = brain;
 //
 // Pulls run serially so we don't slam Ollama with two concurrent
 // multi-gig streams. Deferred 4 s so the WS layer is ready.
-setTimeout(() => {
+// Brain dependency setup (Ollama running + models pulled). Heavy: detection,
+// process spawn, and potentially multi-GB pulls. Invoked from the deferred boot
+// work AFTER the dashboard has rendered (see runDeferredBootWork) so it does not
+// starve the renderer's event loop during first paint.
+function runBrainSetup() {
   const setupMod = require('./mind/ollama-setup');
-  setupMod.detectBrainSetup().then(async (status) => {
+  return setupMod.detectBrainSetup().then(async (status) => {
     if (!status.ollamaInstalled) {
       console.log('[brain/setup] Ollama not installed - brain features disabled until you install it from https://ollama.com/download');
       if (typeof broadcast === 'function') broadcast({
@@ -3344,18 +3356,40 @@ setTimeout(() => {
   }).catch((err) => {
     console.warn('[brain/setup] error:', err.message);
   });
-}, 4000);
+}
 
-// Auto-refresh Mind on every server boot so the graph is always current
-// when the user opens the app. Deferred 1.5s so the WebSocket layer is
-// ready to broadcast the toast event. Incremental — skips files whose
-// SHA256 hasn't changed, so it's cheap on a warm cache and a full rebuild
-// only on the first run after a clean clone.
-setTimeout(() => {
-  if (typeof mind.kickoffStartupRefresh === 'function') {
-    mind.kickoffStartupRefresh().catch(() => {});
-  }
-}, 1500);
+// ── Deferred boot work (de-congestion) ──────────────────────────────────────
+// The Mind graph refresh (a full incremental rebuild) and the brain setup above
+// are CPU/IO heavy and run on this single event loop. Firing them on fixed
+// timers used to overlap the dashboard's first render and starve its asset/API
+// requests (renderer load regressed once the splash fix made first-paint
+// earlier). Instead, run them ONCE, triggered by whichever comes first:
+//   - POST /api/internal/app-ready  (electron-main posts this after the
+//     dashboard finishes loading, plus a short settle), or
+//   - a fallback timer, so a headless `node server.js` still runs them.
+// After the incremental graph refresh we regenerate the splash/boot-overlay
+// quote pool so the next boot shows fresh, personal quotes.
+let _deferredBootWorkStarted = false;
+function runDeferredBootWork(trigger) {
+  if (_deferredBootWorkStarted) return;
+  _deferredBootWorkStarted = true;
+  console.log(`[boot] running deferred boot work (trigger: ${trigger || 'unknown'})`);
+  Promise.resolve()
+    .then(() => (typeof mind.kickoffStartupRefresh === 'function' ? mind.kickoffStartupRefresh() : null))
+    .catch(() => {})
+    .then(() => (typeof mind.regenerateSplashQuotes === 'function' ? mind.regenerateSplashQuotes() : null))
+    .catch(() => {});
+  // Stagger the brain setup slightly so the graph refresh gets the loop first.
+  setTimeout(() => { try { runBrainSetup(); } catch (e) { console.warn('[brain/setup] start error:', e.message); } }, 1200);
+}
+
+// Trigger 1: explicit signal from the renderer once the dashboard has loaded.
+addRoute('POST', '/api/internal/app-ready', (req, res) => {
+  setTimeout(() => runDeferredBootWork('app-ready'), 500);
+  json(res, { ok: true });
+});
+// Trigger 2: fallback so a headless server (no Electron renderer) still runs it.
+setTimeout(() => runDeferredBootWork('fallback-timer'), 9000);
 
 // ── Mount learnings ─────────────────────────────────────────────────────────
 const learningsDataDir = path.join(repoRoot, '.ai-workspace');
@@ -3437,6 +3471,7 @@ loadedPlugins = loadPlugins(pluginsDir, {
   },
 });
 if (loadedPlugins.length) console.log(`  Loaded ${loadedPlugins.length} plugin(s)`);
+trace.mark('server:plugins-loaded', { count: loadedPlugins.length });
 try {
   const rootCfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
   const migratedRootCfg = normalizeRootConfig(rootCfg);
@@ -3612,6 +3647,7 @@ writePluginHints();
 })();
 
 // ── Start ───────────────────────────────────────────────────────────────────
+trace.mark('server:module-eval:done');
 function startServer() {
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -3623,6 +3659,7 @@ function startServer() {
   });
 
   server.listen(PORT, HOST, () => {
+    trace.mark('server:listen-callback');
     const url = `http://${HOST}:${PORT}`;
     console.log(`\n  Symphonee running at ${url}\n`);
     if (!process.env.ELECTRON) exec(`start ${url}`);

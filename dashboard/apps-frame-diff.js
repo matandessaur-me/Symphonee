@@ -4,7 +4,15 @@
 // difference. Threshold is tuned above the JPEG quantization floor so repeated
 // captures of a static window read as unchanged.
 
-const Jimp = require('jimp');
+// Lazy-load jimp. This module is pulled into the boot path via
+// apps-agent -> apps-agent-chat -> apps-frame-diff, and require('jimp') is
+// ~100ms+. diffFrames is only ever called during a live Apps session, so defer
+// the cost off startup.
+let _Jimp;
+function getJimp() {
+  if (!_Jimp) _Jimp = require('jimp');
+  return _Jimp;
+}
 
 const DOWN_W = 80;
 const DOWN_H = 45;
@@ -12,7 +20,7 @@ const DEFAULT_THRESHOLD = 0.008; // ~0.8% mean absolute luminance delta
 
 async function toGreyGrid(base64) {
   const buf = Buffer.from(base64, 'base64');
-  const img = await Jimp.read(buf);
+  const img = await getJimp().read(buf);
   img.resize(DOWN_W, DOWN_H).greyscale();
   const { data } = img.bitmap;
   const grid = new Uint8Array(DOWN_W * DOWN_H);

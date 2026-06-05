@@ -18,12 +18,19 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-// Lazy-load playwright-core (only used by the fallback driver)
-let chromium;
-try {
-  chromium = require('playwright-core').chromium;
-} catch (_) {
-  chromium = null;
+// Lazy-load playwright-core (only used by the fallback driver). This is the
+// single heaviest require on the boot path (~370ms), and the fallback driver
+// is rarely used (the in-app webview driver is the default), so defer the
+// require to first use instead of paying it at module-eval.
+let _chromium;
+let _chromiumLoaded = false;
+function getChromium() {
+  if (!_chromiumLoaded) {
+    _chromiumLoaded = true;
+    try { _chromium = require('playwright-core').chromium; }
+    catch (_) { _chromium = null; }
+  }
+  return _chromium;
 }
 
 // ── Encryption helpers for session/credential storage ───────────────────────
@@ -490,7 +497,7 @@ function makePlaywrightDriver() {
   let requestIds = new WeakMap();
 
   function _ensurePlaywright() {
-    if (!chromium) {
+    if (!getChromium()) {
       throw new Error('playwright-core is not installed. Run: npm install playwright-core');
     }
   }
@@ -575,7 +582,7 @@ function makePlaywrightDriver() {
           const opts = { ...launchOpts };
           if (c.channel) opts.channel = c.channel;
           if (c.executablePath) opts.executablePath = c.executablePath;
-          browser = await chromium.launch(opts);
+          browser = await getChromium().launch(opts);
           launchedVia = c.label;
           break;
         } catch (err) { lastErr = err; }

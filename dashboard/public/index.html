@@ -4767,9 +4767,35 @@
       background: var(--base);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 0; opacity: 0; pointer-events: none;
-      transition: opacity 0.25s ease;
+      transition: opacity 0.6s ease;
     }
     .loading-overlay.visible { opacity: 1; pointer-events: all; }
+    /* Boot variant: the intentional splash. Centered logo + big quote, no label
+       or progress bar, dark (#1a1a1a) to match splash.html for a seamless,
+       invisible handoff from the OS splash to the dashboard. */
+    .loading-overlay.boot { background: #1a1a1a; }
+    .loading-overlay-logo {
+      display: none;
+      width: 44%; max-width: 440px; height: auto; object-fit: contain;
+    }
+    .loading-overlay.boot .loading-overlay-logo { display: block; }
+    .loading-overlay.boot .loading-overlay-bar,
+    .loading-overlay.boot .loading-overlay-label { display: none; }
+    /* Animated 3-dot loader (boot only). Sits between logo and quote so the
+       screen reads as actively loading, not just a static splash. */
+    .boot-dots { display: none; gap: 8px; margin-top: 26px; }
+    .loading-overlay.boot .boot-dots { display: flex; }
+    .boot-dots span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.55);
+      animation: boot-dot 1.25s ease-in-out infinite;
+    }
+    .boot-dots span:nth-child(2) { animation-delay: 0.16s; }
+    .boot-dots span:nth-child(3) { animation-delay: 0.32s; }
+    @keyframes boot-dot {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40%           { opacity: 1;    transform: translateY(-6px); }
+    }
     .loading-overlay-bar {
       width: 160px; height: 3px; border-radius: 2px;
       background: var(--surface1); overflow: hidden;
@@ -4791,7 +4817,7 @@
     }
     .loading-overlay-quote {
       margin-top: 28px; text-align: center; max-width: 360px;
-      opacity: 0; transition: opacity 0.4s ease;
+      opacity: 0; transition: opacity 0.6s ease;
     }
     .loading-overlay-quote.visible { opacity: 1; }
     .loading-overlay-quote-text {
@@ -4802,6 +4828,14 @@
       font: 12px var(--font-ui); color: var(--overlay1);
       margin-top: 8px;
     }
+    /* Boot variant quote: big, clean, calm. These are LLM-generated facts about
+       your work, so no author line. */
+    .loading-overlay.boot .loading-overlay-quote { margin-top: 24px; max-width: 660px; padding: 0 28px; }
+    .loading-overlay.boot .loading-overlay-quote-text {
+      font: 500 23px/1.5 var(--font-ui); color: rgba(255, 255, 255, 0.72);
+      font-style: normal; letter-spacing: 0.2px;
+    }
+    .loading-overlay.boot .loading-overlay-quote-author { display: none; }
     /* ── Onboarding wizard ──────────────────────────────────────────────── */
     .onboarding {
       position: fixed; inset: 0; z-index: 10000;
@@ -4872,6 +4906,8 @@
 </script>
 
 <div class="loading-overlay" id="loadingOverlay">
+  <img class="loading-overlay-logo" src="/launch-logo.png" alt="Symphonee" />
+  <div class="boot-dots" aria-hidden="true"><span></span><span></span><span></span></div>
   <div class="loading-overlay-label" id="loadingLabel">Loading</div>
   <div class="loading-overlay-bar"><div class="loading-overlay-bar-fill"></div></div>
   <div class="loading-overlay-quote" id="loadingQuote">
@@ -4879,6 +4915,16 @@
     <div class="loading-overlay-quote-author" id="loadingQuoteAuthor"></div>
   </div>
 </div>
+<script>
+  // Show the boot overlay in its splash ("boot") form on first paint, so it is
+  // visually continuous with splash.html (same logo, same dark background) and
+  // covers the dashboard render. Quote cycling + the smooth hide are wired in
+  // the main script (_initBootLoading), which runs after this.
+  try {
+    var _ov = document.getElementById('loadingOverlay');
+    if (_ov) { _ov.classList.add('boot'); _ov.classList.add('visible'); }
+  } catch (_) {}
+</script>
 
 <!-- ═══ Onboarding Wizard ═══════════════════════════════════════════════ -->
 <div class="onboarding" id="onboarding">
@@ -23563,14 +23609,19 @@ function showLoading(text) {
   _loadingTimer = setTimeout(hideLoading, 8000);
 }
 function _showRandomQuote() {
+  // In boot ("splash") mode these are plain LLM facts shown big, so render them
+  // unquoted with no author. The manual-refresh mode keeps the "quote" — author
+  // styling.
+  const boot = document.getElementById('loadingOverlay').classList.contains('boot');
+  const fmt = (s) => boot ? s : '"' + s + '"';
   const q = _loadingQuotes[Math.floor(Math.random() * _loadingQuotes.length)];
   const quoteEl = document.getElementById('loadingQuote');
   const textEl = document.getElementById('loadingQuoteText');
   const authorEl = document.getElementById('loadingQuoteAuthor');
   quoteEl.classList.remove('visible');
   setTimeout(() => {
-    textEl.textContent = '"' + q.text + '"';
-    authorEl.textContent = '— ' + q.author;
+    textEl.textContent = fmt(q.text);
+    authorEl.textContent = q.author ? '— ' + q.author : '';
     quoteEl.classList.add('visible');
   }, 150);
   clearInterval(_quoteTimer);
@@ -23578,8 +23629,8 @@ function _showRandomQuote() {
     const next = _loadingQuotes[Math.floor(Math.random() * _loadingQuotes.length)];
     quoteEl.classList.remove('visible');
     setTimeout(() => {
-      textEl.textContent = '"' + next.text + '"';
-      authorEl.textContent = '— ' + next.author;
+      textEl.textContent = fmt(next.text);
+      authorEl.textContent = next.author ? '— ' + next.author : '';
       quoteEl.classList.add('visible');
     }, 400);
   }, 4000);
@@ -23591,6 +23642,53 @@ function hideLoading() {
   quoteEl.classList.remove('visible');
   document.getElementById('loadingOverlay').classList.remove('visible');
 }
+
+// ── Boot loading overlay ────────────────────────────────────────────────────
+// Covers the initial dashboard render with cycling Mind-generated quotes
+// (continuous with splash.html), then hides once the window has fully loaded.
+let _bootOverlayDone = false;
+function hideBootOverlay() {
+  if (_bootOverlayDone) return;
+  _bootOverlayDone = true;
+  hideLoading();
+  // Drop the boot (splash) styling once it has faded out, so a later manual
+  // showLoading() (refresh/import) uses the normal compact overlay, not the
+  // big centered-logo splash.
+  const ov = document.getElementById('loadingOverlay');
+  if (ov) setTimeout(() => ov.classList.remove('boot'), 700);
+}
+async function _initBootLoading() {
+  const ov = document.getElementById('loadingOverlay');
+  if (!ov) return;
+  // Hard safety cap registered FIRST so the overlay can never get stuck even if
+  // something below throws.
+  setTimeout(hideBootOverlay, 12000);
+  // Pull personal quotes from the Mind; fall back to the built-in set. Mutate
+  // the existing array in place so _showRandomQuote keeps using it.
+  try {
+    const r = await fetch('/api/splash/quotes');
+    if (r.ok) {
+      const d = await r.json();
+      if (d && Array.isArray(d.quotes) && d.quotes.length) {
+        _loadingQuotes.length = 0;
+        for (const q of d.quotes) _loadingQuotes.push({ text: q.text, author: q.author || 'Symphonee' });
+      }
+    }
+  } catch (_) {}
+  ov.classList.add('boot');
+  ov.classList.add('visible');
+  _showRandomQuote();
+  // Hide once the page has fully loaded, with a comfortable minimum dwell so the
+  // splash reads as intentional (logo + a quote you can actually finish reading)
+  // even when the app is fully cached and would otherwise flash by. (Hard cap
+  // already registered at the top of this fn.)
+  const MIN_REVEAL = 2500;
+  const start = Date.now();
+  const finish = () => setTimeout(hideBootOverlay, Math.max(0, MIN_REVEAL - (Date.now() - start)));
+  if (document.readyState === 'complete') finish();
+  else window.addEventListener('load', finish, { once: true });
+}
+_initBootLoading();
 async function refreshAll() {
   showLoading('Refreshing');
   const minWait = new Promise(r => setTimeout(r, 4000));

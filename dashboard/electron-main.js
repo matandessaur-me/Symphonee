@@ -4,6 +4,8 @@
 const { app, BrowserWindow, nativeImage, nativeTheme, dialog, screen, shell, webContents: webContentsNS, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const trace = require('./startup-trace');
+trace.mark('main:module-eval');
 
 process.env.ELECTRON = '1';
 
@@ -12,7 +14,12 @@ const HOST = '127.0.0.1';
 
 let win = null;
 let splashShownAt = 0;
-const SPLASH_MIN_MS = 1500;
+// Brand-min: how long the splash stays up AFTER it becomes visible, so the logo
+// is not a jarring flash. Was 1500ms, which (combined with an ordering bug that
+// applied the full floor from server-listening rather than from splash-visible)
+// kept users on the splash ~2.1s after the server was already ready. The floor
+// is measured from splash-visible (ready-to-show), not from server-listening.
+const SPLASH_MIN_MS = 400;
 
 // ── In-app browser automation driver ───────────────────────────────────────
 // Tracks the <webview> webContents inside panel-browser and exposes
@@ -1452,6 +1459,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    trace.mark('main:whenReady');
     // Create the main window FIRST and point it at splash.html on disk so
     // the user sees the brand mark immediately. We swap to the dashboard
     // URL once the HTTP server is listening (with a CSS fade in splash.html).
@@ -1503,6 +1511,7 @@ if (!gotLock) {
       // the window once Chromium has produced its first frame.
       win.once('ready-to-show', () => {
         try {
+          trace.mark('main:splash-ready-to-show');
           win.maximize();
           win.show();
           splashShownAt = Date.now();
@@ -1510,6 +1519,7 @@ if (!gotLock) {
       });
       win.on('closed', () => { win = null; });
       try { win.loadFile(path.join(__dirname, 'public', 'splash.html')); } catch (_) {}
+      trace.mark('main:window-created');
     }
 
     // Wipe the renderer's HTTP cache on every launch. Electron's session
@@ -1517,14 +1527,27 @@ if (!gotLock) {
     // mind-ui.js even after the server had updated them, which broke the
     // dashboard repeatedly during development. Localhost-only assets so
     // the cache buys us nothing.
-    try {
-      const { session } = require('electron');
-      await session.defaultSession.clearCache();
-    } catch (e) { console.log('  cache clear skipped:', e.message); }
+    trace.mark('main:clearCache:start');
+    // Previously cleared the renderer HTTP cache on EVERY launch to dodge stale
+    // dev assets. That forced a full cold re-fetch + re-parse of index.html /
+    // mind-ui.js / xterm / the 3D graph libs every boot (~1.2s of renderer
+    // time). The localhost assets only go stale while actively iterating on the
+    // front-end, so this is now opt-in: set SY_CLEAR_CACHE=1 when editing
+    // dashboard assets. Normal launches keep the warm cache.
+    if (process.env.SY_CLEAR_CACHE === '1') {
+      try {
+        const { session } = require('electron');
+        await session.defaultSession.clearCache();
+        console.log('  Renderer cache cleared (SY_CLEAR_CACHE=1)');
+      } catch (e) { console.log('  cache clear skipped:', e.message); }
+    }
+    trace.mark('main:clearCache:done');
     console.log('Electron ready, loading server...');
     let server, startServer, addRoute;
     try {
+      trace.mark('main:server-require:start');
       ({ server, startServer, addRoute } = require('./server'));
+      trace.mark('main:server-require:done');
     } catch (err) {
       dialog.showErrorBox('Symphonee - Startup Error',
         `Failed to load server modules.\n\n${err.message}\n\nTry running "npm install" in the dashboard folder.`);
@@ -1801,6 +1824,8 @@ if (!gotLock) {
     });
 
     server.on('listening', () => {
+      trace.mark('main:server-listening');
+      trace.flush('listening');
       console.log('Server listening, swapping splash to dashboard...');
       const appUrl = `http://${HOST}:${PORT}`;
 
@@ -1808,14 +1833,47 @@ if (!gotLock) {
       // the splash minimum, then navigate the same window to the dashboard.
       const swap = () => {
         if (!win || win.isDestroyed()) return;
+        const sinceVisible = splashShownAt ? Date.now() - splashShownAt : 0;
+        trace.mark('main:splash-swap', { splashFloorMs: SPLASH_MIN_MS, sinceSplashVisibleMs: sinceVisible });
         try { win.loadURL(appUrl); } catch (_) {}
       };
-      const elapsed = splashShownAt ? Date.now() - splashShownAt : 0;
-      const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
-      setTimeout(swap, remaining);
+      // Swap once BOTH conditions hold: the server is listening (we are in that
+      // handler) AND the splash has been visible for the brand-min floor. The
+      // floor is measured from splash-visible (ready-to-show), not from now --
+      // otherwise a server that becomes ready before the window paints would
+      // restart the full floor from listening (the original bug). If the splash
+      // is not visible yet, defer scheduling until ready-to-show fires; the
+      // splashShownAt-setter is registered first, so it runs before this.
+      const scheduleSwap = () => {
+        const elapsed = splashShownAt ? Date.now() - splashShownAt : 0;
+        setTimeout(swap, Math.max(0, SPLASH_MIN_MS - elapsed));
+      };
+      if (splashShownAt) scheduleSwap();
+      else win.once('ready-to-show', scheduleSwap);
 
       // Re-attach the link/navigation handlers on the live window.
       if (win && !win.isDestroyed()) {
+        // Mark when the dashboard (not the splash) finishes loading in the
+        // renderer. This closes the end-to-end boot timeline and promotes the
+        // trace to an indexed boot-<n>.json.
+        win.webContents.on('did-finish-load', () => {
+          try {
+            const u = win.webContents.getURL() || '';
+            if (u.startsWith(appUrl)) {
+              trace.mark('main:dashboard-did-finish-load');
+              trace.flush('dashboard-loaded');
+              // Signal the server that the UI is up so it can run heavy deferred
+              // boot work (Mind refresh, brain setup, quote regen) AFTER the
+              // render instead of competing with it.
+              try {
+                const http = require('http');
+                const rq = http.request({ hostname: HOST, port: PORT, path: '/api/internal/app-ready', method: 'POST', headers: { 'Content-Length': 0 } }, r => { r.on('data', () => {}); r.on('end', () => {}); });
+                rq.on('error', () => {});
+                rq.end();
+              } catch (_) {}
+            }
+          } catch (_) {}
+        });
         win.webContents.setWindowOpenHandler(({ url }) => {
           if (url.startsWith(appUrl)) return { action: 'allow' };
           shell.openExternal(url);
