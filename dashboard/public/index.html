@@ -4818,28 +4818,43 @@
     .loading-overlay.boot .loading-overlay-quote-author { display: none; }
     /* ── Onboarding wizard ──────────────────────────────────────────────── */
     .onboarding {
-      position: fixed; inset: 0; z-index: 10000;
-      background: var(--base); display: none;
+      position: fixed; inset: 0; z-index: 10000; display: none;
+      background:
+        radial-gradient(1100px 560px at 50% -8%, color-mix(in srgb, var(--accent) 11%, transparent), transparent),
+        radial-gradient(900px 500px at 50% 110%, color-mix(in srgb, var(--accent) 7%, transparent), transparent),
+        var(--base);
       flex-direction: column; align-items: center; justify-content: center;
+      padding: 48px 24px;
     }
     .onboarding.visible { display: flex; }
+    /* Slim top progress bar (typeform-style) */
+    .onboarding-progress {
+      position: fixed; top: 0; left: 0; right: 0; height: 3px;
+      background: color-mix(in srgb, var(--surface1) 55%, transparent);
+    }
+    .onboarding-progress-fill {
+      height: 100%; width: 0;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, var(--text)), var(--accent));
+      border-radius: 0 3px 3px 0; transition: width 0.4s cubic-bezier(0.22,1,0.36,1);
+      box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 65%, transparent);
+    }
+    /* No card box -- a centered single-column flow that fills the screen. */
     .onboarding-card {
-      width: 520px; max-height: 80vh; display: flex; flex-direction: column;
-      background: var(--mantle); border: 1px solid var(--surface1);
-      border-radius: var(--radius-lg); box-shadow: 0 16px 48px rgba(0,0,0,0.4);
-      overflow: hidden;
+      width: 100%; max-width: 600px; max-height: 100%;
+      display: flex; flex-direction: column;
+      background: transparent; border: none; box-shadow: none; overflow: visible;
     }
-    .onboarding-body { padding: 28px 32px; overflow-y: auto; flex: 1; }
-    .onboarding-title { font: 20px var(--font-ui); font-weight: 700; color: var(--text); margin-bottom: 6px; }
-    .onboarding-subtitle { font: 13px var(--font-ui); color: var(--subtext0); margin-bottom: 20px; line-height: 1.5; }
-    .onboarding-field { margin-bottom: 14px; }
-    .onboarding-field label { display: block; font: 11px var(--font-ui); font-weight: 600; color: var(--subtext1); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .onboarding-body { padding: 6px 6px 2px; overflow-y: auto; flex: 0 1 auto; }
+    .onboarding-title { font: 30px var(--font-ui); font-weight: 700; color: var(--text); margin-bottom: 8px; letter-spacing: -0.4px; line-height: 1.18; }
+    .onboarding-subtitle { font: 15px var(--font-ui); color: var(--subtext0); margin-bottom: 28px; line-height: 1.55; }
+    .onboarding-field { margin-bottom: 16px; }
+    .onboarding-field label { display: block; font: 11px var(--font-ui); font-weight: 600; color: var(--subtext1); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
     .onboarding-field input, .onboarding-field select {
-      width: 100%; padding: 8px 10px; font: 13px var(--font-ui); color: var(--text);
-      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
-      outline: none; box-sizing: border-box;
+      width: 100%; padding: 12px 14px; font: 15px var(--font-ui); color: var(--text);
+      background: var(--surface0); border: 1px solid var(--surface1); border-radius: 10px;
+      outline: none; box-sizing: border-box; transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .onboarding-field input:focus, .onboarding-field select:focus { border-color: var(--accent); }
+    .onboarding-field input:focus, .onboarding-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
     .onboarding-hint {
       font: 11px/1.5 var(--font-ui); color: var(--subtext0); margin-top: 4px;
       padding: 8px 10px; background: var(--surface0); border-radius: var(--radius);
@@ -4849,21 +4864,22 @@
     .onboarding-hint code { font: 10px var(--font-mono); background: var(--base); padding: 1px 4px; border-radius: 2px; }
     .onboarding-footer {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 32px; border-top: 1px solid var(--surface0);
+      padding: 24px 6px 0; margin-top: 10px; border-top: none;
     }
-    .onboarding-dots { display: flex; gap: 6px; }
-    .onboarding-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--surface1); transition: background 0.2s; }
-    .onboarding-dot.active { background: var(--accent); }
-    .onboarding-dot.done { background: var(--green); }
-    .onboarding-btns { display: flex; gap: 8px; }
+    .onboarding-dots { display: flex; gap: 7px; }
+    .onboarding-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--surface2); transition: background 0.2s, transform 0.2s; }
+    .onboarding-dot.active { background: var(--accent); transform: scale(1.3); }
+    .onboarding-dot.done { background: color-mix(in srgb, var(--accent) 55%, var(--surface2)); }
+    .onboarding-btns { display: flex; gap: 10px; }
     .onboarding-btn {
-      padding: 8px 20px; border: none; border-radius: var(--radius); font: 12px var(--font-ui);
-      font-weight: 600; cursor: pointer; transition: opacity 0.1s;
+      padding: 11px 26px; border: none; border-radius: 10px; font: 13px var(--font-ui);
+      font-weight: 600; cursor: pointer; transition: opacity 0.1s, transform 0.12s, box-shadow 0.15s;
     }
-    .onboarding-btn:hover { opacity: 0.85; }
+    .onboarding-btn:hover { opacity: 0.92; }
     .onboarding-btn-secondary { background: var(--surface1); color: var(--text); }
     .onboarding-btn-primary { background: var(--accent); color: var(--crust); }
-    .onboarding-btn:disabled { opacity: 0.4; cursor: default; }
+    .onboarding-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 35%, transparent); }
+    .onboarding-btn:disabled { opacity: 0.4; cursor: default; transform: none; box-shadow: none; }
     .onboarding-section-title { font: 12px var(--font-ui); font-weight: 600; color: var(--text); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--surface0); }
     .onboarding-repo-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--surface0); font-size: 12px; }
     .onboarding-repo-name { font-weight: 600; color: var(--accent); min-width: 80px; }
@@ -4898,13 +4914,13 @@
 
 <div class="loading-overlay" id="loadingOverlay">
   <img class="loading-overlay-logo" src="/launch-logo.png" alt="Symphonee" />
-  <div class="boot-dots" aria-hidden="true"><span></span><span></span><span></span></div>
   <div class="loading-overlay-label" id="loadingLabel">Loading</div>
   <div class="loading-overlay-bar"><div class="loading-overlay-bar-fill"></div></div>
   <div class="loading-overlay-quote" id="loadingQuote">
     <div class="loading-overlay-quote-text" id="loadingQuoteText"></div>
     <div class="loading-overlay-quote-author" id="loadingQuoteAuthor"></div>
   </div>
+  <div class="boot-dots" aria-hidden="true"><span></span><span></span><span></span></div>
 </div>
 <script>
   // Show the boot overlay in its splash ("boot") form on first paint, so it is
@@ -4919,6 +4935,7 @@
 
 <!-- ═══ Onboarding Wizard ═══════════════════════════════════════════════ -->
 <div class="onboarding" id="onboarding">
+  <div class="onboarding-progress"><div class="onboarding-progress-fill" id="obProgressFill"></div></div>
   <div class="onboarding-card">
     <div class="onboarding-body" id="onboardingBody"></div>
     <div class="onboarding-footer">
@@ -23856,6 +23873,17 @@ async function startOnboarding() {
   obRender();
 }
 
+// Keyboard control: Enter advances (textareas keep their newline; modifier combos ignored).
+document.addEventListener('keydown', (e) => {
+  const ob = document.getElementById('onboarding');
+  if (!ob || !ob.classList.contains('visible')) return;
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.target && e.target.tagName === 'TEXTAREA') return;
+    e.preventDefault();
+    obNav(1);
+  }
+});
+
 function obSkipToEnd() {
   _obStep = OB_STEPS.length - 1;
   obRender();
@@ -23898,12 +23926,17 @@ function obRender() {
   const applicable = OB_STEPS.map((_, i) => _obStepIsApplicable(i) ? i : -1).filter(i => i >= 0);
   const dotActiveIdx = applicable.indexOf(_obStep);
   dots.innerHTML = applicable.map((_, visI) => `<div class="onboarding-dot${visI === dotActiveIdx ? ' active' : visI < dotActiveIdx ? ' done' : ''}"></div>`).join('');
+  const _pf = document.getElementById('obProgressFill');
+  if (_pf) _pf.style.width = (applicable.length ? Math.round(((dotActiveIdx + 1) / applicable.length) * 100) : 0) + '%';
   // Buttons
   document.getElementById('obBack').style.display = _obStep === 0 ? 'none' : '';
   const nextBtn = document.getElementById('obNext');
   nextBtn.textContent = step.nextLabel || (_obStep === OB_STEPS.length - 1 ? 'Get Started' : 'Next');
   try { lucide.createIcons(); } catch (_) {}
   if (step.onEnter) step.onEnter();
+  // Keyboard-first: focus the first field so the user can just type.
+  const _fi = body.querySelector('input, select, textarea');
+  if (_fi) setTimeout(() => { try { _fi.focus(); } catch (_) {} }, 60);
 }
 
 async function obNav(dir) {
@@ -24814,6 +24847,7 @@ function getCmdActions() {
     { label: 'Resume Session', icon: 'rotate-ccw', action: () => { resumeAiSession(); switchTab('terminal'); }, category: 'AI', hint: 'Resume the last AI session' },
     // Settings
     { label: 'Open Settings', icon: 'settings', action: () => openSettings(), category: 'Settings', hint: 'Repos, plugins, and AI keys' },
+    { label: 'Run Setup (Onboarding)', icon: 'sparkles', action: () => startOnboarding(), category: 'Settings', hint: 'Re-run the welcome / setup wizard' },
     // Scheduled jobs (recurring prompts to any CLI)
     { label: 'Scheduled Jobs', icon: 'calendar-clock', action: () => openJobsModal(), category: 'AI', hint: 'Run AI prompts on a schedule' },
     { label: 'Create Scheduled Job', icon: 'plus', action: () => openJobEditor(), category: 'AI', hint: 'Schedule a recurring AI prompt' },
@@ -25093,8 +25127,8 @@ function openAIFocusPalette() {
     if (!input) return;
     input.value = seed;
     filterCmdPalette();
-    // Bias selection to the "Ask AI" row (last AI-category entry).
-    const aiIdx = _cmdFiltered.findIndex(a => a.category === 'AI' && a.label.startsWith('Ask AI:'));
+    // Bias selection to the AI fallback row (ask-locally / send-to-CLI).
+    const aiIdx = _cmdFiltered.findIndex(a => a._aiFallback);
     if (aiIdx >= 0) { _cmdSelectedIdx = aiIdx; renderCmdPalette(); }
     input.setSelectionRange(input.value.length, input.value.length);
   }, 60);
@@ -25456,16 +25490,20 @@ function filterCmdPalette() {
   // there are a few matches, or as the sole option when nothing matches - so
   // a question like "what's in my inbox" still resolves to a useful action.
   if (q && q.length >= 2 && !findMatch) {
-    const aiLabel = 'Ask AI: ' + raw.trim();
-    const already = _cmdFiltered.some(a => a.label === aiLabel);
+    const queryText = raw.trim();
+    // A question gets a quick LOCAL answer (Gemma, grounded in your Mind); a
+    // task is dispatched to the active CLI. Label/hint reflect which will happen.
+    const isQ = _looksLikeQuestion(queryText);
+    const cliLabel = (CLI_CONFIG[activeCli] && CLI_CONFIG[activeCli].label) || activeCli;
+    const already = _cmdFiltered.some(a => a._aiFallback);
     if (!already) {
-      const cliLabel = (CLI_CONFIG[activeCli] && CLI_CONFIG[activeCli].label) || activeCli;
       const aiRow = {
-        label: aiLabel,
-        icon: 'sparkles',
-        action: () => askAIFromPalette(raw.trim()),
+        label: (isQ ? 'Answer locally: ' : 'Ask AI: ') + queryText,
+        icon: isQ ? 'cpu' : 'sparkles',
+        action: () => askAIFromPalette(queryText),
         category: 'AI',
-        hint: 'Send to ' + cliLabel,
+        hint: isQ ? 'Local answer, grounded in your Mind' : ('Send to ' + cliLabel),
+        _aiFallback: true,
       };
       if (_cmdFiltered.length === 0) _cmdFiltered = [aiRow];
       else _cmdFiltered.push(aiRow);
