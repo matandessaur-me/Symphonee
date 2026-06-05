@@ -224,6 +224,13 @@
       border-radius: 5px;
       font: 600 10px var(--font-mono); color: var(--text);
     }
+    /* ── Hotkeys editor mini buttons ─────────────────────────────────────── */
+    .hotkey-mini {
+      background: var(--surface1); border: 1px solid var(--surface2);
+      color: var(--subtext1); font: 600 10px var(--font-ui);
+      padding: 3px 8px; border-radius: 5px; cursor: pointer; flex-shrink: 0;
+    }
+    .hotkey-mini:hover { color: var(--text); border-color: var(--overlay0); }
 
     /* ── Theme: Warm Metallic ────────────────────────────────────────────── */
     [data-theme="warm-metallic"] {
@@ -6176,6 +6183,9 @@
         <button class="settings-nav-btn" data-settings-tab="theme" onclick="switchSettingsTab('theme', this)">
           <i data-lucide="palette" style="width:14px;height:14px;"></i> Theme
         </button>
+        <button class="settings-nav-btn" data-settings-tab="hotkeys" onclick="switchSettingsTab('hotkeys', this)">
+          <i data-lucide="keyboard" style="width:14px;height:14px;"></i> Hotkeys
+        </button>
         <div style="flex:1;"></div>
         <button class="settings-nav-btn settings-export-import-btn" onclick="openExportImportMenu(this)">
           <i data-lucide="arrow-left-right" style="width:14px;height:14px;"></i> Export / Import
@@ -6516,6 +6526,15 @@
                 <i data-lucide="upload" style="width:13px;height:13px;"></i> Import Themes
               </button>
             </div>
+          </div>
+        </div>
+
+        <!-- Hotkeys Tab -->
+        <div class="settings-tab" id="settingsTab-hotkeys">
+          <div class="settings-section">
+            <div class="settings-section-title">Keyboard Shortcuts</div>
+            <div class="settings-section-desc">Click a shortcut, then press a new key combo to rebind it (Esc to cancel). If the combo is already in use, it is automatically unbound from the other action. Changes save to your config and travel with Settings export/import.</div>
+            <div id="hotkeysList" style="margin-top:8px;"></div>
           </div>
         </div>
 
@@ -7053,7 +7072,15 @@ function createTermInstance(termId, label) {
     if (e.key === 'Control' || e.key === 'Shift') return false;
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const k = (e.key || '').toLowerCase();
-      if (k === 'k' || k === 'i' || k === '/' || k === '.') return false;
+      // Let a combo bound to an allow-in-input hotkey that WOULD fire (command
+      // palette, AI focus, help, etc. -- including REBOUND ones) bubble to the
+      // global hub instead of going to the PTY. The when() check means context
+      // shortcuts (e.g. note Ctrl+S) do NOT suppress the terminal's own keys.
+      try {
+        const combo = eventToCombo(e);
+        const act = combo && _hotkeyMap.get(combo);
+        if (act && act.allowInInput && (act.when ? act.when() : true)) return false;
+      } catch (_) {}
       // Ctrl/Cmd+V: paste the clipboard into the PTY. Without this xterm sends a
       // raw ^V (0x16) and nothing useful happens. preventDefault suppresses the
       // browser's native paste so the 'paste' listener below does not also fire
@@ -12351,13 +12378,8 @@ async function switchScreen() {
   } catch (_) {}
 }
 
-// Ctrl+S to save note
-document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 's' && currentNote && document.activeElement === document.getElementById('noteTextarea')) {
-    e.preventDefault();
-    saveCurrentNote();
-  }
-});
+// Ctrl+S (save note) is now the 'save-note' entry in HOTKEY_ACTIONS, dispatched
+// by the central keyboard hub so it is viewable/rebindable in Settings > Hotkeys.
 
 // ── Open external links in system browser ───────────────────────────────
 function openExternal(url) {
@@ -13050,6 +13072,7 @@ async function loadConfig(autoSelectSprint) {
   try {
     const res = await fetch('/api/config');
     configData = await res.json();
+    try { loadHotkeys(); } catch (_) {}
     try { applyInappBrowserAppearance(); } catch (_) {}
     document.getElementById('projectLabel').textContent = 'Settings';
     // Plugin presence drives shell visibility. Config keys are owned by plugins
@@ -22559,6 +22582,7 @@ function switchSettingsTab(tabId, btn) {
   // Trigger AI detection when switching to AI tab
   if (tabId === 'ai') detectAiTools();
   if (tabId === 'theme') renderThemeList();
+  if (tabId === 'hotkeys') { try { renderHotkeys(); } catch (_) {} }
   if (tabId === 'repos') { try { renderSettingsSpaces(); } catch (_) {} }
   // Semi-transparent overlay on theme tab so user can preview live
   const modal = document.getElementById('settingsModal');
@@ -24757,14 +24781,76 @@ function _runSeqKey(key) {
   if (fn) { try { fn(); } catch (_) {} }
 }
 
-// ── Keyboard shortcut: Escape closes modals ─────────────────────────────
+// ── Hotkeys: configurable keyboard shortcuts ────────────────────────────────
+// Single source of truth for the BINDABLE app shortcuts. run()/when() live in
+// code; only the COMBO is user-editable (stored as overrides in
+// configData.Hotkeys = { version, bindings: {actionId: combo}, disabled: [] }).
+// Menu navigation keys (Enter/Arrow/Escape inside dropdowns), the `g` sequence,
+// and the OS panic key are intentionally NOT here.
+function _hasWorkItemProvider() { return !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.workItemProvider)); }
+const HOTKEY_ACTIONS = [
+  { id: 'command-palette',     group: 'Core',       label: 'Command palette',          def: 'Ctrl+K', allowInInput: true, run: () => openCmdPalette() },
+  { id: 'command-palette-alt', group: 'Core',       label: 'Command palette (alt)',    def: 'Ctrl+J', allowInInput: true, run: () => openCmdPalette() },
+  { id: 'ai-focus',            group: 'Core',       label: 'Ask AI about selection',   def: 'Ctrl+I', allowInInput: true, run: () => openAIFocusPalette() },
+  { id: 'shortcut-help',       group: 'Core',       label: 'Keyboard shortcuts help',  def: 'Ctrl+/', allowInInput: true, run: () => openShortcutHelp() },
+  { id: 'rerun-ai',            group: 'AI',         label: 'Re-run last AI prompt',    def: 'Ctrl+.', allowInInput: true, run: () => { const h = _readAiHistory(); if (h.length) askAIFromPalette(h[0].prompt); else toast('No AI history yet', 'info'); } },
+  { id: 'go-terminal',         group: 'Navigate',   label: 'Go to Terminal',           def: 'Ctrl+T', run: () => switchTab('terminal') },
+  { id: 'go-backlog',          group: 'Navigate',   label: 'Go to Backlog',            def: 'Ctrl+B', when: _hasWorkItemProvider, run: () => switchTab('backlog') },
+  { id: 'go-diffview',         group: 'Navigate',   label: 'Go to Diff viewer',        def: 'Ctrl+D', when: () => { const b = document.getElementById('diffviewTabBtn'); return b && b.style.display !== 'none'; }, run: () => switchTab('diffview') },
+  { id: 'refresh-items',       group: 'Work items', label: 'Refresh work items',       def: 'Ctrl+R', when: _hasWorkItemProvider, run: () => { loadWorkItems(true); toast('Refreshed', 'success'); } },
+  { id: 'new-item',            group: 'Work items', label: 'New work item',            def: 'Ctrl+Shift+N', allowInInput: true, when: _hasWorkItemProvider, run: () => openCreateModal() },
+  { id: 'find-items',          group: 'Work items', label: 'Find work items',          def: 'Ctrl+Shift+F', when: _hasWorkItemProvider, run: () => { switchTab('backlog'); setTimeout(() => document.getElementById('backlogSearch')?.focus(), 100); } },
+  { id: 'save-note',           group: 'Notes',      label: 'Save note',                def: 'Ctrl+S', allowInInput: true, when: () => currentNote && document.activeElement === document.getElementById('noteTextarea'), run: () => saveCurrentNote() },
+  { id: 'find-in-note',        group: 'Notes',      label: 'Find in note',             def: 'Ctrl+F', allowInInput: true, when: () => { const p = document.getElementById('panel-notes'); return p && p.classList.contains('active') && currentNote; }, run: () => openNoteFind() },
+];
+const RESERVED_COMBOS = new Set(['Ctrl+Alt+Shift+X']); // OS panic hotkey (electron-main globalShortcut)
+
+// Canonical combo string from a keydown event, e.g. "Ctrl+Shift+K". Modifier
+// order is fixed (Ctrl, Alt, Shift) so record and dispatch always agree. Meta
+// is folded into Ctrl. Returns null for a modifier-only press.
+function eventToCombo(e) {
+  const k = e.key;
+  if (k === 'Control' || k === 'Shift' || k === 'Alt' || k === 'Meta' || k === 'OS') return null;
+  const parts = [];
+  if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  let key = k;
+  if (key === ' ') key = 'Space';
+  else if (key.length === 1) key = key.toUpperCase();
+  parts.push(key);
+  return parts.join('+');
+}
+function comboToDisplay(combo) { return combo; }
+
+function _hotkeyCfg() {
+  const h = (typeof configData !== 'undefined' && configData && configData.Hotkeys) || {};
+  return { bindings: h.bindings || {}, disabled: new Set(h.disabled || []) };
+}
+// Effective combo for an action: undefined binding -> default, '' -> unbound.
+function _effCombo(a, bindings) { return (bindings[a.id] !== undefined) ? bindings[a.id] : a.def; }
+
+let _hotkeyMap = new Map(); // combo -> action (effective, 1:1 via auto-unbind)
+function rebuildHotkeyMap() {
+  const { bindings, disabled } = _hotkeyCfg();
+  _hotkeyMap = new Map();
+  for (const a of HOTKEY_ACTIONS) {
+    if (disabled.has(a.id)) continue;
+    const combo = _effCombo(a, bindings);
+    if (combo) _hotkeyMap.set(combo, a); // last wins if somehow duplicated
+  }
+}
+function loadHotkeys() { rebuildHotkeyMap(); }
+rebuildHotkeyMap(); // defaults until loadConfig() applies overrides
+
+// ── Keyboard shortcut hub ───────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
     _clearSeq();
   }
 
-  // Don't intercept when typing in inputs/textareas (unless it's a specific shortcut)
+  // Don't intercept when typing in inputs/textareas (unless the action opts in)
   const inInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT';
 
   // Sequence: first "g" arms, a second key within 1.5s fires the nav.
@@ -24786,46 +24872,106 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // Work-item shortcuts are gated on a workItemProvider being installed.
-  // Without one, Ctrl+B / Ctrl+R / Ctrl+Shift+N / Ctrl+Shift+F are no-ops so
-  // core stays consistent with "just the terminal" installs.
-  const _hasWIProvider = !!((_loadedPlugins || []).some(p => p.contributions && p.contributions.workItemProvider));
-
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
-    // Ctrl+K → Command Palette (works from anywhere, even inputs)
-    if (e.key === 'k') { e.preventDefault(); openCmdPalette(); return; }
-    // Ctrl+I → Focus AI on the current selection (or open palette blank)
-    if (e.key === 'i') { e.preventDefault(); openAIFocusPalette(); return; }
-    // Ctrl+/ → Keyboard shortcut cheatsheet
-    if (e.key === '/') { e.preventDefault(); openShortcutHelp(); return; }
-    // Ctrl+. → Re-run the most recent AI prompt against the active CLI
-    if (e.key === '.') {
-      e.preventDefault();
-      const hist = _readAiHistory();
-      if (hist.length) askAIFromPalette(hist[0].prompt);
-      else toast('No AI history yet', 'info');
-      return;
+  // Configurable hotkeys: look the pressed combo up in the registry dispatch
+  // map. Replaces the old hardcoded Ctrl+K/T/B/D/R/... if-chain. Work-item
+  // actions gate themselves via their when() (workItemProvider installed).
+  const combo = eventToCombo(e);
+  if (combo) {
+    const action = _hotkeyMap.get(combo);
+    if (action && (action.allowInInput || !inInput)) {
+      let ok = true;
+      try { ok = action.when ? !!action.when() : true; } catch (_) { ok = false; }
+      if (ok) { e.preventDefault(); try { action.run(); } catch (_) {} return; }
     }
-    // Ctrl+B → Board (requires workItemProvider)
-    if (e.key === 'b' && !inInput && _hasWIProvider) { e.preventDefault(); switchTab('backlog'); }
-    // Ctrl+T → Terminal
-    if (e.key === 't' && !inInput) { e.preventDefault(); switchTab('terminal'); }
-    // Ctrl+D → Diff viewer (if visible)
-    if (e.key === 'd' && !inInput) {
-      if (document.getElementById('diffviewTabBtn').style.display !== 'none') {
-        e.preventDefault(); switchTab('diffview');
-      }
-    }
-    // Ctrl+R → Refresh work items (requires workItemProvider)
-    if (e.key === 'r' && !inInput && _hasWIProvider) { e.preventDefault(); loadWorkItems(true); toast('Refreshed', 'success'); }
-  }
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
-    // Ctrl+Shift+N → Create new work item (requires workItemProvider)
-    if (e.key === 'N' && _hasWIProvider) { e.preventDefault(); openCreateModal(); }
-    // Ctrl+Shift+F → Find work items (requires workItemProvider)
-    if (e.key === 'F' && !inInput && _hasWIProvider) { e.preventDefault(); switchTab('backlog'); setTimeout(() => document.getElementById('backlogSearch')?.focus(), 100); }
   }
 });
+
+// ── Hotkeys editor (Settings > Hotkeys) ─────────────────────────────────────
+let _hkRecording = null; // actionId currently capturing a new combo
+async function saveHotkeys() {
+  rebuildHotkeyMap();
+  try { renderHotkeys(); } catch (_) {}
+  try {
+    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Hotkeys: configData.Hotkeys }) });
+  } catch (_) {}
+}
+function _ensureHotkeysCfg() {
+  configData.Hotkeys = configData.Hotkeys || { version: 1, bindings: {}, disabled: [] };
+  configData.Hotkeys.bindings = configData.Hotkeys.bindings || {};
+  if (!Array.isArray(configData.Hotkeys.disabled)) configData.Hotkeys.disabled = [];
+  return configData.Hotkeys;
+}
+function applyHotkeyBinding(actionId, combo) {
+  const h = _ensureHotkeysCfg();
+  // Auto-unbind: any OTHER action effectively using this combo loses it.
+  for (const a of HOTKEY_ACTIONS) {
+    if (a.id === actionId) continue;
+    if (_effCombo(a, h.bindings) === combo) {
+      h.bindings[a.id] = ''; // '' = explicitly unbound
+      toast('Unbound "' + a.label + '" from ' + comboToDisplay(combo), 'info');
+    }
+  }
+  h.bindings[actionId] = combo;
+  h.disabled = h.disabled.filter(x => x !== actionId); // rebinding re-enables
+  saveHotkeys();
+}
+function startHotkeyRecord(actionId) {
+  _hkRecording = actionId;
+  try { renderHotkeys(); } catch (_) {}
+  const onKey = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (e.key === 'Escape') { _hkRecording = null; cleanup(); renderHotkeys(); return; }
+    const combo = eventToCombo(e);
+    if (!combo) return; // modifier-only; keep waiting for the real key
+    cleanup();
+    _hkRecording = null;
+    if (RESERVED_COMBOS.has(combo)) { toast(comboToDisplay(combo) + ' is reserved', 'error'); renderHotkeys(); return; }
+    applyHotkeyBinding(actionId, combo);
+  };
+  function cleanup() { document.removeEventListener('keydown', onKey, true); }
+  document.addEventListener('keydown', onKey, true); // capture: fire before the hub
+}
+function resetHotkey(actionId) {
+  const h = _ensureHotkeysCfg();
+  delete h.bindings[actionId];
+  h.disabled = h.disabled.filter(x => x !== actionId);
+  saveHotkeys();
+}
+function toggleHotkeyDisabled(actionId) {
+  const h = _ensureHotkeysCfg();
+  if (h.disabled.includes(actionId)) h.disabled = h.disabled.filter(x => x !== actionId);
+  else h.disabled.push(actionId);
+  saveHotkeys();
+}
+function resetAllHotkeys() {
+  configData.Hotkeys = { version: 1, bindings: {}, disabled: [] };
+  saveHotkeys();
+}
+function renderHotkeys() {
+  const c = document.getElementById('hotkeysList');
+  if (!c) return;
+  const { bindings, disabled } = _hotkeyCfg();
+  const groups = {};
+  for (const a of HOTKEY_ACTIONS) { (groups[a.group] = groups[a.group] || []).push(a); }
+  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px;"><button class="hotkey-mini" onclick="resetAllHotkeys()" title="Reset every shortcut to its default">Reset all</button></div>';
+  for (const g of Object.keys(groups)) {
+    html += `<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin:10px 0 2px;">${esc(g)}</div>`;
+    for (const a of groups[g]) {
+      const combo = _effCombo(a, bindings);
+      const isOverridden = bindings[a.id] !== undefined;
+      const isDisabled = disabled.has(a.id);
+      const recording = _hkRecording === a.id;
+      const chipText = recording ? 'Press keys...' : (isDisabled ? '(disabled)' : (combo ? esc(comboToDisplay(combo)) : '(unbound)'));
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--surface0);">
+        <div style="flex:1;font-size:12px;color:${isDisabled ? 'var(--overlay1)' : 'var(--text)'};">${esc(a.label)}</div>
+        <button class="sy-kbd" onclick="startHotkeyRecord('${a.id}')" title="Click, then press a key combo (Esc to cancel)" style="min-width:96px;cursor:pointer;${recording ? 'box-shadow:0 0 0 2px var(--accent);' : ''}">${chipText}</button>
+        ${isOverridden ? `<button class="hotkey-mini" onclick="resetHotkey('${a.id}')" title="Reset to default (${esc(a.def)})">Reset</button>` : ''}
+        <button class="hotkey-mini" onclick="toggleHotkeyDisabled('${a.id}')" title="${isDisabled ? 'Enable' : 'Disable'}">${isDisabled ? 'Enable' : 'Disable'}</button>
+      </div>`;
+    }
+  }
+  c.innerHTML = html;
+}
 
 // ── Command Palette ─────────────────────────────────────────────────────
 let _cmdSelectedIdx = 0;
@@ -25152,6 +25298,13 @@ function openShortcutHelp() {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4500;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   const row = (k, label) => '<div style="display:flex;align-items:center;gap:12px;padding:5px 0;"><span class="sy-kbd" style="min-width:74px;">' + k + '</span><span style="color:var(--subtext1);font-size:12px;">' + label + '</span></div>';
+  // Generate the shortcut rows from the live hotkey registry so the cheatsheet
+  // always reflects the user's current (possibly rebound) bindings.
+  const _hkc = _hotkeyCfg();
+  const coreRows = HOTKEY_ACTIONS
+    .filter(a => !_hkc.disabled.has(a.id))
+    .map(a => { const c = _effCombo(a, _hkc.bindings); return c ? row(comboToDisplay(c), a.label) : ''; })
+    .join('') + row('Esc', 'Close modals');
   overlay.innerHTML =
     '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:10px;padding:18px 22px;width:560px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,0.5);">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
@@ -25162,14 +25315,8 @@ function openShortcutHelp() {
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 28px;">' +
         '<div>' +
-          '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Core</div>' +
-          row('Ctrl+K', 'Command palette') +
-          row('Ctrl+I', 'Ask AI about selection') +
-          row('Ctrl+J', 'Command palette (alt)') +
-          row('Ctrl+.', 'Re-run last AI prompt') +
-          row('Ctrl+/', 'This help') +
-          row('Ctrl+T', 'Go to Terminal') +
-          row('Esc',    'Close modals') +
+          '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Shortcuts</div>' +
+          coreRows +
         '</div>' +
         '<div>' +
           '<div style="font-size:10px;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Go to (press g, then...)</div>' +
@@ -28294,17 +28441,8 @@ function onNoteFindKeydown(e) {
   }
 }
 
-// Capture Ctrl+F when the notes panel is the active tab and focus is in the
-// note editor. Other tabs keep the browser-default behavior.
-document.addEventListener('keydown', (e) => {
-  const isFind = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f';
-  if (!isFind) return;
-  const notesPanel = document.getElementById('panel-notes');
-  if (!notesPanel || !notesPanel.classList.contains('active')) return;
-  if (!currentNote) return;
-  e.preventDefault();
-  openNoteFind();
-}, true);
+// Ctrl+F (find in note) is now the 'find-in-note' entry in HOTKEY_ACTIONS,
+// dispatched by the central keyboard hub (viewable/rebindable in Settings).
 
 async function runNotesSearch() {
   const q = document.getElementById('notesSearchInput').value.trim();
