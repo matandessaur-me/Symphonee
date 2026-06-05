@@ -4874,6 +4874,17 @@
     .onboarding-overview-text { flex: 1; }
     .onboarding-overview-text strong { color: var(--text); font-size: 13px; display: block; margin-bottom: 2px; }
     .onboarding-overview-text span { color: var(--subtext0); font-size: 11px; line-height: 1.4; }
+    /* Step-in transition (typeform-style) */
+    .onboarding-body.ob-step-in { animation: obStepIn 0.32s cubic-bezier(0.22,1,0.36,1); }
+    @keyframes obStepIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    /* Final-screen video guide grid */
+    .ob-video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 8px; }
+    .ob-video-card { background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius); padding: 10px; cursor: default; transition: border-color 0.15s, transform 0.15s; }
+    .ob-video-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--surface2)); transform: translateY(-1px); }
+    .ob-video-thumb { position: relative; height: 64px; border-radius: 6px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--surface1)), var(--surface1)); display: flex; align-items: center; justify-content: center; color: var(--accent); margin-bottom: 8px; }
+    .ob-video-play { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 85%, #000); color: var(--crust); display: flex; align-items: center; justify-content: center; }
+    .ob-video-title { font-size: 12px; font-weight: 600; color: var(--text); }
+    .ob-video-desc { font-size: 10px; color: var(--subtext0); line-height: 1.4; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -23586,6 +23597,50 @@ function obPickTheme(themeId) {
   });
 }
 
+// Short usage guides shown on the final onboarding screen. Thumbnails are
+// placeholders (icon tiles) until real clips are added under public/guides/.
+const OB_GUIDE_VIDEOS = [
+  { icon: 'terminal', title: 'Launch an AI', desc: 'Pick a CLI and start talking in the terminal.' },
+  { icon: 'search', title: 'Command palette', desc: 'Jump anywhere, run actions, or ask a quick question.' },
+  { icon: 'git-compare', title: 'Review & commit', desc: 'See diffs and commit with AI-written messages.' },
+  { icon: 'brain', title: 'Your Mind', desc: 'Symphonee remembers context across sessions and CLIs.' },
+  { icon: 'package', title: 'Share knowledge (KIT)', desc: 'Export a topic and hand it to anyone.' },
+  { icon: 'puzzle', title: 'Plugins', desc: 'Add integrations per project from Settings.' },
+];
+let _obNeedsRestart = false; // set when a step did something that needs a relaunch
+
+async function obCheckBrain() {
+  const status = document.getElementById('obBrainStatus');
+  const actions = document.getElementById('obBrainActions');
+  if (!status) return;
+  try {
+    const r = await fetch('/api/symphonee/setup/check');
+    const d = await r.json();
+    if (d.ready) {
+      status.innerHTML = '<span style="color:var(--green);">Local AI is ready.</span> The Mind and instant local answers are enabled.';
+      if (actions) actions.innerHTML = '';
+    } else if (!d.ollamaInstalled) {
+      status.innerHTML = 'Ollama is not installed. Install it to enable local AI (the Mind and instant local question answers).';
+      if (actions) actions.innerHTML = '<button class="onboarding-btn onboarding-btn-primary" onclick="openExternal(\'https://ollama.com/download\')" style="font-size:11px;padding:6px 16px;">Get Ollama</button><button class="onboarding-btn onboarding-btn-secondary" onclick="obCheckBrain()" style="font-size:11px;padding:6px 16px;">Re-check</button>';
+    } else {
+      status.innerHTML = 'Ollama is installed. Pull the local model to enable the Mind + instant answers (one-time download).';
+      if (actions) actions.innerHTML = '<button class="onboarding-btn onboarding-btn-primary" onclick="obPullBrain(this)" style="font-size:11px;padding:6px 16px;">Enable local AI</button>';
+    }
+  } catch (_) {
+    status.innerHTML = 'Could not check local AI status. You can set this up later from Settings.';
+  }
+  try { lucide.createIcons(); } catch (_) {}
+}
+async function obPullBrain(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting download...'; }
+  _obNeedsRestart = true;
+  try {
+    await fetch('/api/symphonee/setup/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const status = document.getElementById('obBrainStatus');
+    if (status) status.innerHTML = 'Downloading the local model in the background - it keeps going after setup. Symphonee will relaunch when you finish so it activates.';
+  } catch (_) {}
+}
+
 const OB_STEPS = [
   // 0: Display name
   () => ({
@@ -23745,7 +23800,32 @@ const OB_STEPS = [
     <div style="margin-top:16px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);font-size:11px;color:var(--subtext0);border-left:2px solid var(--accent);">
       Manage everything from the <strong style="color:var(--text);">settings button</strong> at the bottom left. Plugin tabs show up automatically when you install them.
     </div>`,
-    nextLabel: 'Get Started',
+    nextLabel: 'Next',
+  }),
+  // 9: Local AI (Ollama) -- optional. Powers the Mind and instant local answers.
+  () => ({
+    title: 'Local AI (optional)',
+    subtitle: 'Symphonee can power its Mind and answer quick questions locally with Ollama - no cloud, no API keys. Optional; enable it later from Settings any time.',
+    html: `<div id="obBrainStatus" style="margin-top:8px;font-size:12px;color:var(--subtext0);line-height:1.5;">Checking local AI...</div>
+      <div id="obBrainActions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;"></div>`,
+    onEnter: () => obCheckBrain(),
+    nextLabel: 'Next',
+  }),
+  // 10: Final -- how to use Symphonee, with short video guides.
+  () => ({
+    title: "You're all set!",
+    subtitle: 'A few short guides to get you going. Reopen them any time from the command palette.',
+    html: `<div class="ob-video-grid">
+        ${OB_GUIDE_VIDEOS.map(v => `<div class="ob-video-card" title="Guide clips coming soon">
+          <div class="ob-video-thumb"><i data-lucide="${v.icon}" style="width:22px;height:22px;"></i><span class="ob-video-play"><i data-lucide="play" style="width:13px;height:13px;"></i></span></div>
+          <div class="ob-video-title">${esc(v.title)}</div>
+          <div class="ob-video-desc">${esc(v.desc)}</div>
+        </div>`).join('')}
+      </div>
+      <div style="margin-top:14px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);font-size:11px;color:var(--subtext0);border-left:2px solid var(--accent);">
+        Tip: the command palette is your fastest path - jump anywhere, ask a quick question for an instant local answer, or run an action.
+      </div>`,
+    nextLabel: 'Restart & Start',
   }),
 ];
 
@@ -23811,6 +23891,8 @@ function obRender() {
   const step = OB_STEPS[_obStep]();
   const body = document.getElementById('onboardingBody');
   body.innerHTML = `<div class="onboarding-title">${step.title}</div><div class="onboarding-subtitle">${step.subtitle}</div>${step.html}`;
+  // Re-trigger the step-in animation on every render (typeform-style transition).
+  body.classList.remove('ob-step-in'); void body.offsetWidth; body.classList.add('ob-step-in');
   // Dots
   const dots = document.getElementById('onboardingDots');
   const applicable = OB_STEPS.map((_, i) => _obStepIsApplicable(i) ? i : -1).filter(i => i >= 0);
@@ -23868,6 +23950,12 @@ async function obFinish() {
       return;
     }
   } catch (_) {}
+  if (_obNeedsRestart) {
+    await minWait; hideLoading();
+    toast('Finishing setup - restarting...', 'success');
+    setTimeout(() => restartApp(), 500);
+    return;
+  }
   await loadConfig(true);
   loadVelocity();
   if (_obData.defaultCli) switchCli(_obData.defaultCli);
