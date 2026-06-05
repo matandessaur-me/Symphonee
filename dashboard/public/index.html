@@ -789,6 +789,7 @@
       background: var(--surface0); border-radius: 3px; padding: 0 4px;
       cursor: text; box-shadow: 0 0 0 1px var(--accent);
       color: var(--text); min-width: 16px;
+      user-select: text; -webkit-user-select: text;
     }
     .term-tab-close {
       display: inline-flex; align-items: center; justify-content: center;
@@ -6994,6 +6995,7 @@ let reconnectTimer = null;
 // ── Multi-Terminal System ────────────────────────────────────────────────
 const termInstances = new Map(); // termId -> { term, fitAddon, container }
 let activeTermId = 'main';
+let _renamingTab = false; // while true, switchTerminal must not steal focus back to the xterm (it would blur the inline rename field)
 let termCounter = 0;
 
 function createTermOpts() {
@@ -7149,7 +7151,7 @@ function switchTerminal(termId) {
         lastRows = rows;
         if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', termId, cols, rows }));
       } catch (_) {}
-      inst.term.focus();
+      if (!_renamingTab) inst.term.focus();
     }); });
   }
   // Sync AI controls for the newly-active shell
@@ -7236,6 +7238,7 @@ function enableTabRename(tabEl, termId) {
     if (nameEl.getAttribute('contenteditable') === 'true') return;
     const prev = nameEl.textContent;
     let done = false;
+    _renamingTab = true; // keep switchTerminal's deferred focus from blurring us
     nameEl.setAttribute('contenteditable', 'true');
     nameEl.spellcheck = false;
     nameEl.focus();
@@ -7245,9 +7248,12 @@ function enableTabRename(tabEl, termId) {
     } catch (_) {}
     const commit = (save) => {
       if (done) return; done = true;
+      _renamingTab = false;
       nameEl.removeAttribute('contenteditable');
       nameEl.removeEventListener('keydown', onKey);
       nameEl.removeEventListener('blur', onBlur);
+      // Return focus to the active terminal so typing resumes immediately.
+      try { const ai = termInstances.get(activeTermId); if (ai) ai.term.focus(); } catch (_) {}
       const val = nameEl.textContent.replace(/\s+/g, ' ').trim();
       if (save && val) {
         nameEl.textContent = val;
