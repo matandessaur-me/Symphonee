@@ -961,6 +961,52 @@ function mountMind(addRoute, json, ctx) {
     return json(res, result);
   });
 
+  // ── Ask: a quick, Mind-grounded answer from the LOCAL chat model ──────────
+  // Powers the command palette's "informational question" path: instead of
+  // dispatching a heavyweight agent, answer the question locally with Gemma,
+  // grounded in the knowledge graph. Returns {ok:false, reason:'no-local-model'}
+  // so the client can fall back to an agent dispatch.
+  addRoute('POST', '/api/mind/ask', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const question = String(body.question || '').trim();
+    if (!question) return json(res, { error: 'question required' }, 400);
+
+    let model = null;
+    try { model = llm.pickChatModel(); } catch (_) {}
+    if (!model) return json(res, { ok: false, reason: 'no-local-model' }, 200);
+
+    // Gather grounding context from the graph (best-effort, never throws).
+    const space = getSpace();
+    const blocks = [];
+    const citedNodeIds = [];
+    try {
+      const g = store.loadGraph(repoRoot, space);
+      if (g) {
+        const dense = await tryDenseSeeds(repoRoot, space, question, 12).catch(() => null);
+        const result = query.runQuery(g, {
+          question, mode: 'bfs', budget: 1500,
+          seedIds: (dense && dense.length) ? query.bestSeedsHybrid(g, question, 5, { dense }) : null,
+        });
+        for (const n of ((result && result.nodes) || []).slice(0, 12)) {
+          const text = [n.label, n.body || n.answer || n.description].filter(Boolean).join(': ').replace(/\s+/g, ' ').slice(0, 400);
+          if (text) { blocks.push('- ' + text); citedNodeIds.push(n.id); }
+        }
+      }
+    } catch (_) { /* answer without grounding */ }
+
+    const sys = 'You are Symphonee, a concise developer assistant. Answer the question practically and directly. Use the CONTEXT from the user knowledge graph when it is relevant; if it does not cover the question, answer from general knowledge. Keep it tight - no preamble, no headers.';
+    const ctx = blocks.length ? ('CONTEXT from the knowledge graph:\n' + blocks.join('\n') + '\n\n') : '';
+    try {
+      const answer = await llm.chatOllama(
+        [{ role: 'system', content: sys }, { role: 'user', content: ctx + 'QUESTION: ' + question }],
+        { format: null, temperature: 0.3, numPredict: 700, timeoutMs: 60000 }
+      );
+      return json(res, { ok: true, answer: String(answer || '').trim(), model, grounded: blocks.length, citedNodeIds });
+    } catch (e) {
+      return json(res, { ok: false, reason: 'llm-error', error: e.message || String(e) }, 200);
+    }
+  });
+
   // Dense-only semantic search (debug + UI smart-search). Returns ranked nodes
   // by cosine similarity. The graph has to have been embedded first via
   // /api/mind/embed (or SYMPHONEE_EMBED_AUTO=1 during build).

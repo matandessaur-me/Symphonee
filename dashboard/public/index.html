@@ -4960,10 +4960,10 @@
     <img src="/logo.svg" class="header-logo" alt="">
     <span class="header-title">Symphonee</span>
   </div>
-  <div class="cmd-trigger" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
+  <div class="cmd-trigger" id="cmdTrigger" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
     <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
     <span>Search or run a command...</span>
-    <kbd>Ctrl+K</kbd>
+    <kbd id="cmdTriggerKbd">Ctrl+K</kbd>
   </div>
   <div class="header-right">
     <div id="onboardingChip" style="display:none;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:color-mix(in srgb, var(--accent) 14%, var(--surface0));border:1px solid color-mix(in srgb, var(--accent) 40%, var(--surface2));color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:6px;cursor:pointer;" onclick="toggleOnboardingPanel(event)" title="Getting started">
@@ -24793,7 +24793,7 @@ const HOTKEY_ACTIONS = [
   { id: 'command-palette-alt', group: 'Core',       label: 'Command palette (alt)',    def: 'Ctrl+J', allowInInput: true, run: () => openCmdPalette() },
   { id: 'ai-focus',            group: 'Core',       label: 'Ask AI about selection',   def: 'Ctrl+I', allowInInput: true, run: () => openAIFocusPalette() },
   { id: 'shortcut-help',       group: 'Core',       label: 'Keyboard shortcuts help',  def: 'Ctrl+/', allowInInput: true, run: () => openShortcutHelp() },
-  { id: 'rerun-ai',            group: 'AI',         label: 'Re-run last AI prompt',    def: 'Ctrl+.', allowInInput: true, run: () => { const h = _readAiHistory(); if (h.length) askAIFromPalette(h[0].prompt); else toast('No AI history yet', 'info'); } },
+  { id: 'rerun-ai',            group: 'AI',         label: 'Re-run last AI prompt',    def: 'Ctrl+.', allowInInput: true, run: () => { const h = _readAiHistory(); if (h.length) askAIFromPalette(h[0].prompt, { forceDispatch: true }); else toast('No AI history yet', 'info'); } },
   { id: 'go-terminal',         group: 'Navigate',   label: 'Go to Terminal',           def: 'Ctrl+T', run: () => switchTab('terminal') },
   { id: 'go-backlog',          group: 'Navigate',   label: 'Go to Backlog',            def: 'Ctrl+B', when: _hasWorkItemProvider, run: () => switchTab('backlog') },
   { id: 'go-diffview',         group: 'Navigate',   label: 'Go to Diff viewer',        def: 'Ctrl+D', when: () => { const b = document.getElementById('diffviewTabBtn'); return b && b.style.display !== 'none'; }, run: () => switchTab('diffview') },
@@ -24840,7 +24840,19 @@ function rebuildHotkeyMap() {
     if (combo) _hotkeyMap.set(combo, a); // last wins if somehow duplicated
   }
 }
-function loadHotkeys() { rebuildHotkeyMap(); }
+// Keep the header command-palette trigger label in sync with the live binding
+// (it was a hardcoded "Ctrl+K" that went stale after a rebind).
+function syncPaletteShortcutLabel() {
+  const a = HOTKEY_ACTIONS.find(x => x.id === 'command-palette');
+  if (!a) return;
+  const { bindings, disabled } = _hotkeyCfg();
+  const combo = disabled.has(a.id) ? '' : _effCombo(a, bindings);
+  const kbd = document.getElementById('cmdTriggerKbd');
+  const trigger = document.getElementById('cmdTrigger');
+  if (kbd) { kbd.textContent = combo || ''; kbd.style.display = combo ? '' : 'none'; }
+  if (trigger) trigger.title = combo ? ('Command Palette (' + combo + ')') : 'Command Palette';
+}
+function loadHotkeys() { rebuildHotkeyMap(); try { syncPaletteShortcutLabel(); } catch (_) {} }
 rebuildHotkeyMap(); // defaults until loadConfig() applies overrides
 
 // ── Keyboard shortcut hub ───────────────────────────────────────────────────
@@ -24890,6 +24902,7 @@ document.addEventListener('keydown', (e) => {
 let _hkRecording = null; // actionId currently capturing a new combo
 async function saveHotkeys() {
   rebuildHotkeyMap();
+  try { syncPaletteShortcutLabel(); } catch (_) {}
   try { renderHotkeys(); } catch (_) {}
   try {
     await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Hotkeys: configData.Hotkeys }) });
@@ -25407,6 +25420,77 @@ function _deleteAiHistoryEntry(prompt, fromSpace) {
   } catch (_) {}
 }
 
+// Heuristic: is this free-text an informational QUESTION (answer locally) vs a
+// TASK to dispatch to an agent? Conservative -- the answer modal has a "send to
+// agent" escape hatch for the misfires.
+function _looksLikeQuestion(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return false;
+  if (t.endsWith('?')) return true;
+  const first = (t.split(/\s+/)[0] || '').replace(/[^a-z']/g, '');
+  const QWORDS = new Set(['how','what',"what's",'whats','why','when','where','who','which','whose','whom','is','are','am','was','were','can','could','should','would','do','does','did','will','explain','define']);
+  return QWORDS.has(first);
+}
+
+let _localAnswerPending = null;
+// Answer a question locally via Gemma (Mind-grounded) in a modal, instead of
+// dispatching an agent. Falls back to dispatch if no local model / on error.
+async function answerLocally(question, opts) {
+  opts = opts || {};
+  const cli = opts.cli || activeCli || 'claude';
+  const cliLabel = (CLI_CONFIG[cli] && CLI_CONFIG[cli].label) || cli;
+  _localAnswerPending = { question, cli };
+  let overlay = document.getElementById('localAnswerOverlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'localAnswerOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4600;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh;font-family:var(--font-ui);';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML =
+    '<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:12px;width:680px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 16px 50px rgba(0,0,0,0.55);">' +
+      '<div style="display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--surface1);">' +
+        '<i data-lucide="sparkles" style="width:16px;height:16px;color:var(--accent);"></i>' +
+        '<strong style="font-size:13px;">Quick answer</strong>' +
+        '<span id="localAnswerModel" style="font-size:10px;color:var(--overlay1);">local</span>' +
+        '<div style="flex:1;"></div>' +
+        '<button onclick="document.getElementById(\'localAnswerOverlay\').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button>' +
+      '</div>' +
+      '<div style="padding:12px 18px;color:var(--subtext1);font-size:12px;border-bottom:1px solid var(--surface1);">' + esc(question) + '</div>' +
+      '<div id="localAnswerBody" style="padding:16px 18px;overflow:auto;font-size:13px;line-height:1.6;color:var(--text);"><span style="color:var(--subtext0);">Thinking locally...</span></div>' +
+      '<div style="display:flex;align-items:center;gap:10px;padding:11px 18px;border-top:1px solid var(--surface1);">' +
+        '<span style="font-size:11px;color:var(--overlay1);">Answered locally from your Mind.</span>' +
+        '<div style="flex:1;"></div>' +
+        '<button class="hotkey-mini" onclick="_dispatchFromLocalAnswer()">Send to ' + esc(cliLabel) + ' instead</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  try { lucide.createIcons({ nodes: [overlay] }); } catch (_) {}
+  try {
+    const r = await fetch('/api/mind/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
+    const d = await r.json().catch(() => ({}));
+    const bodyEl = document.getElementById('localAnswerBody');
+    if (!bodyEl) return; // modal was closed
+    if (d && d.ok && d.answer) {
+      bodyEl.innerHTML = (typeof renderMarkdownToHtml === 'function') ? renderMarkdownToHtml(d.answer) : esc(d.answer).replace(/\n/g, '<br>');
+      const me = document.getElementById('localAnswerModel');
+      if (me && d.model) me.textContent = d.model + (d.grounded ? ' · grounded' : '');
+    } else {
+      overlay.remove();
+      toast(d && d.reason === 'no-local-model' ? 'No local model installed - sending to agent' : 'Local answer unavailable - sending to agent', 'info');
+      askAIFromPalette(question, { forceDispatch: true });
+    }
+  } catch (_) {
+    if (overlay) overlay.remove();
+    toast('Local answer failed - sending to agent', 'info');
+    askAIFromPalette(question, { forceDispatch: true });
+  }
+}
+function _dispatchFromLocalAnswer() {
+  const p = _localAnswerPending;
+  const ov = document.getElementById('localAnswerOverlay'); if (ov) ov.remove();
+  if (p) askAIFromPalette(p.question, { forceDispatch: true });
+}
+
 async function askAIFromPalette(query, opts) {
   opts = opts || {};
   if (!query || !query.trim()) { closeCmdPalette(); return; }
@@ -25437,6 +25521,13 @@ async function askAIFromPalette(query, opts) {
     } catch (err) {
       toast('Follow-up failed: ' + (err.message || err), 'error');
     }
+    return;
+  }
+  // Informational questions get a quick local (Gemma, Mind-grounded) answer in a
+  // modal instead of spawning an agent. forceDispatch (the modal's escape hatch,
+  // and the Re-run action) skips this.
+  if (!opts.forceDispatch && _looksLikeQuestion(query)) {
+    answerLocally(query.trim(), { cli });
     return;
   }
   try {
