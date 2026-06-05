@@ -784,6 +784,12 @@
     }
     .term-tab:hover { color: var(--text); }
     .term-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .term-tab-name { outline: none; }
+    .term-tab-name[contenteditable="true"] {
+      background: var(--surface0); border-radius: 3px; padding: 0 4px;
+      cursor: text; box-shadow: 0 0 0 1px var(--accent);
+      color: var(--text); min-width: 16px;
+    }
     .term-tab-close {
       display: inline-flex; align-items: center; justify-content: center;
       width: 18px; height: 18px;
@@ -5115,7 +5121,7 @@
     <!-- Terminal -->
     <div class="tab-panel active" id="panel-terminal">
       <div class="term-tabs" id="termTabs">
-        <div class="term-tab active" data-term="main" onclick="switchTerminal('main')" id="mainTermTab">Shell 1</div>
+        <div class="term-tab active" data-term="main" onclick="switchTerminal('main')" id="mainTermTab" title="Double-click to rename"><span class="term-tab-name">Shell 1</span></div>
         <button class="term-tab-add" onclick="addTerminal()" title="New terminal">+</button>
         <div style="flex:1;"></div>
         <span class="tab-bar-status" id="termStatus" style="margin-right:4px;"></span>
@@ -7106,7 +7112,9 @@ function createTermInstance(termId, label) {
     const tab = document.createElement('div');
     tab.className = 'term-tab';
     tab.dataset.term = termId;
+    tab.title = 'Double-click to rename';
     const nameSpan = document.createElement('span');
+    nameSpan.className = 'term-tab-name';
     nameSpan.textContent = label || termId;
     const closeBtn = document.createElement('button');
     closeBtn.className = 'term-tab-close';
@@ -7116,6 +7124,7 @@ function createTermInstance(termId, label) {
     tab.appendChild(closeBtn);
     tab.addEventListener('click', (e) => { if (!e.target.closest('.term-tab-close')) switchTerminal(termId); });
     tabsEl.insertBefore(tab, addBtn);
+    enableTabRename(tab, termId);
   }
 
   return { term, fitAddon };
@@ -7214,6 +7223,51 @@ function closeTerminal(termId) {
   if (typeof orchRefreshAgents === 'function') orchRefreshAgents();
 }
 
+// Inline-rename a terminal tab: double-click the name to edit it. Enter or blur
+// commits, Escape cancels. The custom label is stored on the term instance;
+// renumberShells() only renumbers auto "Shell N" labels, so custom names stick.
+function enableTabRename(tabEl, termId) {
+  if (!tabEl) return;
+  const nameEl = tabEl.querySelector('.term-tab-name');
+  if (!nameEl) return;
+  tabEl.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (nameEl.getAttribute('contenteditable') === 'true') return;
+    const prev = nameEl.textContent;
+    let done = false;
+    nameEl.setAttribute('contenteditable', 'true');
+    nameEl.spellcheck = false;
+    nameEl.focus();
+    try {
+      const range = document.createRange(); range.selectNodeContents(nameEl);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    } catch (_) {}
+    const commit = (save) => {
+      if (done) return; done = true;
+      nameEl.removeAttribute('contenteditable');
+      nameEl.removeEventListener('keydown', onKey);
+      nameEl.removeEventListener('blur', onBlur);
+      const val = nameEl.textContent.replace(/\s+/g, ' ').trim();
+      if (save && val) {
+        nameEl.textContent = val;
+        const inst = termInstances.get(termId);
+        if (inst) inst.label = val;
+      } else {
+        nameEl.textContent = prev;
+      }
+    };
+    const onKey = (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
+    };
+    const onBlur = () => commit(true);
+    nameEl.addEventListener('keydown', onKey);
+    nameEl.addEventListener('blur', onBlur);
+  });
+}
+
 function getActiveTerm() {
   const inst = termInstances.get(activeTermId);
   return inst ? inst.term : null;
@@ -7226,6 +7280,7 @@ Object.defineProperty(window, 'fitAddon', { get: () => termInstances.get('main')
 
 // Create main terminal
 createTermInstance('main', 'Shell 1');
+enableTabRename(document.getElementById('mainTermTab'), 'main');
 
 // ── Resize handling ─────────────────────────────────────────────────────
 function fitTerminalNow() {
