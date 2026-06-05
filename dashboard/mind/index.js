@@ -1007,6 +1007,39 @@ function mountMind(addRoute, json, ctx) {
     }
   });
 
+  // ── KIT (Know It Too): portable, shareable knowledge ─────────────────────
+  // Export a topic + everything connected to it as a self-contained mind-graph;
+  // ingest a KIT by merging only the gaps (no duplicates) into the local graph.
+  const kit = require('./kit');
+  addRoute('POST', '/api/mind/kit/export', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space);
+    if (!g) return json(res, { ok: false, reason: 'empty-graph', hint: 'build the mind first' }, 200);
+    const r = kit.exportKit(g, {
+      topic: body.topic || '',
+      seedIds: Array.isArray(body.seedIds) ? body.seedIds : null,
+      space,
+      maxNodes: Math.max(1, Math.min(Number(body.maxNodes) || 800, 5000)),
+      maxDepth: Math.max(1, Math.min(Number(body.maxDepth) || 4, 8)),
+    });
+    return json(res, r);
+  });
+  addRoute('POST', '/api/mind/kit/ingest', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const incoming = body && body.kit ? body.kit : body; // accept {kit:...} or a raw KIT
+    if (!incoming || !Array.isArray(incoming.nodes)) return json(res, { ok: false, reason: 'invalid-kit' }, 400);
+    const space = getSpace();
+    const g = store.loadGraph(repoRoot, space) || store.emptyGraph({ space });
+    const r = kit.ingestKit(g, incoming);
+    if (r.ok && (r.addedNodes || r.addedEdges)) {
+      try { store.saveGraph(repoRoot, space, g); } catch (e) { return json(res, { ok: false, reason: 'save-failed', error: e.message }, 500); }
+      try { broadcast({ type: 'mind-update', payload: { kind: 'kit-ingest', ...r } }); } catch (_) {}
+      try { notifyKnowledgeEvent({ kind: 'kit-ingest', reason: 'kit-ingest', nodeIds: [] }); } catch (_) {}
+    }
+    return json(res, r);
+  });
+
   // Dense-only semantic search (debug + UI smart-search). Returns ranked nodes
   // by cosine similarity. The graph has to have been embedded first via
   // /api/mind/embed (or SYMPHONEE_EMBED_AUTO=1 during build).
