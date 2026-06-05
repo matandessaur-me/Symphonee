@@ -81,6 +81,8 @@ Self-healing chain: when content is edited and an atom drops out of the corpus, 
 
 If `bootstrap.mind.enabled` is true, the brain is populated. Three different consultation modes — pick by the SHAPE of the user's question:
 
+**Already in hand:** `bootstrap.mind.spec` (when present) is the active repo's focused knowledge spec — its connected notes, decisions, conversations, and concepts, grouped and distilled. Treat it as already-known context for the current project; you do not need to query for what it already covers. Use the three modes below for anything beyond it.
+
 - **Code structure** ("what does X call?", "what depends on Y?", "where is Z defined?") → `POST /api/mind/query` with the user's question. Returns a BFS sub-graph. Code-only queries auto-suppress brand/taxonomy edges so the answer stays light.
 
 - **Prior work / past decisions** ("what did we figure out about X?", "didn't we work on Y?", "what worked for Z?", "what do I know about W?") → `POST /api/mind/recall { question, since?, until?, repo? }` BEFORE answering. Returns a ranked list of memory cards + conversations + drawer turns from the time window. `since` accepts ISO dates OR natural language ("10 days ago", "last week", "yesterday"). Memory cards are the highest-priority hits because they are durable distilled facts.

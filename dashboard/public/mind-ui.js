@@ -590,7 +590,7 @@
         '</div>' +
         '<div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;">' +
           '<div id="specsHeader" style="padding:12px 16px;border-bottom:1px solid var(--surface0);display:flex;align-items:center;gap:10px;min-height:22px;">' +
-            '<span style="font-size:12px;color:var(--subtext0);">Pick an anchor to see its knowledge spec.</span>' +
+            '<span style="font-size:12px;color:var(--subtext0);">Pick a subject to see its knowledge spec, then export it as a KIT to share.</span>' +
           '</div>' +
           '<div id="specsGraph" style="flex:1;min-height:0;position:relative;background:radial-gradient(900px 520px at 50% 28%, color-mix(in srgb, var(--accent) 7%, transparent), transparent);"></div>' +
         '</div>' +
@@ -605,27 +605,44 @@
     const importBtn = $('specsImportBtn'), importFile = $('specsImportFile');
     if (importBtn && importFile) { importBtn.onclick = () => importFile.click(); importFile.onchange = () => _specsIngest(importFile); }
     if (!_spec.anchors) {
-      $('specsList').innerHTML = '<div style="padding:12px;color:var(--subtext0);font-size:11px;">Loading anchors...</div>';
-      try { const r = await fetch('/api/mind/anchors'); const d = await r.json(); _spec.anchors = d.anchors || []; } catch (_) { _spec.anchors = []; }
+      $('specsList').innerHTML = '<div style="padding:12px;color:var(--subtext0);font-size:11px;">Loading subjects...</div>';
+      try { const r = await fetch('/api/mind/anchors'); const d = await r.json(); _spec.anchors = d.subjects || d.anchors || []; } catch (_) { _spec.anchors = []; }
     }
     _renderAnchorList();
     if (_spec.selected) _specsSelect(_spec.selected, true);
+  }
+  // Compact "what this subject contains" line, e.g. "142 code . 23 conv . 8 notes".
+  function _countsLine(counts) {
+    if (!counts) return '';
+    const labelFor = { code: 'code', note: 'notes', conversation: 'conv', drawer: 'sessions', concept: 'concepts', doc: 'docs', recipe: 'recipes', artifact: 'artifacts', memory: 'memories', insight: 'insights', tag: 'tags', entity: 'entities' };
+    const order = ['code', 'note', 'conversation', 'drawer', 'concept', 'doc', 'recipe', 'artifact', 'memory', 'insight'];
+    const parts = [];
+    for (const k of order) {
+      if (counts[k]) parts.push(counts[k] + ' ' + (labelFor[k] || k));
+      if (parts.length >= 4) break;
+    }
+    return parts.join('  .  ');
   }
   function _renderAnchorList() {
     const host = $('specsList'); if (!host) return;
     const f = (_spec.filter || '').trim().toLowerCase();
     let list = _spec.anchors || [];
-    if (f) list = list.filter(a => a.label.toLowerCase().indexOf(f) >= 0 || a.kind.toLowerCase().indexOf(f) >= 0);
+    if (f) list = list.filter(a => a.label.toLowerCase().indexOf(f) >= 0 || (a.kind || '').toLowerCase().indexOf(f) >= 0);
     const shown = list.slice(0, 200);
-    if (!shown.length) { host.innerHTML = '<div style="padding:12px;color:var(--subtext0);font-size:11px;">' + (f ? 'No matches.' : 'No anchors yet - build the brain first.') + '</div>'; return; }
+    if (!shown.length) { host.innerHTML = '<div style="padding:12px;color:var(--subtext0);font-size:11px;">' + (f ? 'No matches.' : 'No subjects yet - build the brain first.') + '</div>'; return; }
     host.innerHTML = shown.map(a => {
       const sel = _spec.selected && _spec.selected.id === a.id;
       const color = KIND_COLOR[a.kind] || '#9399b2';
-      return '<div class="specs-item" data-id="' + escapeHtml(a.id) + '" style="display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;margin-bottom:2px;' + (sel ? 'background:color-mix(in srgb, var(--accent) 20%, var(--surface0));' : '') + '">' +
-        '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';flex-shrink:0;box-shadow:0 0 6px ' + color + '66;"></span>' +
-        '<span style="flex:1;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(a.label) + '</span>' +
-        '<span style="font-size:9px;color:var(--subtext0);text-transform:uppercase;letter-spacing:.3px;flex-shrink:0;">' + escapeHtml(a.kind) + '</span>' +
-        '<span style="font-size:10px;color:var(--overlay1);min-width:22px;text-align:right;flex-shrink:0;">' + a.degree + '</span>' +
+      const breakdown = _countsLine(a.counts);
+      return '<div class="specs-item" data-id="' + escapeHtml(a.id) + '" style="display:flex;align-items:flex-start;gap:8px;padding:8px 9px;border-radius:8px;cursor:pointer;margin-bottom:2px;' + (sel ? 'background:color-mix(in srgb, var(--accent) 20%, var(--surface0));' : '') + '">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';flex-shrink:0;box-shadow:0 0 6px ' + color + '66;margin-top:3px;"></span>' +
+        '<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">' +
+          '<span style="display:flex;align-items:center;gap:6px;">' +
+            '<span style="flex:1;font-size:12.5px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(a.label) + '</span>' +
+            '<span style="font-size:8.5px;color:var(--subtext0);text-transform:uppercase;letter-spacing:.4px;flex-shrink:0;padding:1px 5px;border-radius:6px;background:' + color + '22;">' + escapeHtml(a.kind) + '</span>' +
+          '</span>' +
+          (breakdown ? '<span style="font-size:10px;color:var(--subtext0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(breakdown) + '</span>' : '') +
+        '</span>' +
       '</div>';
     }).join('') + (list.length > shown.length ? '<div style="padding:8px 9px;color:var(--subtext0);font-size:10px;">+' + (list.length - shown.length) + ' more - keep typing to narrow</div>' : '');
     host.querySelectorAll('.specs-item').forEach(el => {
@@ -646,19 +663,30 @@
       '<span style="flex:1;"></span>' +
       '<button id="specsExportBtn" class="tab-bar-btn" style="font-size:11px;">Export KIT</button>';
     const exportBtn = $('specsExportBtn'); if (exportBtn) exportBtn.onclick = () => _specsExport();
-    if (keepGraph && _spec.kit) { _renderSpecGraph(_spec.kit); const c = $('specsCounts'); if (c) c.textContent = _spec.kit.stats.nodes + ' nodes . ' + _spec.kit.stats.edges + ' edges'; return; }
+    if (keepGraph && _spec.kit) { _renderSpecGraph(_spec.kit); const c = $('specsCounts'); if (c) c.textContent = _specKitCounts(_spec.kit); return; }
     if (graphHost) graphHost.innerHTML = '<div style="padding:30px;color:var(--subtext0);font-size:12px;">Building spec...</div>';
     let kit = null;
     try {
-      const r = await fetch('/api/mind/kit/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seedIds: [anchor.id], maxNodes: 250, maxDepth: 3 }) });
+      // Use ALL the subject's merged seeds (repo + tag + entity) so the spec is
+      // everything connected to the subject, not just one node. A higher node cap
+      // lets notes + conversations through, not only code.
+      const seedIds = (anchor.seedIds && anchor.seedIds.length) ? anchor.seedIds : [anchor.id];
+      const r = await fetch('/api/mind/kit/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seedIds, maxNodes: 500, maxDepth: 3 }) });
       const d = await r.json();
       if (d.ok) kit = d.kit;
     } catch (_) {}
     if (_spec.selected !== anchor) return; // selection changed while loading
-    if (!kit) { if (graphHost) graphHost.innerHTML = '<div style="padding:30px;color:var(--subtext0);font-size:12px;">No connected knowledge for this anchor.</div>'; return; }
+    if (!kit) { if (graphHost) graphHost.innerHTML = '<div style="padding:30px;color:var(--subtext0);font-size:12px;">No connected knowledge for this subject.</div>'; return; }
     _spec.kit = kit;
-    const counts = $('specsCounts'); if (counts) counts.textContent = kit.stats.nodes + ' nodes . ' + kit.stats.edges + ' edges';
+    const counts = $('specsCounts'); if (counts) counts.textContent = _specKitCounts(kit);
     _renderSpecGraph(kit);
+  }
+  // Header summary for a loaded spec: total + the kinds that matter for sharing.
+  function _specKitCounts(kit) {
+    const by = {};
+    for (const n of (kit.nodes || [])) { if (n) by[n.kind] = (by[n.kind] || 0) + 1; }
+    const line = _countsLine(by);
+    return kit.stats.nodes + ' nodes . ' + kit.stats.edges + ' edges' + (line ? '  (' + line + ')' : '');
   }
   function _renderSpecGraph(kit) {
     const host = $('specsGraph'); if (!host) return;
@@ -3752,17 +3780,88 @@
   }
   async function askAbout(labelEnc) {
     const q = decodeURIComponent(labelEnc);
-    const r = await API('/api/mind/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, budget: 1200 }) });
+    // Ground the answer on the actual clicked node (set by showNodeDetail), not a
+    // re-search of its label -- this is what makes the answer specific instead of
+    // the vague "the context does not contain..." we used to get.
+    const nodeId = state.selectedNode || null;
+    const askQuestion = nodeId
+      ? `In one short paragraph, explain what "${q}" is in my work and how it connects to the related items. Be concrete and specific; do not say the context is insufficient.`
+      : q;
     const detail = $('mindDetail');
     detail.style.display = 'block';
     detail.innerHTML = `
-      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Query: ${escapeHtml(q)}</div>
-      <div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;">Sub-graph: ${r.nodes?.length || 0} nodes / ${r.edges?.length || 0} edges (~${r.estTokens || 0} tokens)</div>
-      <div style="background:var(--base);padding:8px;border-radius:4px;font-size:11px;color:var(--text);margin-bottom:8px;">${escapeHtml(r.answer?.summary || '')}</div>
-      <div style="font-size:10px;color:var(--subtext0);font-style:italic;">${escapeHtml(r.answer?.note || '')}</div>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:3px;">
-        ${(r.nodes || []).slice(0, 50).map(n => `<a href="#" class="mind-neighbor-link" data-id="${n.id}" style="font-size:11px;color:var(--accent);text-decoration:none;padding:3px 6px;background:var(--mantle);border-radius:3px;">${escapeHtml(n.label)} <span style="color:var(--subtext0);">(${escapeHtml(n.kind)})</span></a>`).join('')}
-      </div>`;
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:13px;font-weight:600;color:var(--text);">${escapeHtml(q)}</div>
+        <div class="mind-ask-loading">Asking Mind<span>.</span><span>.</span><span>.</span></div>
+      </div>
+      <style>
+        .mind-ask-loading { font-size:11px; color:var(--subtext0); }
+        .mind-ask-loading span { animation: maskdot 1.2s infinite; opacity:0.3; }
+        .mind-ask-loading span:nth-child(2){ animation-delay:0.2s; }
+        .mind-ask-loading span:nth-child(3){ animation-delay:0.4s; }
+        @keyframes maskdot { 0%,80%,100%{opacity:0.25;} 40%{opacity:1;} }
+      </style>`;
+    // Lead with a real written answer from the local model (Gemma/Qwen) grounded
+    // in the graph; fetch the raw sub-graph in parallel and tuck it away as
+    // "related knowledge" -- useful for the AI / drill-down, but secondary to the
+    // human-readable explanation the user actually wants.
+    let ans = null, sub = null;
+    try {
+      [ans, sub] = await Promise.all([
+        API('/api/mind/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: askQuestion, nodeId }) }).catch(() => null),
+        API('/api/mind/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, budget: 1200 }) }).catch(() => null),
+      ]);
+    } catch (_) {}
+    const answerText = (ans && ans.ok && ans.answer) ? ans.answer : '';
+    const subNodes = (sub && sub.nodes) || [];
+    const noModel = ans && ans.reason === 'no-local-model';
+    const emptyMsg = noModel
+      ? 'No local chat model is running. Start Ollama with a model like gemma or qwen to get a written answer; the related knowledge below is still available.'
+      : 'Could not generate a written answer right now. The related knowledge below is what Mind knows about this.';
+
+    detail.innerHTML = `
+      <div class="mind-ask">
+        <div class="mind-ask-scroll">
+          <div class="mind-ask-q">${escapeHtml(q)}</div>
+          ${answerText
+            ? `<div class="mind-ask-answer">${escapeHtml(answerText)}</div>
+               <div class="mind-ask-model">answered locally by ${escapeHtml(ans.model || 'local model')}${ans.grounded ? ' &middot; grounded in ' + ans.grounded + ' knowledge node' + (ans.grounded === 1 ? '' : 's') : ''}</div>`
+            : `<div class="mind-ask-empty">${escapeHtml(emptyMsg)}</div>`}
+          ${subNodes.length ? `
+            <details class="mind-ask-graph" ${answerText ? '' : 'open'}>
+              <summary>Related knowledge <span class="mind-section-count">${subNodes.length}</span></summary>
+              <div class="mind-ask-nodes">
+                ${subNodes.slice(0, 50).map(n => `<a href="#" class="mind-neighbor-link" data-id="${escapeHtml(n.id)}">${escapeHtml(n.label)} <span class="mind-ask-kind">(${escapeHtml(n.kind)})</span></a>`).join('')}
+              </div>
+            </details>` : ''}
+        </div>
+        <div class="mind-detail-actions">
+          <button class="mind-action-btn mind-action-primary" onclick="MindUI.closeDetail()">Close</button>
+        </div>
+      </div>
+      <style>
+        #mindDetail { padding:0 !important; overflow:hidden !important; }
+        .mind-ask { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
+        .mind-ask-scroll { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:16px; display:flex; flex-direction:column; gap:12px; }
+        .mind-ask-q { font-size:13px; font-weight:600; color:var(--text); line-height:1.35; word-break:break-word; }
+        .mind-ask-answer { font-size:12.5px; color:var(--text); line-height:1.6; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; background:var(--base); padding:12px 14px; border-radius:6px; border-left:2px solid var(--accent); }
+        .mind-ask-model { font-size:10px; color:var(--subtext0); font-style:italic; }
+        .mind-ask-empty { font-size:11.5px; color:var(--subtext0); line-height:1.5; background:var(--base); padding:10px 12px; border-radius:6px; }
+        .mind-ask-graph { font-size:11px; }
+        .mind-ask-graph > summary { cursor:pointer; font-size:10px; font-weight:700; color:var(--subtext0); text-transform:uppercase; letter-spacing:0.6px; list-style:none; display:flex; align-items:center; gap:6px; padding:4px 0; }
+        .mind-ask-graph > summary::-webkit-details-marker { display:none; }
+        .mind-ask-graph > summary::before { content:'\\25B8'; display:inline-block; transition:transform 0.15s; }
+        .mind-ask-graph[open] > summary::before { transform:rotate(90deg); }
+        .mind-ask-nodes { display:flex; flex-direction:column; gap:3px; margin-top:6px; max-height:300px; overflow-y:auto; overflow-x:hidden; }
+        .mind-ask-nodes a { font-size:11px; color:var(--accent); text-decoration:none; padding:4px 7px; background:var(--mantle); border-radius:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mind-ask-nodes a:hover { background:var(--surface0); }
+        .mind-ask-kind { color:var(--subtext0); }
+        .mind-detail-actions { display:flex; gap:8px; padding:12px 14px; border-top:1px solid var(--surface0); background:var(--mantle); flex-shrink:0; }
+        .mind-action-btn { font-size:13px; font-weight:600; padding:11px 16px; border-radius:6px; border:1px solid var(--surface1); background:var(--surface0); color:var(--text); cursor:pointer; line-height:1; }
+        .mind-action-btn:hover { background:var(--surface1); }
+        .mind-action-primary { flex:1; }
+        .mind-section-count { background:var(--surface0); color:var(--subtext0); padding:0 6px; border-radius:8px; font-weight:500; font-size:9.5px; }
+      </style>`;
     detail.querySelectorAll('.mind-neighbor-link').forEach(a => {
       a.addEventListener('click', (ev) => { ev.preventDefault(); showNodeDetail(a.dataset.id); });
     });
