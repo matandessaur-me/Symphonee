@@ -7046,6 +7046,12 @@ function createTermInstance(termId, label) {
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const k = (e.key || '').toLowerCase();
       if (k === 'k' || k === 'i' || k === '/' || k === '.') return false;
+      // Ctrl/Cmd+V: paste the clipboard into the PTY. Without this xterm sends a
+      // raw ^V (0x16) and nothing useful happens. preventDefault suppresses the
+      // browser's native paste so the 'paste' listener below does not also fire
+      // (no double paste); return false keeps xterm from processing the key.
+      // Guard on keydown -- the handler also fires on keyup.
+      if (k === 'v' && e.type === 'keydown') { e.preventDefault(); pasteIntoTerm(); return false; }
     }
     return true;
   });
@@ -7055,22 +7061,41 @@ function createTermInstance(termId, label) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data }));
   });
 
-  // Right-click
+  // Send clipboard text to the PTY as input. Shared by Ctrl/Cmd+V, the
+  // right-click menu, and the paste event (Win+V, dictation tools like Wispr
+  // Flow that inject text via the clipboard).
+  async function pasteIntoTerm() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+    } catch (_) {}
+  }
+
+  // Right-click: copy the selection if there is one, otherwise paste.
   container.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
     e.stopPropagation();
     const sel = term.getSelection();
     if (sel) {
-      await navigator.clipboard.writeText(sel);
+      try { await navigator.clipboard.writeText(sel); } catch (_) {}
     } else {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
-      } catch (_) {}
+      pasteIntoTerm();
     }
   });
 
-  container.addEventListener('paste', (e) => { e.preventDefault(); e.stopPropagation(); });
+  // Native paste events: Win+V clipboard history, middle-click paste, and
+  // dictation tools (e.g. Wispr Flow) that inject via the clipboard. This used
+  // to just block the event, which silently broke ALL keyboard/voice paste in
+  // the terminal. Forward the event's clipboard text to the PTY instead.
+  // (Ctrl/Cmd+V is handled in the key handler above, which preventDefaults, so
+  // it does not also reach here -- no double paste.)
+  container.addEventListener('paste', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    let text = '';
+    try { text = (e.clipboardData || window.clipboardData).getData('text'); } catch (_) {}
+    if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+  });
 
   termInstances.set(termId, { term, fitAddon, container, label: label || termId });
 
