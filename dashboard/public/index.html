@@ -22340,6 +22340,10 @@ const AI_TOOLS_META = {
 
 let _aiToolsStatus = {}; // cli -> { installed, path }
 let _pwshStatus = { installed: false };
+// CLI ids whose install is currently in-flight. Kept in the model (not just on
+// the button) so a full renderAiTools() re-render -- triggered when a SIBLING
+// install finishes -- does not reset a still-installing tool back to "Install".
+const _aiInstalling = new Set();
 
 async function detectAiTools() {
   const container = document.getElementById('settingsAiTools');
@@ -22361,6 +22365,12 @@ function renderAiTools() {
 
   // PowerShell 7 prerequisite card
   const pwshInstalled = _pwshStatus.installed;
+  const pwshInstalling = _aiInstalling.has('pwsh');
+  const pwshBtn = pwshInstalling
+    ? `<button class="ai-tool-btn installing" id="aiToolBtn-pwsh" disabled>Installing...</button>`
+    : `<button class="ai-tool-btn ${pwshInstalled ? 'installed' : 'install'}" id="aiToolBtn-pwsh"
+                onclick="${pwshInstalled ? '' : "installCli('pwsh')"}"
+                ${pwshInstalled ? 'disabled' : ''}>${pwshInstalled ? 'Installed' : 'Install'}</button>`;
   const pwshCard = `
     <div style="margin-bottom:8px;padding:0 2px;">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin-bottom:6px;">Prerequisites</div>
@@ -22372,9 +22382,7 @@ function renderAiTools() {
             ? '<span class="ai-tool-status installed">Installed</span>'
             : '<span class="ai-tool-status not-installed" style="color:var(--yellow);">Required for AI CLI tools</span>'}
         </div>
-        <button class="ai-tool-btn ${pwshInstalled ? 'installed' : 'install'}" id="aiToolBtn-pwsh"
-                onclick="${pwshInstalled ? '' : "installCli('pwsh')"}"
-                ${pwshInstalled ? 'disabled' : ''}>${pwshInstalled ? 'Installed' : 'Install'}</button>
+        ${pwshBtn}
       </div>
     </div>
     <div style="padding:0 2px;margin-bottom:6px;">
@@ -22385,11 +22393,18 @@ function renderAiTools() {
   const toolCards = Object.entries(AI_TOOLS_META).map(([id, meta]) => {
     const status = _aiToolsStatus[id] || { installed: false };
     const isInstalled = status.installed;
-    const btnClass = isInstalled ? 'installed' : 'install';
-    const btnText = isInstalled ? 'Installed' : 'Install';
+    const isInstalling = _aiInstalling.has(id);
     const statusText = isInstalled
       ? `<span class="ai-tool-status installed">Installed</span>`
       : `<span class="ai-tool-status not-installed">Not installed &middot; <code style="font-size:9px;color:var(--subtext0);">npm i -g ${meta.pkg}</code></span>`;
+
+    // In-progress installs win over the installed/not-installed state so a
+    // re-render (e.g. a sibling install finishing) keeps showing "Installing...".
+    const btn = isInstalling
+      ? `<button class="ai-tool-btn installing" id="aiToolBtn-${id}" disabled>Installing...</button>`
+      : `<button class="ai-tool-btn ${isInstalled ? 'installed' : 'install'}" id="aiToolBtn-${id}"
+                onclick="${isInstalled ? '' : `installCli('${id}')`}"
+                ${isInstalled ? 'disabled' : ''}>${isInstalled ? 'Installed' : 'Install'}</button>`;
 
     return `
       <div class="ai-tool-card" id="aiToolCard-${id}">
@@ -22398,9 +22413,7 @@ function renderAiTools() {
           <div class="ai-tool-name">${meta.name}</div>
           ${statusText}
         </div>
-        <button class="ai-tool-btn ${btnClass}" id="aiToolBtn-${id}"
-                onclick="${isInstalled ? '' : `installCli('${id}')`}"
-                ${isInstalled ? 'disabled' : ''}>${btnText}</button>
+        ${btn}
       </div>`;
   }).join('');
 
@@ -22410,6 +22423,7 @@ function renderAiTools() {
 async function installCli(cli) {
   const btn = document.getElementById(`aiToolBtn-${cli}`);
   if (!btn) return;
+  _aiInstalling.add(cli);
   btn.className = 'ai-tool-btn installing';
   btn.textContent = 'Installing...';
   btn.disabled = true;
@@ -22434,8 +22448,10 @@ async function installCli(cli) {
       } else {
         toast(`${displayName} installed successfully`, 'success');
       }
+      _aiInstalling.delete(cli);
       renderAiTools();
     } else {
+      _aiInstalling.delete(cli);
       btn.className = 'ai-tool-btn install';
       btn.textContent = 'Retry';
       btn.disabled = false;
@@ -22444,6 +22460,7 @@ async function installCli(cli) {
       if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd, errMsg); }
     }
   } catch (e) {
+    _aiInstalling.delete(cli);
     btn.className = 'ai-tool-btn install';
     btn.textContent = 'Retry';
     btn.disabled = false;
@@ -24117,6 +24134,10 @@ async function obDetectAiTools() {
 }
 
 let _obPwshStatus = { installed: false };
+// Same in-flight tracker as the Settings AI tools (_aiInstalling): survives the
+// full obRenderAiTools() re-render so a sibling install finishing does not reset
+// a still-installing tool to "Install".
+const _obInstalling = new Set();
 
 function obRenderAiTools() {
   const container = document.getElementById('obAiTools');
@@ -24124,6 +24145,10 @@ function obRenderAiTools() {
 
   // PowerShell 7 prerequisite
   const pwshOk = _obPwshStatus.installed;
+  const pwshInstalling = _obInstalling.has('pwsh');
+  const pwshBtn = pwshInstalling
+    ? `<button class="ai-tool-btn installing" id="obAiBtn-pwsh" disabled>Installing...</button>`
+    : `<button class="ai-tool-btn ${pwshOk ? 'installed' : 'install'}" id="obAiBtn-pwsh" onclick="${pwshOk ? '' : "obInstallCli('pwsh')"}" ${pwshOk ? 'disabled' : ''}>${pwshOk ? 'Installed' : 'Install'}</button>`;
   const pwshCard = `
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin-bottom:6px;">Prerequisites</div>
     <div class="ai-tool-card" style="${pwshOk ? '' : 'border-color:var(--yellow);'}">
@@ -24131,7 +24156,7 @@ function obRenderAiTools() {
       <div class="ai-tool-info"><div class="ai-tool-name">PowerShell 7</div>
         ${pwshOk ? '<span class="ai-tool-status installed">Installed</span>' : '<span class="ai-tool-status not-installed" style="color:var(--yellow);">Required for AI CLI tools</span>'}
       </div>
-      <button class="ai-tool-btn ${pwshOk ? 'installed' : 'install'}" id="obAiBtn-pwsh" onclick="${pwshOk ? '' : "obInstallCli('pwsh')"}" ${pwshOk ? 'disabled' : ''}>${pwshOk ? 'Installed' : 'Install'}</button>
+      ${pwshBtn}
     </div>
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--subtext0);margin:8px 0 6px;">AI Tools</div>`;
 
@@ -24139,12 +24164,16 @@ function obRenderAiTools() {
   const meta = { claude: { name: 'Claude Code', color: '#d97757', pkg: '@anthropic-ai/claude-code' }, gemini: { name: 'Gemini CLI', color: '#078efa', pkg: '@google/gemini-cli' }, copilot: { name: 'Copilot CLI', color: '#8534f3', pkg: '@github/copilot' }, codex: { name: 'Codex CLI', color: '#10a37f', pkg: '@openai/codex' }, grok: { name: 'Grok Code', color: '#ef4444', pkg: '@webdevtoday/grok-cli' } };
   const toolCards = Object.entries(meta).map(([id, m]) => {
     const installed = _obAiStatus[id]?.installed;
+    const installing = _obInstalling.has(id);
+    const btn = installing
+      ? `<button class="ai-tool-btn installing" id="obAiBtn-${id}" disabled>Installing...</button>`
+      : `<button class="ai-tool-btn ${installed ? 'installed' : 'install'}" id="obAiBtn-${id}" onclick="${installed ? '' : `obInstallCli('${id}')`}" ${installed ? 'disabled' : ''}>${installed ? 'Installed' : 'Install'}</button>`;
     return `<div class="ai-tool-card">
       <div class="ai-tool-dot" style="background:${m.color}"></div>
       <div class="ai-tool-info"><div class="ai-tool-name">${m.name}</div>
         ${installed ? '<span class="ai-tool-status installed">Installed</span>' : `<span class="ai-tool-status not-installed">Not installed</span>`}
       </div>
-      <button class="ai-tool-btn ${installed ? 'installed' : 'install'}" id="obAiBtn-${id}" onclick="${installed ? '' : `obInstallCli('${id}')`}" ${installed ? 'disabled' : ''}>${installed ? 'Installed' : 'Install'}</button>
+      ${btn}
     </div>`;
   }).join('');
 
@@ -24154,6 +24183,7 @@ function obRenderAiTools() {
 async function obInstallCli(cli) {
   const btn = document.getElementById(`obAiBtn-${cli}`);
   if (!btn) return;
+  _obInstalling.add(cli);
   btn.className = 'ai-tool-btn installing'; btn.textContent = 'Installing...'; btn.disabled = true;
   // Clear any previous fallback hint
   const prevHint = btn.closest('.ai-tool-card')?.querySelector('.install-fallback-hint');
@@ -24169,15 +24199,17 @@ async function obInstallCli(cli) {
       } else {
         toast('Installed!', 'success');
       }
+      _obInstalling.delete(cli);
       obRenderAiTools();
     }
     else {
+      _obInstalling.delete(cli);
       btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false;
       const errMsg = data.error || 'Install failed';
       toast(`Install failed: ${errMsg}`, 'error');
       if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd, errMsg); }
     }
-  } catch (_) { btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false; }
+  } catch (_) { _obInstalling.delete(cli); btn.className = 'ai-tool-btn install'; btn.textContent = 'Retry'; btn.disabled = false; }
 }
 
 function showInstallFallbackHint(btn, cmd, msg) {
