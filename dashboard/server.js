@@ -1818,13 +1818,18 @@ function gitExec(repoPath, cmd, timeoutMs) {
   return gitSync(repoPath, cmd, timeoutMs);
 }
 
-function handleGitStatus(url, res) {
+async function handleGitStatus(url, res) {
   const repoName = url.searchParams.get('repo');
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-  const branch = gitExec(repoPath, 'rev-parse --abbrev-ref HEAD');
-  const status = gitExec(repoPath, 'status --porcelain -u');
+  // Run git OFF the main event loop (gitAsync = spawn) so the 10s status poll
+  // does not freeze the whole UI. `git status -u` is slow on big / untracked-
+  // heavy repos, and the legacy gitExec/gitSync would block the Electron main
+  // process (server.js runs in it) for the duration -- the recurring freeze.
+  let branch = '', status = '';
+  try { branch = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD'); } catch (_) {}
+  try { status = await gitAsync(repoPath, 'status --porcelain -u'); } catch (_) {}
   const statusMap = { 'M': 'modified', 'A': 'added', 'D': 'deleted', 'R': 'renamed', '?': 'new', 'U': 'conflict' };
   const statusLabel = { 'modified': 'M', 'added': 'A', 'deleted': 'D', 'renamed': 'R', 'new': 'N', 'conflict': 'U' };
   const files = status ? status.split('\n').filter(Boolean).map(line => {
@@ -1852,20 +1857,25 @@ function handleGitStatus(url, res) {
   json(res, { branch, files, clean: files.length === 0 });
 }
 
-function handleGitDiff(url, res) {
+async function handleGitDiff(url, res) {
   const repoName = url.searchParams.get('repo');
   const filePath = url.searchParams.get('path') || '';
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
+  // gitAsync (spawn) instead of the blocking gitExec so loading a large diff
+  // does not freeze the main process / whole UI. Returns '' on error to match
+  // the old gitExec-tolerant behavior.
+  const g = async (cmd) => { try { return await gitAsync(repoPath, cmd); } catch (_) { return ''; } };
+
   let diff = '';
   if (filePath) {
     // Try staged + unstaged diff against HEAD (ignore CRLF differences on Windows)
-    diff = gitExec(repoPath, `diff --ignore-cr-at-eol HEAD -- "${filePath}"`);
+    diff = await g(`diff --ignore-cr-at-eol HEAD -- "${filePath}"`);
     // Try unstaged only
-    if (!diff) diff = gitExec(repoPath, `diff --ignore-cr-at-eol -- "${filePath}"`);
+    if (!diff) diff = await g(`diff --ignore-cr-at-eol -- "${filePath}"`);
     // Try staged only
-    if (!diff) diff = gitExec(repoPath, `diff --ignore-cr-at-eol --cached -- "${filePath}"`);
+    if (!diff) diff = await g(`diff --ignore-cr-at-eol --cached -- "${filePath}"`);
     // For untracked/new files, show entire content as additions
     if (!diff) {
       const fullPath = path.join(repoPath, filePath);
@@ -1879,10 +1889,10 @@ function handleGitDiff(url, res) {
       }
     }
   } else {
-    diff = gitExec(repoPath, 'diff --ignore-cr-at-eol HEAD');
-    if (!diff) diff = gitExec(repoPath, 'diff --ignore-cr-at-eol');
+    diff = await g('diff --ignore-cr-at-eol HEAD');
+    if (!diff) diff = await g('diff --ignore-cr-at-eol');
     // Include untracked (new) files in the combined diff
-    const status = gitExec(repoPath, 'status --porcelain');
+    const status = await g('status --porcelain');
     if (status) {
       const untrackedFiles = status.split('\n').filter(Boolean)
         .filter(l => l.startsWith('??'))
@@ -1924,13 +1934,14 @@ async function handleGitBranches(url, res) {
   }
 }
 
-function handleGitLog(url, res) {
+async function handleGitLog(url, res) {
   const repoName = url.searchParams.get('repo');
   const count = url.searchParams.get('count') || '20';
   const repoPath = getRepoPath(repoName);
   if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
-  const output = gitExec(repoPath, `log -${count} --pretty=format:"%h|%s|%an|%ar"`);
+  let output = '';
+  try { output = await gitAsync(repoPath, `log -${count} --pretty=format:"%h|%s|%an|%ar"`); } catch (_) {}
   const commits = output ? output.split('\n').filter(Boolean).map(line => {
     const [hash, subject, author, date] = line.replace(/^"|"$/g, '').split('|');
     return { hash, subject, author, date };
@@ -1939,7 +1950,7 @@ function handleGitLog(url, res) {
   json(res, { commits });
 }
 
-function handleCommitDiff(url, res) {
+async function handleCommitDiff(url, res) {
   const repoName = url.searchParams.get('repo');
   const hash = url.searchParams.get('hash');
   const filePath = url.searchParams.get('path') || '';
@@ -1948,9 +1959,10 @@ function handleCommitDiff(url, res) {
   if (!hash) return json(res, { error: 'hash required' }, 400);
 
   const pathArg = filePath ? ` -- "${filePath}"` : '';
-  const diff = gitExec(repoPath, `diff --ignore-cr-at-eol ${hash}~1 ${hash}${pathArg}`);
-  const stat = gitExec(repoPath, `diff --ignore-cr-at-eol --stat=999 ${hash}~1 ${hash}`);
-  const msg = gitExec(repoPath, `log -1 --pretty=format:"%s" ${hash}`);
+  const g = async (cmd) => { try { return await gitAsync(repoPath, cmd); } catch (_) { return ''; } };
+  const diff = await g(`diff --ignore-cr-at-eol ${hash}~1 ${hash}${pathArg}`);
+  const stat = await g(`diff --ignore-cr-at-eol --stat=999 ${hash}~1 ${hash}`);
+  const msg = await g(`log -1 --pretty=format:"%s" ${hash}`);
 
   json(res, { diff: diff || 'No changes', stat, message: msg, hash });
 }
