@@ -5014,9 +5014,9 @@
     <div class="sidebar-scrollable">
       <div id="sidebarCoreActions">
         <div class="section-title">Actions</div>
-        <button class="btn" onclick="refreshAll()"><i data-lucide="refresh-cw"></i> Refresh</button>
+        <button class="btn" onclick="refreshAll()" title="Refresh work items, branches, and repo state"><i data-lucide="refresh-cw"></i> Refresh</button>
         <button class="btn" onclick="analyzeActiveRepo()" title="Generate a repo map and send it to the AI"><i data-lucide="brain"></i> Analyze Repo</button>
-        <button class="btn" onclick="openRepoMapModal()"><i data-lucide="map"></i> Generate Repo Map</button>
+        <button class="btn" onclick="openRepoMapModal()" title="Generate a symbol map of the active repo and open it in a viewer"><i data-lucide="map"></i> Generate Repo Map</button>
         <div id="sidebarPluginActionsCore"></div>
         <div class="divider"></div>
       </div>
@@ -24759,26 +24759,26 @@ function getCmdActions() {
   const actions = [
     // Navigation (core always-on)
     { label: 'Go to Terminal', icon: 'terminal', action: () => switchTab('terminal'), category: 'Navigate', hint: 'Ctrl+T' },
-    { label: 'Go to Files', icon: 'folder', action: () => switchTab('files'), category: 'Navigate' },
-    { label: 'Go to Notes', icon: 'file-text', action: () => switchTab('notes'), category: 'Navigate' },
+    { label: 'Go to Files', icon: 'folder', action: () => switchTab('files'), category: 'Navigate', hint: 'Browse and open repo files' },
+    { label: 'Go to Notes', icon: 'file-text', action: () => switchTab('notes'), category: 'Navigate', hint: 'Your notes and learnings' },
     // Core actions (always-on)
     { label: 'Refresh', icon: 'refresh-cw', action: () => refreshAll(), category: 'Action', hint: 'Ctrl+R' },
     { label: 'Generate Repo Map', icon: 'map', action: () => openRepoMapModal(), category: 'Action', hint: 'Symbol map of the active repo' },
     { label: 'Analyze Repo', icon: 'brain', action: () => analyzeActiveRepo(), category: 'AI', hint: 'Generate a repo map and send it to the AI' },
     { label: 'Search Notes + Learnings', icon: 'search', action: () => { document.getElementById('cmdPaletteInput').value = 'find '; filterCmdPalette(); }, category: 'Action', hint: 'find <query>' },
     // Git (local ops always work; remote pull/push still listed but fail gracefully without auth)
-    { label: 'Switch Branch', icon: 'git-branch', action: () => openGitModal('branches'), category: 'Git' },
-    { label: 'Commit Changes', icon: 'git-commit', action: () => openGitModal('commit'), category: 'Git' },
-    { label: 'Compare Branches', icon: 'git-compare', action: () => openGitModal('compare'), category: 'Git' },
+    { label: 'Switch Branch', icon: 'git-branch', action: () => openGitModal('branches'), category: 'Git', hint: 'Check out a different branch' },
+    { label: 'Commit Changes', icon: 'git-commit', action: () => openGitModal('commit'), category: 'Git', hint: 'Stage and commit working changes' },
+    { label: 'Compare Branches', icon: 'git-compare', action: () => openGitModal('compare'), category: 'Git', hint: 'Diff two branches' },
     // AI (core)
-    { label: 'Launch AI', icon: 'play', action: () => { if (!aiLaunched) launchAi(); switchTab('terminal'); }, category: 'AI' },
-    { label: 'Stop AI', icon: 'square', action: () => { if (aiLaunched) stopAi(); }, category: 'AI' },
-    { label: 'Resume Session', icon: 'rotate-ccw', action: () => { resumeAiSession(); switchTab('terminal'); }, category: 'AI' },
+    { label: 'Launch AI', icon: 'play', action: () => { if (!aiLaunched) launchAi(); switchTab('terminal'); }, category: 'AI', hint: 'Start the AI in the terminal' },
+    { label: 'Stop AI', icon: 'square', action: () => { if (aiLaunched) stopAi(); }, category: 'AI', hint: 'Stop the running AI session' },
+    { label: 'Resume Session', icon: 'rotate-ccw', action: () => { resumeAiSession(); switchTab('terminal'); }, category: 'AI', hint: 'Resume the last AI session' },
     // Settings
-    { label: 'Open Settings', icon: 'settings', action: () => openSettings(), category: 'Settings' },
+    { label: 'Open Settings', icon: 'settings', action: () => openSettings(), category: 'Settings', hint: 'Repos, plugins, and AI keys' },
     // Scheduled jobs (recurring prompts to any CLI)
     { label: 'Scheduled Jobs', icon: 'calendar-clock', action: () => openJobsModal(), category: 'AI', hint: 'Run AI prompts on a schedule' },
-    { label: 'Create Scheduled Job', icon: 'plus', action: () => openJobEditor(), category: 'AI' },
+    { label: 'Create Scheduled Job', icon: 'plus', action: () => openJobEditor(), category: 'AI', hint: 'Schedule a recurring AI prompt' },
   ];
   // Plugin-contributed quick actions + AI actions. No plugin names hardcoded.
   // The palette reads from each loaded plugin's leftQuickActions and aiActions
