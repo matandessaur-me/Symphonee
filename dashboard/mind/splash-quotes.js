@@ -95,10 +95,29 @@ async function regenerate({ repoRoot, space, store, broadcast } = {}) {
       'Rules: exactly 12 lines; each UNDER 100 characters; plain text; no names, no hashtags, no surrounding quotation marks. ' +
       'Return STRICT JSON only, an array of strings: {"quotes":["line one","line two", ...]}';
     const user = 'Notes from my knowledge graph:\n' + material.join('\n') + '\n\nWrite the 12 lines now.';
-    const out = await chatOllama(
+    // Ask for free-form text (not format:'json'): some models -- gemma in
+    // particular -- ignore the JSON mode and wrap the object in a ```json code
+    // fence, which the strict JSON parser then rejects. We strip fences/prose
+    // and parse ourselves.
+    const resp = await chatOllama(
       [{ role: 'system', content: sys }, { role: 'user', content: user }],
-      { format: 'json', temperature: 0.6, numPredict: 900, timeoutMs: 90000 }
+      { format: null, temperature: 0.6, numPredict: 1200, timeoutMs: 120000 }
     );
+    // chatOllama returns a wrapper {ok, model, text} for free-form, or a parsed
+    // object in JSON mode. Normalize, then strip ```json fences / surrounding
+    // prose and parse the first JSON object/array.
+    let out = null;
+    const rawStr = (resp && typeof resp === 'object' && typeof resp.text === 'string') ? resp.text
+                 : (typeof resp === 'string' ? resp : null);
+    if (rawStr != null) {
+      try {
+        const s = rawStr.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        const mm = s.match(/[\{\[][\s\S]*[\}\]]/);
+        out = JSON.parse(mm ? mm[0] : s);
+      } catch (_) { out = null; }
+    } else if (resp && typeof resp === 'object') {
+      out = resp; // already parsed (JSON mode)
+    }
     // Be liberal in what we accept: {quotes:[...]}, {lines:[...]}, a bare array,
     // or the first array-valued field; items may be strings or {text|quote|line}.
     let raw = [];
