@@ -2745,9 +2745,47 @@ function handleHealthCheck(res) {
 }
 
 // ── Multi-PTY management ────────────────────────────────────────────────────
-const terminals = new Map(); // termId -> { pty, cols, rows }
+const terminals = new Map(); // termId -> { pty, cols, rows, cwd, label }
 const termAiMeta = new Map(); // termId -> { cli, launched, updatedAt }
 let defaultCols = 120, defaultRows = 30;
+
+// ── Terminal session persistence ────────────────────────────────────────────
+// PTYs are in-memory and die with the process, so to bring the user's shells
+// (name + working dir) back after an app restart we persist a small manifest of
+// open shells and recreate them on the first client connection. Local state, so
+// it lives under .ai-workspace (gitignored).
+const termSessionsFile = path.join(repoRoot, '.ai-workspace', 'terminal-sessions.json');
+let _sessionsRestored = false;
+function loadTermSessions() {
+  try { return JSON.parse(fs.readFileSync(termSessionsFile, 'utf8')) || {}; }
+  catch (_) { return { shells: [], mainLabel: null }; }
+}
+function saveTermSessions() {
+  try {
+    fs.mkdirSync(path.dirname(termSessionsFile), { recursive: true });
+    const shells = [];
+    let mainLabel = null;
+    for (const [id, t] of terminals) {
+      if (id === 'main') { mainLabel = t.label || null; continue; }
+      shells.push({ id, label: t.label || null, cwd: t.cwd || null });
+    }
+    atomicWriteSync(termSessionsFile, JSON.stringify({ shells, mainLabel }, null, 2));
+  } catch (_) { /* best-effort */ }
+}
+// Recreate persisted non-main shells once, on the first client connection after
+// a server (app) restart. Guarded so reconnects do not duplicate.
+function restoreTermSessionsOnce() {
+  if (_sessionsRestored) return;
+  _sessionsRestored = true;
+  let saved;
+  try { saved = loadTermSessions(); } catch (_) { return; }
+  for (const s of (saved && saved.shells) || []) {
+    if (!s || !s.id || s.id === 'main' || terminals.has(s.id)) continue;
+    let cwd = repoRoot;
+    try { if (s.cwd && fs.existsSync(s.cwd)) cwd = s.cwd; } catch (_) {}
+    try { createTerminal(s.id, defaultCols, defaultRows, cwd, s.label || null); } catch (_) {}
+  }
+}
 
 function findShell() {
   const pwsh = detectPwsh();
@@ -2795,7 +2833,7 @@ function _handleTerminalCwd(termId, cwd) {
   broadcast({ type: 'term-cwd', termId, cwd, repo: _repoForPath(cwd) });
 }
 
-function createTerminal(termId, cols = 120, rows = 30, cwd = null) {
+function createTerminal(termId, cols = 120, rows = 30, cwd = null, label = null) {
   // Default new terminals to Symphonee's repoRoot (where scripts/*.ps1 live)
   // so the user always has access to Symphonee's tools regardless of which
   // repo is active. The "active repo" is metadata Symphonee uses to know
@@ -2824,7 +2862,7 @@ function createTerminal(termId, cols = 120, rows = 30, cwd = null) {
     },
   });
 
-  terminals.set(termId, { pty: ptyProcess, cols, rows, cwd });
+  terminals.set(termId, { pty: ptyProcess, cols, rows, cwd, label: label || null });
 
   ptyProcess.onData(data => {
     broadcast({ type: 'output', termId, data });
@@ -2971,10 +3009,19 @@ Object.defineProperty(global, 'currentPty', {
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
-  // Send list of active terminals
+  // On the first connection after an app restart, bring back the user's saved
+  // shells (name + cwd) so renaming/opening shells survives a restart.
+  restoreTermSessionsOnce();
+  // Send list of active terminals with their labels + cwd so the client can
+  // rebuild the tabs (a fresh renderer has none).
   const active = [];
-  for (const [id] of terminals) active.push(id);
-  ws.send(JSON.stringify({ type: 'term-list', terminals: active }));
+  let mainLabel = null;
+  for (const [id, t] of terminals) {
+    if (id === 'main') mainLabel = t.label || null;
+    active.push({ id, label: t.label || null, cwd: t.cwd || null });
+  }
+  if (mainLabel == null) { try { mainLabel = loadTermSessions().mainLabel || null; } catch (_) {} }
+  ws.send(JSON.stringify({ type: 'term-list', terminals: active, mainLabel }));
 
   ws.on('message', (raw) => {
     try {
@@ -3005,11 +3052,18 @@ wss.on('connection', (ws) => {
           break;
         }
         case 'create-term': {
-          createTerminal(termId, msg.cols || defaultCols, msg.rows || defaultRows, msg.cwd);
+          createTerminal(termId, msg.cols || defaultCols, msg.rows || defaultRows, msg.cwd, msg.label || null);
+          saveTermSessions();
           break;
         }
         case 'kill-term': {
-          if (termId !== 'main') killTerminal(termId);
+          if (termId !== 'main') { killTerminal(termId); saveTermSessions(); }
+          break;
+        }
+        case 'rename-term': {
+          // Persist a user-renamed shell so the name survives an app restart.
+          const t = terminals.get(termId);
+          if (t) { t.label = (String(msg.label || '').slice(0, 60)) || null; saveTermSessions(); }
           break;
         }
         case 'restart': {

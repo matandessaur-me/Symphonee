@@ -7196,7 +7196,7 @@ function addTerminal(label, cwd) {
   // Create server PTY with the known-good dimensions; switchTerminal's
   // double-rAF will fit() the xterm and send a resize once layout is done.
   if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'create-term', termId, cwd, cols, rows }));
+    ws.send(JSON.stringify({ type: 'create-term', termId, cwd, cols, rows, label: name }));
   }
   return termId;
 }
@@ -7253,6 +7253,8 @@ function enableTabRename(tabEl, termId) {
         nameEl.textContent = val;
         const inst = termInstances.get(termId);
         if (inst) inst.label = val;
+        // Persist the rename so it survives an app restart.
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'rename-term', termId, label: val }));
       } else {
         nameEl.textContent = prev;
       }
@@ -7360,12 +7362,30 @@ requestAnimationFrame(fitTerminalNow);
             setTimeout(cb, 300); // small delay to let PTY fully init
           }
           break;
-        case 'term-list':
-          // Server sent list of active terminals — create main if needed
-          if (!termInstances.has('main') || msg.terminals.includes('main')) {
-            // Main already created in HTML
+        case 'term-list': {
+          const list = Array.isArray(msg.terminals) ? msg.terminals : [];
+          // Apply a persisted custom name to the main shell.
+          if (msg.mainLabel) {
+            const mainName = document.querySelector('#mainTermTab .term-tab-name');
+            if (mainName) mainName.textContent = msg.mainLabel;
+            const mi = termInstances.get('main'); if (mi) mi.label = msg.mainLabel;
+          }
+          // Recreate any non-main shells that exist server-side but not in this
+          // renderer. After an app restart the renderer is fresh, so this brings
+          // back the user's open shells with their saved names + working dirs.
+          // (On a ws reconnect the instances already exist, so this no-ops.)
+          for (const t of list) {
+            const id = typeof t === 'string' ? t : (t && t.id);
+            if (!id || id === 'main' || termInstances.has(id)) continue;
+            const label = (t && typeof t === 'object' && t.label) ? t.label : id;
+            createTermInstance(id, label);
+            const inst = termInstances.get(id);
+            if (inst && t && t.cwd) inst.cwd = t.cwd;
+            const mm = /^term-(\d+)$/.exec(id);
+            if (mm) termCounter = Math.max(termCounter, parseInt(mm[1], 10));
           }
           break;
+        }
         case 'term-cwd': {
           const tid = msg.termId || 'main';
           const inst = termInstances.get(tid);
