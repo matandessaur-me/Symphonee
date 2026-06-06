@@ -16,6 +16,7 @@ const { gitAsync, gitSync } = require('./utils/git-async');
 const { SWRCache } = require('./utils/swr-cache');
 const { atomicWriteSync } = require('./utils/atomic-write');
 const { namespaceFromName } = require('./lib/notes-ns');
+const { detectPwsh } = require('./lib/detect-cli');
 const { BusyGuard } = require('./utils/busy-guard');
 const instructionAudit = require('./instruction-audit');
 const trace = require('./startup-trace');
@@ -407,8 +408,6 @@ const server = http.createServer(async (req, res) => {
         return json(res, await mcpClient.callTool(body.server, body.tool, body.arguments));
       } catch (e) { return json(res, { error: e.message }, 500); }
     }
-    if (url.pathname === '/api/prerequisites')                   return handlePrerequisites(res);
-    if (url.pathname === '/api/cli/install' && req.method === 'POST') return handleCliInstall(req, res);
 
     // ── Repos ─────────────────────────────────────────────────────────────
     if (url.pathname === '/api/repos' && req.method === 'GET')  return handleGetRepos(res);
@@ -1076,166 +1075,6 @@ try {
     }
   });
 } catch (_) {}
-
-// ── Prerequisites API ────────────────────────────────────────────────────
-function handlePrerequisites(res) {
-  const result = {
-    cliTools: {},
-    nodeJs: { installed: true, version: process.version },
-    config: { exists: false, complete: false },
-  };
-
-  for (const id of ['claude', 'gemini', 'copilot', 'codex', 'grok', 'qwen']) {
-    result.cliTools[id] = detectCli(id);
-  }
-
-  result.pwsh = detectPwsh();
-
-  try {
-    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    result.config.exists = true;
-    // "Complete" no longer means ADO is configured - the shell ships plugin-first, so
-    // a DefaultUser + at least one configured repo is enough to be a usable install.
-    result.config.complete = !!(cfg.DefaultUser && cfg.Repos && Object.keys(cfg.Repos).length > 0);
-  } catch (_) {}
-
-  const anyCliInstalled = Object.values(result.cliTools).some(c => c.installed);
-  result.ready = anyCliInstalled && result.config.complete;
-
-  json(res, result);
-}
-
-// ── CLI Install Handler ──────────────────────────────────────────────────────
-const CLI_INSTALL_COMMANDS = {
-  claude:  'npm install -g @anthropic-ai/claude-code',
-  gemini:  'npm install -g @google/gemini-cli',
-  copilot: 'npm install -g @github/copilot',
-  codex:   'npm install -g @openai/codex',
-
-  grok:    'npm install -g @webdevtoday/grok-cli',
-  qwen:    'npm install -g @qwen-code/qwen-code',
-};
-
-// Detect a CLI tool via `where` first, then fall back to common npm global paths.
-// After a fresh npm install the current process PATH may be stale, so we also
-// check the typical npm global bin directories directly (same strategy as detectPwsh).
-// Returns { installed, path, inPath } - `inPath` indicates if `where` found it (ready to use)
-// vs found via fallback (installed but may need terminal restart).
-function detectCli(cli) {
-  // 1. Try `where` (checks current PATH - means it's ready to use right now)
-  const whereCmd = `where ${cli}.cmd 2>nul || where ${cli} 2>nul`;
-  try {
-    const where = execSync(whereCmd, { encoding: 'utf8', timeout: 5000 }).trim();
-    if (where) return { installed: true, path: where.split('\n')[0].trim(), inPath: true };
-  } catch (_) {}
-
-  // 2. Fallback: check common npm global install locations
-  const npmPrefixes = [];
-  // Try to get the actual npm prefix
-  try {
-    const prefix = execSync('npm config get prefix', { encoding: 'utf8', timeout: 5000 }).trim();
-    if (prefix) npmPrefixes.push(prefix);
-  } catch (_) {}
-  // Common Windows locations
-  const appData = process.env.APPDATA || '';
-  if (appData) npmPrefixes.push(path.join(appData, 'npm'));
-  const localAppData = process.env.LOCALAPPDATA || '';
-  if (localAppData) npmPrefixes.push(path.join(localAppData, 'npm'));
-  // nvm-windows uses per-version dirs
-  const nvmHome = process.env.NVM_HOME || process.env.NVM_SYMLINK || '';
-  if (nvmHome) npmPrefixes.push(nvmHome);
-  // Deduplicate
-  const seen = new Set();
-  for (const prefix of npmPrefixes) {
-    if (!prefix || seen.has(prefix.toLowerCase())) continue;
-    seen.add(prefix.toLowerCase());
-    for (const ext of ['.cmd', '.ps1', '']) {
-      const candidate = path.join(prefix, cli + ext);
-      try { if (fs.existsSync(candidate)) return { installed: true, path: candidate, inPath: false }; } catch (_) {}
-    }
-  }
-  return { installed: false, path: '', inPath: false };
-}
-
-const PWSH_WINGET_CMD = 'winget install Microsoft.PowerShell --accept-source-agreements --accept-package-agreements';
-
-// Detect pwsh.exe via `where` first, then fall back to common install paths.
-// `where` relies on the current process PATH which may be stale after a fresh install.
-function detectPwsh() {
-  try {
-    const where = execSync('where pwsh.exe 2>nul', { encoding: 'utf8', timeout: 5000 }).trim();
-    if (where) return { installed: true, path: where.split('\n')[0].trim() };
-  } catch (_) {}
-  // Fallback: check common install locations (PATH may not be refreshed yet)
-  const candidates = [
-    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
-    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '8', 'pwsh.exe'),
-    path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'PowerShell', 'pwsh.exe'),
-    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', 'pwsh.exe'),
-  ];
-  for (const c of candidates) {
-    try { if (c && fs.existsSync(c)) return { installed: true, path: c }; } catch (_) {}
-  }
-  return { installed: false, path: '' };
-}
-
-function handleCliInstall(req, res) {
-  let body = '';
-  req.on('data', c => body += c);
-  req.on('end', () => {
-    try {
-      const { cli } = JSON.parse(body);
-
-      // PowerShell 7 needs admin elevation — handle separately
-      if (cli === 'pwsh') return handlePwshInstall(res);
-
-      const installCmd = CLI_INSTALL_COMMANDS[cli];
-      if (!installCmd) return json(res, { error: `Unknown CLI: ${cli}` }, 400);
-
-      // Run install asynchronously
-      const { exec } = require('child_process');
-      exec(installCmd, { timeout: 120000, encoding: 'utf8' }, (err, stdout, stderr) => {
-        // After install, re-check using detectCli (checks PATH + common npm global dirs)
-        const result = detectCli(cli);
-
-        if (result.installed) {
-          json(res, {
-            ok: true, cli, installed: true, path: result.path,
-            // If found via fallback (not in PATH), the user may need to restart the app
-            needsRestart: !result.inPath,
-          });
-        } else {
-          json(res, {
-            ok: false, cli, installed: false,
-            error: err ? err.message : 'Installation failed. Please try the manual command below.',
-            fallbackCmd: installCmd,
-          });
-        }
-      });
-    } catch (e) {
-      json(res, { error: 'Invalid request' }, 400);
-    }
-  });
-}
-
-function handlePwshInstall(res) {
-  const { exec } = require('child_process');
-  // Attempt elevated install via Start-Process -Verb RunAs (triggers UAC prompt)
-  const elevatedCmd = `powershell.exe -NoProfile -Command "Start-Process -FilePath 'winget' -ArgumentList 'install Microsoft.PowerShell --accept-source-agreements --accept-package-agreements' -Verb RunAs -Wait -PassThru | Select-Object -ExpandProperty ExitCode"`;
-  exec(elevatedCmd, { timeout: 180000, encoding: 'utf8' }, (err, stdout, stderr) => {
-    // Check if pwsh is now available (detectPwsh checks common paths too, not just PATH)
-    const result = detectPwsh();
-    if (result.installed) {
-      json(res, { ok: true, cli: 'pwsh', installed: true, path: result.path });
-    } else {
-      json(res, {
-        ok: false, cli: 'pwsh', installed: false,
-        error: 'Installation requires administrator privileges.',
-        fallbackCmd: PWSH_WINGET_CMD,
-      });
-    }
-  });
-}
 
 // All Azure DevOps HTTP helpers and handlers moved to the azure-devops plugin
 // (dashboard/plugins/azure-devops/routes.js) as of plugin v0.4.0. This includes:
@@ -2213,6 +2052,8 @@ const { mountFiles } = require('./routes/files');
 mountFiles(addRoute, json, { getRepoPath, broadcast });
 const { mountNotes } = require('./routes/notes');
 mountNotes(addRoute, json, { repoRoot, broadcast, hybridSearch, getUiContext: getUiContextWithPath });
+const { mountCliInstall } = require('./routes/cli-install');
+mountCliInstall(addRoute, json, { configPath });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 trace.mark('server:orchestrator-mounted');
 
