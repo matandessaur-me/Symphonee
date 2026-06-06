@@ -408,16 +408,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Repos ─────────────────────────────────────────────────────────────
-    if (url.pathname === '/api/repos' && req.method === 'GET')  return handleGetRepos(res);
-    if (url.pathname === '/api/repos' && req.method === 'POST') return handleSaveRepo(req, res);
     // Spaces: non-git workspaces (Personal, Business, Freelance, ...). Stored
     // like repos but flagged so the UI hides git actions. Live at a separate
     // route so existing repo consumers are unaffected.
-    if (url.pathname === '/api/spaces' && req.method === 'GET')  return handleGetSpaces(res);
-    if (url.pathname === '/api/spaces' && req.method === 'POST') return handleSaveSpace(req, res);
-    if (url.pathname === '/api/spaces' && req.method === 'DELETE') return handleDeleteSpace(req, res);
-    if (url.pathname === '/api/spaces/attach-repo' && req.method === 'POST') return handleSpaceAttachRepo(req, res);
-    if (url.pathname === '/api/spaces/toggle-plugin' && req.method === 'POST') return handleSpaceTogglePlugin(req, res);
     if (url.pathname === '/api/skills' && req.method === 'GET')  return handleGetSkills(res);
     if (url.pathname.startsWith('/api/skills/') && req.method === 'GET') {
       const slug = decodeURIComponent(url.pathname.slice('/api/skills/'.length));
@@ -687,105 +680,6 @@ try {
 //   handleAreas, handleTeamMembers.
 
 // ── Repos Management ────────────────────────────────────────────────────────
-function handleGetRepos(res) {
-  const cfg = getConfig();
-  json(res, cfg.Repos || {});
-}
-
-async function handleSaveRepo(req, res) {
-  const { name, path: repoPath } = await readBody(req);
-  if (!name || !repoPath) return json(res, { error: 'name and path are required' }, 400);
-  let cfg = {};
-  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
-  cfg.Repos = cfg.Repos || {};
-  cfg.Repos[name] = repoPath;
-  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
-  broadcast({ type: 'config-changed' });
-  json(res, { ok: true });
-}
-
-function handleGetSpaces(res) {
-  const cfg = getConfig();
-  json(res, cfg.Spaces || {});
-}
-const CORE_SPACE_PLUGIN_IDS = new Set(['browser-use', 'video-use', 'stagehand']);
-function normalizeSpacePluginList(list) {
-  if (!Array.isArray(list)) return [];
-  const out = [];
-  for (const item of list) {
-    if (typeof item !== 'string') continue;
-    if (CORE_SPACE_PLUGIN_IDS.has(item)) continue;
-    if (out.includes(item)) continue;
-    out.push(item);
-  }
-  return out;
-}
-async function handleSaveSpace(req, res) {
-  const body = await readBody(req);
-  const { name, icon, description, repos, plugins } = body || {};
-  if (!name) return json(res, { error: 'name is required' }, 400);
-  let cfg = {};
-  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
-  cfg.Spaces = cfg.Spaces || {};
-  const prev = cfg.Spaces[name] || {};
-  cfg.Spaces[name] = {
-    icon: icon || prev.icon || 'layers',
-    description: description !== undefined ? description : (prev.description || ''),
-    repos: Array.isArray(repos) ? repos.filter(r => typeof r === 'string') : (prev.repos || []),
-    plugins: Array.isArray(plugins) ? normalizeSpacePluginList(plugins) : normalizeSpacePluginList(prev.plugins || []),
-    createdAt: prev.createdAt || Date.now(),
-  };
-  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
-  broadcast({ type: 'config-changed' });
-  json(res, { ok: true, space: cfg.Spaces[name] });
-}
-
-// Toggle whether a repo is a member of a space (single-space membership:
-// adding to one space removes it from any other).
-async function handleSpaceAttachRepo(req, res) {
-  const { space, repo, attach } = await readBody(req);
-  if (!space || !repo) return json(res, { error: 'space and repo are required' }, 400);
-  let cfg = {};
-  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
-  cfg.Spaces = cfg.Spaces || {};
-  if (!cfg.Spaces[space]) return json(res, { error: 'space not found' }, 404);
-  // Remove from every other space first (single-membership rule).
-  for (const [n, s] of Object.entries(cfg.Spaces)) {
-    if (!s || !Array.isArray(s.repos)) continue;
-    cfg.Spaces[n] = { ...s, repos: s.repos.filter(r => r !== repo) };
-  }
-  if (attach !== false) {
-    const s = cfg.Spaces[space];
-    const list = Array.isArray(s.repos) ? s.repos : [];
-    cfg.Spaces[space] = { ...s, repos: list.includes(repo) ? list : list.concat(repo) };
-  }
-  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
-  broadcast({ type: 'config-changed' });
-  json(res, { ok: true });
-}
-
-// Toggle plugin presence in a space's preset.
-async function handleSpaceTogglePlugin(req, res) {
-  const { space, plugin, enabled } = await readBody(req);
-  if (!space || !plugin) return json(res, { error: 'space and plugin are required' }, 400);
-  if (CORE_SPACE_PLUGIN_IDS.has(plugin)) return json(res, { ok: true, plugins: normalizeSpacePluginList(((getConfig().Spaces || {})[space] || {}).plugins || []) });
-  let cfg = {};
-  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
-  cfg.Spaces = cfg.Spaces || {};
-  if (!cfg.Spaces[space]) return json(res, { error: 'space not found' }, 404);
-  const s = cfg.Spaces[space];
-  const list = Array.isArray(s.plugins) ? s.plugins.slice() : [];
-  const idx = list.indexOf(plugin);
-  if (enabled === false || (enabled === undefined && idx >= 0)) {
-    if (idx >= 0) list.splice(idx, 1);
-  } else if (idx < 0) {
-    list.push(plugin);
-  }
-  cfg.Spaces[space] = { ...s, plugins: normalizeSpacePluginList(list) };
-  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
-  broadcast({ type: 'config-changed' });
-  json(res, { ok: true, plugins: cfg.Spaces[space].plugins });
-}
 const _skillsDir = path.join(__dirname, 'skills');
 function _parseSkillFrontmatter(content) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/m.exec(content);
@@ -822,17 +716,6 @@ function handleGetSkill(res, slug) {
     const { meta, body } = _parseSkillFrontmatter(raw);
     json(res, { slug, name: meta.name || slug, description: meta.description || '', body });
   } catch (e) { json(res, { error: e.message }, 500); }
-}
-
-async function handleDeleteSpace(req, res) {
-  const { name } = await readBody(req);
-  if (!name) return json(res, { error: 'name is required' }, 400);
-  let cfg = {};
-  try { cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { cfg = {}; }
-  if (cfg.Spaces && cfg.Spaces[name]) delete cfg.Spaces[name];
-  atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
-  broadcast({ type: 'config-changed' });
-  json(res, { ok: true });
 }
 
 function getPluginRecommendations() {
@@ -1660,6 +1543,8 @@ mountConfig(addRoute, json, {
   getConfig, normalizeRootConfig, configPath, templatePath, repoRoot, pluginsDir,
   swrGit, swrPlugins, broadcast, writePluginHints, getPlugins: () => loadedPlugins,
 });
+const { mountSpaces } = require('./routes/spaces');
+mountSpaces(addRoute, json, { getConfig, normalizeRootConfig, configPath, broadcast });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 trace.mark('server:orchestrator-mounted');
 
