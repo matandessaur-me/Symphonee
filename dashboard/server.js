@@ -17,6 +17,7 @@ const { SWRCache } = require('./utils/swr-cache');
 const { atomicWriteSync } = require('./utils/atomic-write');
 const { namespaceFromName } = require('./lib/notes-ns');
 const { detectPwsh } = require('./lib/detect-cli');
+const { readProcessTree: _readProcessTree, detectAiUnder: _detectAiUnder } = require('./lib/ai-tree-detect');
 const { BusyGuard } = require('./utils/busy-guard');
 const instructionAudit = require('./instruction-audit');
 const trace = require('./startup-trace');
@@ -1200,84 +1201,6 @@ function killTerminal(termId) {
 // Given a parent PID, find whether any known AI CLI is running as a
 // descendant. Lets the frontend reliably decide whether to show "Launch AI"
 // or "Restart Shell" even after a page refresh.
-const AI_CLI_PROCESS_NAMES = {
-  claude:  ['claude.exe', 'claude'],
-  codex:   ['codex.exe',  'codex'],
-  gemini:  ['gemini.exe', 'gemini'],
-  copilot: ['copilot.exe','copilot'],
-  grok:    ['grok.exe',   'grok'],
-  qwen:    ['qwen.exe',   'qwen'],
-};
-// Some CLIs (e.g. gemini, qwen, codex) are Node.js scripts wrapped in a .cmd
-// shim, so their OS process name is node.exe rather than the CLI name.
-// These substrings are matched against the full CommandLine of node.exe
-// processes to identify which CLI is actually running.
-const AI_CLI_NODE_MARKERS = {
-  gemini:  ['@google/gemini-cli', 'gemini-cli', 'gemini.js'],
-  copilot: ['@github/copilot-cli', 'copilot-cli'],
-  codex:   ['@openai/codex', 'codex.js'],
-  qwen:    ['qwen-code', 'qwen.js'],
-};
-let _aiDetectCache = { ts: 0, tree: null };
-async function _readProcessTree() {
-  // Cache for ~1s so multiple terminals polling back-to-back share one snapshot.
-  if (Date.now() - _aiDetectCache.ts < 1000 && _aiDetectCache.tree) return _aiDetectCache.tree;
-  // wmic was removed in Windows 11 24H2, so we use Get-CimInstance via PowerShell
-  // which is present on every supported Windows SKU.
-  // CommandLine is included so node.exe processes can be matched by script path.
-  return await new Promise((resolve) => {
-    try {
-      const psCmd = '@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine) | ConvertTo-Json -Compress';
-      const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd], { windowsHide: true });
-      let out = '';
-      ps.stdout.on('data', (b) => { out += b.toString('utf8'); });
-      ps.on('error', () => resolve(null));
-      ps.on('close', () => {
-        try {
-          const arr = JSON.parse(out || '[]');
-          const list = Array.isArray(arr) ? arr : [arr];
-          const byParent = new Map();
-          for (const p of list) {
-            const pid = Number(p && p.ProcessId);
-            const ppid = Number(p && p.ParentProcessId);
-            const name = String((p && p.Name) || '').trim().toLowerCase();
-            const cmdline = String((p && p.CommandLine) || '').toLowerCase();
-            if (!pid || !name) continue;
-            if (!byParent.has(ppid)) byParent.set(ppid, []);
-            byParent.get(ppid).push({ pid, name, cmdline });
-          }
-          _aiDetectCache = { ts: Date.now(), tree: byParent };
-          resolve(byParent);
-        } catch (_) { resolve(null); }
-      });
-    } catch (_) { resolve(null); }
-  });
-}
-function _detectAiUnder(tree, rootPid) {
-  if (!tree || !rootPid) return null;
-  const visited = new Set();
-  const stack = [rootPid];
-  while (stack.length) {
-    const pid = stack.pop();
-    if (visited.has(pid)) continue;
-    visited.add(pid);
-    const kids = tree.get(pid) || [];
-    for (const k of kids) {
-      // Direct name match (compiled binaries like claude.exe).
-      for (const cli of Object.keys(AI_CLI_PROCESS_NAMES)) {
-        if (AI_CLI_PROCESS_NAMES[cli].includes(k.name)) return cli;
-      }
-      // Node.js-based CLIs: match via CommandLine when process is node.exe.
-      if ((k.name === 'node.exe' || k.name === 'node') && k.cmdline) {
-        for (const cli of Object.keys(AI_CLI_NODE_MARKERS)) {
-          if (AI_CLI_NODE_MARKERS[cli].some(m => k.cmdline.includes(m))) return cli;
-        }
-      }
-      stack.push(k.pid);
-    }
-  }
-  return null;
-}
 addRoute('POST', '/api/term/detect-ai', async (req, res) => {
   try {
     const body = await readBody(req);
