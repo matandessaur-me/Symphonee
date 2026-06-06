@@ -5093,7 +5093,6 @@
           <button class="tab-btn" data-tab="apps" id="appsTabBtn" onclick="switchTab('apps')" style="display:none;">Apps<span class="tab-running-dot" title="An apps-agent session is running"></span></button>
           <button class="tab-btn" data-tab="backlog" data-plugin-id="azure-devops" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
           <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
-          <button class="tab-btn closable" data-tab="recipe-editor" id="recipeEditorTabBtn" onclick="switchTab('recipe-editor')" style="display:none;"><span>Recipe Editor</span><span class="tab-close" onclick="event.stopPropagation();closeRecipeEditor();" title="Close">&times;</span></button>
           <button class="tab-btn closable" data-tab="automations-editor" id="appsAutomationsTabBtn" onclick="switchTab('automations-editor')" style="display:none;"><span id="appsAutomationsTabLabel">Automations</span><span class="tab-close" onclick="event.stopPropagation();appsCloseAutomations();" title="Close">&times;</span></button>
           <button class="tab-btn closable" data-tab="apps-instructions" id="appsInstructionsTabBtn" onclick="switchTab('apps-instructions')" style="display:none;"><span id="appsInstructionsTabLabel">Instructions</span><span class="tab-close" onclick="event.stopPropagation();appsCloseInstructions();" title="Close">&times;</span></button>
           <button class="tab-btn" data-tab="activity" data-plugin-id="azure-devops" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
@@ -5243,48 +5242,6 @@
         <div class="empty-state">
           <i data-lucide="clipboard-list"></i>
           <div class="empty-state-text">Select a work item to view details</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recipe Editor -->
-    <div class="tab-panel" id="panel-recipe-editor">
-      <div style="display:flex;height:100%;font-family:var(--font-ui);font-size:13px;">
-        <div style="flex:1;display:flex;flex-direction:column;padding:16px 18px;overflow:hidden;min-width:0;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-shrink:0;">
-            <i data-lucide="book-plus" style="width:20px;height:20px;color:var(--accent);"></i>
-            <strong id="recipeEditorTitle" style="font-size:16px;">New Recipe</strong>
-            <div style="flex:1;"></div>
-            <button onclick="previewRecipe()" id="recipePreviewBtn" style="font-size:13px;padding:7px 14px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:6px;"><i data-lucide="eye" style="width:13px;height:13px;"></i> Preview</button>
-            <button onclick="closeRecipeEditor()" style="font-size:13px;padding:7px 16px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;">Cancel</button>
-            <button onclick="saveRecipe()" id="recipeSaveBtn" style="font-size:13px;padding:7px 18px;background:var(--accent);border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;">Save Recipe</button>
-          </div>
-          <div style="overflow-y:auto;flex-shrink:0;max-height:50%;padding-right:4px;">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-              <div><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Filename (id)</label><input id="reFilename" type="text" placeholder="my-recipe" style="width:100%;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:13px var(--font-ui);outline:none;box-sizing:border-box;"></div>
-              <div><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Display name</label><input id="reName" type="text" placeholder="My Recipe" style="width:100%;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:13px var(--font-ui);outline:none;box-sizing:border-box;"></div>
-            </div>
-            <div style="margin-bottom:12px;"><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Description</label><input id="reDescription" type="text" placeholder="One-line description" style="width:100%;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:13px var(--font-ui);outline:none;box-sizing:border-box;"></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
-              <div><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Icon</label><input id="reIcon" type="text" value="play" readonly style="width:100%;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:13px var(--font-mono);outline:none;box-sizing:border-box;"></div>
-              <div><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Intent</label><select id="reIntent" style="width:100%;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:13px var(--font-ui);outline:none;box-sizing:border-box;"><option>quick-summary</option><option selected>deep-code</option><option>plan-and-implement</option><option>long-autonomy</option><option>web-research</option><option>web-research-cheap</option><option>pr-review</option><option>parallel-fanout</option></select></div>
-              <div><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Mode (advisory)</label><select id="reMode" style="width:100%;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:13px var(--font-ui);outline:none;box-sizing:border-box;"><option value="">-</option><option>review</option><option selected>edit</option><option>trusted</option><option>bypass</option></select></div>
-            </div>
-            <div style="margin-bottom:14px;"><label style="font-size:12px;color:var(--subtext0);display:block;margin-bottom:5px;">Pick an icon</label><div id="reIconPicker" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(36px, 1fr));gap:6px;padding:8px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;max-height:120px;overflow-y:auto;"></div></div>
-            <label id="reDispatchLabel" style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);margin-bottom:16px;cursor:pointer;"><input id="reDispatch" type="checkbox" style="width:15px;height:15px;cursor:pointer;"> Dispatch to a fresh worker (requires AI Orchestration). Default off = inject into your active terminal.</label>
-            <div style="font-size:12px;color:var(--subtext0);margin-bottom:8px;display:flex;align-items:center;gap:10px;">Inputs <button onclick="addRecipeInputRow()" style="font-size:12px;padding:4px 10px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:3px;cursor:pointer;">+ Add input</button></div>
-            <div id="reInputsList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
-          </div>
-          <label style="font-size:12px;color:var(--subtext0);margin-bottom:6px;flex-shrink:0;">Prompt body (markdown)</label>
-          <div id="recipeBodyEditor" style="flex:1;min-height:220px;border:1px solid var(--surface2);border-radius:4px;overflow:hidden;"></div>
-        </div>
-        <div style="width:280px;border-left:1px solid var(--surface2);padding:16px 14px;background:var(--mantle);overflow-y:auto;flex-shrink:0;">
-          <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Insert Variable</div>
-          <div id="reVarsContext" style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;"></div>
-          <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">From Your Inputs</div>
-          <div id="reVarsInputs" style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;"><div style="font-size:12px;color:var(--subtext0);font-style:italic;">Add an input above first.</div></div>
-          <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Snippets</div>
-          <div id="reSnippets" style="display:flex;flex-direction:column;gap:6px;"></div>
         </div>
       </div>
     </div>
@@ -5555,6 +5512,7 @@
           <button class="mind-tab mind-view-btn" data-view="knowledge" onclick="MindUI.setView('knowledge')" title="Project schemas, specs, ADRs declared via .symphonee/context-artifacts.json">Knowledge</button>
           <button class="mind-tab mind-view-btn" data-view="mindmap" onclick="MindUI.setView('mindmap')" title="The graph itself - switch between graph and community map">Mind map</button>
           <button class="mind-tab mind-view-btn" data-view="specs" onclick="MindUI.setView('specs')" title="Search your knowledge, view a focused spec sub-graph, export/import as a KIT">Specs</button>
+          <button class="mind-tab mind-view-btn" data-view="skills" onclick="MindUI.setView('skills')" title="Procedures every CLI follows -- browse, author, and review AI-proposed skills">Skills</button>
         </div>
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>
@@ -5836,11 +5794,6 @@
                   <div class="orch-cta-title">Launch an AI session</div>
                   <div class="orch-cta-sub">Full terminal with Claude, Gemini, Codex, or Grok</div>
                 </button>
-                <button class="orch-cta-card" onclick="openCmdPalette();setTimeout(()=>{const i=document.getElementById('cmdPaletteInput');if(i){i.value='recipe';filterCmdPalette();i.focus();}},60);">
-                  <i data-lucide="book-open"></i>
-                  <div class="orch-cta-title">Run a recipe</div>
-                  <div class="orch-cta-sub">Saved prompts for routine work</div>
-                </button>
               </div>
             </div>
           </div>
@@ -5858,7 +5811,6 @@
       <button class="intel-tab active" data-itab="activity" data-plugin-id="azure-devops" id="intelTab-activity" onclick="switchIntelTab('activity')" style="display:none;">Activity</button>
       <button class="intel-tab" data-itab="team" data-plugin-id="azure-devops" id="intelTab-team" onclick="switchIntelTab('team')" style="display:none;">Team</button>
       <button class="intel-tab" data-itab="gitlog" id="intelTab-gitlog" onclick="switchIntelTab('gitlog')">Git Log</button>
-      <button class="intel-tab" data-itab="recipes" id="intelTab-recipes" onclick="switchIntelTab('recipes'); refreshRecipesPanel();">Recipes</button>
       <div class="tab-open-wrap" id="intelReopenWrap" style="display:none;flex-shrink:0;">
         <button class="tab-open-btn" onclick="toggleIntelReopenMenu()" title="Open closed panels" style="font-size:12px;padding:4px 6px;width:22px;height:22px;margin-top:6px;">+</button>
         <div class="tab-open-menu" id="intelReopenMenu"></div>
@@ -5884,17 +5836,7 @@
       <div id="gitLogList" style="color:var(--subtext0);font-size:12px;padding:4px;">Select a repo in Files tab</div>
     </div>
 
-    <!-- Recipes Panel -->
-    <div class="intel-panel" id="ipanel-recipes">
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-        <button onclick="openRecipeEditor()" title="Create a new recipe in the editor" style="font-size:13px;padding:6px 12px;background:var(--accent);border:none;color:#000;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600;"><i data-lucide="plus" style="width:13px;height:13px;"></i> New Recipe</button>
-        <button onclick="openRecipesFolder()" title="Open recipes folder in OS file manager" style="font-size:12px;padding:6px 12px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:6px;"><i data-lucide="folder-open" style="width:12px;height:12px;"></i> Folder</button>
-        <div style="flex:1;"></div>
-        <button onclick="refreshRecipesPanel()" title="Rescan recipes folder" style="font-size:12px;padding:6px 12px;background:var(--surface1);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:6px;"><i data-lucide="refresh-cw" style="width:12px;height:12px;"></i> Rescan</button>
-      </div>
-      <div id="recipesPanelList" style="display:flex;flex-direction:column;gap:8px;font-size:13px;"><div style="color:var(--subtext0);padding:8px;">Loading...</div></div>
-    </div>
-  </aside>
+    </aside>
 </div>
 
 <!-- ═══ Create Work Item Modal ═══════════════════════════════════════════ -->
@@ -6134,7 +6076,7 @@
       <ul style="margin:0 0 12px 16px;padding:0;color:var(--subtext0);">
         <li>All configured PATs, API keys, and preferences</li>
         <li>All plugin configs and installed third-party plugins</li>
-        <li>All custom themes, notes, recipes, and learnings</li>
+        <li>All custom themes, notes, and learnings</li>
         <li>Display preferences (sidebar widths, etc.)</li>
       </ul>
       <p style="margin:0 0 16px;color:var(--subtext1);"><strong>You cannot undo this.</strong> Export first if you want to keep anything.</p>
@@ -10958,20 +10900,15 @@ document.addEventListener('keydown', (e) => {
   }
 }, true);
 
-// ── Note @-mentions: link to another note, recipe, or repo ───────────────
+// ── Note @-mentions: link to another note or repo ────────────────────────
 // Typing "@" pops a grouped picker. Selecting an item inserts a markdown
 // reference like "[Note: my-note](note:my-note)". The AI can treat these
 // as explicit cross-document pointers without needing fuzzy matching.
 function _gatherMentionCandidates() {
-  const out = { notes: [], recipes: [], repos: [] };
+  const out = { notes: [], repos: [] };
   try {
     if (Array.isArray(window._notesListCache)) {
       out.notes = window._notesListCache.slice(0, 30).map(n => ({ key: 'note:' + n.name, label: n.name, category: 'Notes', icon: 'file-text', insert: '[Note: ' + n.name + '](note:' + encodeURIComponent(n.name) + ')' }));
-    }
-  } catch (_) {}
-  try {
-    if (Array.isArray(_recipesCache)) {
-      out.recipes = _recipesCache.slice(0, 30).map(r => ({ key: 'recipe:' + r.id, label: r.name, category: 'Recipes', icon: r.icon || 'book-open', insert: '[Recipe: ' + r.name + '](recipe:' + encodeURIComponent(r.id) + ')' }));
     }
   } catch (_) {}
   try {
@@ -10979,7 +10916,7 @@ function _gatherMentionCandidates() {
       out.repos = Object.keys(configData.Repos).slice(0, 20).map(name => ({ key: 'repo:' + name, label: name, category: 'Repos', icon: 'git-branch', insert: '[Repo: ' + name + '](repo:' + encodeURIComponent(name) + ')' }));
     }
   } catch (_) {}
-  return [...out.notes, ...out.recipes, ...out.repos];
+  return [...out.notes, ...out.repos];
 }
 
 function _maybeOpenNoteMentionMenu() {
@@ -12446,8 +12383,6 @@ function launchAiWith(cli) {
     document.getElementById('resumeBtn').style.display = 'none';
     syncAiControls();
     if (typeof orchRefreshAgents === 'function') orchRefreshAgents();
-    // Refresh the Recipes panel so newly-available recipes show up without a manual rescan.
-    if (typeof refreshRecipesPanel === 'function') { try { refreshRecipesPanel(); } catch (_) {} }
   }
 
   if (_shellReadyResolve) {
@@ -14248,22 +14183,6 @@ const SLASH_COMMANDS = [
     run: (input) => {
       input.value = '';
       if (typeof switchTab === 'function') switchTab('notes');
-    },
-  },
-  {
-    slug: 'recipe',
-    label: 'Run recipe',
-    desc: 'Open the command palette seeded with a recipe search',
-    hint: 'Recipe',
-    run: (input) => {
-      input.value = '';
-      if (typeof openCmdPalette === 'function') {
-        openCmdPalette();
-        setTimeout(() => {
-          const i = document.getElementById('cmdPaletteInput');
-          if (i) { i.value = 'recipe '; i.dispatchEvent(new Event('input')); i.focus(); }
-        }, 60);
-      }
     },
   },
   {
@@ -23850,7 +23769,6 @@ const OB_STEPS = [
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline; orchestrate across them</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-code" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Files & Diffs</strong><span>Browse code, view diffs, commit with AI-generated messages</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-text" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Notes</strong><span>Markdown scratchpad; export individually or bundled</span></div></div>
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="book-open" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Recipes</strong><span>Reusable AI workflows; import, export, and share</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="puzzle" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Plugins</strong><span>Azure DevOps, GitHub, Jira, Wrike, Builder.io, Sanity, WordPress - opt in per project</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="search" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Command Palette</strong><span>Press <code style="background:var(--surface0);padding:1px 4px;border-radius:2px;font-size:10px;">Ctrl+K</code> to jump anywhere</span></div></div>
     </div>
@@ -24642,11 +24560,6 @@ function _runSeqKey(key) {
       if (btn && btn.style.display !== 'none') switchTab('backlog');
       else toast('Backlog requires a work-item plugin', 'warning');
     },
-    r: () => {
-      const btn = document.getElementById('recipeEditorTabBtn');
-      if (btn && btn.style.display !== 'none') switchTab('recipe-editor');
-      else { document.getElementById('cmdPaletteInput'); openCmdPalette(); setTimeout(() => { const i = document.getElementById('cmdPaletteInput'); if (i) { i.value = 'recipe'; filterCmdPalette(); } }, 60); }
-    },
   };
   const fn = map[key];
   if (fn) { try { fn(); } catch (_) {} }
@@ -24885,6 +24798,7 @@ function getCmdActions() {
     { label: 'Analyze Repo', icon: 'brain', action: () => analyzeActiveRepo(), category: 'AI', hint: 'Generate a repo map and send it to the AI' },
     { label: 'Search Notes + Learnings', icon: 'search', action: () => { document.getElementById('cmdPaletteInput').value = 'find '; filterCmdPalette(); }, category: 'Action', hint: 'find <query>' },
     { label: 'Knowledge Specs (KIT)', icon: 'package', action: () => openMindSpecs(), category: 'Mind', hint: 'Search your knowledge, view a spec, export/import as a KIT' },
+    { label: 'Skills', icon: 'list-checks', action: () => openMindSkills(), category: 'Mind', hint: 'Procedures every CLI follows; browse, author, review proposed skills' },
     // Git (local ops always work; remote pull/push still listed but fail gracefully without auth)
     { label: 'Switch Branch', icon: 'git-branch', action: () => openGitModal('branches'), category: 'Git', hint: 'Check out a different branch' },
     { label: 'Commit Changes', icon: 'git-commit', action: () => openGitModal('commit'), category: 'Git', hint: 'Stage and commit working changes' },
@@ -24955,17 +24869,6 @@ function getCmdActions() {
     actions.push({ label: `Switch to ${name}`, icon: 'git-branch', action: () => selectRepo(name), category: 'Repo' });
   }
   // Recipes (project-local + user-global). Loaded synchronously from cache.
-  if (_recipesCache && _recipesCache.length) {
-    for (const r of _recipesCache) {
-      actions.push({
-        label: r.name,
-        icon: r.icon || 'play',
-        action: () => openRecipeRunModal(r.id),
-        category: 'Recipe',
-        hint: r.description || '',
-      });
-    }
-  }
   // Work items (top 20 recent)
   const recentWi = [...workItems].sort((a, b) => new Date(b.changedDate) - new Date(a.changedDate)).slice(0, 20);
   for (const wi of recentWi) {
@@ -25679,6 +25582,14 @@ async function openRepoMapModal() {
 function closeRepoMapModal() {
   if (_repoMapEditor) { try { _repoMapEditor.dispose(); } catch (_) {} _repoMapEditor = null; }
   const o = document.getElementById('repoMapOverlay'); if (o) o.remove();
+}
+
+// Open the Skills view (a Mind sub-tab). Skills are part of the brain, so they
+// live under Mind as a proper view, not a pop-up modal.
+function openMindSkills() {
+  if (typeof closeCmdPalette === 'function') closeCmdPalette();
+  switchTab('mind');
+  setTimeout(() => { try { if (window.MindUI) MindUI.setView('skills'); } catch (_) {} }, 80);
 }
 
 function setRepoMapView(view) {
@@ -26765,7 +26676,6 @@ function applyPluginPinnedTabs(opts) {
       _intelFallbackToRecipes = first.dataset.itab === 'recipes';
       try {
         switchIntelTab(first.dataset.itab);
-        if (first.dataset.itab === 'recipes' && typeof refreshRecipesPanel === 'function') refreshRecipesPanel();
       } catch (_) {}
     }
   } else {
@@ -28097,197 +28007,7 @@ async function removeMcp(nameEnc) {
 
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
 
-// ═══ Recipes ═══════════════════════════════════════════════════════════════
-let _recipesCache = [];
-async function refreshRecipes() {
-  try {
-    const r = await fetch('/api/recipes');
-    const list = await r.json();
-    _recipesCache = Array.isArray(list) ? list : [];
-  } catch (_) { _recipesCache = []; }
-}
 
-async function openRecipeRunModal(recipeId) {
-  let recipe;
-  try {
-    const r = await fetch('/api/recipes/' + encodeURIComponent(recipeId));
-    if (!r.ok) throw new Error('fetch failed');
-    recipe = await r.json();
-  } catch (e) { toast('Could not load recipe: ' + recipeId, 'error'); return; }
-
-  const wantsDispatch = recipe.meta && recipe.meta.dispatch === true;
-  const aiState = (typeof termAiState !== 'undefined') ? termAiState.get(activeTermId) : null;
-  const aiReady = aiState && aiState.launched && aiState.cli;
-  if (!wantsDispatch && !aiReady) {
-    toast('Launch an AI in your active terminal first (Ctrl+L or click an AI in the picker).', 'error');
-    return;
-  }
-
-  // Fetch live data the smart selectors will need
-  const pf = window.Symphonee?.contributions?.providerFetch;
-  const [reposObj, iterations, ctx] = await Promise.all([
-    fetch('/api/repos').then(r => r.json()).catch(() => ({})),
-    (pf ? pf('workItem', 'iterationsRoute', {}) : Promise.resolve(null)).then(r => r ? r.json() : []).catch(() => []),
-    fetch('/api/ui/context').then(r => r.json()).catch(() => ({})),
-  ]);
-  const repoNames = Object.keys(reposObj || {});
-  const iterationNames = Array.isArray(iterations) ? iterations.map(i => i.name || i.path) : [];
-
-  let overlay = document.getElementById('recipeRunOverlay');
-  if (overlay) overlay.remove();
-  overlay = document.createElement('div');
-  overlay.id = 'recipeRunOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
-
-  const inputsHtml = (recipe.inputs || []).map(i => {
-    const def = i.default == null ? '' : String(i.default);
-    const req = i.required ? ' <span style="color:var(--accent);">*</span>' : '';
-    const label = `<label style="display:block;font-size:11px;color:var(--subtext0);margin-bottom:4px;">${escapeHtml(i.name)}${req}${i.description ? ' <span style="opacity:0.7;">- '+escapeHtml(i.description)+'</span>' : ''}</label>`;
-    if (i.type === 'boolean') {
-      return `<div style="margin-bottom:10px;"><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);"><input type="checkbox" data-recipe-input="${escapeHtml(i.name)}" ${def==='true'?'checked':''}> ${escapeHtml(i.name)}${req}</label></div>`;
-    }
-    if (i.type === 'repo') {
-      const initial = def || ctx.activeRepo || '';
-      const opts = repoNames.map(n => `<option value="${escapeHtml(n)}" ${n===initial?'selected':''}>${escapeHtml(n)}${n===ctx.activeRepo?' (active)':''}</option>`).join('');
-      return `<div style="margin-bottom:10px;">${label}<select data-recipe-input="${escapeHtml(i.name)}" style="width:100%;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;">${opts}</select></div>`;
-    }
-    if (i.type === 'iteration') {
-      const initial = def || ctx.selectedIterationName || '';
-      const opts = iterationNames.map(n => `<option value="${escapeHtml(n)}" ${n===initial?'selected':''}>${escapeHtml(n)}${n===ctx.selectedIterationName?' (active)':''}</option>`).join('');
-      return `<div style="margin-bottom:10px;">${label}<select data-recipe-input="${escapeHtml(i.name)}" style="width:100%;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;">${opts}</select></div>`;
-    }
-    if (i.type === 'select' && Array.isArray(i.choices)) {
-      const opts = i.choices.map(c => `<option value="${escapeHtml(c)}" ${String(c)===def?'selected':''}>${escapeHtml(c)}</option>`).join('');
-      return `<div style="margin-bottom:10px;">${label}<select data-recipe-input="${escapeHtml(i.name)}" style="width:100%;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;">${opts}</select></div>`;
-    }
-    const inputType = i.type === 'number' ? 'number' : 'text';
-    return `<div style="margin-bottom:10px;">${label}<input type="${inputType}" data-recipe-input="${escapeHtml(i.name)}" value="${escapeHtml(def)}" style="width:100%;padding:6px 8px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;color:var(--text);font:12px var(--font-ui);outline:none;"></div>`;
-  }).join('');
-
-  // Always show the active context the recipe body will see
-  const contextHtml = `
-    <div style="background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);padding:8px 10px;margin-bottom:14px;font-size:11px;color:var(--text);line-height:1.6;">
-      <div style="font-size:9px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Will run with</div>
-      <div><strong>Repo:</strong> ${escapeHtml(ctx.activeRepo || '(none selected)')}${ctx.activeRepoPath ? ' <span style="color:var(--subtext0);font-size:10px;">at '+escapeHtml(ctx.activeRepoPath)+'</span>' : ''}</div>
-      ${ctx.selectedIterationName ? `<div><strong>Iteration:</strong> ${escapeHtml(ctx.selectedIterationName)}</div>` : ''}
-      <div><strong>AI:</strong> ${aiReady ? escapeHtml(aiState.cli) + ' (in your active terminal)' : (wantsDispatch ? 'fresh worker via orchestrator' : 'none')}</div>
-    </div>`;
-
-  overlay.innerHTML = `
-    <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:20px;min-width:460px;max-width:620px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--accent);font-weight:600;font-size:13px;">
-        <i data-lucide="${escapeHtml(recipe.icon || 'play')}" style="width:16px;height:16px;"></i>
-        <span>${escapeHtml(recipe.name)}</span>
-      </div>
-      <div style="font-size:11px;color:var(--subtext0);margin-bottom:14px;">${escapeHtml(recipe.description)}</div>
-      ${contextHtml}
-      ${inputsHtml || '<div style="font-size:11px;color:var(--subtext0);margin-bottom:8px;font-style:italic;">No inputs needed - this recipe runs on the context shown above.</div>'}
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-        <button onclick="document.getElementById('recipeRunOverlay').remove()" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Cancel</button>
-        <button onclick="submitRecipeRun('${encodeURIComponent(recipe.id)}')" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Run</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
-}
-
-async function submitRecipeRun(recipeIdEnc) {
-  const recipeId = decodeURIComponent(recipeIdEnc);
-  // Re-check AI readiness right before running (could have changed since modal opened)
-  const recipeMeta = (_recipesCache || []).find(r => r.id === recipeId) || {};
-  const wantsDispatch = recipeMeta && recipeMeta.meta && recipeMeta.meta.dispatch === true;
-  const aiState = (typeof termAiState !== 'undefined') ? termAiState.get(activeTermId) : null;
-  const aiReady = aiState && aiState.launched && aiState.cli;
-  if (!wantsDispatch && !aiReady) {
-    toast('Launch an AI in your active terminal first.', 'error');
-    return;
-  }
-  const inputs = {};
-  document.querySelectorAll('[data-recipe-input]').forEach(el => {
-    const name = el.getAttribute('data-recipe-input');
-    if (el.type === 'checkbox') inputs[name] = el.checked;
-    else if (el.type === 'number') inputs[name] = el.value === '' ? null : Number(el.value);
-    else inputs[name] = el.value;
-  });
-  document.getElementById('recipeRunOverlay').remove();
-  try {
-    const r = await fetch('/api/recipes/run', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: recipeId, inputs, originTermId: activeTermId || null }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || r.statusText);
-    if (data.mode === 'dispatch') {
-      toast(`Recipe '${recipeId}' dispatched to ${data.cli} (task ${data.taskId.slice(0,8)})`, 'success');
-    } else {
-      toast(`Recipe '${recipeId}' sent to your active terminal`, 'success');
-      switchTab('terminal');
-    }
-  } catch (e) { toast('Recipe failed: ' + e.message, 'error'); }
-}
-
-async function refreshRecipesPanel() {
-  await refreshRecipes();
-  const host = document.getElementById('recipesPanelList');
-  if (!host) return;
-  if (!_recipesCache.length) {
-    host.innerHTML = '<div style="color:var(--subtext0);padding:12px;">No recipes found. Add a markdown file to <code>recipes/</code>.</div>';
-    return;
-  }
-  const aiState = (typeof termAiState !== 'undefined') ? termAiState.get(activeTermId) : null;
-  const aiReady = aiState && aiState.launched && aiState.cli;
-  host.innerHTML = (!aiReady ? `<div style="padding:10px 12px;margin-bottom:10px;background:color-mix(in srgb, var(--yellow, #f5b800) 12%, var(--surface0));border:1px solid color-mix(in srgb, var(--yellow, #f5b800) 30%, transparent);border-radius:var(--radius);font-size:13px;color:var(--text);">No AI launched in your active terminal. Recipes that run in your terminal need one. <a href="#" onclick="event.preventDefault(); switchTab('terminal');" style="color:var(--accent);">Open the terminal</a> and launch an AI first.</div>` : '') + _recipesCache.map(r => {
-    const inputs = (r.inputs || []).map(i => escapeHtml(i.name) + (i.required ? '*' : '')).join(', ') || 'none';
-    const target = r.cli ? `cli: <code>${escapeHtml(r.cli)}</code>` : (r.intent ? `intent: <code>${escapeHtml(r.intent)}</code>` : '');
-    const wantsDispatch = r.meta && r.meta.dispatch === true;
-    const canRun = wantsDispatch || aiReady;
-    // Only show USER badge (project-local is the boring default)
-    const userBadge = r.scope === 'user'
-      ? '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--subtext0);margin-left:6px;" title="From your global recipes folder (~/.symphonee/recipes/)">USER</span>'
-      : '';
-    const modeBadge = wantsDispatch
-      ? '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--surface2);color:var(--subtext0);margin-left:6px;" title="Spawns a fresh worker via orchestrator">DISPATCH</span>'
-      : '';
-    const runBtn = canRun
-      ? `<button onclick="openRecipeRunModal('${encodeURIComponent(r.id)}')" style="font-size:12px;padding:5px 14px;background:var(--accent);border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;">Run</button>`
-      : `<button disabled title="Launch an AI in your active terminal first" style="font-size:12px;padding:5px 14px;background:var(--surface2);border:none;color:var(--subtext0);border-radius:4px;cursor:not-allowed;font-weight:600;">Run</button>`;
-    const iconBtn = (icon, fn, title) => `<button onclick="${fn}" title="${title}" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;border-radius:3px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="${icon}" style="width:14px;height:14px;"></i></button>`;
-    return `
-      <div style="border:1px solid var(--surface2);border-radius:var(--radius);padding:12px 14px;background:var(--surface0);${canRun?'':'opacity:0.6;'}">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <i data-lucide="${escapeHtml(r.icon || 'play')}" style="width:16px;height:16px;color:var(--accent);"></i>
-          <strong style="font-size:14px;">${escapeHtml(r.name)}</strong>
-          ${userBadge}${modeBadge}
-          <div style="flex:1;"></div>
-          ${iconBtn('pencil', `openRecipeEditor('${encodeURIComponent(r.id)}', 'edit')`, 'Edit')}
-          ${iconBtn('copy', `openRecipeEditor('${encodeURIComponent(r.id)}', 'duplicate')`, 'Duplicate')}
-          ${iconBtn('trash-2', `deleteRecipe('${encodeURIComponent(r.id)}', '${escapeHtml(r.name)}')`, 'Delete')}
-          ${runBtn}
-        </div>
-        <div style="color:var(--subtext0);font-size:13px;margin-top:6px;line-height:1.4;">${escapeHtml(r.description || '(no description)')}</div>
-        <div style="color:var(--subtext0);font-size:11px;font-family:var(--font-mono);margin-top:8px;">id: ${escapeHtml(r.id)} &nbsp; ${target} &nbsp; inputs: ${inputs}</div>
-      </div>`;
-  }).join('');
-  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
-}
-
-async function openRecipesFolder() {
-  // User-authored and imported recipes live in ~/.symphonee/recipes/. The
-  // in-repo `recipes/` folder holds only shipped defaults, which is rarely what
-  // the user wants to inspect after importing settings.
-  try {
-    await fetch('/api/ui/open-path', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope: 'home', path: '.symphonee/recipes' }),
-    });
-  } catch (_) { toast('Could not open folder', 'error'); }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  refreshRecipes();
-  setInterval(refreshRecipes, 60000);
-});
 
 // ═══ Notes search (uses /api/search) ════════════════════════════════════
 let _notesSearchTimer = null;
@@ -28481,21 +28201,6 @@ async function runNotesSearch() {
   }
 }
 
-// ═══ Recipe Editor ════════════════════════════════════════════════════════
-const RECIPE_ICONS = ['play','book-open','lightbulb','search-check','file-text','clipboard-list','users','sunrise','filter','git-pull-request','flag','flame','zap','sparkles','wand-2','hammer','wrench','bug','package','rocket','calendar','clock','check-square','list','layers','target','send','bell','mail','message-square','refresh-cw','terminal','code-2','database','server','brain','eye','settings','scale','gauge','book-plus','flask','beaker','telescope','compass','map'];
-let _recipeEditMode = 'create'; // 'create' | 'edit' | 'duplicate'
-let _recipeEditOriginalId = null;
-
-async function deleteRecipe(idEnc, name) {
-  if (!confirm(`Delete recipe "${name}"? This removes the file and cannot be undone.`)) return;
-  try {
-    const r = await fetch('/api/recipes/' + idEnc, { method: 'DELETE' });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || r.statusText);
-    toast('Recipe deleted', 'success');
-    refreshRecipesPanel();
-  } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
-}
 
 // Each variable: human-readable label first, then the {{ token }} as secondary text.
 const RE_CONTEXT_VARS = [
@@ -28514,319 +28219,24 @@ const RE_SNIPPETS = [
   { label: 'Start a graph run', desc: 'Launch a multi-step durable workflow from a JSON definition', text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/Start-GraphRun.ps1" -File ".ai-workspace/my-graph.json"' },
 ];
 
-let recipeBodyEditor = null;
 
-async function openRecipeEditor(idEnc, mode) {
-  _recipeEditMode = mode || 'create';
-  _recipeEditOriginalId = null;
-  const recipeBtn = document.getElementById('recipeEditorTabBtn');
-  if (recipeBtn) {
-    _placeTabAtEnd(recipeBtn);
-    recipeBtn.style.display = '';
-  }
-  switchTab('recipe-editor');
-  resetRecipeEditor();
-  renderIconPicker();
-  renderRecipeEditorVars();
-  await refreshDispatchAvailability();
-  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
-  // Mount Monaco for the body
-  try {
-    if (typeof loadMonaco === 'function') await loadMonaco();
-    const host = document.getElementById('recipeBodyEditor');
-    if (recipeBodyEditor) { try { recipeBodyEditor.dispose(); } catch (_) {} recipeBodyEditor = null; }
-    if (typeof monaco !== 'undefined') {
-      recipeBodyEditor = monaco.editor.create(host, {
-        value: '',
-        language: 'markdown',
-        theme: 'symphonee',
-        fontSize: 13,
-        fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace",
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        wordWrap: 'on',
-        automaticLayout: true,
-        lineNumbers: 'off',
-        padding: { top: 10 },
-      });
-    } else {
-      host.innerHTML = '<textarea id="reBodyFallback" style="width:100%;height:100%;background:var(--surface0);border:none;color:var(--text);padding:10px;font:13px var(--font-mono);outline:none;resize:none;" placeholder="Write the prompt here. Click variables on the right to insert at the cursor."></textarea>';
-    }
-  } catch (e) { console.warn('recipe editor mount failed', e); }
 
-  // If editing or duplicating, hydrate from the existing recipe
-  if (idEnc && (mode === 'edit' || mode === 'duplicate')) {
-    try {
-      const r = await fetch('/api/recipes/' + idEnc);
-      if (!r.ok) throw new Error('fetch failed');
-      const recipe = await r.json();
-      hydrateRecipeEditor(recipe, mode);
-    } catch (e) { toast('Could not load recipe to ' + mode, 'error'); }
-  } else {
-    document.getElementById('recipeEditorTitle').textContent = 'New Recipe';
-  }
-}
 
-function hydrateRecipeEditor(recipe, mode) {
-  _recipeEditOriginalId = recipe.id;
-  document.getElementById('recipeEditorTitle').textContent = mode === 'edit' ? `Edit: ${recipe.name}` : `Duplicate: ${recipe.name}`;
-  document.getElementById('reFilename').value = mode === 'duplicate' ? recipe.id + '-copy' : recipe.id;
-  document.getElementById('reFilename').disabled = (mode === 'edit'); // can't rename in edit mode
-  document.getElementById('reName').value = mode === 'duplicate' ? recipe.name + ' (copy)' : recipe.name;
-  document.getElementById('reDescription').value = recipe.description || '';
-  setIconPickerValue(recipe.icon || 'play');
-  document.getElementById('reIntent').value = recipe.intent || 'deep-code';
-  document.getElementById('reMode').value = recipe.mode || 'edit';
-  document.getElementById('reDispatch').checked = !!(recipe.meta && recipe.meta.dispatch);
-  for (const inp of (recipe.inputs || [])) {
-    addRecipeInputRow(inp);
-  }
-  if (recipeBodyEditor) recipeBodyEditor.setValue(recipe.body || '');
-  else { const ta = document.getElementById('reBodyFallback'); if (ta) ta.value = recipe.body || ''; }
-  refreshRecipeEditorInputVars();
-}
 
-function renderIconPicker() {
-  const host = document.getElementById('reIconPicker');
-  if (!host) return;
-  host.innerHTML = RECIPE_ICONS.map(name => `<button type="button" data-icon="${name}" onclick="setIconPickerValue('${name}')" title="${name}" style="padding:6px;background:var(--surface0);border:1px solid var(--surface2);border-radius:4px;cursor:pointer;color:var(--text);display:flex;align-items:center;justify-content:center;"><i data-lucide="${name}" style="width:16px;height:16px;"></i></button>`).join('');
-  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
-}
 
-function setIconPickerValue(name) {
-  document.getElementById('reIcon').value = name;
-  document.querySelectorAll('#reIconPicker button[data-icon]').forEach(b => {
-    b.style.borderColor = b.dataset.icon === name ? 'var(--accent)' : 'var(--surface2)';
-    b.style.background = b.dataset.icon === name ? 'color-mix(in srgb, var(--accent) 18%, var(--surface0))' : 'var(--surface0)';
-  });
-}
 
-async function refreshDispatchAvailability() {
-  const cb = document.getElementById('reDispatch');
-  const lbl = document.getElementById('reDispatchLabel');
-  if (!cb) return;
-  cb.disabled = false;
-  if (lbl) { lbl.style.opacity = '1'; lbl.title = ''; }
-}
 
-function closeRecipeEditor() {
-  document.getElementById('recipeEditorTabBtn').style.display = 'none';
-  switchTab('terminal');
-  if (recipeBodyEditor) { try { recipeBodyEditor.dispose(); } catch (_) {} recipeBodyEditor = null; }
-}
 
-function resetRecipeEditor() {
-  const f = document.getElementById('reFilename');
-  f.value = ''; f.disabled = false;
-  document.getElementById('reName').value = '';
-  document.getElementById('reDescription').value = '';
-  document.getElementById('reIcon').value = 'play';
-  document.getElementById('reIntent').value = 'deep-code';
-  document.getElementById('reMode').value = 'edit';
-  document.getElementById('reDispatch').checked = false;
-  document.getElementById('reInputsList').innerHTML = '';
-  if (recipeBodyEditor) { try { recipeBodyEditor.setValue(''); } catch (_) {} }
-  setIconPickerValue('play');
-}
 
-function renderRecipeEditorVars() {
-  const ctxHost = document.getElementById('reVarsContext');
-  ctxHost.innerHTML = RE_CONTEXT_VARS.map(v => varBtnLabeled(v.label, v.token, v.desc)).join('');
-  const snipHost = document.getElementById('reSnippets');
-  snipHost.innerHTML = RE_SNIPPETS.map(s => snippetBtn(s.label, s.text, s.desc)).join('');
-  refreshRecipeEditorInputVars();
-}
 
-function varBtnLabeled(label, token, desc) {
-  const insert = `{{ ${token} }}`;
-  return `<button onclick="insertIntoRecipeBody(${JSON.stringify(insert).replace(/"/g,'&quot;')})" title="${escapeHtml(desc || '')}" style="display:flex;flex-direction:column;align-items:flex-start;text-align:left;font-size:13px;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;line-height:1.3;">
-    <span style="font-weight:600;">${escapeHtml(label)}</span>
-    <span style="color:var(--subtext0);font-family:var(--font-mono);font-size:10px;font-weight:400;margin-top:2px;">${escapeHtml(insert)}</span>
-  </button>`;
-}
 
-function snippetBtn(label, text, desc) {
-  return `<button onclick="insertIntoRecipeBody(${JSON.stringify(text).replace(/"/g,'&quot;')})" title="${escapeHtml(text)}" style="display:flex;flex-direction:column;align-items:flex-start;text-align:left;font-size:13px;padding:8px 10px;background:var(--surface0);border:1px solid var(--surface2);color:var(--text);border-radius:4px;cursor:pointer;line-height:1.3;">
-    <span style="font-weight:600;">${escapeHtml(label)}</span>
-    ${desc ? `<span style="color:var(--subtext0);font-size:11px;font-weight:400;margin-top:2px;">${escapeHtml(desc)}</span>` : ''}
-  </button>`;
-}
 
-function refreshRecipeEditorInputVars() {
-  const host = document.getElementById('reVarsInputs');
-  const rows = Array.from(document.querySelectorAll('#reInputsList > div'));
-  const items = rows.map(r => ({
-    name: r.querySelector('[data-recipe-input-name]').value.trim(),
-    desc: r.querySelector('[data-recipe-input-desc]')?.value?.trim() || '',
-  })).filter(x => x.name);
-  if (!items.length) { host.innerHTML = '<div style="font-size:12px;color:var(--subtext0);font-style:italic;">Add an input above first.</div>'; return; }
-  host.innerHTML = items.map(it => varBtnLabeled(it.name, `inputs.${it.name}`, it.desc || ('User input: ' + it.name))).join('');
-}
 
-function addRecipeInputRow(existing) {
-  const host = document.getElementById('reInputsList');
-  const row = document.createElement('div');
-  row.style.cssText = 'display:grid;grid-template-columns:140px 130px 1fr 1fr 90px 28px;gap:8px;align-items:center;';
-  const e = existing || {};
-  const name = e.name ? escapeHtml(e.name) : '';
-  const type = e.type || 'string';
-  const def = e.default != null ? escapeHtml(String(e.default)) : '';
-  const desc = e.description ? escapeHtml(e.description) : '';
-  const opt = (v, l) => `<option value="${v}" ${type===v?'selected':''}>${l}</option>`;
-  row.innerHTML = `
-    <input type="text" placeholder="name" value="${name}" data-recipe-input-name oninput="refreshRecipeEditorInputVars()" style="padding:7px 9px;background:var(--surface0);border:1px solid var(--surface2);border-radius:3px;color:var(--text);font:13px var(--font-mono);outline:none;">
-    <select data-recipe-input-type style="padding:7px 9px;background:var(--surface0);border:1px solid var(--surface2);border-radius:3px;color:var(--text);font:13px var(--font-ui);outline:none;">
-      ${opt('string','string')}${opt('number','number')}${opt('boolean','boolean')}${opt('repo','repo (dropdown)')}${opt('iteration','iteration (dropdown)')}
-    </select>
-    <input type="text" placeholder="description (shown to user)" value="${desc}" data-recipe-input-desc oninput="refreshRecipeEditorInputVars()" style="padding:7px 9px;background:var(--surface0);border:1px solid var(--surface2);border-radius:3px;color:var(--text);font:13px var(--font-ui);outline:none;">
-    <input type="text" placeholder="default value" value="${def}" data-recipe-input-default style="padding:7px 9px;background:var(--surface0);border:1px solid var(--surface2);border-radius:3px;color:var(--text);font:13px var(--font-mono);outline:none;">
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--subtext0);"><input type="checkbox" ${e.required?'checked':''} data-recipe-input-required style="width:14px;height:14px;cursor:pointer;"> required</label>
-    <button onclick="this.parentElement.remove();refreshRecipeEditorInputVars();" title="Remove input" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:18px;">×</button>`;
-  host.appendChild(row);
-}
 
-function insertIntoRecipeBody(text) {
-  if (recipeBodyEditor) {
-    const sel = recipeBodyEditor.getSelection();
-    recipeBodyEditor.executeEdits('insert-var', [{ range: sel, text, forceMoveMarkers: true }]);
-    recipeBodyEditor.focus();
-    return;
-  }
-  // Fallback (textarea)
-  const ta = document.getElementById('reBodyFallback');
-  if (!ta) return;
-  const start = ta.selectionStart, end = ta.selectionEnd;
-  ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
-  ta.selectionStart = ta.selectionEnd = start + text.length;
-  ta.focus();
-}
 
-function getRecipeBody() {
-  if (recipeBodyEditor) return recipeBodyEditor.getValue();
-  const ta = document.getElementById('reBodyFallback');
-  return ta ? ta.value : '';
-}
 
-function buildRecipeFrontmatter() {
-  const inputs = [];
-  document.querySelectorAll('#reInputsList > div').forEach(row => {
-    let name = row.querySelector('[data-recipe-input-name]').value.trim();
-    if (!name) return;
-    // Identifier-safe: lowercase, alphanumeric + underscore + dash. Spaces and
-    // other chars break {{ inputs.<name> }} dotted-path lookups.
-    name = name.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const type = row.querySelector('[data-recipe-input-type]').value;
-    const desc = row.querySelector('[data-recipe-input-desc]')?.value?.trim() || '';
-    const def = row.querySelector('[data-recipe-input-default]').value;
-    const req = row.querySelector('[data-recipe-input-required]').checked;
-    const item = { name, type };
-    if (desc) item.description = desc;
-    if (def !== '') item.default = def;
-    if (req) item.required = true;
-    inputs.push(item);
-  });
-  const fm = {
-    name: document.getElementById('reName').value.trim(),
-    description: document.getElementById('reDescription').value.trim(),
-    icon: document.getElementById('reIcon').value.trim() || 'play',
-    intent: document.getElementById('reIntent').value,
-    mode: document.getElementById('reMode').value,
-    dispatch: document.getElementById('reDispatch').checked,
-    inputs,
-  };
-  if (!fm.mode) delete fm.mode;
-  if (!fm.dispatch) delete fm.dispatch;
-  if (!inputs.length) delete fm.inputs;
-  return fm;
-}
 
-async function saveRecipe(overwrite) {
-  const id = document.getElementById('reFilename').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-  if (!id) { toast('Filename is required', 'error'); return; }
-  const fm = buildRecipeFrontmatter();
-  if (!fm.name) { toast('Display name is required', 'error'); return; }
-  const body = getRecipeBody();
-  // In edit mode we always overwrite the original. In create/duplicate mode
-  // we let the server return 409 and ask the user to confirm.
-  const finalOverwrite = overwrite || (_recipeEditMode === 'edit' && id === _recipeEditOriginalId);
-  try {
-    const r = await fetch('/api/recipes/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, frontmatter: fm, body, overwrite: finalOverwrite }),
-    });
-    const data = await r.json();
-    if (r.status === 409 && data.exists) {
-      if (confirm(`A recipe named '${id}' already exists. Overwrite?`)) return saveRecipe(true);
-      return;
-    }
-    if (!r.ok) throw new Error(data.error || r.statusText);
-    toast(`Recipe '${id}' saved`, 'success');
-    closeRecipeEditor();
-    refreshRecipesPanel();
-  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
-}
 
-async function previewRecipe() {
-  const id = document.getElementById('reFilename').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-  const fm = buildRecipeFrontmatter();
-  const body = getRecipeBody();
-  // Build a transient preview by saving to a hidden tmp recipe and reading back.
-  // Simpler: send the body + inputs definitions inline to a render-only path.
-  // We use the existing /api/recipes/preview endpoint but it expects a saved
-  // recipe. For unsaved drafts, fall back to client-side render of a fake
-  // inputs object using each input's default.
-  const tmpInputs = {};
-  for (const i of (fm.inputs || [])) {
-    tmpInputs[i.name] = i.default != null ? i.default : '';
-  }
-  // Render client-side too so we don't need to save first
-  let rendered = body;
-  try {
-    const ctx = await fetch('/api/ui/context').then(r => r.json()).catch(() => ({}));
-    const resolveInputs = {};
-    for (const k of Object.keys(tmpInputs)) {
-      let v = tmpInputs[k];
-      if (typeof v === 'string' && v.includes('{{')) {
-        v = renderTpl(v, { context: ctx });
-      }
-      resolveInputs[k] = v;
-    }
-    rendered = renderTpl(body, { context: ctx, env: {}, inputs: resolveInputs });
-  } catch (_) {}
-  showRecipePreviewModal(id || '(unsaved)', fm, rendered.trim());
-}
-
-function renderTpl(tpl, vars) {
-  return String(tpl).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
-    try {
-      const parts = String(expr).split('.').map(s => s.trim()).filter(Boolean);
-      let cur = vars;
-      for (const p of parts) { if (cur == null) return ''; cur = cur[p]; }
-      return String(cur ?? '');
-    } catch (_) { return ''; }
-  });
-}
-
-function showRecipePreviewModal(id, fm, prompt) {
-  let overlay = document.getElementById('recipePreviewOverlay');
-  if (overlay) overlay.remove();
-  overlay = document.createElement('div');
-  overlay.id = 'recipePreviewOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);';
-  overlay.innerHTML = `
-    <div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:var(--radius);padding:20px;width:80vw;max-width:900px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--accent);font-weight:600;font-size:15px;">
-        <i data-lucide="eye" style="width:18px;height:18px;"></i>
-        <span>Preview: ${escapeHtml(fm.name || id)}</span>
-        <div style="flex:1;"></div>
-        <button onclick="document.getElementById('recipePreviewOverlay').remove()" style="font-size:13px;padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;">Close</button>
-      </div>
-      <div style="font-size:12px;color:var(--subtext0);margin-bottom:10px;">This is the prompt that will be sent (defaults applied, context substituted). It is NOT being run.</div>
-      <pre style="flex:1;overflow:auto;background:var(--mantle);border:1px solid var(--surface2);border-radius:4px;padding:14px;color:var(--text);font:13px var(--font-mono);white-space:pre-wrap;line-height:1.5;margin:0;">${escapeHtml(prompt || '(empty)')}</pre>
-    </div>`;
-  document.body.appendChild(overlay);
-  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
-}
 
 </script>
 <script src="/3d-force-graph.min.js"></script>

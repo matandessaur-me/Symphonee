@@ -9,7 +9,7 @@ This reference covers ONLY the core shell. Every provider integration -- issue t
 | POST | `/api/config` | Save config changes. Body: key-value pairs to update |
 | GET | `/api/config/export` | Export settings to JSON (PATs stripped) |
 | POST | `/api/config/import` | Import settings + auto-install missing plugins |
-| POST | `/api/config/reset` | Factory reset. Body: `{ confirm: true }` -- wipes config, plugin configs, notes, recipes, learnings, display prefs |
+| POST | `/api/config/reset` | Factory reset. Body: `{ confirm: true }` -- wipes config, plugin configs, notes, learnings, display prefs |
 | GET | `/api/repos` | Configured local repositories |
 | GET | `/api/prerequisites` | Check which AI CLIs are installed |
 | POST | `/api/cli/install` | Install a Node CLI globally. Body: `{ name }` |

@@ -10,8 +10,6 @@ Use these before writing anything custom. They handle the common Symphonee opera
 |---|---|
 | `Show-Diff.ps1 -Repo '<name>'` | Open built-in diff viewer (NEVER use `git diff` in terminal) |
 | `Commit-Changes.ps1 -Message '...'` | Stage + commit |
-| `Get-Recipes.ps1` | List installed recipes |
-| `Run-Recipe.ps1 -Id <id>` | Execute a recipe |
 | `Save-Note.ps1` / `save-note.js` | Save a note (use `node scripts/save-note.js` from bash) |
 | `Search-Notes.ps1 -Query '...'` | Hybrid search across notes + learnings |
 | `Get-RepoMap.ps1` | Generate symbol map for the active repo |

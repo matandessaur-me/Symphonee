@@ -24,7 +24,6 @@ const { extractNotes } = require('./extractors/notes');
 const { extractLearnings } = require('./extractors/learnings');
 const { extractCliMemory } = require('./extractors/cli-memory');
 const { extractCliSkills } = require('./extractors/cli-skills');
-const { extractRecipes } = require('./extractors/recipes');
 const { extractAppRecipes } = require('./extractors/app-recipes');
 const { extractSiteMap } = require('./extractors/site-map');
 const { extractPlugins } = require('./extractors/plugins');
@@ -92,19 +91,13 @@ async function _runBuildInner({ repoRoot, space, sources = [], incremental = fal
     fragments.push(f); summary.cliSkills = { scanned: f.scanned, perSource: f.perSource, nodes: f.nodes.length, edges: f.edges.length };
   }
 
-  if (sources.includes('recipes')) {
-    onProgress('Extracting recipes...');
-    const f = extractRecipes({ repoRoot, manifest, incremental });
-    fragments.push(f); summary.recipes = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length };
-  }
-
-  if (sources.includes('app-recipes') || sources.includes('recipes')) {
+  if (sources.includes('app-recipes')) {
     onProgress('Extracting app automations (recipes/memory/run-history)...');
     const f = extractAppRecipes({ manifest, incremental });
     fragments.push(f); summary.appRecipes = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length };
   }
 
-  if (sources.includes('site-map') || sources.includes('recipes')) {
+  if (sources.includes('site-map')) {
     onProgress('Extracting site map (site-recipes / site-memory / page snapshots)...');
     const f = extractSiteMap({ manifest, incremental });
     fragments.push(f); summary.siteMap = { scanned: f.scanned, skippedUnchanged: f.skippedUnchanged, nodes: f.nodes.length, edges: f.edges.length };

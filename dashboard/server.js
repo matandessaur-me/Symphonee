@@ -116,24 +116,9 @@ const graphRuns = new GraphRunsEngine({
   },
 });
 const modelRouter = require('./model-router');
-const recipes = require('./recipes');
 const { HybridSearchEngine } = require('./hybrid-search');
 const { buildRepoMap } = require('./repo-map');
 const hybridSearch = new HybridSearchEngine({ repoRoot });
-
-// Render input.default templates so the UI sees evaluated values
-// instead of raw {{ context.selectedIterationName }} placeholders.
-function withRenderedDefaults(recipe, ctx) {
-  if (!recipe || !Array.isArray(recipe.inputs)) return recipe;
-  const renderedInputs = recipe.inputs.map(i => {
-    if (typeof i.default !== 'string' || !i.default.includes('{{')) return i;
-    try {
-      const rendered = recipes.renderTemplate(i.default, { context: ctx });
-      return { ...i, default: rendered, defaultTemplate: i.default };
-    } catch (_) { return i; }
-  });
-  return { ...recipe, inputs: renderedInputs };
-}
 
 async function permGate(res, type, value, label) {
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
@@ -212,118 +197,6 @@ const server = http.createServer(async (req, res) => {
       return json(res, modelRouter.recommend({ ...body, configPath }));
     }
 
-    // ── Recipes ───────────────────────────────────────────────────────────
-    if (url.pathname === '/api/recipes' && req.method === 'GET') {
-      const ctx = getUiContextWithPath();
-      return json(res, recipes.listRecipes().map(r => withRenderedDefaults(r, ctx)));
-    }
-    const recipeMatch = url.pathname.match(/^\/api\/recipes\/([^/]+)$/);
-    if (recipeMatch && req.method === 'GET') {
-      const r = recipes.loadRecipe(decodeURIComponent(recipeMatch[1]));
-      if (!r) return json(res, { error: 'recipe not found' }, 404);
-      return json(res, withRenderedDefaults(r, getUiContextWithPath()));
-    }
-    if (url.pathname === '/api/recipes/save' && req.method === 'POST') {
-      const body = await readBody(req);
-      const id = String(body.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      if (!id) return json(res, { error: 'id required' }, 400);
-      // User-authored recipes live in ~/.symphonee/recipes/ so they stay
-      // machine-local and never get committed alongside the shipped recipes.
-      const userRecipesDir = path.join(require('os').homedir(), '.symphonee', 'recipes');
-      const shippedFile = path.join(repoRoot, 'recipes', id + '.md');
-      const file = path.join(userRecipesDir, id + '.md');
-      const alreadyExists = fs.existsSync(file) || fs.existsSync(shippedFile);
-      if (alreadyExists && !body.overwrite) {
-        return json(res, { error: `A recipe with id '${id}' already exists. Pass overwrite:true to replace it.`, exists: true }, 409);
-      }
-      if (!await permGate(res, 'api', 'POST /api/recipes/save', `${body.overwrite ? 'Update' : 'Save'} recipe: ${id}`)) return;
-      try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        const fm = body.frontmatter || {};
-        const lines = ['---'];
-        const order = ['name', 'description', 'icon', 'intent', 'cli', 'model', 'mode', 'dispatch', 'plugins', 'mcpServers', 'inputs'];
-        for (const k of order) {
-          if (fm[k] === undefined || fm[k] === null || fm[k] === '') continue;
-          if (Array.isArray(fm[k])) {
-            if (k === 'inputs') {
-              lines.push('inputs:');
-              for (const it of fm[k]) {
-                lines.push('  - name: ' + it.name);
-                if (it.type) lines.push('    type: ' + it.type);
-                if (it.description) lines.push('    description: ' + JSON.stringify(it.description));
-                if (it.default !== undefined && it.default !== '') lines.push('    default: ' + JSON.stringify(String(it.default)));
-                if (it.required) lines.push('    required: true');
-              }
-            } else {
-              lines.push(k + ': [' + fm[k].map(v => JSON.stringify(v)).join(', ') + ']');
-            }
-          } else if (typeof fm[k] === 'boolean') {
-            lines.push(k + ': ' + (fm[k] ? 'true' : 'false'));
-          } else {
-            lines.push(k + ': ' + (typeof fm[k] === 'string' && /[:#'"\\\[\]\{\}]/.test(fm[k]) ? JSON.stringify(fm[k]) : fm[k]));
-          }
-        }
-        lines.push('---');
-        const content = lines.join('\n') + '\n\n' + (body.body || '').replace(/\r\n/g, '\n');
-        fs.writeFileSync(file, content, 'utf8');
-        return json(res, { ok: true, id, path: file });
-      } catch (e) { return json(res, { error: e.message }, 500); }
-    }
-    if (url.pathname === '/api/recipes/preview' && req.method === 'POST') {
-      const body = await readBody(req);
-      const id = String(body.id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      if (!id) return json(res, { error: 'id required' }, 400);
-      const recipe = recipes.loadRecipe(id);
-      if (!recipe) return json(res, { error: 'recipe not found' }, 404);
-      try {
-        const ctx = getUiContextWithPath();
-        const finalInputs = {};
-        for (const def of (recipe.inputs || [])) {
-          let v = (body.inputs && Object.prototype.hasOwnProperty.call(body.inputs, def.name)) ? body.inputs[def.name] : undefined;
-          if (v === undefined && def.default !== undefined) v = def.default;
-          if (typeof v === 'string' && v.includes('{{')) {
-            v = recipes.renderTemplate(v, { context: ctx });
-          }
-          finalInputs[def.name] = v;
-        }
-        const rendered = recipes.renderTemplate(recipe.body, { context: ctx, env: process.env, inputs: finalInputs });
-        return json(res, { id, inputs: finalInputs, prompt: rendered.trim() });
-      } catch (e) { return json(res, { error: e.message }, 500); }
-    }
-    const recipeDelMatch = url.pathname.match(/^\/api\/recipes\/([^/]+)$/);
-    if (recipeDelMatch && req.method === 'DELETE') {
-      const id = decodeURIComponent(recipeDelMatch[1]).toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      if (!id) return json(res, { error: 'id required' }, 400);
-      if (!await permGate(res, 'api', `DELETE /api/recipes/${id}`, `Delete recipe: ${id}`)) return;
-      try {
-        // Prefer the user-scoped file; only shipped recipes should be in the
-        // repo folder, and we refuse to delete those here.
-        const userFile = path.join(require('os').homedir(), '.symphonee', 'recipes', id + '.md');
-        const repoFile = path.join(repoRoot, 'recipes', id + '.md');
-        if (fs.existsSync(userFile)) {
-          fs.unlinkSync(userFile);
-          return json(res, { ok: true, id, scope: 'user' });
-        }
-        if (fs.existsSync(repoFile)) {
-          return json(res, { error: 'Shipped recipes cannot be deleted from the UI.' }, 403);
-        }
-        return json(res, { error: 'not found' }, 404);
-      } catch (e) { return json(res, { error: e.message }, 500); }
-    }
-    if (url.pathname === '/api/recipes/run' && req.method === 'POST') {
-      const body = await readBody(req);
-      if (!body.id) return json(res, { error: 'id required' }, 400);
-      if (!await permGate(res, 'api', 'POST /api/recipes/run', `Run recipe: ${body.id}`)) return;
-      try {
-        return json(res, await recipes.runRecipe({
-          ...body,
-          injectToTerminal: (termId, text) => {
-            const t = terminals.get(termId);
-            if (t && t.pty) try { t.pty.write(text); } catch (_) {}
-          },
-        }));
-      } catch (e) { return json(res, { error: e.message }, 400); }
-    }
     // ── Hybrid Search ─────────────────────────────────────────────────────
     if (url.pathname.startsWith('/api/search')) {
       if (url.pathname === '/api/search' && req.method === 'GET') {
@@ -682,6 +555,10 @@ const server = http.createServer(async (req, res) => {
         // on session start regardless of which CLI it is.
         let mindField = null;
         try { mindField = mind && typeof mind.bootstrapField === 'function' ? mind.bootstrapField() : null; } catch (_) {}
+        // Skills: the procedural catalog -- every CLI sees which reusable
+        // procedures exist and fetches the body of the one it needs.
+        let skillsField = null;
+        try { skillsField = skills && typeof skills.bootstrapField === 'function' ? skills.bootstrapField() : null; } catch (_) {}
         // Append mind instructions to the main instructions blob so every CLI
         // is told how to query and contribute to the shared brain.
         try {
@@ -721,6 +598,7 @@ const server = http.createServer(async (req, res) => {
         const payload = {
           context, instructions, plugins, learnings, permissions: permissionsData,
           mind: mindField,
+          skills: skillsField,
           brain: brainField,
           instructionsAudit: auditField,
           loadedAt: new Date().toISOString(),
@@ -3202,6 +3080,30 @@ if (orchestrator) {
   orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
 }
 
+// ── Mount Skill Corpus (the procedural layer of the cognitive loop) ─────────
+// Model-neutral SKILL.md recipes for HOW to do tasks the same way every time.
+// Surfaced in /api/bootstrap (so every direct CLI session sees the catalog) and
+// injected into dispatched-worker prompts (so delegated work follows the same
+// procedures). The body of each skill is fetched on demand from /api/skills/item.
+const { mountSkills } = require('./skill-corpus');
+const skills = mountSkills(addRoute, json, { repoRoot, broadcast });
+console.log(`  Skill corpus mounted (/api/skills/*) -- ${skills.catalog().length} skill(s)`);
+if (orchestrator) {
+  orchestrator.getSkillsHint = () => skills.catalogText();
+}
+// Skill Reflection: the REFLECT->LEARN arc -- mines Mind's corrections into
+// PROPOSED skills (propose-only; the user accepts). Closes the loop so the
+// system improves its own procedures, not just its knowledge.
+const { mountReflection } = require('./skill-reflection');
+const skillReflection = mountReflection(addRoute, json, { repoRoot, getUiContext: getUiContextWithPath, broadcast });
+console.log('  Skill reflection mounted (/api/skills/reflect, /api/skills/proposals)');
+// Contracts: the INTEND arc -- commit substantial/autonomous work to a reviewable
+// plan with acceptance criteria + per-unit evidence, so it is trustworthy and
+// auditable (see the run-a-contract skill).
+const { mountContracts } = require('./contracts');
+const contracts = mountContracts(addRoute, json, { repoRoot, broadcast });
+console.log('  Contracts mounted (/api/contracts/*)');
+
 // ── Mount Symphonee brain (planner + live intent model) ─────────────────────
 // The brain is the reasoning layer above Mind. Mind is memory; the brain
 // classifies inputs, picks tools, and (when planner mode is "active")
@@ -3368,10 +3270,24 @@ function runDeferredBootWork(trigger) {
       : (typeof mind.kickoffStartupRefresh === 'function' ? mind.kickoffStartupRefresh() : null)))
     .catch(() => {})
     .then(() => (typeof mind.regenerateSplashQuotes === 'function' ? mind.regenerateSplashQuotes() : null))
+    .catch(() => {})
+    // After Mind has settled, reflect on accumulated corrections and propose
+    // skills (propose-only -- the user accepts). Cheap, deduped, never auto-edits.
+    .then(() => (skillReflection && typeof skillReflection.runDigest === 'function'
+      ? skillReflection.runDigest({ max: 6 }).then(r => { if (r && r.proposals && r.proposals.length) console.log(`  [reflect] proposed ${r.proposals.length} skill(s) from Mind corrections`); })
+      : null))
     .catch(() => {});
   // Stagger the brain setup slightly so the graph refresh gets the loop first.
   setTimeout(() => { try { runBrainSetup(); } catch (e) { console.warn('[brain/setup] start error:', e.message); } }, 1200);
+  // Daily reflection so corrections accumulated during long-running sessions
+  // become proposed skills without needing a restart.
+  if (!_skillReflectionInterval) {
+    _skillReflectionInterval = setInterval(() => {
+      try { if (skillReflection && skillReflection.runDigest) skillReflection.runDigest({ max: 6 }).catch(() => {}); } catch (_) {}
+    }, 24 * 60 * 60 * 1000);
+  }
 }
+let _skillReflectionInterval = null;
 
 // Trigger 1: explicit signal from the renderer once the dashboard has loaded.
 addRoute('POST', '/api/internal/app-ready', (req, res) => {

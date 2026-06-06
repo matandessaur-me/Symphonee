@@ -40,3 +40,6 @@ CHANGELOG.md
 .symphonee/
 symphonee-settings*.json
 docs/
+
+# AI-proposed skills awaiting review (runtime state)
+skills/.proposals/

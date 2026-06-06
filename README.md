@@ -17,7 +17,7 @@
 Symphonee treats your tools the way a symphony treats its sections.
 
 - **The Conductor** is you, issuing intent.
-- **The Score** is the graph run, recipes, and notes that describe what must happen.
+- **The Score** is the graph run, skills, and notes that describe what must happen.
 - **The Orchestrator** is the bus that routes work across agents and keeps time.
 - **The Instruments** are the plugins: Azure DevOps, GitHub, Sanity, Builder.io, WordPress, and anything else you install per project.
 - **The Players** are the CLIs: Claude Code, Codex, Gemini CLI, Grok, Qwen Code, GitHub Copilot. Each reads the same score, plays its own part.
@@ -31,7 +31,7 @@ Symphonee itself is the hall, the baton, and the tempo.
 Most AI tools stop at the suggestion. They write a plan and hand you a chat window. Symphonee assumes you already know what you want done, and focuses on the thing that is actually hard: making many tools, agents, and side effects cooperate without drifting.
 
 - **Local-first.** Your repos, your machine, your permissions. The engine runs on `127.0.0.1:3800`.
-- **Plugin-driven.** Core ships with terminal, recipes, notes, diffs, git, and repo management. Everything else is a plugin you install per project.
+- **Plugin-driven.** Core ships with terminal, notes, diffs, git, skills, and repo management. Everything else is a plugin you install per project.
 - **Multi-CLI.** One conductor, many players. Same score, different instruments.
 - **Durable.** Graph runs survive restarts, branch on approval gates, and keep state across multi-hour sessions.
 - **Permission-aware.** Four runtime modes (`review`, `edit`, `trusted`, `bypass`) enforced by the server, not by agent etiquette.
@@ -45,15 +45,15 @@ Most AI tools stop at the suggestion. They write a plan and hand you a chat wind
 - **Git Operations.** Switch branches, pull, push, compare, and commit through the built-in UI. Side-by-side diff viewer with syntax highlighting.
 - **File Browser and Monaco Code Viewer.** Browse repository files, search across codebases, view and edit files with full Monaco editor.
 - **Markdown Notes.** Built-in scratchpad. AI agents can read and write notes too.
-- **Command Palette.** `Ctrl+K` jumps to any action, tab, repository, recipe, or plugin surface. Type `find <query>` to search across notes and learnings.
-- **Factory Reset + Export/Import.** One-click wipe of config, themes, notes, recipes, and installed plugins. Export bundle round-trips on import and auto-clones the plugins you used.
+- **Command Palette.** `Ctrl+K` jumps to any action, tab, repository, skill, or plugin surface. Type `find <query>` to search across notes and learnings.
+- **Factory Reset + Export/Import.** One-click wipe of config, themes, notes, skills, and installed plugins. Export bundle round-trips on import and auto-clones the plugins you used.
 
 ### The Orchestra (AI tooling)
 - **Permission Modes.** Four modes (`review` / `edit` / `trusted` / `bypass`) gate every spawn, write, and external call at the server level. Pattern-based allow/ask/deny rules with one-click "always allow this pattern" promotion.
 - **AI Orchestration.** The conductor dispatches work to other players (Codex, Gemini, Grok, Copilot) with circuit breaker, retry, escalation ladder, fan-out, worktree isolation, and durable graph runs.
 - **Graph Runs.** Define multi-step workflows with worker, approval, and branch nodes. Survive app restarts. Auto-fallback to a different CLI on rate-limit or quota errors. Results auto-inject back into the launching terminal.
 - **Model Router.** Picks the right CLI and model for each task intent (`quick-summary`, `deep-code`, `web-research`, etc.) based on your subscriptions and API keys. Auto-promotes to large-context models when input exceeds 200k tokens.
-- **Recipes.** Reusable AI workflows declared as markdown files. Built-in editor (Monaco + variable library + icon picker + preview). Three universal defaults ship: Explain Codebase, Brainstorm Feature, Review My Changes.
+- **Skills.** The procedural layer of the brain: model-neutral `SKILL.md` files for HOW to do a task the same way every time. Every CLI loads them, so behaviour stays consistent across agents. Live under **Mind -> Skills** (browse, author, review). A reflection loop mines your Mind corrections into proposed skills (local-model drafted, propose-only) so the system improves itself; **Contracts** let autonomous work commit to a reviewable plan with acceptance criteria + evidence.
 - **MCP Server + Client.** Exposes Symphonee to Claude Desktop, Cursor, VS Code, Zed, etc. Consume external MCP servers (GitHub, Postgres, Slack, Linear, and so on) right inside the app.
 - **Hybrid Search.** BM25 ranking across notes and learnings.
 - **Repo Map.** Token-budgeted symbol map of any repo. Languages, layout, top files ranked by recent commits with extracted classes and functions.
@@ -115,7 +115,7 @@ Symphonee
 |   +-- Orchestrator                   -> Spawn / dispatch / handoff / fan-out / worktree
 |   +-- Graph runs engine              -> Durable multi-step workflows
 |   +-- Model router                   -> Intent-based CLI + model selection
-|   +-- Recipes loader                 -> Markdown workflow files
+|   +-- Skill corpus                   -> SKILL.md procedures + reflection loop
 |   +-- Hybrid search (BM25)           -> Notes + Learnings retrieval
 |   +-- Repo map                       -> Token-budgeted symbol graph
 |   +-- MCP server (stdio)             -> Exposes plugins + tools to external clients
@@ -127,14 +127,14 @@ Symphonee
 +-- Dashboard UI (index.html)
 |   +-- Header                         -> Permission mode chip + status
 |   +-- Sidebar                        -> Core + plugin-contributed quick actions, AI actions
-|   +-- Center tabs                    -> Terminal, Orchestrator, Files, Diff, Notes, Recipe Editor, plugin tabs
-|   +-- Right intel panel              -> Recipes + plugin-contributed panels
-|   +-- Monaco editor                  -> Code viewer + recipe editor + repo map viewer
+|   +-- Center tabs                    -> Terminal, Orchestrator, Files, Diff, Notes, Mind, plugin tabs
+|   +-- Right intel panel              -> Git log + plugin-contributed panels
+|   +-- Monaco editor                  -> Code viewer + repo map viewer
 |   +-- XTerm.js terminal              -> Multi-tab PTYs with AI launchers
 |   +-- Approval modal                 -> Permissions + graph-run approval gates
 |
 +-- Scripts (scripts/)
-    +-- 30+ PowerShell + Node helpers (work items, git, recipes, graph runs, etc.)
+    +-- 30+ PowerShell + Node helpers (work items, git, mind, graph runs, etc.)
 ```
 
 ### How it works
@@ -147,25 +147,15 @@ Symphonee
 
 ---
 
-## Recipes (reusable AI workflows)
+## Skills (the procedural layer)
 
-A recipe is a single markdown file with YAML frontmatter that bundles a recurring AI operation: which CLI/model (or just an intent for the model router), which plugins/MCP servers to enable, what permission mode to use, typed inputs, and a prompt template body. Recipes live in `recipes/` (project-local, committed) or `~/.symphonee/recipes/` (user-global).
+A skill is a single `SKILL.md` file with YAML frontmatter (name, description, optional `when`/`tags`) plus a markdown body that captures HOW to do a task well: when to use it, the ordered steps, the safety rails, and how to verify the result. Skills are model-neutral, so every CLI -- Claude Code, Codex, Gemini, Copilot, Grok, Qwen -- follows the same procedure. They live in `skills/` and are served at `/api/skills/*`.
 
-Open the right intel panel -> **Recipes** tab to browse, create, edit, duplicate, preview, delete, or run any recipe. The built-in editor is a Monaco-based markdown editor with a clickable variable library on the right (context vars like Selected Repo, your declared inputs, plus snippets for common patterns).
+Open **Mind -> Skills** to browse, author, edit, or review skills. Every session sees the catalog at bootstrap (`bootstrap.skills`), and dispatched workers get it injected into their prompt, so delegated work stays consistent too.
 
-**Three default recipes** ship with the app, all universal (no Azure DevOps or GitHub required):
+Symphonee improves its own skills. A **reflection loop** mines your Mind corrections into *proposed* skills (drafted by your local model, propose-only). Accept one in the Skills tab and every CLI inherits it -- you correct the system once, not each CLI each time. For substantial or autonomous work, **Contracts** let the AI commit to a reviewable plan -- intent + acceptance criteria -- and prove each step with evidence instead of improvising.
 
-| Recipe | What it does |
-|---|---|
-| **Explain This Codebase** | Reads README + manifest + entry points, produces a 6-section orientation brief |
-| **Brainstorm a Feature** | Turn a one-line idea into user stories, edge cases, technical considerations, ordered implementation plan |
-| **Review My Changes** | Pre-flight code review of your uncommitted git diff before pushing |
-
-**Two delivery modes**:
-- `inject` (default): rendered prompt is typed into the active terminal so the AI you're already working with handles it.
-- `dispatch`: spawns a fresh headless worker via the orchestrator.
-
-Recipes can be invoked via the Recipes panel, the command palette (Ctrl+K), `./scripts/Run-Recipe.ps1`, or any MCP client that has the Symphonee MCP server connected (`run_recipe`, `list_recipes`, `preview_recipe`, etc.).
+Together, skills (how we work), Mind (what we know), and contracts (intentional execution) form a closed loop: perceive, recall, intend, act, reflect, learn, persist.
 
 ---
 
@@ -225,8 +215,8 @@ The visual theme is driven by your **theme preference** in Settings, not by whic
 ## Tech Stack
 
 - **Electron** v35 -- Desktop application shell
-- **Node.js** -- HTTP server and core services (orchestrator, graph runs, recipes, permissions, plugin loader, MCP)
-- **Monaco Editor** -- Code viewer, recipe editor, repo map viewer
+- **Node.js** -- HTTP server and core services (orchestrator, graph runs, skills, permissions, plugin loader, MCP)
+- **Monaco Editor** -- Code viewer, repo map viewer
 - **XTerm.js** -- Terminal emulator with WebGL rendering
 - **node-pty** -- Persistent PowerShell PTY sessions
 - **WebSocket (ws)** -- Real-time terminal I/O bridge

@@ -7,7 +7,7 @@ Symphonee. Every CLI the orchestrator dispatches reads from and writes to
 the same graph.
 
 The graph contains the user's notes, the team's curated learnings, the
-shell's instruction docs, every plugin's metadata, every recipe, the active
+shell's instruction docs, every plugin's metadata, every skill, the active
 repo's code and docs, the conversation outcomes that previous CLI sessions
 saved back, **and the user-level skills/agents/plugins each CLI ships with**
 (Claude Code agents, Codex skills, Qwen skills, Claude marketplace plugins).
@@ -30,7 +30,7 @@ workflow manually. Filter for these via the `cli_<provider>` and
 - The active codebase, its architecture, who-calls-what, where-defined.
 - Past learnings (mistakes, gotchas, resolved bugs, CLI quirks).
 - Notes the user has taken, including in past sessions.
-- Which plugin / recipe / script handles a given task.
+- Which plugin / skill / script handles a given task.
 
 If the brain has a relevant sub-graph, **use it as ground truth instead of
 guessing or re-reading the raw files**. Cite node IDs in your answer.
@@ -365,9 +365,9 @@ Single source of truth for every Mind URL. Refer here when an inline section abo
 - `POST /api/mind/artifacts/search { q, name? }` — hybrid search restricted to artefact nodes.
 
 **Build + watch + ingest**
-- `POST /api/mind/build        {}` — full rebuild (notes, learnings, cli-memory, cli-skills, recipes, plugins, instructions, repo-code, cli-history, cli-drawers). Also invokable via `./scripts/Build-Mind.ps1` or `node scripts/build-mind.js`.
+- `POST /api/mind/build        {}` — full rebuild (notes, learnings, cli-memory, cli-skills, plugins, instructions, repo-code, cli-history, cli-drawers). Also invokable via `./scripts/Build-Mind.ps1` or `node scripts/build-mind.js`.
 - `POST /api/mind/update       {}` — incremental update (skips files whose SHA256 hasn't changed).
-- `POST /api/mind/watch        {"enabled":true}` or `{ enabled: true|false }` — chokidar on every connected repo + notes + recipes + instructions, 3s debounce, auto-incremental rebuild.
+- `POST /api/mind/watch        {"enabled":true}` or `{ enabled: true|false }` — chokidar on every connected repo + notes + skills + instructions, 3s debounce, auto-incremental rebuild.
 - `GET  /api/mind/watch` — current watch state.
 - `POST /api/mind/add          { url|path, label, kind, createdBy }` — add one artefact. URLs go through SSRF guards.
 - `POST /api/mind/patch-file   { file }` — cheaper than `/api/mind/update` for the "user just saved one file" case. Drops the file from the manifest and triggers a single-file incremental re-extract via the same engine path. `file` may be absolute or repo-relative. Returns `{ jobId, ok, file }` immediately; completion broadcasts `mind-update` with `kind: "patch-file-complete"`.

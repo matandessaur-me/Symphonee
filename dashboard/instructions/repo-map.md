@@ -28,7 +28,6 @@ Languages with symbol extraction: JS, TS, Python, C#, Go, Rust, Java, Kotlin, Ru
 
 - First time touching a repo
 - Onboarding a worker that needs to make changes
-- Recipes that operate on unfamiliar codebases (the `explain-codebase` recipe is a natural fit)
 - Triaging "where would I put X?" questions
 
 Cached per-commit. A second call on the same HEAD sha is free.

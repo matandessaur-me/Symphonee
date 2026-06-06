@@ -195,35 +195,6 @@ const TOOLS = [
     handler: async (args) => textResult(JSON.stringify(await apiRequest('GET', `/api/graph-runs/${encodeURIComponent(args.id)}`), null, 2)),
   },
   {
-    name: 'list_recipes',
-    description: 'List all available Symphonee recipes (reusable AI workflows declared as markdown files in recipes/). Defaults are pre-rendered against the current UI context.',
-    inputSchema: { type: 'object', properties: {} },
-    handler: async () => textResult(JSON.stringify(await apiRequest('GET', '/api/recipes'), null, 2)),
-  },
-  {
-    name: 'get_recipe',
-    description: 'Get full detail of a recipe, including its prompt body and input schema. Defaults are pre-rendered against the current UI context (same as the dashboard sees).',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string', description: 'Recipe id (filename without .md).' } },
-      required: ['id'],
-    },
-    handler: async (args) => textResult(JSON.stringify(await apiRequest('GET', `/api/recipes/${encodeURIComponent(args.id)}`), null, 2)),
-  },
-  {
-    name: 'preview_recipe',
-    description: 'Render a recipe with optional input overrides and return the final prompt WITHOUT running it. Useful for inspecting what the recipe would send.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        inputs: { type: 'object', description: 'Optional overrides; missing inputs use defaults.' },
-      },
-      required: ['id'],
-    },
-    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/recipes/preview', args), null, 2)),
-  },
-  {
     name: 'search_notes_and_learnings',
     description: 'Hybrid (BM25) search across Notes and Learnings. Returns ranked results with snippets.',
     inputSchema: {
@@ -257,29 +228,6 @@ const TOOLS = [
       params.set('budget', String(args.budget || 4000));
       return textResult(await apiRequest('GET', '/api/repo/map?' + params.toString()));
     },
-  },
-  {
-    name: 'delete_recipe',
-    description: 'Delete a recipe by id. Permission-gated.',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string' } },
-      required: ['id'],
-    },
-    handler: async (args) => textResult(JSON.stringify(await apiRequest('DELETE', `/api/recipes/${encodeURIComponent(args.id)}`), null, 2)),
-  },
-  {
-    name: 'run_recipe',
-    description: 'Run a recipe with the given inputs. Returns the spawned task id; the worker result will be injected into the originating terminal when complete.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        inputs: { type: 'object', description: 'Map of input name to value.' },
-      },
-      required: ['id'],
-    },
-    handler: async (args) => textResult(JSON.stringify(await apiRequest('POST', '/api/recipes/run', args), null, 2)),
   },
   {
     name: 'approve_graph_node',

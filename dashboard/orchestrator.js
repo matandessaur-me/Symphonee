@@ -439,6 +439,7 @@ class Orchestrator extends EventEmitter {
     this.getConfig = getConfig || (() => ({}));
     this.getLearnings = null; // set by mountOrchestrator after construction
     this.getMindHint = null;  // set by server.js after Mind is mounted; () => string | null
+    this.getSkillsHint = null; // set by server.js after Skills are mounted; () => string | null
     this.saveTaskToMind = null; // set by server.js; (task) => void, called on task completion
 
     /** @type {Map<string, Task>} */
@@ -598,6 +599,18 @@ class Orchestrator extends EventEmitter {
           : this.getMindHint();
         if (hint && typeof prompt === 'string' && !prompt.startsWith('[mind:')) {
           prompt = `${hint}\n\n${prompt}`;
+        }
+      } catch (_) {}
+    }
+
+    // Skills hint: prepend the procedural catalog so a dispatched worker follows
+    // the same consistent procedures as every other CLI. Each skill's full body
+    // is fetched on demand (GET /api/skills/item?id=<id>). Skipped if no skills.
+    if (typeof this.getSkillsHint === 'function' && _retryAttempt === 0) {
+      try {
+        const sh = this.getSkillsHint();
+        if (sh && typeof prompt === 'string' && !prompt.includes('[skills:')) {
+          prompt = `${sh}\n\n${prompt}`;
         }
       } catch (_) {}
     }
