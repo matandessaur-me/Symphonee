@@ -440,10 +440,8 @@ const server = http.createServer(async (req, res) => {
 
 
     // ── Image Proxy (ADO images need auth) ─────────────────────────────────
-    if (url.pathname === '/api/image-proxy' && req.method === 'GET') return handleImageProxy(url, res);
 
     // ── Open External URL ─────────────────────────────────────────────────
-    if (url.pathname === '/api/open-external' && req.method === 'POST') return handleOpenExternal(req, res);
 
     // ── UI Actions (AI → Dashboard) ───────────────────────────────────────
     if (url.pathname === '/api/ui/tab' && req.method === 'POST')              return handleUiAction(req, res, 'switch-tab');
@@ -780,75 +778,6 @@ function getRepoPath(repoName) {
   const cfg = getConfig();
   const repos = cfg.Repos || {};
   return repos[repoName] || null;
-}
-
-async function handleOpenExternal(req, res) {
-  const { url: extUrl } = await readBody(req);
-  if (!extUrl) return json(res, { error: 'url required' }, 400);
-  try { new URL(extUrl); } catch (_) { return json(res, { error: 'Invalid URL' }, 400); }
-  // Use rundll32 which reliably opens URLs in the default browser on Windows
-  exec(`rundll32 url.dll,FileProtocolHandler "${extUrl}"`);
-  json(res, { ok: true });
-}
-
-// ── Image Proxy ─────────────────────────────────────────────────────────────
-// Plugins contribute contributions.imageAuth entries to register URL-pattern
-// auth headers. Core never hardcodes service-specific auth - it just walks
-// the contributed rules. Each rule: { hostnamePattern, authType, authConfigKey }.
-//   authType 'basic-pat' -> 'Basic ' + base64(':' + config[authConfigKey])
-//   authType 'bearer'    -> 'Bearer ' + config[authConfigKey]
-//   authType 'token'     -> 'token '  + config[authConfigKey]
-function resolveImageAuth(hostname, cfg) {
-  for (const p of (loadedPlugins || [])) {
-    const rules = (p.contributions && p.contributions.imageAuth) || [];
-    for (const rule of rules) {
-      if (!rule || !rule.hostnamePattern || !rule.authConfigKey) continue;
-      if (!hostname.includes(rule.hostnamePattern)) continue;
-      const secret = cfg[rule.authConfigKey];
-      if (!secret) continue;
-      switch (rule.authType) {
-        case 'bearer':    return 'Bearer ' + secret;
-        case 'token':     return 'token ' + secret;
-        case 'basic-pat':
-        default:          return 'Basic ' + Buffer.from(':' + secret).toString('base64');
-      }
-    }
-  }
-  return null;
-}
-function handleImageProxy(url, res) {
-  const imageUrl = url.searchParams.get('url');
-  if (!imageUrl) { res.writeHead(400); return res.end('Missing url param'); }
-
-  const cfg = getConfig();
-  const parsedUrl = new URL(imageUrl);
-
-  const options = {
-    hostname: parsedUrl.hostname,
-    path: parsedUrl.pathname + parsedUrl.search,
-    method: 'GET',
-    headers: { 'Accept': '*/*' },
-  };
-  const authHeader = resolveImageAuth(parsedUrl.hostname, cfg);
-  if (authHeader) options.headers['Authorization'] = authHeader;
-
-  const proto = parsedUrl.protocol === 'https:' ? https : http;
-  const proxyReq = proto.request(options, (proxyRes) => {
-    if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
-      // Follow redirect
-      const redirectUrl = new URL(proxyRes.headers.location, imageUrl);
-      const newUrl = new URL(`http://${HOST}:${PORT}/api/image-proxy`);
-      newUrl.searchParams.set('url', redirectUrl.href);
-      return handleImageProxy(newUrl, res);
-    }
-    res.writeHead(proxyRes.statusCode, {
-      'Content-Type': proxyRes.headers['content-type'] || 'image/png',
-      'Cache-Control': 'max-age=3600',
-    });
-    proxyRes.pipe(res);
-  });
-  proxyReq.on('error', (e) => { res.writeHead(502); res.end(e.message); });
-  proxyReq.end();
 }
 
 // ── UI Context (tracks what's selected in the dashboard) ────────────────────
@@ -1468,6 +1397,8 @@ mountConfig(addRoute, json, {
 });
 const { mountSpaces } = require('./routes/spaces');
 mountSpaces(addRoute, json, { getConfig, normalizeRootConfig, configPath, broadcast });
+const { mountImageProxy } = require('./routes/image-proxy');
+mountImageProxy(addRoute, json, { getConfig, getPlugins: () => loadedPlugins, host: HOST, port: PORT });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 trace.mark('server:orchestrator-mounted');
 
