@@ -15,6 +15,7 @@ const { exec, execSync, spawnSync, spawn } = require('child_process');
 const { gitAsync, gitSync } = require('./utils/git-async');
 const { SWRCache } = require('./utils/swr-cache');
 const { atomicWriteSync } = require('./utils/atomic-write');
+const { namespaceFromName } = require('./lib/notes-ns');
 const { BusyGuard } = require('./utils/busy-guard');
 const instructionAudit = require('./instruction-audit');
 const trace = require('./startup-trace');
@@ -66,6 +67,7 @@ const HOST = '127.0.0.1';
 const repoRoot = path.resolve(__dirname, '..');
 
 const publicDir = path.join(__dirname, 'public');
+const notesDir = path.join(repoRoot, 'notes'); // shared: hybrid-search index + note path-guards (note ROUTES live in routes/notes.js)
 const nodeModules = path.join(repoRoot, 'node_modules');
 const configPath = path.join(repoRoot, 'config', 'config.json');
 const templatePath = path.join(repoRoot, 'config', 'config.template.json');
@@ -435,14 +437,6 @@ const server = http.createServer(async (req, res) => {
     // registered - no explicit gate needed in core.
 
     // ── Notes ─────────────────────────────────────────────────────────────
-    if (url.pathname === '/api/notes' && req.method === 'GET')    return handleListNotes(url, res);
-    if (url.pathname === '/api/notes/read' && req.method === 'GET') return handleReadNote(url, res);
-    if (url.pathname === '/api/notes/save' && req.method === 'POST') return handleSaveNote(req, res);
-    if (url.pathname === '/api/notes/delete' && req.method === 'DELETE') return handleDeleteNote(req, res);
-    if (url.pathname === '/api/notes/create' && req.method === 'POST') return handleCreateNote(req, res);
-    if (url.pathname === '/api/notes/export' && req.method === 'GET')  return handleExportNote(url, res);
-    if (url.pathname === '/api/notes/export-all' && req.method === 'GET') return handleExportAllNotes(res);
-    if (url.pathname === '/api/notes/import' && req.method === 'POST')  return handleImportNotes(req, res);
 
     // ── File Browser & Git ─────────────────────────────────────────────────
     // git routes -> routes/git.js (mountGit)
@@ -1577,7 +1571,7 @@ function getUiContextWithPath() {
     ctx.activeRepoPath = (cfg.Repos || {})[ctx.activeRepo] || null;
   }
   // Derive the notes namespace: active space name, or '_global' when none.
-  ctx.notesNamespace = ctx.activeSpace ? _namespaceFromName(ctx.activeSpace) : '_global';
+  ctx.notesNamespace = ctx.activeSpace ? namespaceFromName(ctx.activeSpace) : '_global';
   return ctx;
 }
 
@@ -1718,215 +1712,6 @@ async function handleUiMutate(req, res) {
 // notebook. The special '_global' namespace holds notes taken when no space is
 // active. Legacy flat notes (notes/*.md from before this change) are migrated
 // into '_global' on boot.
-const notesDir = path.join(repoRoot, 'notes');
-
-function _namespaceFromName(name) {
-  // Keep a reversible, filesystem-safe slug that avoids collisions with
-  // other subdirs.
-  return String(name || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || '_global';
-}
-function _resolveNotesNs(raw) {
-  const ns = _namespaceFromName(raw);
-  const dir = path.join(notesDir, ns);
-  fs.mkdirSync(dir, { recursive: true });
-  return { ns, dir };
-}
-function _pickNotesNsFromReq(source) {
-  // Preference order: explicit ns param -> active space -> '_global'
-  const explicit = source && (source.ns || source.namespace);
-  if (explicit) return _resolveNotesNs(explicit);
-  const ctx = getUiContextWithPath();
-  return _resolveNotesNs(ctx.notesNamespace || '_global');
-}
-
-// Migration: move flat notes/*.md into notes/_global/. Runs on boot AND before
-// every list/create/save so manually-dropped flat files (e.g. after a sync or
-// restore) get picked up without a restart. Idempotent: a second call is a
-// no-op when there are no flat .md files left.
-function _migrateLegacyNotes() {
-  try {
-    if (!fs.existsSync(notesDir)) return;
-    const flat = fs.readdirSync(notesDir).filter(f => f.endsWith('.md'));
-    if (!flat.length) return;
-    const { dir: globalDir } = _resolveNotesNs('_global');
-    let moved = false;
-    for (const f of flat) {
-      const src = path.join(notesDir, f);
-      const dst = path.join(globalDir, f);
-      try {
-        if (!fs.existsSync(dst)) { fs.renameSync(src, dst); moved = true; }
-        else fs.unlinkSync(src); // global already has a same-named note
-      } catch (_) {}
-    }
-    // Re-index after a silent migration so hybrid search sees the moved notes
-    // immediately (list endpoint paths don't reindex otherwise).
-    if (moved) {
-      try { hybridSearch.reindex().catch(() => {}); } catch (_) {}
-    }
-  } catch (_) {}
-}
-_migrateLegacyNotes();
-
-function handleListNotes(url, res) {
-  try {
-    // Catch any flat notes/*.md files that landed after boot (e.g. via sync).
-    _migrateLegacyNotes();
-    const { dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
-    const files = fs.readdirSync(dir)
-      .filter(f => f.endsWith('.md'))
-      .map(f => {
-        const st = fs.statSync(path.join(dir, f));
-        return { name: f.replace('.md', ''), mtime: st.mtime };
-      })
-      .sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
-    json(res, files);
-  } catch (e) {
-    json(res, { error: e.message }, 500);
-  }
-}
-
-function handleReadNote(url, res) {
-  const name = url.searchParams.get('name');
-  if (!name) return json(res, { error: 'name required' }, 400);
-  const { dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
-  const filePath = path.join(dir, name + '.md');
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
-  try {
-    const content = fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
-    json(res, { name, content });
-  } catch (e) {
-    json(res, { error: e.message }, 500);
-  }
-}
-
-async function handleSaveNote(req, res) {
-  const body = await readBody(req);
-  const { name, content } = body || {};
-  if (!name) return json(res, { error: 'name required' }, 400);
-  const { dir } = _pickNotesNsFromReq(body);
-  const filePath = path.join(dir, name + '.md');
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
-  atomicWriteSync(resolved, content || '');
-  broadcast({ type: 'ui-action', action: 'refresh-notes' });
-  hybridSearch.indexNote(resolved).catch(() => {});
-  json(res, { ok: true });
-}
-
-async function handleCreateNote(req, res) {
-  const body = await readBody(req);
-  const { name } = body || {};
-  if (!name) return json(res, { error: 'name required' }, 400);
-  const safeName = name.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
-  if (!safeName) return json(res, { error: 'Invalid name' }, 400);
-  _migrateLegacyNotes();
-  const { dir } = _pickNotesNsFromReq(body);
-  const filePath = path.join(dir, safeName + '.md');
-  if (fs.existsSync(filePath)) return json(res, { error: 'Note already exists' }, 409);
-  atomicWriteSync(filePath, `# ${safeName}\n\n`);
-  broadcast({ type: 'ui-action', action: 'refresh-notes' });
-  json(res, { ok: true, name: safeName });
-}
-
-function handleExportNote(url, res) {
-  const name = url.searchParams.get('name');
-  if (!name) return json(res, { error: 'name required' }, 400);
-  const { ns, dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
-  const filePath = path.join(dir, name + '.md');
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
-  if (!fs.existsSync(resolved)) return json(res, { error: 'Not found' }, 404);
-  const bodyTxt = fs.readFileSync(resolved, 'utf8');
-  const safeName = name.replace(/[\\/:*?"<>|]/g, '_');
-  // Prefix the filename with the namespace so same-named notes in different
-  // spaces don't collide when downloaded into one folder.
-  const safeNs = String(ns || '_global').replace(/[\\/:*?"<>|]/g, '_');
-  const downloadName = (safeNs === '_global' ? safeName : safeNs + '__' + safeName) + '.md';
-  res.writeHead(200, {
-    'Content-Type': 'text/markdown; charset=utf-8',
-    'Content-Disposition': 'attachment; filename="' + downloadName + '"',
-  });
-  res.end(bodyTxt);
-}
-
-function handleExportAllNotes(res) {
-  // Export every namespace in a single payload so round-tripping via import
-  // preserves per-space organization.
-  const payload = { _exportedAt: new Date().toISOString(), _exportedFrom: 'Symphonee', namespaces: {} };
-  try {
-    if (fs.existsSync(notesDir)) {
-      for (const ns of fs.readdirSync(notesDir)) {
-        const nsDir = path.join(notesDir, ns);
-        if (!fs.statSync(nsDir).isDirectory()) continue;
-        const nsMap = {};
-        for (const f of fs.readdirSync(nsDir)) {
-          if (!f.endsWith('.md')) continue;
-          try { nsMap[f.replace(/\.md$/, '')] = fs.readFileSync(path.join(nsDir, f), 'utf8'); } catch (_) {}
-        }
-        if (Object.keys(nsMap).length) payload.namespaces[ns] = nsMap;
-      }
-    }
-  } catch (_) {}
-  res.writeHead(200, {
-    'Content-Type': 'application/json',
-    'Content-Disposition': 'attachment; filename="symphonee-notes.json"',
-  });
-  res.end(JSON.stringify(payload, null, 2));
-}
-
-async function handleImportNotes(req, res) {
-  const body = await readBody(req);
-  // Accepted shapes:
-  //   { namespaces: { nsName: { noteName: content, ... }, ... } } (new export-all)
-  //   { notes: { noteName: content, ... } } (legacy export-all -> active ns)
-  //   { name, content, ns? }                 (single note)
-  //   { noteName: content, ... }             (flat map -> active ns)
-  let byNs = {};
-  if (body && body.namespaces && typeof body.namespaces === 'object') {
-    byNs = body.namespaces;
-  } else if (body && body.notes && typeof body.notes === 'object') {
-    const ns = _namespaceFromName(body.ns);
-    byNs[ns] = body.notes;
-  } else if (body && body.name && typeof body.content === 'string') {
-    const ns = _namespaceFromName(body.ns);
-    byNs[ns] = { [body.name]: body.content };
-  } else if (body && typeof body === 'object' && !Array.isArray(body)) {
-    const ns = _namespaceFromName(body.ns);
-    const map = { ...body }; delete map.ns;
-    byNs[ns] = map;
-  }
-  if (!Object.keys(byNs).length) return json(res, { error: 'Invalid payload' }, 400);
-  let written = 0, skipped = 0;
-  for (const [nsRaw, map] of Object.entries(byNs)) {
-    const { dir } = _resolveNotesNs(nsRaw);
-    for (const [name, content] of Object.entries(map || {})) {
-      if (typeof content !== 'string') { skipped++; continue; }
-      const safe = String(name).replace(/[\\/:*?"<>|]/g, '_');
-      const dest = path.join(dir, safe + '.md');
-      if (!path.resolve(dest).startsWith(path.resolve(dir))) { skipped++; continue; }
-      try { fs.writeFileSync(dest, content, 'utf8'); written++; } catch (_) { skipped++; }
-    }
-  }
-  broadcast({ type: 'ui-action', action: 'refresh-notes' });
-  json(res, { ok: true, written, skipped });
-}
-
-async function handleDeleteNote(req, res) {
-  const body = await readBody(req);
-  const { name } = body || {};
-  if (!name) return json(res, { error: 'name required' }, 400);
-  const { dir } = _pickNotesNsFromReq(body);
-  const filePath = path.join(dir, name + '.md');
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
-  if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
-  broadcast({ type: 'ui-action', action: 'refresh-notes' });
-  json(res, { ok: true });
-}
-
-// proxyHtmlImages moved to the azure-devops plugin (it only rewrites ADO-hosted image URLs).
-
 function formatAge(date) {
   const ms = Date.now() - new Date(date).getTime();
   const mins = ms / 60000;
@@ -2426,6 +2211,8 @@ const { mountGit } = require('./routes/git');
 mountGit(addRoute, json, { getRepoPath, broadcast, swrGit, guard });
 const { mountFiles } = require('./routes/files');
 mountFiles(addRoute, json, { getRepoPath, broadcast });
+const { mountNotes } = require('./routes/notes');
+mountNotes(addRoute, json, { repoRoot, broadcast, hybridSearch, getUiContext: getUiContextWithPath });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 trace.mark('server:orchestrator-mounted');
 
