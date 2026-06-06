@@ -442,47 +442,7 @@ const server = http.createServer(async (req, res) => {
     // ── Open External URL ─────────────────────────────────────────────────
 
     // ── UI Actions (AI → Dashboard) ───────────────────────────────────────
-    if (url.pathname === '/api/ui/tab' && req.method === 'POST')              return handleUiAction(req, res, 'switch-tab');
-    if (url.pathname === '/api/ui/view-workitem' && req.method === 'POST')  return handleUiAction(req, res, 'view-workitem');
-    if (url.pathname === '/api/ui/view-note' && req.method === 'POST')      return handleUiAction(req, res, 'view-note');
-    if (url.pathname === '/api/ui/refresh-workitems' && req.method === 'POST') return handleUiAction(req, res, 'refresh-workitems');
-    if (url.pathname === '/api/ui/view-file' && req.method === 'POST')       return handleUiAction(req, res, 'view-file');
-    if (url.pathname === '/api/ui/view-diff' && req.method === 'POST')       return handleUiAction(req, res, 'view-diff');
-    if (url.pathname === '/api/ui/view-commit-diff' && req.method === 'POST') return handleUiAction(req, res, 'view-commit-diff');
-    if (url.pathname === '/api/ui/view-activity' && req.method === 'POST')   return handleUiAction(req, res, 'view-activity');
-    if (url.pathname === '/api/ui/view-pr' && req.method === 'POST')       return handleUiAction(req, res, 'view-pr');
-    if (url.pathname === '/api/ui/view-plugin' && req.method === 'POST')   return handleUiAction(req, res, 'view-plugin');
-    if (url.pathname === '/api/ui/context' && req.method === 'GET')         return json(res, getUiContextWithPath());
-    if (url.pathname === '/api/ui/context' && req.method === 'POST')        return handleUiContextUpdate(req, res);
-    if (url.pathname === '/api/ui/mutate' && req.method === 'POST')         return handleUiMutate(req, res);
-    if (url.pathname === '/api/application-state/focus' && req.method === 'GET')  return json(res, _getFocusState());
-    if (url.pathname === '/api/application-state/focus' && req.method === 'POST') return handleFocusUpdate(req, res);
-    // Generic key-value application-state store. Key is the last path segment.
-    // Pattern from agent-native: UI writes 'navigation' on every route change,
-    // AI writes 'navigate' as a one-shot command. GET reads; PUT sets;
-    // DELETE clears. Also supports GET /api/application-state (listing).
-    if (url.pathname === '/api/application-state' && req.method === 'GET') {
-      return json(res, _appStateStore);
-    }
-    if (url.pathname.startsWith('/api/application-state/') && req.method === 'GET') {
-      const key = decodeURIComponent(url.pathname.slice('/api/application-state/'.length));
-      if (!key) return json(res, { error: 'key required' }, 400);
-      return json(res, { key, value: _appStateStore[key] !== undefined ? _appStateStore[key] : null });
-    }
-    if (url.pathname.startsWith('/api/application-state/') && req.method === 'PUT') {
-      const key = decodeURIComponent(url.pathname.slice('/api/application-state/'.length));
-      if (!key || key === 'focus') return json(res, { error: key ? 'reserved key' : 'key required' }, 400);
-      return handleAppStateWrite(req, res, key);
-    }
-    if (url.pathname.startsWith('/api/application-state/') && req.method === 'DELETE') {
-      const key = decodeURIComponent(url.pathname.slice('/api/application-state/'.length));
-      if (!key || key === 'focus') return json(res, { error: key ? 'reserved key' : 'key required' }, 400);
-      delete _appStateStore[key];
-      broadcast({ type: 'app-state-set', key, value: null });
-      return json(res, { ok: true, key });
-    }
-
-    // ── Bootstrap: one call returns everything an AI CLI needs to start ─
+// ── Bootstrap: one call returns everything an AI CLI needs to start ─
     // The instructions tell every CLI (Claude, Gemini, Codex, Copilot, Grok)
     // to call this once at the start of a session. Returns a checksum the
     // CLI is required to echo in its first reply so we can verify it
@@ -730,186 +690,12 @@ function getRepoPath(repoName) {
 // Persisted to <repoRoot>/.symphonee/ui-state.json so the user's selection
 // survives an app restart. Restoring on boot is best-effort - if the saved
 // repo no longer exists in config, fall back to nothing.
-const _uiStatePath = path.join(repoRoot, '.symphonee', 'ui-state.json');
-
-function _loadUiState() {
-  try {
-    if (!fs.existsSync(_uiStatePath)) return null;
-    return JSON.parse(fs.readFileSync(_uiStatePath, 'utf8'));
-  } catch (_) { return null; }
-}
-
-function _saveUiState(state) {
-  try {
-    fs.mkdirSync(path.dirname(_uiStatePath), { recursive: true });
-    fs.writeFileSync(_uiStatePath, JSON.stringify(state, null, 2), 'utf8');
-  } catch (_) { /* best effort */ }
-}
-
-let _uiContext = (() => {
-  const saved = _loadUiState() || {};
-  return {
-    selectedIteration: saved.selectedIteration ?? null,
-    selectedIterationName: saved.selectedIterationName || 'All Iterations',
-    selectedArea: saved.selectedArea ?? null,
-    selectedAreaName: saved.selectedAreaName || 'Team Default',
-    activeSpace: saved.activeSpace ?? null,
-    activeRepo: saved.activeRepo ?? null,
-    activeRepoPath: null, // re-derived from config below
-  };
-})();
-
-function getUiContextWithPath() {
-  // Always resolve the repo path from config so it's up to date
-  const ctx = { ..._uiContext };
-  if (ctx.activeRepo) {
-    const cfg = getConfig();
-    ctx.activeRepoPath = (cfg.Repos || {})[ctx.activeRepo] || null;
-  }
-  // Derive the notes namespace: active space name, or '_global' when none.
-  ctx.notesNamespace = ctx.activeSpace ? namespaceFromName(ctx.activeSpace) : '_global';
-  return ctx;
-}
+const { createUiContextStore } = require('./lib/ui-context');
+const _uiCtxStore = createUiContextStore({ repoRoot, getConfig, broadcast, onActiveRepoChange: () => { try { writePluginHints(); } catch (_) {} } });
+const getUiContextWithPath = _uiCtxStore.getUiContext;
 
 const writePluginHints = createPluginHints({ repoRoot, pluginsDir, getConfig, getUiContext: getUiContextWithPath, broadcast });
 
-async function handleUiContextUpdate(req, res) {
-  const data = await readBody(req);
-  const prevRepo = _uiContext.activeRepo;
-  Object.assign(_uiContext, data);
-  // Regenerate AI instructions when active repo changes (e.g. No Repo mode toggle)
-  if (data.activeRepo !== undefined && data.activeRepo !== prevRepo) {
-    try { writePluginHints(); } catch (_) {}
-  }
-  // Persist so the selection survives an app restart.
-  _saveUiState({
-    selectedIteration: _uiContext.selectedIteration,
-    selectedIterationName: _uiContext.selectedIterationName,
-    selectedArea: _uiContext.selectedArea,
-    selectedAreaName: _uiContext.selectedAreaName,
-    activeSpace: _uiContext.activeSpace,
-    activeRepo: _uiContext.activeRepo,
-  });
-  json(res, { ok: true, context: getUiContextWithPath() });
-}
-
-async function handleUiAction(req, res, action) {
-  const data = await readBody(req);
-  // Normalize: accept "commit" as alias for "hash" in view-commit-diff
-  if (action === 'view-commit-diff' && data.commit && !data.hash) {
-    data.hash = data.commit;
-    delete data.commit;
-  }
-  broadcast({ type: 'ui-action', action, ...data });
-  json(res, { ok: true, action });
-}
-
-// Runtime UI mutation: the AI sends a spec (add a tab, show a FAB, collapse a
-// panel) and we broadcast it to every connected dashboard. The client applies
-// the mutation in-memory and persists it to localStorage so it survives a
-// reload without touching source files.
-//
-// Accepted ops:
-//   { op: 'addTab',        id, label, bodyHtml }
-//   { op: 'removeTab',     id }
-//   { op: 'setTabHidden',  id, hidden }
-//   { op: 'addFab',        id, label, icon?, prompt? | href? }
-//   { op: 'removeFab',     id }
-//   { op: 'setCollapsed',  target, collapsed }   // CSS selector
-//   { op: 'reset' }                              // clear all mutations
-//
-// `bodyHtml` is sanitized client-side; we do not eval anything on the server.
-// Focus / context-awareness state. Mirrors agent-native's application-state
-// pattern: the UI tells the server what it is currently looking at so any
-// AI worker can fetch one URL to know the user's "where" without asking.
-let _focusState = {
-  activeTab: null,     // "terminal" | "notes" | "files" | ...
-  activeRepo: null,    // mirrors /api/ui/context.activeRepo
-  currentNote: null,   // selected note name
-  selection: '',       // last non-trivial text selection
-  updatedAt: 0,
-};
-
-function _getFocusState() {
-  // Merge in the authoritative activeRepo from /api/ui/context so workers
-  // never have to fetch both endpoints.
-  const ctx = (typeof getUiContextWithPath === 'function') ? getUiContextWithPath() : {};
-  return {
-    ..._focusState,
-    activeRepo: _focusState.activeRepo || ctx.activeRepo || null,
-    activeRepoPath: ctx.activeRepoPath || null,
-  };
-}
-
-async function handleFocusUpdate(req, res) {
-  const data = await readBody(req);
-  _focusState = {
-    activeTab: data.activeTab ?? _focusState.activeTab,
-    activeRepo: data.activeRepo ?? _focusState.activeRepo,
-    currentNote: data.currentNote ?? _focusState.currentNote,
-    selection: typeof data.selection === 'string' ? data.selection.slice(0, 2000) : _focusState.selection,
-    updatedAt: Date.now(),
-  };
-  json(res, { ok: true });
-}
-
-// ── Application state key/value store (agent-native pattern) ───────────────
-// General-purpose shared state between UI and AI agents. The UI writes
-// navigation state (what the user is looking at); the AI writes a 'navigate'
-// command and the UI reads + deletes it. Persisted to disk so it survives
-// restarts (except ephemeral keys like 'navigate').
-const APP_STATE_MAX_KEYS = 128;
-const APP_STATE_EPHEMERAL = new Set(['navigate']);
-const _appStatePath = path.join(repoRoot, 'config', 'application-state.json');
-let _appStateStore = {};
-try {
-  if (fs.existsSync(_appStatePath)) {
-    _appStateStore = JSON.parse(fs.readFileSync(_appStatePath, 'utf8')) || {};
-  }
-} catch (_) { _appStateStore = {}; }
-let _appStateSaveTimer = null;
-function _saveAppState() {
-  clearTimeout(_appStateSaveTimer);
-  _appStateSaveTimer = setTimeout(() => {
-    try {
-      fs.mkdirSync(path.dirname(_appStatePath), { recursive: true });
-      // Never persist ephemeral keys.
-      const serializable = {};
-      for (const [k, v] of Object.entries(_appStateStore)) {
-        if (!APP_STATE_EPHEMERAL.has(k)) serializable[k] = v;
-      }
-      fs.writeFileSync(_appStatePath, JSON.stringify(serializable, null, 2));
-    } catch (_) {}
-  }, 200);
-}
-async function handleAppStateWrite(req, res, key) {
-  const data = await readBody(req);
-  if (Object.keys(_appStateStore).length >= APP_STATE_MAX_KEYS && !(key in _appStateStore)) {
-    return json(res, { error: 'too many keys' }, 400);
-  }
-  _appStateStore[key] = data && Object.prototype.hasOwnProperty.call(data, 'value') ? data.value : data;
-  _saveAppState();
-  broadcast({ type: 'app-state-set', key, value: _appStateStore[key] });
-  json(res, { ok: true, key });
-}
-
-async function handleUiMutate(req, res) {
-  const data = await readBody(req);
-  const ops = Array.isArray(data.ops) ? data.ops : (data.op ? [data] : []);
-  if (!ops.length) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'No ops supplied. Pass { op, ... } or { ops: [...] }.' }));
-  }
-  broadcast({ type: 'ui-mutate', ops });
-  json(res, { ok: true, count: ops.length });
-}
-
-// ── Utilities ───────────────────────────────────────────────────────────────
-// ── Notes Management (namespaced by space) ─────────────────────────────────
-// Notes are partitioned into subdirs under `notes/` so each space has its own
-// notebook. The special '_global' namespace holds notes taken when no space is
-// active. Legacy flat notes (notes/*.md from before this change) are migrated
-// into '_global' on boot.
 function formatAge(date) {
   const ms = Date.now() - new Date(date).getTime();
   const mins = ms / 60000;
@@ -1226,6 +1012,7 @@ const { mountImageProxy } = require('./routes/image-proxy');
 mountImageProxy(addRoute, json, { getConfig, getPlugins: () => loadedPlugins, host: HOST, port: PORT });
 const { mountPluginRecommendations } = require('./routes/plugin-recommendations');
 mountPluginRecommendations(addRoute, json, { getConfig, getUiContext: getUiContextWithPath, pluginsDir, getPlugins: () => loadedPlugins });
+_uiCtxStore.mountRoutes(addRoute, json);
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 trace.mark('server:orchestrator-mounted');
 
