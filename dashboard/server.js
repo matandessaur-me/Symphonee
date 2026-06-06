@@ -225,9 +225,6 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Plugin recommendations (local git remote detection, no network) ───
-    if (url.pathname === '/api/plugins/recommendations' && req.method === 'GET') {
-      return json(res, getPluginRecommendations());
-    }
 
     // ── Repo Map (always available) ──────────────────────────────────────
     if (url.pathname === '/api/repo/map' && req.method === 'GET') {
@@ -716,61 +713,6 @@ function handleGetSkill(res, slug) {
     json(res, { slug, name: meta.name || slug, description: meta.description || '', body });
   } catch (e) { json(res, { error: e.message }, 500); }
 }
-
-function getPluginRecommendations() {
-  const cfg = getConfig();
-  const repos = cfg.Repos || {};
-  const uiCtx = getUiContextWithPath();
-  const repoEntries = [];
-  if (uiCtx.activeRepo && repos[uiCtx.activeRepo]) repoEntries.push([uiCtx.activeRepo, repos[uiCtx.activeRepo]]);
-  for (const entry of Object.entries(repos)) {
-    if (!repoEntries.some(([name]) => name === entry[0])) repoEntries.push(entry);
-  }
-
-  const remotes = [];
-  for (const [repoName, repoPath] of repoEntries.slice(0, 20)) {
-    if (!repoPath || !fs.existsSync(repoPath)) continue;
-    const out = gitSync(repoPath, 'remote -v', 5000);
-    if (out) remotes.push({ repoName, text: out.toLowerCase() });
-  }
-
-  const installedIds = new Set();
-  try {
-    if (fs.existsSync(pluginsDir)) {
-      for (const dir of fs.readdirSync(pluginsDir)) {
-        if (dir !== 'sdk' && fs.existsSync(path.join(pluginsDir, dir, 'plugin.json'))) installedIds.add(dir);
-      }
-    }
-  } catch (_) {}
-  const activeIds = new Set((loadedPlugins || []).filter(p => checkActivation(p, getConfig)).map(p => p.id));
-  const byId = new Map();
-  const add = (id, label, reason, repoName, score) => {
-    const item = byId.get(id) || { id, label, reasons: [], repoNames: [], score: 0, installed: installedIds.has(id), configured: activeIds.has(id) };
-    if (reason && !item.reasons.includes(reason)) item.reasons.push(reason);
-    if (repoName && !item.repoNames.includes(repoName)) item.repoNames.push(repoName);
-    item.score = Math.max(item.score, score || 0);
-    byId.set(id, item);
-  };
-
-  for (const r of remotes) {
-    if (r.text.includes('github.com')) {
-      add('github', 'GitHub', `Detected a GitHub remote in ${r.repoName}.`, r.repoName, 100);
-    }
-    if (r.text.includes('dev.azure.com') || r.text.includes('visualstudio.com')) {
-      add('azure-devops', 'Azure DevOps', `Detected an Azure DevOps remote in ${r.repoName}.`, r.repoName, 95);
-    }
-  }
-
-  return {
-    recommendations: [...byId.values()].sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
-    scannedRepos: repoEntries.length,
-  };
-}
-
-// handleStartWorking moved to the azure-devops plugin (dashboard/plugins/azure-devops/routes.js) as of plugin v0.4.0.
-
-// GitHub handlers (handleCreatePullRequest, handleGitHub*) moved to the github plugin
-// in dashboard/plugins/github/routes.js as of plugin v0.4.0.
 
 // ── UI Actions (AI -> Dashboard) ─────────────────────────────────────────────
 // ── File Browser ────────────────────────────────────────────────────────────
@@ -1399,6 +1341,8 @@ const { mountSpaces } = require('./routes/spaces');
 mountSpaces(addRoute, json, { getConfig, normalizeRootConfig, configPath, broadcast });
 const { mountImageProxy } = require('./routes/image-proxy');
 mountImageProxy(addRoute, json, { getConfig, getPlugins: () => loadedPlugins, host: HOST, port: PORT });
+const { mountPluginRecommendations } = require('./routes/plugin-recommendations');
+mountPluginRecommendations(addRoute, json, { getConfig, getUiContext: getUiContextWithPath, pluginsDir, getPlugins: () => loadedPlugins });
 console.log('  Orchestrator bus mounted (/api/orchestrator/*)');
 trace.mark('server:orchestrator-mounted');
 
