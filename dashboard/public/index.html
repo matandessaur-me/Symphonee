@@ -136,7 +136,7 @@
       <i data-lucide="bell"></i>
       <span class="notif-badge" id="notifBadge">0</span>
     </div>
-    <button onclick="restartApp()" title="Restart App" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="rotate-cw" style="width:14px;height:14px;"></i></button>
+    <button onclick="openHistory()" title="History -- everything Symphonee did, with undo" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="history" style="width:15px;height:15px;"></i></button>
     <div class="window-controls">
       <button onclick="fetch('/api/window/minimize',{method:'POST'})" title="Minimize"><i data-lucide="minus" style="width:16px;height:16px;"></i></button>
       <button class="win-close" onclick="fetch('/api/window/close',{method:'POST'})" title="Close"><i data-lucide="x" style="width:16px;height:16px;"></i></button>
@@ -257,7 +257,6 @@
           <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
           <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
           <button class="tab-btn" data-tab="mind" onclick="switchTab('mind')" title="Symphonee's shared knowledge graph">Mind</button>
-          <button class="tab-btn" data-tab="ledger" onclick="switchTab('ledger')" title="Everything the AI did -- live action history with undo">Activity</button>
         </div>
         <button class="tab-scroll-arrow right" id="tabScrollRight" onclick="scrollTabs(200)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div>
@@ -681,8 +680,8 @@
     <div class="tab-panel" id="panel-ledger">
       <div class="ledger-root">
         <div class="ledger-toolbar">
-          <span class="ledger-title">Activity</span>
-          <span class="ledger-sub">Everything the AI did, live</span>
+          <span class="ledger-title">History</span>
+          <span class="ledger-sub">Every action Symphonee took, newest first</span>
           <span class="ledger-spacer"></span>
           <select id="ledgerFilterCategory" class="ledger-select" onchange="ledgerSetFilter('category', this.value)" title="Filter by category">
             <option value="">All categories</option>
@@ -711,6 +710,7 @@
           <div class="ledger-list" id="ledgerList"></div>
           <div class="ledger-side">
             <div class="ledger-side-title">Checkpoints</div>
+            <div class="ledger-side-sub">Repo snapshots you can undo to. Take one before risky work.</div>
             <div id="ledgerCheckpoints"></div>
           </div>
         </div>
@@ -1673,6 +1673,11 @@
 
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
+          <div class="settings-section">
+            <div class="settings-section-title">Maintenance</div>
+            <div class="settings-section-desc">Restart the Symphonee app (reloads the server and all windows).</div>
+            <button onclick="restartApp()" style="display:inline-flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font:600 12px var(--font-ui);cursor:pointer;transition:border-color 0.12s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--surface2)'"><i data-lucide="rotate-cw" style="width:14px;height:14px;"></i> Restart Symphonee</button>
+          </div>
           <div class="settings-section">
             <div class="settings-section-title">AI Orchestration</div>
             <div class="settings-section-desc">The lead AI dispatches tasks to other installed CLIs and can run Graph Runs (durable multi-step workflows with branching, approval gates, and crash recovery). Pick which CLIs the orchestrator is allowed to dispatch to.</div>

@@ -52,19 +52,7 @@ async function create(repoPath, { label, repo, auto } = {}) {
     try { await gitAsync(repoPath, 'update-ref refs/symphonee/checkpoints/' + id + ' ' + stash); } catch (_) {}
   }
   let changed = 0;
-  let files = [];
-  try {
-    const s = await gitAsync(repoPath, 'status --porcelain');
-    if (s) {
-      const lines = s.split('\n').filter(Boolean);
-      changed = lines.length;
-      // "XY path" -> { status, path }; cap the stored list so the json stays small
-      files = lines.slice(0, 100).map((l) => ({
-        status: l.slice(0, 2).trim() || '?',
-        path: l.slice(3).replace(/\r$/, '').trim(),
-      })).filter((f) => f.path);
-    }
-  } catch (_) {}
+  try { const s = await gitAsync(repoPath, 'status --porcelain'); changed = s ? s.split('\n').filter(Boolean).length : 0; } catch (_) {}
 
   const cp = {
     id, ts: new Date().toISOString(),
@@ -73,7 +61,6 @@ async function create(repoPath, { label, repo, auto } = {}) {
     head, branch,
     stash: stash || null,   // snapshot tree source; null => clean-tree checkpoint
     changed,                // number of changed tracked paths at checkpoint time
-    files,                  // the changed paths (so the UI can show WHAT it covers)
     auto: !!auto,
   };
   if (_dir) { try { fs.writeFileSync(_file(id), JSON.stringify(cp, null, 2)); } catch (_) {} }

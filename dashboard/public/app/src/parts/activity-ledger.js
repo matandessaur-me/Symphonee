@@ -9,7 +9,6 @@
 state.ledgerEntries = state.ledgerEntries || [];
 state.ledgerCheckpoints = state.ledgerCheckpoints || [];
 state.ledgerFilter = state.ledgerFilter || { category: '', outcome: '', q: '' };
-state.ledgerOpenCp = state.ledgerOpenCp || null;
 
 const LEDGER_CAT_ICON = {
   api: 'plug', git: 'git-branch', file: 'file-text', terminal: 'square-terminal',
@@ -17,6 +16,21 @@ const LEDGER_CAT_ICON = {
   mind: 'brain', orchestrator: 'network', system: 'cpu',
 };
 const LEDGER_OUTCOME_CLASS = { ok: 'lg-ok', blocked: 'lg-blocked', error: 'lg-error', pending: 'lg-pending' };
+// Plain-language label for the KIND of action, so each row says what it is.
+const LEDGER_CAT_LABEL = { api: 'Action', git: 'Git', file: 'File', terminal: 'Terminal', plugin: 'Plugin', cli: 'Worker', apps: 'Desktop', browser: 'Browser', mind: 'Mind', orchestrator: 'Orchestrator', system: 'System' };
+
+// Open the History view from the top-bar history icon.
+function openHistory() { if (typeof switchTab === 'function') switchTab('ledger'); }
+
+function _histDayLabel(ts) {
+  const d = new Date(ts); const now = new Date();
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((b - a) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
 
 function _ledgerEsc(s) {
   return String(s == null ? '' : s)
@@ -59,16 +73,17 @@ function _ledgerPasses(e) {
 
 function _ledgerRowHtml(e) {
   const icon = LEDGER_CAT_ICON[e.category] || 'activity';
+  const label = LEDGER_CAT_LABEL[e.category] || 'Action';
   const oc = LEDGER_OUTCOME_CLASS[e.outcome] || 'lg-ok';
-  const decision = e.decision && e.decision !== 'allow' ? '<span class="lg-decision lg-' + _ledgerEsc(e.decision) + '">' + _ledgerEsc(e.decision) + '</span>' : '';
-  const resource = e.resource ? '<span class="lg-res">' + _ledgerEsc(e.resource) + '</span>' : '';
-  return '<div class="lg-row" data-id="' + _ledgerEsc(e.id) + '">' +
-      '<span class="lg-time">' + _ledgerTime(e.ts) + '</span>' +
-      '<span class="lg-icon"><i data-lucide="' + icon + '"></i></span>' +
-      '<span class="lg-actor">' + _ledgerEsc(e.actor || 'main') + '</span>' +
-      '<span class="lg-main"><span class="lg-action">' + _ledgerEsc(e.action) + '</span>' + resource + '</span>' +
-      decision +
-      '<span class="lg-outcome ' + oc + '">' + _ledgerEsc(e.outcome) + '</span>' +
+  const res = e.resource ? '<span class="hist-res">' + _ledgerEsc(e.resource) + '</span>' : '';
+  // 'ok' is the unremarkable default -- only call out blocked / error / pending.
+  const out = (e.outcome && e.outcome !== 'ok') ? '<span class="hist-out ' + oc + '">' + _ledgerEsc(e.outcome) + '</span>' : '';
+  return '<div class="hist-row">' +
+      '<span class="hist-time">' + _ledgerTime(e.ts) + '</span>' +
+      '<span class="hist-cat hist-cat-' + _ledgerEsc(e.category) + '" title="' + label + ' action"><i data-lucide="' + icon + '"></i>' + label + '</span>' +
+      '<span class="hist-what"><span class="hist-action">' + _ledgerEsc(e.action) + '</span>' + res + '</span>' +
+      '<span class="hist-actor">' + _ledgerEsc(e.actor || 'main') + '</span>' +
+      out +
     '</div>';
 }
 
@@ -77,10 +92,18 @@ function ledgerRender() {
   if (!list) return;
   const rows = state.ledgerEntries.filter(_ledgerPasses);
   if (!rows.length) {
-    list.innerHTML = '<div class="lg-empty">No actions recorded yet. As the AI (any CLI) acts -- automation, plugins, worker spawns, Mind writes, permission decisions -- they appear here live.</div>';
+    list.innerHTML = '<div class="lg-empty"><b>Nothing here yet.</b><br><br>This is a running log of everything Symphonee does -- approving or blocking an action, running an automation, spawning a worker, creating a checkpoint. Each row shows <b>when</b> it happened, the <b>kind</b> of action, <b>what</b> it touched, and <b>how it turned out</b>. Newest at the top. Do something and it shows up here instantly.</div>';
     return;
   }
-  list.innerHTML = rows.map(_ledgerRowHtml).join('');
+  // Newest-first (already sorted by the API), grouped under day headers so it
+  // reads as a timeline, not a flat wall.
+  let html = ''; let lastDay = null;
+  for (const e of rows) {
+    const day = _histDayLabel(e.ts);
+    if (day !== lastDay) { html += '<div class="hist-day">' + day + '</div>'; lastDay = day; }
+    html += _ledgerRowHtml(e);
+  }
+  list.innerHTML = html;
   if (typeof lucide !== 'undefined') { try { lucide.createIcons({ el: list }); } catch (_) {} }
 }
 
@@ -92,36 +115,15 @@ function ledgerRenderCheckpoints() {
     el.innerHTML = '<div class="lg-empty-sm">No checkpoints yet. Take one before risky work, then undo to it in a click.</div>';
     return;
   }
-  el.innerHTML = cps.map((c) => {
-    const open = state.ledgerOpenCp === c.id;
-    const fileList = Array.isArray(c.files) && c.files.length
-      ? '<div class="lg-cp-files">' + c.files.slice(0, 30).map((f) => '<div class="lg-cp-file"><span class="lg-cp-fst">' + _ledgerEsc(f.status || '?') + '</span>' + _ledgerEsc(f.path || '') + '</div>').join('') +
-        (c.files.length > 30 ? '<div class="lg-cp-file lg-cp-more">+' + (c.files.length - 30) + ' more</div>' : '') + '</div>'
-      : '<div class="lg-cp-files lg-cp-empty-sm">' + (c.changed ? c.changed + ' changed file(s) (re-checkpoint to capture the list)' : 'clean working tree at snapshot time') + '</div>';
-    return '<div class="lg-cp' + (c.auto ? ' lg-cp-auto' : '') + (open ? ' lg-cp-open' : '') + '" onclick="ledgerToggleCp(\'' + _ledgerEsc(c.id) + '\')" title="Click for details">' +
+  el.innerHTML = cps.map((c) =>
+    '<div class="lg-cp' + (c.auto ? ' lg-cp-auto' : '') + '">' +
       '<div class="lg-cp-head">' +
-        '<i data-lucide="chevron-right" class="lg-cp-caret"></i>' +
         '<span class="lg-cp-label">' + _ledgerEsc(c.label || c.id) + '</span>' +
-        '<button class="lg-cp-undo" onclick="event.stopPropagation();ledgerUndo(\'' + _ledgerEsc(c.id) + '\')" title="Revert tracked files to this snapshot">Undo</button>' +
+        '<button class="lg-cp-undo" onclick="ledgerUndo(\'' + _ledgerEsc(c.id) + '\')" title="Revert tracked files to this snapshot">Undo</button>' +
       '</div>' +
       '<div class="lg-cp-meta">' + _ledgerTime(c.ts) + ' &middot; ' + _ledgerEsc(c.branch || '') + ' &middot; ' + (c.changed || 0) + ' changed</div>' +
-      '<div class="lg-cp-details"' + (open ? '' : ' style="display:none"') + '>' +
-        '<div class="lg-cp-kv"><span>id</span><code>' + _ledgerEsc(c.id) + '</code></div>' +
-        '<div class="lg-cp-kv"><span>when</span>' + _ledgerEsc(new Date(c.ts).toLocaleString()) + '</div>' +
-        '<div class="lg-cp-kv"><span>branch</span>' + _ledgerEsc(c.branch || '-') + '</div>' +
-        '<div class="lg-cp-kv"><span>head</span><code>' + _ledgerEsc(String(c.head || '').slice(0, 9)) + '</code></div>' +
-        '<div class="lg-cp-kv"><span>covers</span>' + (c.changed || 0) + ' tracked change(s)</div>' +
-        fileList +
-        '<div class="lg-cp-hint">Undo reverts tracked files to this snapshot. New (untracked) files are kept, and a safety checkpoint of the current state is taken first, so undo is reversible.</div>' +
-      '</div>' +
-    '</div>';
-  }).join('');
-  if (typeof lucide !== 'undefined') { try { lucide.createIcons({ el }); } catch (_) {} }
-}
-
-function ledgerToggleCp(id) {
-  state.ledgerOpenCp = (state.ledgerOpenCp === id) ? null : id;
-  ledgerRenderCheckpoints();
+    '</div>'
+  ).join('');
 }
 
 async function ledgerCheckpointNow() {
@@ -152,23 +154,13 @@ function ledgerOnAction(entry) {
   if (!entry || !entry.id) return;
   state.ledgerEntries.unshift(entry);
   if (state.ledgerEntries.length > 1000) state.ledgerEntries.length = 1000;
-  // Only touch the DOM if the panel is active (cheap guard).
   const panel = document.getElementById('panel-ledger');
-  if (panel && panel.classList.contains('active') && _ledgerPasses(entry)) {
-    const list = document.getElementById('ledgerList');
-    if (list) {
-      const empty = list.querySelector('.lg-empty');
-      if (empty) { ledgerRender(); return; }
-      list.insertAdjacentHTML('afterbegin', _ledgerRowHtml(entry));
-      if (typeof lucide !== 'undefined') { try { lucide.createIcons({ el: list.firstElementChild }); } catch (_) {} }
-    }
-  }
-  // Reflect checkpoint creates/undos in the side list without a full reload.
-  if (entry.category === 'git' && (entry.action === 'checkpoint.create' || entry.action === 'checkpoint.undo')) {
-    const panel2 = document.getElementById('panel-ledger');
-    if (panel2 && panel2.classList.contains('active')) {
-      fetch('/api/ledger/checkpoints').then((r) => r.json()).then((c) => { state.ledgerCheckpoints = c.checkpoints || []; ledgerRenderCheckpoints(); }).catch(() => {});
-    }
+  const active = panel && panel.classList.contains('active');
+  // Re-render the feed (cheap; keeps day grouping correct) only while visible.
+  if (active) ledgerRender();
+  // Reflect checkpoint creates/undos in the side list live.
+  if (active && entry.category === 'git' && (entry.action === 'checkpoint.create' || entry.action === 'checkpoint.undo')) {
+    fetch('/api/ledger/checkpoints').then((r) => r.json()).then((c) => { state.ledgerCheckpoints = c.checkpoints || []; ledgerRenderCheckpoints(); }).catch(() => {});
   }
 }
 
