@@ -17,6 +17,17 @@ Use these before writing anything custom. They handle the common Symphonee opera
 | `Run-Query.ps1 -File path/to/query.ps1` | Run a generic query script |
 | `Get-PluginInstructions.ps1 [-Plugin <id>]` | Fetch AI instructions from installed plugins |
 
+## Renderer build (when editing the dashboard UI)
+
+The served `dashboard/public/js/app.js` and `mind-ui.js` are GENERATED. Edit the
+source (`dashboard/public/app/src/parts/*.js` or `mind-ui/src/*.js`) and rebuild --
+never hand-edit the output. See the `verify-frontend-edit` skill.
+
+| Command | Purpose |
+|---|---|
+| `npm run build:renderer` (`node scripts/build-renderer.js`) | Rebuild `app.js` (concat parts) + `mind-ui.js` (esbuild bundle) |
+| `npm run watch:renderer` (`... --watch`) | Rebuild on source change during dev |
+
 ## Mind (shared knowledge graph)
 
 | Script | Purpose |

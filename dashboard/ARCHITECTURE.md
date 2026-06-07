@@ -59,16 +59,37 @@ so their `require('./x')` paths resolve unchanged.
 config, spaces, cli-install, image-proxy, plugin-recommendations).
 
 ### `public/` — renderer
-- `index.html` — markup (~2.2k LOC)
-- `styles/app.css` — all styles (extracted from the inline `<style>`)
-- `js/app.js` — the main renderer logic (extracted from the inline `<script>`)
-- `mind-ui.js` — the Mind UI
 
-`app.js` and `mind-ui.js` are still single files. Splitting them further safely
-requires a build step (e.g. esbuild + ES modules) because they share one global
-scope and rely on per-script function hoisting — a plain multi-file split would
-break at runtime in ways only visible in the live GUI. That is a deliberate future
-pass, not a blind edit.
+`index.html` is markup (~2.2k LOC) + a few small bootstrap scripts; `styles/app.css`
+holds all styles. The two large scripts — `js/app.js` and `mind-ui.js` — are
+**generated build outputs**, authored as small source files and combined at author
+time by `scripts/build-renderer.js` (`npm run build:renderer`, or `--watch`). No
+runtime build step: the app still serves static files; `index.html` is unchanged.
+
+| Served file | Source | Build strategy |
+|------|--------|----------|
+| `js/app.js` | `app/src/parts/*.js` + `manifest.json` | **flat concatenation** — byte-identical to the original |
+| `mind-ui.js` | `mind-ui/src/*.js` | **esbuild ES-module bundle** |
+
+Two strategies because the two files have different shapes:
+
+- **`mind-ui`** was a single IIFE with a shared **state object**, so it split
+  cleanly into real `import`/`export` modules (`core`, `search`, `data`, `graph`,
+  `dashboard`, `detailActions`, …) bundled by esbuild. esbuild statically resolves
+  every cross-module reference, so a broken link is a build error.
+- **`app.js`** is a flat-global classic script: ~875 top-level functions (called
+  by 327 inline `on*` handlers by bare name) and ~146 **mutable** globals reassigned
+  across ~1,700 references. Real modules would require rewriting all of those to a
+  shared state object — a large, scope-sensitive change to an untested 21k-line UI.
+  So it is split by **concern into cohesive parts** (`terminals.js`, `files.js`,
+  `git.js`, `orchestrator.js`, `work-items.js`, `browser.js`, `apps.js`, `themes.js`,
+  `command-palette.js`, …) that **concatenate back byte-identical** — navigable
+  source, zero behavioural risk. The incremental path to real modules (introduce a
+  `state.js`, move mutable globals onto it per cluster, then promote a part to a
+  module) is documented in `app/src/README.md`.
+
+**Generated files are not hand-edited** — they carry that warning, and the
+concatenated `app.js` is provably the original bytes.
 
 ## Conventions
 

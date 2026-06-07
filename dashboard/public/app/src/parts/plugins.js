@@ -1,0 +1,1302 @@
+// ── Plugin System ──────────────────────────────────────────────────────────
+
+// Notify all plugin iframes of an event
+function notifyPluginIframes(eventType, data) {
+  document.querySelectorAll('iframe[data-plugin-id]').forEach(function (iframe) {
+    try {
+      iframe.contentWindow.postMessage({ __symphonee: true, type: eventType, data: data }, location.origin);
+    } catch (_) {}
+  });
+}
+
+// Listen for postMessage from plugin iframes
+window.addEventListener('message', function (event) {
+  if (event.origin !== location.origin) return;
+  var msg = event.data;
+  if (!msg || !msg.__symphonee) return;
+
+  switch (msg.type) {
+    case 'switchTab':
+      switchTab(msg.tab);
+      break;
+    case 'askAi':
+      askAi(msg.prompt);
+      break;
+    case 'toast':
+      if (typeof toast === 'function') toast(msg.message, msg.level || 'info');
+      break;
+    case 'getContext':
+      var ctxData = {
+        activeRepo: activeRepo,
+        selectedIteration: document.getElementById('sprintSelect').value,
+        selectedIterationName: (document.getElementById('sprintSelect').selectedOptions[0] || {}).textContent || '',
+        config: {}
+      };
+      // Send config without secrets
+      if (configData) {
+        var keys = Object.keys(configData);
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          if (k.indexOf('PAT') === -1 && k.indexOf('Token') === -1 && k.indexOf('Secret') === -1) {
+            ctxData.config[k] = configData[k];
+          }
+        }
+      }
+      event.source.postMessage({
+        __symphonee: true, type: 'contextResponse', requestId: msg.requestId, data: ctxData
+      }, event.origin);
+      break;
+    case 'viewWorkItem':
+      viewWorkItem(msg.id);
+      break;
+    case 'openActivityTimeline':
+      openActivityTimeline();
+      break;
+    case 'viewCommitDiff':
+      if (msg.repo) {
+        filesCurrentRepo = msg.repo;
+        activeRepo = msg.repo;
+      }
+      viewCommitDiff(msg.hash);
+      break;
+    case 'openSettings':
+      openSettings(msg.tab || 'plugins');
+      if (msg.plugin) {
+        setTimeout(function () {
+          var btn = document.querySelector('.plugin-settings-nav[data-plugin-tab="ps_' + msg.plugin + '"]');
+          if (btn) switchPluginSettingsTab(msg.plugin, btn);
+        }, 50);
+      }
+      break;
+    case 'configChanged':
+      // Forward config change to all iframes of this plugin so the tab refreshes
+      if (msg.plugin) {
+        document.querySelectorAll('iframe[data-plugin-id="' + msg.plugin + '"]').forEach(function (f) {
+          if (f.contentWindow !== event.source) {
+            f.contentWindow.postMessage({ __symphonee: true, type: 'configChanged', data: {} }, location.origin);
+          }
+        });
+      }
+      break;
+  }
+});
+
+// Execute a plugin action
+function executePluginAction(plugin, action) {
+  switch (action.type) {
+    case 'switchTab':
+      var tabId = action.tab;
+      if (tabId.indexOf('plugin-') !== 0) tabId = 'plugin-' + plugin.id + '-' + tabId;
+      switchTab(tabId);
+      break;
+    case 'prompt':
+      var prompt = action.template
+        .replace(/\$\{repo\}/g, activeRepo || '')
+        .replace(/\$\{config\.(\w+)\}/g, function (_, key) { return (configData || {})[key] || ''; });
+      askAi(prompt);
+      break;
+    case 'api':
+      fetch('http://127.0.0.1:3800' + action.path, {
+        method: action.method || 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: action.body ? JSON.stringify(action.body) : undefined
+      });
+      break;
+    case 'script':
+      var scriptPath = 'dashboard/plugins/' + plugin.id + '/' + action.path;
+      var cmd = scriptPath.endsWith('.js') ? 'node ' + scriptPath
+        : scriptPath.endsWith('.ps1') ? 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./' + scriptPath + '"'
+        : './' + scriptPath;
+      var aiPrompt = 'Run this command: ' + cmd;
+      if (action.analyze) aiPrompt += ' and then ' + action.analyze;
+      askAi(aiPrompt);
+      break;
+  }
+}
+
+// Inject a sidebar action button
+function injectSidebarAction(plugin, action) {
+  var containers = {
+    actions: document.getElementById('sidebarPluginActions'),
+    aiActions: document.getElementById('sidebarPluginAiActions'),
+  };
+  var container = containers[action.section];
+  if (!container) return;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.setAttribute('data-plugin-id', plugin.id);
+  btn.innerHTML = '<i data-lucide="' + (action.icon || 'puzzle') + '"></i> ' + action.label;
+  btn.onclick = function () { executePluginAction(plugin, action.action); };
+  container.appendChild(btn);
+}
+
+// Inject an AI action button
+function injectAiAction(plugin, action) {
+  var container = document.getElementById('sidebarPluginAiActions');
+  if (!container) return;
+
+  var btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.setAttribute('data-plugin-id', plugin.id);
+  btn.innerHTML = '<i data-lucide="' + (action.icon || 'sparkles') + '"></i> ' + action.label;
+  btn.onclick = function () { runPluginAiAction(plugin, action); };
+  container.appendChild(btn);
+}
+
+// Accepts both shapes:
+//   v1: {action: {type:'script'|'prompt'|'api'|'switchTab', ...}}
+//   v2: {script:'scripts/X.ps1', args?:'...', analyze?:'...', requires?:['sprint']}
+//       {prompt:'...'}
+//       {command:'globalFunctionName'}
+//
+// Template variables available in args / analyze / prompt strings:
+//   ${sprint}       - raw iteration path from the sidebar sprintSelect ('' if none)
+//   ${sprintName}   - human-readable name of the selected iteration
+//   ${repo}         - active repo name from /api/ui/context
+//   ${repoPath}     - active repo path on disk
+//   ${config.X}     - any top-level key from configData
+//
+// requires: array of context keys that must be non-empty; toasts and bails if any are missing.
+function _pluginActionContext() {
+  var spEl = document.getElementById('sprintSelect');
+  var sprint = spEl ? (spEl.value || '') : '';
+  var sprintName = spEl && spEl.selectedOptions[0] ? spEl.selectedOptions[0].textContent : '';
+  var ctx = (typeof configData !== 'undefined' && configData) || {};
+  return {
+    sprint: sprint,
+    sprintName: sprintName,
+    repo: (typeof activeRepo !== 'undefined' ? activeRepo : '') || '',
+    repoPath: ((ctx.Repos || {})[(typeof activeRepo !== 'undefined' ? activeRepo : '')] || ''),
+    configData: ctx,
+  };
+}
+function _pluginActionSubst(tpl, ctx) {
+  if (!tpl) return '';
+  return String(tpl)
+    .replace(/\$\{sprint\}/g, ctx.sprint)
+    .replace(/\$\{sprintName\}/g, ctx.sprintName)
+    .replace(/\$\{repo\}/g, ctx.repo)
+    .replace(/\$\{repoPath\}/g, ctx.repoPath)
+    .replace(/\$\{config\.(\w+)\}/g, function (_, k) { return (ctx.configData || {})[k] || ''; });
+}
+function runPluginAiAction(plugin, action) {
+  if (action.action) return executePluginAction(plugin, action.action);
+
+  var ctx = _pluginActionContext();
+  // Enforce requires[] - bail with a toast if any required context is blank.
+  var requires = action.requires || [];
+  for (var i = 0; i < requires.length; i++) {
+    var key = requires[i];
+    if (!ctx[key]) {
+      var friendly = key === 'sprint' ? 'Select an iteration first'
+                   : key === 'repo'   ? 'Select a repo first'
+                   :                    'Missing required context: ' + key;
+      toast(friendly, 'info');
+      return;
+    }
+  }
+
+  if (action.script) {
+    var scriptPath = 'dashboard/plugins/' + plugin.id + '/' + action.script.replace(/^\/?/, '');
+    var args = _pluginActionSubst(action.args || '', ctx);
+    var cmd = 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./' + scriptPath + '"' + (args ? ' ' + args : '');
+    var prompt = 'Run this command: ' + cmd;
+    if (action.analyze) prompt += ' and then ' + _pluginActionSubst(action.analyze, ctx);
+    return askAi(prompt);
+  }
+  if (action.prompt) return askAi(_pluginActionSubst(action.prompt, ctx));
+  if (action.command && typeof window[action.command] === 'function') return window[action.command]();
+  console.warn('Plugin action has no executable shape:', plugin.id, action);
+}
+
+// Inject a custom sidebar section with its own title and buttons
+function injectSidebarSection(plugin, section) {
+  var container = document.getElementById('sidebarPluginSections');
+  if (!container) return;
+
+  var wrapper = document.createElement('div');
+  wrapper.setAttribute('data-plugin-id', plugin.id);
+  var titleStyle = plugin.tint ? ' style="color: rgba(' + plugin.tint + ', 0.8);"' : '';
+  wrapper.innerHTML = '<div class="divider"></div><div class="section-title"' + titleStyle + '>' + (section.title || plugin.name) + '</div>';
+
+  var items = section.items || [];
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.innerHTML = '<i data-lucide="' + (item.icon || 'puzzle') + '"></i> ' + item.label;
+    (function (it) {
+      btn.onclick = function () { executePluginAction(plugin, it.action); };
+    })(item);
+    wrapper.appendChild(btn);
+  }
+  container.appendChild(wrapper);
+}
+
+// Inject a center tab with iframe panel
+function injectCenterTab(plugin, tab) {
+  var scrollContainer = document.querySelector('.tab-bar-scroll');
+  var tabId = 'plugin-' + plugin.id + '-' + tab.id;
+
+  var btn = document.createElement('button');
+  btn.className = 'tab-btn closable';
+  btn.dataset.tab = tabId;
+  btn.dataset.pluginId = plugin.id;
+  btn.setAttribute('data-plugin-id', plugin.id);
+  btn.title = tab.label;
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
+
+  // Colored dot for plugin identity
+  var dot = document.createElement('span');
+  dot.className = 'tab-dot';
+  dot.style.background = plugin.tint ? 'rgb(' + plugin.tint + ')' : 'var(--accent)';
+  btn.appendChild(dot);
+
+  // Full label always shown
+  var labelSpan = document.createElement('span');
+  labelSpan.textContent = tab.label;
+  btn.appendChild(labelSpan);
+
+  var closeSpan = document.createElement('span');
+  closeSpan.className = 'tab-close';
+  closeSpan.innerHTML = '&#215;';
+  closeSpan.onclick = function (e) {
+    e.stopPropagation();
+    closePluginTab(tabId);
+  };
+  btn.appendChild(closeSpan);
+
+  btn.onclick = function () { switchTab(tabId); };
+  // Openable plugin tabs slot AFTER the non-openable core tabs (files=900,
+  // diffview=901, notes=902). EPHEMERAL_CENTER_BASE = 1000 leaves headroom;
+  // we bump a counter so opening two in a row keeps click order.
+  injectCenterTab._orderCounter = (injectCenterTab._orderCounter || 0) + 1;
+  btn.style.order = String(EPHEMERAL_CENTER_BASE + injectCenterTab._orderCounter);
+  scrollContainer.appendChild(btn);
+  saveOpenTabs();
+  checkTabBarOverflow();
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel';
+  panel.id = 'panel-' + tabId;
+  panel.setAttribute('data-plugin-id', plugin.id);
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
+  document.querySelector('.center').appendChild(panel);
+}
+
+// Registry of all available plugin center tabs (populated on startup, never injected automatically)
+var pluginTabRegistry = [];
+
+function registerPluginTab(plugin, tabDef) {
+  // Only openable iframe-backed plugin tabs belong in the '+ Open Tab' menu.
+  // Pinned tabs slot in permanently, popup tabs have their own triggers, and
+  // claims-based tabs take over a hardcoded built-in slot - none of those are
+  // "openable from the menu".
+  if (!tabDef || tabDef.pinned || tabDef.popup || tabDef.claims || !tabDef.html) return;
+  var tabId = 'plugin-' + plugin.id + '-' + tabDef.id;
+  if (!pluginTabRegistry.some(function(r) { return r.tabId === tabId; })) {
+    pluginTabRegistry.push({ tabId: tabId, label: tabDef.label, plugin: plugin, tabDef: tabDef });
+  }
+}
+
+function isPluginTabOpen(tabId) {
+  return !!document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+}
+
+function closePluginTab(tabId) {
+  var btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+  var panel = document.getElementById('panel-' + tabId);
+  var wasActive = btn && btn.classList.contains('active');
+  if (btn) btn.remove();
+  if (panel) panel.remove();
+  if (wasActive) switchTab('terminal');
+  saveOpenTabs();
+  checkTabBarOverflow();
+}
+
+// Scroll arrows for tab bar overflow
+function scrollTabs(delta) {
+  var el = document.getElementById('tabBarScroll');
+  if (el) el.scrollBy({ left: delta, behavior: 'smooth' });
+}
+
+function updateScrollArrows() {
+  var el = document.getElementById('tabBarScroll');
+  var left = document.getElementById('tabScrollLeft');
+  var right = document.getElementById('tabScrollRight');
+  if (!el || !left || !right) return;
+  var canScrollLeft = el.scrollLeft > 2;
+  var canScrollRight = el.scrollLeft < (el.scrollWidth - el.clientWidth - 2);
+  left.classList.toggle('visible', canScrollLeft);
+  right.classList.toggle('visible', canScrollRight);
+}
+
+// Check arrows on scroll, resize, and after tab changes
+(function() {
+  var el = document.getElementById('tabBarScroll');
+  if (el) {
+    el.addEventListener('scroll', updateScrollArrows);
+    new ResizeObserver(updateScrollArrows).observe(el);
+  }
+})();
+
+function checkTabBarOverflow() {
+  updateScrollArrows();
+}
+
+// Plugin-driven shell surfaces. A pinned tab (centerTabs/rightTabs with
+// pinned:true and either claims:{tabBtnId,panelId} or html:"...") owns a slot
+// in the tab bar at a declared position. Ties break alphabetically by plugin id.
+// Ephemeral tabs (no pinned flag) keep the existing "openable from the + menu"
+// behavior injected on demand as iframes.
+var _intelFallbackToRecipes = false;
+
+function _hasVisibleChildren(el) {
+  if (!el) return false;
+  return Array.from(el.children).some(function (c) { return getComputedStyle(c).display !== 'none'; });
+}
+
+function reconcilePluginShellSurfaces(opts) {
+  var pluginDriven = document.getElementById('sidebarPluginDriven');
+  var hasLeft = _hasVisibleChildren(document.getElementById('sidebarPluginActions'));
+  var hasAi = _hasVisibleChildren(document.getElementById('sidebarPluginAiActions'));
+  if (pluginDriven) pluginDriven.style.display = (hasLeft || hasAi) ? '' : 'none';
+
+  var aiTitle = document.getElementById('sidebarPluginAiTitle');
+  var aiDiv = document.getElementById('sidebarPluginAiDivider');
+  if (aiTitle) aiTitle.style.display = hasAi ? '' : 'none';
+  if (aiDiv) aiDiv.style.display = (hasAi && hasLeft) ? '' : 'none';
+
+  var leftTitle = document.getElementById('sidebarPluginActionsTitle');
+  if (leftTitle) leftTitle.style.display = hasLeft ? '' : 'none';
+
+  // Azure DevOps board picker (sidebar) is shown iff the ADO plugin contributes
+  // a workItemProvider. Core does not hardcode the plugin id here.
+  var hasProvider = !!(typeof _loadedPlugins !== 'undefined' && _loadedPlugins && _loadedPlugins.some(function(p){
+    return p.contributions && p.contributions.workItemProvider;
+  }));
+  var adoFixed = document.getElementById('sidebarAdoFixed');
+  if (adoFixed) adoFixed.style.display = hasProvider ? '' : 'none';
+
+  // Activity and Team intel tabs are ADO-specific — hide when ADO plugin is absent.
+  var activityTab = document.getElementById('intelTab-activity');
+  var teamTab = document.getElementById('intelTab-team');
+  if (activityTab) activityTab.style.display = hasProvider ? '' : 'none';
+  if (teamTab) teamTab.style.display = hasProvider ? '' : 'none';
+  // If Activity was the active intel tab and is now hidden, fall back to Git Log.
+  if (!hasProvider && activityTab && activityTab.classList.contains('active')) {
+    var gitLogTab = document.getElementById('intelTab-gitlog');
+    if (gitLogTab && typeof switchIntelTab === 'function') switchIntelTab('gitlog');
+  }
+
+  applyPluginPinnedTabs(opts);
+
+  // Repaint any visible "Clone from X" button rows from repoSources contributions.
+  try { renderCloneSourceButtons('settingsRepoAddBtns', 'settings', 'modal-btn'); } catch (_) {}
+  try { renderCloneSourceButtons('obRepoAddBtns', 'ob', 'onboarding-btn onboarding-btn-primary'); } catch (_) {}
+}
+
+// Core pinned tabs: hardcoded positions so plugin tabs can slot around them.
+// Diff is core but behaves like a popup (hidden until showFile/showDiff opens
+// it, closable from the X). It slots right after Files.
+var CORE_PINNED_CENTER = {
+  terminal: 0,
+  orchestrator: 1,
+  browser: 2,
+  apps: 3,
+  files: 900,
+  diffview: 901,
+  notes: 902,
+};
+// Core right-column (intel) tabs. Recipes is always pinned last on the right.
+var CORE_PINNED_RIGHT = {
+  recipes: 900,
+};
+var EPHEMERAL_CENTER_BASE = 1000;
+
+// Collect every pinned + popup tab from all active plugins. Both kinds slot
+// at a declared position and are handled by applyPluginPinnedTabs; the
+// difference is visibility (pinned shows immediately, popup waits for a trigger).
+function _collectPinnedTabs(kind) {
+  var out = [];
+  if (typeof _loadedPlugins === 'undefined' || !_loadedPlugins) return out;
+  for (var i = 0; i < _loadedPlugins.length; i++) {
+    var p = _loadedPlugins[i];
+    var list = ((p.contributions || {})[kind]) || [];
+    list.forEach(function(t, idx) {
+      if (!t || (!t.pinned && !t.popup)) return;
+      out.push({
+        plugin: p,
+        tab: t,
+        position: typeof t.position === 'number' ? t.position : (2 + idx),
+      });
+    });
+  }
+  // Sort by position, alphabetical tie-break on plugin id + tab id.
+  out.sort(function(a, b) {
+    if (a.position !== b.position) return a.position - b.position;
+    var aKey = a.plugin.id + ':' + a.tab.id;
+    var bKey = b.plugin.id + ':' + b.tab.id;
+    return aKey < bKey ? -1 : (aKey > bKey ? 1 : 0);
+  });
+  return out;
+}
+
+function applyPluginPinnedTabs(opts) {
+  opts = opts || {};
+
+  // User-saved drag-reorder overrides win over declared defaults.
+  var _savedOrder = (typeof getSavedTabOrderOverrides === 'function') ? getSavedTabOrderOverrides() : {};
+
+  // Give core tabs their declared order so they don't fight plugin positions.
+  Object.keys(CORE_PINNED_CENTER).forEach(function(dataTab) {
+    var el = document.querySelector('.tab-bar-scroll .tab-btn[data-tab="' + dataTab + '"]');
+    if (!el) return;
+    if (Object.prototype.hasOwnProperty.call(_savedOrder, dataTab)) {
+      el.style.order = String(_savedOrder[dataTab]);
+    } else {
+      el.style.order = String(CORE_PINNED_CENTER[dataTab]);
+    }
+  });
+  Object.keys(CORE_PINNED_RIGHT).forEach(function(dataTab) {
+    var el = document.querySelector('.intel-tabs .intel-tab[data-itab="' + dataTab + '"]');
+    if (el) el.style.order = String(CORE_PINNED_RIGHT[dataTab]);
+  });
+  // Keep the "+ open closed panels" wrap pinned to the very end of the row.
+  var _reopen = document.getElementById('intelReopenWrap');
+  if (_reopen) _reopen.style.order = '9999';
+
+  // Reset all claimable core tab buttons to hidden. A plugin claim re-shows them.
+  var centerCandidates = ['backlogTabBtn', 'workitemTabBtn', 'prsTabBtn', 'activityTabBtn'];
+  centerCandidates.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  ['intelTab-activity', 'intelTab-team', 'intelTab-gitlog'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  // Fold pinned + popup plugin tabs into the DOM. Position is applied as a flex
+  // `order`. Pinned tabs are revealed; popup tabs stay hidden until plugin code
+  // calls openPopupTab(tabBtnId) and gain a close X via _ensureTabCloseButton.
+  _collectPinnedTabs('centerTabs').forEach(function(entry) {
+    var tab = entry.tab;
+    if (tab.claims && tab.claims.tabBtnId) {
+      var el = document.getElementById(tab.claims.tabBtnId);
+      if (!el) return;
+      var _claimKey = el.dataset && el.dataset.tab;
+      if (_claimKey && Object.prototype.hasOwnProperty.call(_savedOrder, _claimKey)) {
+        el.style.order = String(_savedOrder[_claimKey]);
+      } else {
+        el.style.order = String(entry.position);
+      }
+      if (tab.popup) {
+        // Popup tabs always start hidden; plugin code reveals them on demand
+        // (e.g. viewWorkItem). Closing happens via the panel's own close
+        // affordance - the tab itself does not get an X.
+        el.style.display = 'none';
+      } else {
+        el.style.removeProperty('display');
+        el.removeAttribute('hidden');
+      }
+    } else if (tab.html) {
+      injectPinnedCenterTab(entry.plugin, tab, entry.position);
+    }
+  });
+
+  _collectPinnedTabs('rightTabs').forEach(function(entry) {
+    var tab = entry.tab;
+    if (tab.claims && tab.claims.tabBtnId) {
+      var el = document.getElementById(tab.claims.tabBtnId);
+      if (!el) return;
+      el.style.order = String(entry.position);
+      if (tab.popup) {
+        el.style.display = 'none';
+      } else {
+        el.style.removeProperty('display');
+        el.removeAttribute('hidden');
+      }
+    } else if (tab.html) {
+      injectPinnedIntelPanel(entry.plugin, tab, entry.position);
+    }
+  });
+
+  // If the currently active intel tab is hidden (or we are forcing the activity
+  // default), pick the visible intel tab with the lowest CSS `order` so the
+  // leftmost tab on the right column becomes the default.
+  function _intelTabHidden(el) {
+    if (!el) return true;
+    if (el.style.display === 'none' || el.hasAttribute('hidden')) return true;
+    if (el.classList && el.classList.contains('plugin-space-hidden')) return true;
+    try {
+      var cs = getComputedStyle(el);
+      if (cs && cs.display === 'none') return true;
+    } catch (_) {}
+    return false;
+  }
+  function _firstVisibleIntelTab() {
+    var all = Array.prototype.slice.call(document.querySelectorAll('.intel-tab'));
+    var visible = all.filter(function (el) {
+      if (!el.dataset.itab) return false;
+      return !_intelTabHidden(el);
+    });
+    // Git Log stays useful only when a repo is active; prefer Recipes otherwise.
+    if (!activeRepo) {
+      var recipes = visible.filter(function (el) { return el.dataset.itab === 'recipes'; });
+      if (recipes.length) return recipes[0];
+    }
+    visible.sort(function (a, b) {
+      var ao = parseFloat(a.style.order || getComputedStyle(a).order || '0') || 0;
+      var bo = parseFloat(b.style.order || getComputedStyle(b).order || '0') || 0;
+      return ao - bo;
+    });
+    return visible[0] || null;
+  }
+
+  var activeIntel = document.querySelector('.intel-tab.active');
+  // Restore the user's last-selected right-panel tab if it's currently visible
+  // (persisted by switchIntelTab). Takes priority over the DOM default so the
+  // panel reopens where the user left it across restarts.
+  var savedIntel = null;
+  try { savedIntel = localStorage.getItem('symphonee-intel-tab'); } catch (_) {}
+  var savedBtn = null;
+  if (savedIntel) { try { savedBtn = document.querySelector('.intel-tab[data-itab="' + savedIntel.replace(/["\\\]]/g, '') + '"]'); } catch (_) {} }
+  var needFallback = !activeIntel || _intelTabHidden(activeIntel) ||
+    (opts.preferActivityDefault && activeIntel.dataset.itab === 'recipes');
+  if (savedBtn && !_intelTabHidden(savedBtn) && (!activeIntel || activeIntel.dataset.itab !== savedIntel)) {
+    _intelFallbackToRecipes = savedIntel === 'recipes';
+    try { switchIntelTab(savedIntel); } catch (_) {}
+  } else if (needFallback) {
+    var first = _firstVisibleIntelTab();
+    if (first && first.dataset.itab) {
+      _intelFallbackToRecipes = first.dataset.itab === 'recipes';
+      try {
+        switchIntelTab(first.dataset.itab);
+      } catch (_) {}
+    }
+  } else {
+    _intelFallbackToRecipes = false;
+  }
+
+  // Rebuild pluginTabRegistry's DOM-claiming entries so the '+' menu reflects
+  // openable claimed tabs. Iframe-backed pinned tabs are already in the DOM.
+  try {
+    if (typeof pluginTabRegistry !== 'undefined') {
+      for (var k = pluginTabRegistry.length - 1; k >= 0; k--) {
+        if (pluginTabRegistry[k]._native) pluginTabRegistry.splice(k, 1);
+      }
+      _collectPinnedTabs('centerTabs').forEach(function(entry) {
+        var tab = entry.tab;
+        // Only claims-based, ephemeral tabs belong here. Pinned tabs are already
+        // a permanent slot (no + menu entry needed) and popup tabs have their
+        // own triggers (viewWorkItem, openActivityTimeline, etc.).
+        if (!tab.claims || tab.pinned || tab.popup) return;
+        var btn = document.getElementById(tab.claims.tabBtnId);
+        if (!btn) return;
+        pluginTabRegistry.push({
+          _native: true,
+          plugin: entry.plugin,
+          label: tab.label || (btn.textContent || tab.claims.tabBtnId).trim(),
+          tabId: btn.getAttribute('data-tab') || tab.claims.tabBtnId,
+          tabDef: null,
+        });
+      });
+    }
+  } catch (_) {}
+}
+
+// Reveal a popup tab and switch to it. Plugin code (e.g. viewWorkItem,
+// openActivityTimeline) should call this instead of poking display directly so
+// the tab respects its declared position.
+function openPopupTab(tabBtnId) {
+  var el = document.getElementById(tabBtnId);
+  if (!el) return;
+  el.style.removeProperty('display');
+  el.removeAttribute('hidden');
+  var dataTab = el.getAttribute('data-tab') || tabBtnId;
+  switchTab(dataTab);
+}
+
+// Hide a popup tab's button. If it was the active tab, switch back to terminal.
+function closePopupTab(tabBtnId) {
+  var el = document.getElementById(tabBtnId);
+  if (!el) return;
+  var wasActive = el.classList.contains('active');
+  el.style.display = 'none';
+  if (wasActive) switchTab('terminal');
+}
+
+// Inject an iframe-backed pinned center tab at a declared position. Idempotent.
+function injectPinnedCenterTab(plugin, tab, position) {
+  var scrollContainer = document.querySelector('.tab-bar-scroll');
+  var tabId = 'plugin-' + plugin.id + '-' + tab.id;
+  var _overrides = (typeof getSavedTabOrderOverrides === 'function') ? getSavedTabOrderOverrides() : {};
+  var _effectiveOrder = Object.prototype.hasOwnProperty.call(_overrides, tabId)
+    ? _overrides[tabId] : position;
+  var existing = scrollContainer.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+  if (existing) { existing.style.order = String(_effectiveOrder); return; }
+
+  var btn = document.createElement('button');
+  btn.className = 'tab-btn';
+  btn.dataset.tab = tabId;
+  btn.dataset.pluginId = plugin.id;
+  btn.style.order = String(_effectiveOrder);
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
+  var dot = document.createElement('span');
+  dot.className = 'tab-dot';
+  dot.style.background = plugin.tint ? 'rgb(' + plugin.tint + ')' : 'var(--accent)';
+  btn.appendChild(dot);
+  var labelSpan = document.createElement('span');
+  labelSpan.textContent = tab.label;
+  btn.appendChild(labelSpan);
+  btn.onclick = function () { switchTab(tabId); };
+  scrollContainer.appendChild(btn);
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel';
+  panel.id = 'panel-' + tabId;
+  panel.setAttribute('data-plugin-id', plugin.id);
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
+  document.querySelector('.center').appendChild(panel);
+}
+
+function injectPinnedIntelPanel(plugin, tab, position) {
+  var tabBar = document.querySelector('.intel-tabs');
+  var panelId = 'plugin-' + plugin.id + '-' + tab.id;
+  var existing = tabBar.querySelector('.intel-tab[data-itab="' + panelId + '"]');
+  if (existing) { existing.style.order = String(position); return; }
+
+  var btn = document.createElement('button');
+  btn.className = 'intel-tab';
+  btn.dataset.itab = panelId;
+  btn.dataset.pluginId = plugin.id;
+  btn.style.order = String(position);
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
+  btn.appendChild(document.createTextNode(tab.label));
+  btn.onclick = function () { switchIntelTab(panelId); };
+  tabBar.appendChild(btn);
+
+  var panel = document.createElement('div');
+  panel.className = 'intel-panel';
+  panel.id = 'ipanel-' + panelId;
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + tab.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + tab.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
+  document.querySelector('.intel').appendChild(panel);
+}
+
+// Open a plugin tab by tabId (injects it if not already open, then switches to it)
+function openPluginTab(tabId) {
+  if (isPluginTabOpen(tabId)) {
+    _pinPluginTabToEnd(tabId);
+    switchTab(tabId);
+    return;
+  }
+  var entry = pluginTabRegistry.find(function(r) { return r.tabId === tabId; });
+  if (entry && entry._native) {
+    // Native tabs are already in the DOM; just show the button (if hidden) and activate it.
+    var btn = document.getElementById(tabId + 'TabBtn') || document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+    if (btn) btn.style.display = '';
+    _pinPluginTabToEnd(tabId);
+    switchTab(tabId);
+    return;
+  }
+  if (entry) {
+    injectCenterTab(entry.plugin, entry.tabDef);
+    _pinPluginTabToEnd(tabId);
+    switchTab(tabId);
+  }
+}
+
+// Force a plugin tab to the very end of the tab row whenever it's opened.
+// Writes both the live style.order AND the persisted override so drag-reorder
+// state from a prior session can't pull it back into the middle.
+function _pinPluginTabToEnd(tabId) {
+  try {
+    var scroll = document.getElementById('tabBarScroll');
+    if (!scroll) return;
+    var saved = (typeof getSavedTabOrderOverrides === 'function') ? getSavedTabOrderOverrides() : {};
+    var highest = 0;
+    scroll.querySelectorAll('.tab-btn').forEach(function(el) {
+      var key = el.dataset && el.dataset.tab;
+      if (!key || key === tabId) return;
+      var o = parseFloat(saved[key]);
+      if (!isFinite(o)) o = parseFloat(el.style.order);
+      if (isFinite(o) && o > highest) highest = o;
+    });
+    var next = Math.max(20000, Math.floor(highest) + 1);
+    saved[tabId] = next;
+    try { localStorage.setItem('symphonee-tab-order-v2', JSON.stringify(saved)); } catch (_) {}
+    var btn = document.getElementById(tabId + 'TabBtn') || document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+    if (btn) btn.style.order = String(next);
+  } catch (_) {}
+}
+
+// Open a plugin's first center tab by plugin ID (used by view-plugin, command palette, AI)
+function ensurePluginTabOpen(pluginId) {
+  var tabPrefix = 'plugin-' + pluginId + '-';
+  // Already open? Just switch.
+  var existing = document.querySelector('.tab-btn[data-tab^="' + tabPrefix + '"]');
+  if (existing) {
+    switchTab(existing.dataset.tab);
+    return existing.dataset.tab;
+  }
+  // Find in registry and open the first tab for this plugin
+  var entry = pluginTabRegistry.find(function(r) { return r.tabId.indexOf(tabPrefix) === 0; });
+  if (entry) {
+    injectCenterTab(entry.plugin, entry.tabDef);
+    switchTab(entry.tabId);
+    return entry.tabId;
+  }
+  return null;
+}
+
+function toggleOpenTabMenu() {
+  var menu = document.getElementById('tabOpenMenu');
+  var isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open', !isOpen);
+  if (!isOpen) {
+    menu.innerHTML = '';
+    // Gather the active space's plugin preset so we filter out plugins the
+    // user hasn't surfaced for this space. Empty preset / no space = no filter.
+    var allowed = null;
+    try {
+      if (activeSpace && window._spacesCache) {
+        var preset = window._spacesCache[activeSpace] && window._spacesCache[activeSpace].plugins;
+        if (Array.isArray(preset)) preset = preset.filter(function(id) { return !isCoreSpacePluginId(id); });
+        if (Array.isArray(preset) && preset.length) {
+          allowed = new Set(preset);
+          CORE_SPACE_PLUGIN_IDS.forEach(function(id) { allowed.add(id); });
+        }
+      }
+    } catch (_) {}
+    for (var i = 0; i < pluginTabRegistry.length; i++) {
+      (function(entry) {
+        if (allowed && !allowed.has(entry.plugin.id)) return;
+        var open = isPluginTabOpen(entry.tabId);
+        var item = document.createElement('button');
+        item.className = 'tab-open-item';
+        var dot = document.createElement('span');
+        dot.className = 'tab-open-dot';
+        dot.style.background = entry.plugin.tint ? 'rgb(' + entry.plugin.tint + ')' : 'var(--accent)';
+        item.appendChild(dot);
+        var lbl = document.createElement('span');
+        lbl.textContent = entry.label;
+        item.appendChild(lbl);
+        if (open) {
+          var check = document.createElement('span');
+          check.className = 'tab-open-check';
+          check.textContent = 'open';
+          item.appendChild(check);
+        }
+        item.onclick = function() {
+          if (open) { switchTab(entry.tabId); } else { openPluginTab(entry.tabId); }
+          menu.classList.remove('open');
+        };
+        menu.appendChild(item);
+      })(pluginTabRegistry[i]);
+    }
+    if (pluginTabRegistry.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'padding:10px 14px;font-size:12px;color:var(--subtext0);';
+      empty.textContent = 'No plugins installed';
+      menu.appendChild(empty);
+    }
+  }
+}
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('tabOpenMenu');
+  var wrap = document.getElementById('tabOpenWrap');
+  if (menu && wrap && !wrap.contains(e.target)) menu.classList.remove('open');
+});
+
+// - Persist open plugin tabs in localStorage ---------------------------------
+function saveOpenTabs() {
+  var open = [];
+  document.querySelectorAll('.tab-btn.closable').forEach(function(btn) {
+    if (btn.dataset.tab) open.push(btn.dataset.tab);
+  });
+  try { localStorage.setItem('symphonee-open-tabs', JSON.stringify(open)); } catch (_) {}
+}
+
+function restoreOpenTabs() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('symphonee-open-tabs') || '[]');
+    for (var i = 0; i < saved.length; i++) {
+      var tabId = saved[i];
+      if (!isPluginTabOpen(tabId)) {
+        var entry = pluginTabRegistry.find(function(r) { return r.tabId === tabId; });
+        if (entry) injectCenterTab(entry.plugin, entry.tabDef);
+      }
+    }
+  } catch (_) {}
+  checkTabBarOverflow();
+}
+
+// Inject a right-side intel panel with iframe
+function injectIntelPanel(plugin, ip) {
+  var tabBar = document.querySelector('.intel-tabs');
+  var panelId = 'plugin-' + plugin.id + '-' + ip.id;
+
+  var btn = document.createElement('button');
+  btn.className = 'intel-tab closable';
+  btn.dataset.itab = panelId;
+  btn.dataset.pluginId = plugin.id;
+  btn.setAttribute('data-plugin-id', plugin.id);
+  if (plugin.tint) btn.dataset.tint = plugin.tint;
+
+  var label = document.createTextNode(ip.label);
+  btn.appendChild(label);
+
+  var closeSpan = document.createElement('span');
+  closeSpan.className = 'tab-close';
+  closeSpan.innerHTML = '&#215;';
+  closeSpan.onclick = function (e) {
+    e.stopPropagation();
+    closeIntelPanel(panelId);
+  };
+  btn.appendChild(closeSpan);
+
+  btn.onclick = function () { switchIntelTab(panelId); };
+  tabBar.appendChild(btn);
+
+  var panel = document.createElement('div');
+  panel.className = 'intel-panel';
+  panel.id = 'ipanel-' + panelId;
+  panel.setAttribute('data-plugin-id', plugin.id);
+  panel.innerHTML = '<iframe src="/plugins/' + plugin.id + '/' + ip.html + '" ' +
+    'style="width:100%;height:100%;border:none;" ' +
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" ' +
+    'data-plugin-id="' + plugin.id + '" data-tab-id="' + ip.id + '"' +
+    (plugin.tint ? ' data-tint="' + plugin.tint + '"' : '') + '></iframe>';
+  document.querySelector('.intel').appendChild(panel);
+}
+
+var closedIntelPanels = [];
+
+function closeIntelPanel(panelId) {
+  var btn = document.querySelector('.intel-tab[data-itab="' + panelId + '"]');
+  var panel = document.getElementById('ipanel-' + panelId);
+  var wasActive = btn && btn.classList.contains('active');
+  var pluginId = btn ? btn.dataset.pluginId : null;
+  if (pluginId) {
+    var plugin = _loadedPlugins.find(function(p) { return p.id === pluginId; });
+    if (plugin && plugin.contributions && (plugin.contributions.rightTabs || plugin.contributions.intelPanels)) {
+      var rightDefs = plugin.contributions.rightTabs || plugin.contributions.intelPanels || [];
+      var ipDef = rightDefs.find(function(ip) {
+        return 'plugin-' + pluginId + '-' + ip.id === panelId;
+      });
+      if (ipDef && !closedIntelPanels.some(function(c) { return c.panelId === panelId; })) {
+        closedIntelPanels.push({ panelId: panelId, label: ipDef.label, plugin: plugin, ipDef: ipDef });
+      }
+    }
+  }
+  if (btn) btn.remove();
+  if (panel) panel.remove();
+  if (wasActive) {
+    var activity = document.getElementById('intelTab-activity');
+    switchIntelTab(activity && activity.style.display !== 'none' ? 'activity' : 'recipes');
+  }
+  updateIntelReopenButton();
+}
+
+function updateIntelReopenButton() {
+  var wrap = document.getElementById('intelReopenWrap');
+  if (wrap) wrap.style.display = closedIntelPanels.length > 0 ? 'inline-block' : 'none';
+}
+
+function toggleIntelReopenMenu() {
+  var menu = document.getElementById('intelReopenMenu');
+  var isOpen = menu.classList.contains('open');
+  menu.classList.toggle('open', !isOpen);
+  if (!isOpen) {
+    menu.innerHTML = '';
+    for (var i = 0; i < closedIntelPanels.length; i++) {
+      (function(entry) {
+        var item = document.createElement('button');
+        item.className = 'tab-open-item';
+        item.textContent = entry.label;
+        item.onclick = function() {
+          injectIntelPanel(entry.plugin, entry.ipDef);
+          closedIntelPanels = closedIntelPanels.filter(function(c) { return c.panelId !== entry.panelId; });
+          updateIntelReopenButton();
+          switchIntelTab(entry.panelId);
+          menu.classList.remove('open');
+        };
+        menu.appendChild(item);
+      })(closedIntelPanels[i]);
+    }
+  }
+}
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('intelReopenMenu');
+  var wrap = document.getElementById('intelReopenWrap');
+  if (menu && wrap && !wrap.contains(e.target)) menu.classList.remove('open');
+});
+
+// Store context menu items for later use
+var pluginContextMenuItems = [];
+function registerContextMenuItem(plugin, item) {
+  pluginContextMenuItems.push({ plugin: plugin, item: item });
+}
+
+// Initialize all plugins on load. `_pluginsReady` resolves when the IIFE has
+// fetched /api/plugins and finished injecting contributions - other async
+// startup code (loadConfig, applyPluginPinnedTabs) should await this before
+// assuming _loadedPlugins reflects reality.
+var _loadedPlugins = [];
+var _pluginsReadyResolve;
+var _pluginsReady = new Promise(function (r) { _pluginsReadyResolve = r; });
+
+// Re-fetch /api/plugins and figure out which plugins changed activation state
+// since the last call. Returns { added, removed } so the caller can decide
+// whether a restart is needed (e.g. if a removed plugin was driving tabs).
+async function refreshPluginActivation() {
+  try {
+    var res = await fetch('/api/plugins', { cache: 'no-store' });
+    var next = await res.json();
+    var prevIds = new Set(_loadedPlugins.map(function (p) { return p.id; }));
+    var nextIds = new Set(next.map(function (p) { return p.id; }));
+    var added   = next.filter(function (p) { return !prevIds.has(p.id); });
+    var removed = _loadedPlugins.filter(function (p) { return !nextIds.has(p.id); });
+    _loadedPlugins = next;
+    return { added: added, removed: removed };
+  } catch (e) {
+    console.warn('refreshPluginActivation failed', e);
+    return { added: [], removed: [] };
+  }
+}
+
+(async function initPlugins() {
+  var plugins = [];
+  var __initPluginsStart = Date.now();
+  try {
+    var res = await fetch('/api/plugins');
+    plugins = await res.json();
+    console.info('[initPlugins] fetched', plugins.length, 'plugins in', (Date.now() - __initPluginsStart) + 'ms', '->', plugins.map(function(p){return p.id;}).join(','));
+  } catch (e) {
+    console.warn('[initPlugins] fetch failed:', e && e.message);
+    try { if (typeof _pluginsReadyResolve === 'function') _pluginsReadyResolve(); } catch (_) {}
+    return;
+  }
+  _loadedPlugins = plugins;
+
+  // Always show Plugins tab in settings so users can browse/install plugins
+  document.getElementById('settingsPluginsBtn').style.display = '';
+
+  if (plugins.length) {
+    for (var i = 0; i < plugins.length; i++) {
+      var p = plugins[i];
+      var c = p.contributions || {};
+      if (c.sidebarActions) c.sidebarActions.forEach(function (a) { injectSidebarAction(p, a); });
+      if (c.leftQuickActions) c.leftQuickActions.forEach(function (a) {
+        // v2 shape: {id, label, icon, command} OR {id, label, icon, script, analyze}
+        var container = document.getElementById('sidebarPluginActions');
+        if (!container) return;
+        var btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.setAttribute('data-plugin-id', p.id);
+        btn.innerHTML = '<i data-lucide="' + (a.icon || 'puzzle') + '"></i> ' + a.label;
+        btn.onclick = function () { runPluginAiAction(p, a); };
+        container.appendChild(btn);
+      });
+      if (c.aiActions) c.aiActions.forEach(function (a) { injectAiAction(p, a); });
+      if (c.sidebarSections) c.sidebarSections.forEach(function (s) { injectSidebarSection(p, s); });
+      // Pinned tabs (claims-based or html-based) are placed by applyPluginPinnedTabs
+      // when loadConfig calls reconcilePluginShellSurfaces. Ephemeral tabs land in
+      // the registry so the user can open them from the + menu.
+      if (c.centerTabs) c.centerTabs.forEach(function (t) { if (!t.pinned) registerPluginTab(p, t); });
+      if (c.rightTabs) c.rightTabs.forEach(function (ip) { if (!ip.pinned) injectIntelPanel(p, ip); });
+      if (c.intelPanels) c.intelPanels.forEach(function (ip) { injectIntelPanel(p, ip); });
+      if (c.contextMenuItems) c.contextMenuItems.forEach(function (m) { registerContextMenuItem(p, m); });
+    }
+
+    // Restore previously open plugin tabs from localStorage
+    restoreOpenTabs();
+  }
+
+  // Settings > Plugins should list every installed plugin (active + inactive)
+  // so users can configure an installed-but-unconfigured plugin before its
+  // routes activate. Must run even when /api/plugins returned zero active
+  // plugins - that is exactly the "fresh install with only unconfigured
+  // first-party plugins" case. /api/plugins/installed returns both kinds with
+  // an `active` flag; fall back to the active list if the endpoint is missing.
+  try {
+    var installedRes = await fetch('/api/plugins/installed', { cache: 'no-store' });
+    var installed = installedRes.ok ? await installedRes.json() : plugins;
+    renderPluginSettings(installed);
+  } catch (_) { renderPluginSettings(plugins); }
+
+  lucide.createIcons();
+
+  // Load plugin items for command palette (async, non-blocking)
+  loadPluginCmdItems();
+
+  // Signal readiness so loadConfig()'s post-step can safely re-run
+  // applyPluginPinnedTabs against the now-populated _loadedPlugins.
+  try { if (typeof _pluginsReadyResolve === 'function') _pluginsReadyResolve(); } catch (_) {}
+
+  // Apply any space-based plugin preset after the DOM is populated.
+  try { applyPluginSpaceFilter(); } catch (_) {}
+})();
+
+// Render plugin settings fields in the Settings > Plugins tab
+function renderPluginSettings(plugins) {
+  var container = document.getElementById('pluginSettingsContainer');
+  void refreshSpecialSettingsPanels(plugins);
+  // Hide plugins whose settings live on purpose-built settings tabs instead of
+  // the generic Plugins list.
+  var SPECIAL_SETTINGS_PLUGIN_IDS = { 'stagehand': true, 'browser-use': true, 'video-use': true };
+  plugins = (plugins || []).filter(function (p) { return p && !SPECIAL_SETTINGS_PLUGIN_IDS[p.id]; });
+  if (!plugins.length) { container.innerHTML = '<div style="color:var(--subtext0);padding:12px;">No plugins installed.</div>'; return; }
+
+  // Vertical nav column + settings panel (matching main settings pattern)
+  var nav = '<div style="display:flex;gap:0;height:100%;">';
+  nav += '<div style="min-width:140px;border-right:1px solid var(--surface0);padding:8px 0;display:flex;flex-direction:column;gap:2px;">';
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    var active = i === 0 ? ' active' : '';
+    var tintStyle = p.tint ? 'border-left:2px solid rgba(' + p.tint + ',0.5);' : '';
+    nav += '<button class="settings-nav-btn plugin-settings-nav' + active + '" data-plugin-tab="ps_' + p.id + '" onclick="switchPluginSettingsTab(\'' + p.id + '\',this)" style="text-align:left;padding:8px 14px;font-size:12px;border-radius:0;' + tintStyle + '">'
+      + '<i data-lucide="' + (p.icon || 'puzzle') + '" style="width:14px;height:14px;"></i> ' + (p.name || p.id) + '</button>';
+  }
+  nav += '</div><div style="flex:1;padding:16px;overflow-y:auto;">';
+
+  // Panels
+  for (var i = 0; i < plugins.length; i++) {
+    var p = plugins[i];
+    nav += '<div class="plugin-settings-panel" id="ps_' + p.id + '" style="' + (i === 0 ? '' : 'display:none;') + '">';
+    nav += '<div class="settings-section-title">' + (p.name || p.id) + '</div>';
+    if (p.description) nav += '<div class="settings-section-desc" style="margin-bottom:16px;">' + p.description + '</div>';
+    var settings = p.settings || [];
+    var hasNativeSettings = p.contributions && p.contributions.nativeSettings && p.contributions.nativeSettings.targetId;
+    var hasSettingsHtml = p.contributions && p.contributions.settingsHtml;
+    if (hasNativeSettings) {
+      nav += '<div class="plugin-native-settings-mount" data-target-id="' + p.contributions.nativeSettings.targetId
+        + '"' + (p.contributions.nativeSettings.hideNavSelector ? ' data-hide-nav="' + p.contributions.nativeSettings.hideNavSelector + '"' : '')
+        + '></div>';
+    } else if (hasSettingsHtml) {
+      nav += '<iframe src="/plugins/' + p.id + '/' + p.contributions.settingsHtml + '" '
+        + 'style="width:100%;min-height:320px;border:none;" '
+        + 'sandbox="allow-scripts allow-same-origin allow-forms allow-popups" '
+        + 'data-plugin-id="' + p.id + '"'
+        + (p.tint ? ' data-tint="' + p.tint + '"' : '')
+        + ' onload="this.style.height=Math.max(320,this.contentDocument.body.scrollHeight+24)+\'px\'"'
+        + '></iframe>';
+    } else if (!settings.length) {
+      nav += '<div style="font-size:12px;color:var(--subtext0);">No configurable settings.</div>';
+    }
+    for (var j = 0; j < settings.length; j++) {
+      var s = settings[j];
+      var fieldId = 'pluginSetting_' + p.id + '_' + s.key;
+      var isSecret = !!(s.secret || s.sensitive);
+      nav += '<div class="modal-field">';
+      nav += '<label>' + (s.label || s.key) + '</label>';
+      if (s.description) nav += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">' + s.description + '</div>';
+      if (isSecret) {
+        nav += '<div style="display:flex;gap:0;">';
+        nav += '<input id="' + fieldId + '" type="password" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input" style="border-radius:var(--radius) 0 0 var(--radius);flex:1;">';
+        nav += '<button type="button" onclick="toggleSecretField(\'' + fieldId + '\',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>';
+        nav += '</div>';
+      } else if (s.type === 'select' || s.optionsFrom) {
+        var hint = s.optionsFrom === 'aiModels'
+          ? 'Selects the default AI when not set. Only models for which you have an API key in Settings -> AI Keys appear here.'
+          : (s.hint || '');
+        if (hint) nav += '<div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;font-style:italic;">' + hint + '</div>';
+        nav += '<select id="' + fieldId + '" data-plugin="' + p.id + '" data-key="' + s.key + '"'
+          + (s.optionsFrom ? ' data-options-from="' + s.optionsFrom + '"' : '')
+          + ' class="plugin-setting-input"></select>';
+      } else if (s.type === 'boolean') {
+        nav += '<label class="plugin-setting-toggle" style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">';
+        nav += '<span class="sy-switch"><input id="' + fieldId + '" type="checkbox" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input plugin-setting-bool"><span class="plugin-setting-track"></span></span>';
+        nav += '<span style="font-size:12px;color:var(--subtext0);" data-toggle-label="off">Off</span>';
+        nav += '</label>';
+      } else {
+        nav += '<input id="' + fieldId + '" type="text" placeholder="' + (s.placeholder || '') + '" data-plugin="' + p.id + '" data-key="' + s.key + '" class="plugin-setting-input">';
+      }
+      nav += '</div>';
+    }
+    // Delete button
+    nav += '<div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--surface0);">';
+    nav += '<button class="btn" style="color:var(--red);border-color:var(--red);font-size:11px;" onclick="uninstallPlugin(\'' + p.id + '\',\'' + (p.name || p.id).replace(/'/g, "\\'") + '\')">Uninstall ' + (p.name || p.id) + '</button>';
+    nav += '</div>';
+    nav += '</div>';
+  }
+  nav += '</div></div>';
+  container.innerHTML = nav;
+
+  // Phase 6b: relocate native settings DOM blocks into their plugin panels.
+  // Moves (does not clone) so existing form IDs and saveSettings() keep working.
+  document.querySelectorAll('.plugin-native-settings-mount').forEach(function (mount) {
+    var targetId = mount.getAttribute('data-target-id');
+    if (!targetId) return;
+    var node = document.getElementById(targetId);
+    if (!node) return;
+    // Ensure the claimed node is visible regardless of settings-tab active state.
+    node.style.display = '';
+    node.classList.remove('settings-tab', 'active');
+    mount.appendChild(node);
+    var hideSel = mount.getAttribute('data-hide-nav');
+    if (hideSel) {
+      var navBtn = document.querySelector(hideSel);
+      if (navBtn) navBtn.style.display = 'none';
+    }
+  });
+
+  // Populate any dynamic select fields (e.g. type=select with optionsFrom='aiModels')
+  // before loading values, so the saved value lands on a real option.
+  plugins.forEach(function (p) {
+    (p.settings || []).forEach(function (s) {
+      if (!(s.type === 'select' || s.optionsFrom)) return;
+      var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
+      if (!el) return;
+      _populatePluginSettingOptions(el, s);
+    });
+  });
+
+  // Load current values
+  plugins.forEach(function (p) {
+    if (!p.settings || !p.settings.length) return;
+    fetch('/api/plugins/' + p.id + '/config').then(function (r) { return r.json(); }).then(function (cfg) {
+      (p.settings || []).forEach(function (s) {
+        var el = document.getElementById('pluginSetting_' + p.id + '_' + s.key);
+        if (!el) return;
+        if (s.type === 'boolean') {
+          // Apply current value (fall back to manifest default when undefined)
+          var current = cfg[s.key];
+          if (current === undefined) current = !!s.default;
+          el.checked = !!current;
+          _syncPluginToggleVisual(el);
+          el.addEventListener('change', function () { _syncPluginToggleVisual(el); });
+          return;
+        }
+        if (cfg[s.key] !== undefined) {
+          el.value = cfg[s.key];
+          // Browsers ignore .value if no matching <option> exists yet (dynamic
+          // selects). Re-apply once the populate fetch resolves.
+          if (el.tagName === 'SELECT' && el.value !== cfg[s.key]) {
+            el.dataset.pendingValue = cfg[s.key];
+          }
+        } else if ((s.secret || s.sensitive) && cfg[s.key + 'Set']) el.placeholder = '(configured)';
+      });
+    }).catch(function () {});
+  });
+}
+
+async function refreshSpecialSettingsPanels(plugins) {
+  var installed = Array.isArray(plugins) ? plugins : [];
+  var videoSection = document.getElementById('settingsSection-videoUse');
+  if (!videoSection) return;
+  var hasVideoUse = installed.some(function (p) { return p && p.id === 'video-use'; });
+  videoSection.style.display = hasVideoUse ? '' : 'none';
+  videoSection.querySelectorAll('.plugin-setting-input').forEach(function (el) { el.disabled = !hasVideoUse; });
+  if (!hasVideoUse) return;
+  try {
+    var res = await fetch('/api/plugins/video-use/config', { cache: 'no-store' });
+    var cfg = res.ok ? await res.json() : {};
+    var elevenLabsEl = document.getElementById('pluginSetting_video-use_ElevenLabsApiKey');
+    var ffmpegEl = document.getElementById('pluginSetting_video-use_FfmpegPath');
+    var ffprobeEl = document.getElementById('pluginSetting_video-use_FfprobePath');
+    if (elevenLabsEl) {
+      elevenLabsEl.value = cfg.ElevenLabsApiKey || '';
+      elevenLabsEl.placeholder = cfg.ElevenLabsApiKeySet ? '(configured)' : 'Optional ElevenLabs key';
+    }
+    if (ffmpegEl) ffmpegEl.value = cfg.FfmpegPath || 'ffmpeg';
+    if (ffprobeEl) ffprobeEl.value = cfg.FfprobePath || 'ffprobe';
+  } catch (_) {}
+}
+
+// Drives the visual state of the boolean plugin-setting toggle: track color,
+// thumb position, and the "On"/"Off" label next to it.
+function _syncPluginToggleVisual(input) {
+  if (!input) return;
+  var label = input.closest('label.plugin-setting-toggle');
+  if (!label) return;
+  var text = label.querySelector('[data-toggle-label]');
+  var on = !!input.checked;
+  if (text) { text.textContent = on ? 'On' : 'Off'; text.dataset.toggleLabel = on ? 'on' : 'off'; }
+}
+
+// Resolves dropdown options for plugin settings. Static: setting.options array.
+// Dynamic: setting.optionsFrom = 'aiModels' fetches /api/ai/providers and
+// shows only providers the user has saved a key for, grouped by provider.
+function _populatePluginSettingOptions(el, setting) {
+  if (!el || el.tagName !== 'SELECT') return;
+  var defaultLabel = setting.placeholder || 'Default (selects automatically)';
+  el.innerHTML = '<option value="">' + defaultLabel + '</option>';
+
+  if (Array.isArray(setting.options) && setting.options.length) {
+    setting.options.forEach(function (opt) {
+      var value = typeof opt === 'string' ? opt : opt.value;
+      var label = typeof opt === 'string' ? opt : (opt.label || opt.value);
+      var o = document.createElement('option');
+      o.value = value; o.textContent = label;
+      el.appendChild(o);
+    });
+    _applyPendingPluginSelectValue(el);
+    return;
+  }
+
+  if (setting.optionsFrom === 'aiModels') {
+    fetch('/api/ai/providers').then(function (r) { return r.json(); }).then(function (data) {
+      var providers = (data && data.providers) || [];
+      var configured = providers.filter(function (p) { return p.configured && p.models && p.models.length; });
+      if (!configured.length) {
+        var empty = document.createElement('option');
+        empty.value = ''; empty.textContent = 'No AI keys saved -- add one in Settings -> AI Keys';
+        empty.disabled = true;
+        el.innerHTML = '';
+        el.appendChild(empty);
+        return;
+      }
+      configured.forEach(function (p) {
+        var group = document.createElement('optgroup');
+        group.label = p.label;
+        p.models.forEach(function (m) {
+          var o = document.createElement('option');
+          o.value = m.id; o.textContent = m.label;
+          group.appendChild(o);
+        });
+        el.appendChild(group);
+      });
+      _applyPendingPluginSelectValue(el);
+    }).catch(function () {});
+  }
+}
+
+function _applyPendingPluginSelectValue(el) {
+  if (el && el.dataset && el.dataset.pendingValue) {
+    var v = el.dataset.pendingValue;
+    delete el.dataset.pendingValue;
+    el.value = v;
+  }
+}
+
+function switchPluginSettingsTab(pluginId, btn) {
+  document.querySelectorAll('.plugin-settings-nav').forEach(function (b) { b.classList.remove('active'); });
+  document.querySelectorAll('.plugin-settings-panel').forEach(function (p) { p.style.display = 'none'; });
+  btn.classList.add('active');
+  var panel = document.getElementById('ps_' + pluginId);
+  if (panel) panel.style.display = '';
+}
+
+function toggleSecretField(fieldId, btn) {
+  var el = document.getElementById(fieldId);
+  if (el.type === 'password') { el.type = 'text'; btn.style.color = 'var(--accent)'; }
+  else { el.type = 'password'; btn.style.color = 'var(--subtext0)'; }
+}
+
