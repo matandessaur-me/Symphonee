@@ -41,11 +41,23 @@ function _appsSaveProvider(key) {
     localStorage.setItem(_appsProviderStorageKey(), key || '');
   } catch (_) {}
 }
-function _appsOnProviderChange() {
+async function _appsOnProviderChange() {
   const sel = document.getElementById('appsProviderSelect');
   if (!sel) return;
   _appsState.providerKey = sel.value || null;
   _appsSaveProvider(_appsState.providerKey);
+  // Point of need: if they pick the local model and it isn't installed yet, offer
+  // to install it now (instead of a cryptic failure when the session starts).
+  const p = (_appsState.providers || []).find((x) => x.key === _appsState.providerKey);
+  if (p && (p.local || p.key === 'gemma') && typeof symphEnsureLocalModel === 'function') {
+    const ok = await symphEnsureLocalModel({ reason: 'Driving desktop apps with the local model' });
+    if (!ok) {
+      // Declined -- fall back to a cloud provider so they aren't left on a
+      // local option that can't run.
+      const fallback = (_appsState.providers || []).find((x) => !x.local && x.key !== 'gemma');
+      if (fallback) { sel.value = fallback.key; _appsState.providerKey = fallback.key; _appsSaveProvider(fallback.key); }
+    }
+  }
 }
 async function _appsRefreshProviders() {
   try {

@@ -4856,6 +4856,35 @@
     .ob-video-title { font-size: 12px; font-weight: 600; color: var(--text); }
     .ob-video-desc { font-size: 10px; color: var(--subtext0); line-height: 1.4; margin-top: 2px; }
 
+    /* ── Point-of-need local-model install prompt ───────────────────────────── */
+    .symph-mm-overlay {
+      position: fixed; inset: 0; z-index: 4000; display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--crust, #000) 60%, transparent); backdrop-filter: blur(4px); padding: 24px;
+    }
+    .symph-mm-card {
+      width: 100%; max-width: 460px; background: var(--surface0); border: 1px solid var(--surface2);
+      border-radius: 14px; padding: 20px 22px; box-shadow: 0 24px 70px rgba(0,0,0,0.5);
+    }
+    .symph-mm-head { display: flex; align-items: center; gap: 9px; font: 700 14px var(--font-ui); color: var(--text); margin-bottom: 12px; }
+    .symph-mm-head i { width: 17px; height: 17px; color: var(--accent); }
+    .symph-mm-body { font: 13px var(--font-ui); color: var(--subtext1); line-height: 1.55; }
+    .symph-mm-body b { color: var(--text); }
+    .symph-mm-prog { margin-top: 14px; }
+    .symph-mm-bar { height: 7px; border-radius: 4px; background: var(--surface2); overflow: hidden; }
+    .symph-mm-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.3s ease; }
+    .symph-mm-txt { font: 11px var(--font-ui); color: var(--subtext0); margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .symph-mm-actions { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; flex-wrap: wrap; }
+    .symph-mm-btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+      font: 600 12px var(--font-ui); border: 1px solid var(--surface2); background: var(--surface1); color: var(--text);
+      text-decoration: none; transition: border-color 0.12s, background 0.12s;
+    }
+    .symph-mm-btn:hover { border-color: var(--overlay0); }
+    .symph-mm-btn:disabled { opacity: 0.6; cursor: default; }
+    .symph-mm-primary { background: var(--accent); border-color: transparent; color: #fff; }
+    .symph-mm-primary:hover { filter: brightness(1.08); border-color: transparent; }
+    .symph-mm-ghost { background: transparent; }
+
     /* ════════════════════════════════════════════════════════════════════════
        ACTIVITY LEDGER (panel-ledger) -- cross-CLI action history + checkpoints
        ════════════════════════════════════════════════════════════════════════ */
