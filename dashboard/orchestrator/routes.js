@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const permissions = require('../permissions');
 const { CLI_MODELS, CLI_CONFIG } = require('./cli-config');
 
 function readBody(req) {
@@ -17,11 +18,27 @@ function readBody(req) {
   });
 }
 
-function registerOrchestratorRoutes(addRoute, json, orch, { getConfig, broadcast, getUiContext }) {
+function registerOrchestratorRoutes(addRoute, json, orch, { getConfig, broadcast, getUiContext, repoRoot }) {
   const resolveSpace = (passed) => {
     if (passed !== undefined && passed !== null && passed !== '') return passed;
     try { return (getUiContext && getUiContext().activeSpace) || null; } catch (_) { return null; }
   };
+
+  // Permission gate for spawn-style routes. configPath is derived from repoRoot
+  // (falls back to a path relative to this file's grandparent dir) so it reads
+  // the SAME config.json the rest of the server uses. This was previously a
+  // free-standing helper in orchestrator.js; when the routes moved into this
+  // module it was left behind, leaving gateSpawn undefined -> every gated spawn
+  // route threw and hung. Defined here now, fed the real repoRoot.
+  const configPath = path.join(repoRoot || path.join(__dirname, '..', '..'), 'config', 'config.json');
+  async function gateSpawn(res, { cli, cwd, label, wait = true }) {
+    return permissions.gate(res, { type: 'cli', value: `${cli}:spawn` }, {
+      configPath,
+      wait,
+      ctx: { worktree: !!cwd && cwd.includes('worktree') },
+      actionLabel: label || `Spawn ${cli} worker`,
+    });
+  }
 
   // ── GET /api/orchestrator/status ──────────────────────────────────────
   addRoute('GET', '/api/orchestrator/status', (req, res) => {

@@ -110,7 +110,7 @@ function mountOrchestrator(addRoute, json, { terminals, broadcast, repoRoot, cre
   // Auto-cleanup tasks older than 1 hour every 30 minutes (preserves recent results)
   setInterval(() => orch.cleanup(60 * 60 * 1000), 30 * 60 * 1000);
 
-  registerOrchestratorRoutes(addRoute, json, orch, { getConfig, broadcast, getUiContext });
+  registerOrchestratorRoutes(addRoute, json, orch, { getConfig, broadcast, getUiContext, repoRoot });
   return orch;
 }
 

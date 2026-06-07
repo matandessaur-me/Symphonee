@@ -148,13 +148,14 @@ module.exports = {
       // prompt.
       let modeYolo = false;
       try {
-        const perms = require('./permissions');
-        const path = require('path');
-        const configPath = path.join(path.resolve(__dirname, '..'), 'config', 'config.json');
-        const settings = perms.loadSettings(configPath);
+        // Read the active permission mode from the live config (getConfig is the
+        // orchestrator's config accessor). Avoids a __dirname-relative config
+        // path, which broke when this module moved into orchestrator/.
+        const cfg = (this.getConfig && this.getConfig()) || {};
+        const mode = (cfg.Permissions && cfg.Permissions.mode) || 'edit';
         const isWorktree = !!cwd && cwd.includes('worktree');
-        if (settings.mode === 'bypass') modeYolo = true;
-        else if (settings.mode === 'trusted' && isWorktree) modeYolo = true;
+        if (mode === 'bypass') modeYolo = true;
+        else if (mode === 'trusted' && isWorktree) modeYolo = true;
       } catch (_) {}
       const shouldYolo = autoPermit || modeYolo;
       if (shouldYolo && cliMeta.permissionFlag) {
