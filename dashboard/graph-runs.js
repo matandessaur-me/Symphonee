@@ -21,6 +21,7 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const EventEmitter = require('events');
+const vm = require('vm');
 
 const STATES = ['pending', 'running', 'awaiting_approval', 'completed', 'failed', 'cancelled', 'paused'];
 
@@ -534,12 +535,7 @@ function readPath(obj, p) {
 }
 
 function evalSafe(expr, state) {
-  // Evaluate a simple JS expression against `state`. Expression is untrusted
-  // (it came from the graph definition), so we use Function constructor with
-  // a minimal scope. A proper sandbox (vm.Script) will replace this in a
-  // follow-up.
-  const fn = new Function('state', `"use strict"; return (${expr});`);
-  return fn(state);
+  return vm.runInNewContext(`(${expr})`, { state }, { timeout: 200 });
 }
 
 // Compute the set of nodes that become unreachable when `startId` is skipped,

@@ -6,7 +6,8 @@
 
 const http = require('http');
 const https = require('https');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
+const { validateUrl } = require('../mind/security');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -23,10 +24,12 @@ function mountImageProxy(addRoute, json, ctx) {
   async function handleOpenExternal(req, res) {
     const { url: extUrl } = await readBody(req);
     if (!extUrl) return json(res, { error: 'url required' }, 400);
-    try { new URL(extUrl); } catch (_) { return json(res, { error: 'Invalid URL' }, 400); }
+    try { validateUrl(extUrl); } catch (_) { return json(res, { error: 'Invalid URL' }, 400); }
     // rundll32 reliably opens URLs in the default browser on Windows
-    exec(`rundll32 url.dll,FileProtocolHandler "${extUrl}"`);
-    json(res, { ok: true });
+    execFile('rundll32', ['url.dll,FileProtocolHandler', extUrl], (err) => {
+      if (err) return json(res, { error: err.message }, 500);
+      json(res, { ok: true });
+    });
   }
 
   // Plugins contribute contributions.imageAuth: { hostnamePattern, authType, authConfigKey }.
@@ -53,12 +56,18 @@ function mountImageProxy(addRoute, json, ctx) {
   function handleImageProxy(url, res) {
     const imageUrl = url.searchParams.get('url');
     if (!imageUrl) { res.writeHead(400); return res.end('Missing url param'); }
+    try { validateUrl(imageUrl); } catch (e) { res.writeHead(400); return res.end(e.message); }
 
     const cfg = getConfig();
     const parsedUrl = new URL(imageUrl);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      res.writeHead(400);
+      return res.end('only http/https allowed');
+    }
 
     const options = {
       hostname: parsedUrl.hostname,
+      port: parsedUrl.port || undefined,
       path: parsedUrl.pathname + parsedUrl.search,
       method: 'GET',
       headers: { 'Accept': '*/*' },
@@ -71,6 +80,7 @@ function mountImageProxy(addRoute, json, ctx) {
       if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
         // Follow redirect
         const redirectUrl = new URL(proxyRes.headers.location, imageUrl);
+        try { validateUrl(redirectUrl.href); } catch (e) { res.writeHead(400); return res.end(e.message); }
         const newUrl = new URL(`http://${host}:${port}/api/image-proxy`);
         newUrl.searchParams.set('url', redirectUrl.href);
         return handleImageProxy(newUrl, res);

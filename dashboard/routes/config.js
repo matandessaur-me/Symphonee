@@ -257,13 +257,20 @@ function mountConfig(addRoute, json, ctx) {
           });
           if (raw.content) {
             const registry = JSON.parse(Buffer.from(raw.content, 'base64').toString());
-            const { execSync } = require('child_process');
+            const { spawnSync } = require('child_process');
             for (const pluginId of missingPluginIds) {
               const entry = (registry.plugins || []).find(p => p.id === pluginId);
               if (!entry || !entry.repo) continue;
               const destDir = path.join(pluginsDir, pluginId);
               try {
-                execSync('git clone "' + entry.repo + '.git" "' + destDir + '"', { encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'] });
+                const result = spawnSync('git', ['clone', entry.repo + '.git', destDir], {
+                  encoding: 'utf8',
+                  timeout: 60000,
+                  stdio: ['pipe', 'pipe', 'pipe'],
+                  windowsHide: true,
+                  env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+                });
+                if (result.error || result.status !== 0) throw new Error((result.stderr || result.stdout || (result.error && result.error.message) || 'git clone failed').trim());
                 if (fs.existsSync(path.join(destDir, 'plugin.json'))) {
                   fs.writeFileSync(path.join(destDir, 'config.json'), JSON.stringify(pluginConfigs[pluginId], null, 2), 'utf8');
                   installedPlugins.push(pluginId);
