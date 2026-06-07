@@ -65,9 +65,15 @@ function sanitizeText(str) {
     .trim();
 }
 
-const PORT = 3800;
+const PORT = Number(process.env.SYMPHONEE_PORT) || 3800;
 const HOST = '127.0.0.1';
 const repoRoot = path.resolve(__dirname, '..');
+
+// Action Ledger holder. The module is initialised once `broadcast` is available
+// (see below); `permGate` and other early code reference this holder, which is
+// null until then and a no-op-safe instance after. Declared here so functions
+// defined above the init site can close over it without a TDZ hazard.
+let _ledger = null;
 
 const publicDir = path.join(__dirname, 'public');
 const notesDir = path.join(repoRoot, 'notes'); // shared: hybrid-search index + note path-guards (note ROUTES live in routes/notes.js)
@@ -133,6 +139,10 @@ const { buildRepoMap } = require('./repo-map');
 const hybridSearch = new HybridSearchEngine({ repoRoot });
 
 async function permGate(res, type, value, label) {
+  // Ledger recording happens centrally inside permissions.gate() via the
+  // registered recorder (see permissions.setRecorder below), so EVERY gate
+  // caller -- this wrapper, the orchestrator's gateSpawn, the apps routes --
+  // is captured uniformly. Nothing to do here but delegate.
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
 }
 
@@ -684,6 +694,37 @@ const { broadcast, terminals, termAiMeta, createTerminal, killTerminal } = _term
 const _uiCtxStore = createUiContextStore({ repoRoot, getConfig, broadcast, onActiveRepoChange: () => { try { writePluginHints(); } catch (_) {} } });
 const getUiContextWithPath = _uiCtxStore.getUiContext;
 
+// Resolve the active space (the ledger + Mind both partition by it).
+const getSpace = () => { try { return getUiContextWithPath().activeSpace || null; } catch (_) { return null; } };
+
+// ── Action Ledger ───────────────────────────────────────────────────────────
+// Initialise now that broadcast exists. `permGate` (defined above) and the
+// orchestrator/git routes (below) record through this. Lives beside Mind under
+// <repoRoot>/.symphonee/ledger/<space>.jsonl.
+_ledger = require('./lib/ledger').init({ dir: path.join(repoRoot, '.symphonee', 'ledger'), broadcast });
+const ledger = _ledger;
+
+// Register the ledger as the permission engine's recorder. Every gate decision
+// (allow/ask/deny/rejected) -- from permGate, the orchestrator's gateSpawn, the
+// apps routes, anywhere -- now lands in the ledger from one chokepoint. This is
+// where permission DENIALS finally get recorded; before, they vanished.
+permissions.setRecorder(({ action, decision, outcome, label }) => {
+  const ui = getUiContextWithPath();
+  const type = (action && action.type) || 'api';
+  const category = type === 'cli' ? 'cli' : (type === 'plugin' ? 'plugin' : (type === 'tool' ? 'system' : 'api'));
+  ledger.record({
+    category,
+    action: (action && action.value) || 'unknown',
+    resource: label || (action && action.value) || null,
+    decision,
+    outcome,
+    actor: 'main',
+    space: (ui && ui.activeSpace) || null,
+    repo: (ui && ui.activeRepo) || null,
+    detail: label || null,
+  });
+});
+
 const writePluginHints = createPluginHints({ repoRoot, pluginsDir, getConfig, getUiContext: getUiContextWithPath, broadcast });
 
 function handleHealthCheck(res) {
@@ -816,6 +857,31 @@ const mind = mountMind(addRoute, json, {
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 trace.mark('server:mind-mounted');
+
+// ── Action Ledger routes ────────────────────────────────────────────────────
+// GET /api/ledger        - newest-first action history (filterable)
+// GET /api/ledger/stats  - aggregate counts for the activity summary
+addRoute('GET', '/api/ledger', (req, res, url) => {
+  const p = url.searchParams;
+  const space = p.get('space') || getSpace();
+  const entries = ledger.query({
+    space,
+    since: p.get('since') || undefined,
+    until: p.get('until') || undefined,
+    category: p.get('category') || undefined,
+    actor: p.get('actor') || undefined,
+    outcome: p.get('outcome') || undefined,
+    decision: p.get('decision') || undefined,
+    q: p.get('q') || undefined,
+    limit: Number(p.get('limit')) || 200,
+  });
+  json(res, { space, entries, count: entries.length });
+});
+addRoute('GET', '/api/ledger/stats', (req, res, url) => {
+  const p = url.searchParams;
+  json(res, ledger.stats({ space: p.get('space') || getSpace(), since: p.get('since') || undefined }));
+});
+console.log('  Ledger mounted (/api/ledger) - cross-CLI action history');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
 // with the brain's current state (node count, staleness, query URL), and
 // every completed task gets saved back as a shared conversation node.
