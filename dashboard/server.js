@@ -937,6 +937,33 @@ console.log('  Ledger mounted (/api/ledger) - cross-CLI action history + checkpo
 if (orchestrator) {
   orchestrator.getMindHint = (opts) => mind.orchestratorHint(opts || {});
   orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
+  // Context pack: a short "what just happened" digest from the action ledger so
+  // a dispatched worker starts aware of recent actions/changes in the active
+  // repo and the checkpoints it could revert to -- it inherits the same
+  // cross-CLI activity view the user has, instead of starting blind.
+  orchestrator.getLedgerHint = () => {
+    try {
+      const ui = getUiContextWithPath();
+      const space = (ui && ui.activeSpace) || null;
+      const repo = (ui && ui.activeRepo) || null;
+      let rows = ledger.query({ space, limit: 40 });
+      if (repo) rows = rows.filter((r) => !r.repo || r.repo === repo);
+      rows = rows.slice(0, 12);
+      if (!rows.length) return '';
+      const lines = rows.map((r) => {
+        const t = String(r.ts || '').slice(11, 16);
+        const res = r.resource ? ' (' + String(r.resource).slice(0, 60) + ')' : '';
+        const dec = (r.decision && r.decision !== 'allow') ? ' [' + r.decision + ']' : '';
+        return `  - ${t} ${r.actor} ${r.action}${res} -> ${r.outcome}${dec}`;
+      });
+      let cpLine = '';
+      try {
+        const cps = checkpoint.list({ repo, limit: 3 });
+        if (cps.length) cpLine = `\nRecent checkpoints (revert via POST /api/ledger/undo {"checkpointId"}): ${cps.map((c) => c.id + (c.label ? '="' + c.label + '"' : '')).join(', ')}`;
+      } catch (_) {}
+      return `[recent activity: last ${rows.length} server action(s)${repo ? ' in ' + repo : ''}]\n${lines.join('\n')}${cpLine}`;
+    } catch (_) { return ''; }
+  };
 }
 
 // ── Mount Skill Corpus (the procedural layer of the cognitive loop) ─────────
