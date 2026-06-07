@@ -60,6 +60,12 @@
     "files": [
       "dashboard/**/*",
       "config/**/*",
+      "!config/config.json",
+      "!config/application-state.json",
+      "!config/themes.json",
+      "!config/uninstalled-plugins.json",
+      "!config/browser-sessions/**",
+      "!dashboard/plugins/*/config.json",
       "node_modules/**/*",
       "package.json"
     ]
