@@ -79,6 +79,7 @@ const templatePath = path.join(repoRoot, 'config', 'config.template.json');
 const ROUTES = {
   '/':                        { file: path.join(publicDir, 'index.html'),                                          type: 'text/html' },
   '/styles/app.css':          { file: path.join(publicDir, 'styles', 'app.css'),                                   type: 'text/css' },
+  '/js/app.js':               { file: path.join(publicDir, 'js', 'app.js'),                                        type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },
