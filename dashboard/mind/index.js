@@ -197,18 +197,7 @@ function mountMind(addRoute, json, ctx) {
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────
-  addRoute('GET', '/api/mind/graph', (req, res) => {
-    const space = getSpace();
-    const g = store.loadGraph(repoRoot, space);
-    if (!g) return json(res, { space, empty: true, nodes: [], edges: [] });
-    return json(res, g);
-  });
 
-  addRoute('GET', '/api/mind/stats', (req, res) => {
-    const space = getSpace();
-    const stats = store.statsFor(repoRoot, space);
-    return json(res, { space, stats });
-  });
 
   // ── Splash / boot-overlay quotes ─────────────────────────────────────────
   // Instant read of the cached, brain-generated quote pool (or placeholders).
@@ -234,44 +223,6 @@ function mountMind(addRoute, json, ctx) {
   // Multi-CLI: every CLI Symphonee supports can appear in the ranking.
   // If a CLI has never completed a similar task, it simply doesn't appear
   // — that's not a vote against it, just absence of evidence.
-  addRoute('POST', '/api/mind/suggest-cli', async (req, res) => {
-    const body = await readBody(req).catch(() => ({}));
-    const { question, prompt, limit = 5 } = body;
-    const q = question || prompt;
-    if (!q) return json(res, { error: 'question or prompt required' }, 400);
-    const space = getSpace();
-    const g = store.loadGraph(repoRoot, space);
-    if (!g) return json(res, { suggestions: [], note: 'graph empty' });
-
-    const seedIds = query.bestSeeds(g, q, 20);
-    if (!seedIds.length) return json(res, { suggestions: [], note: 'no similar tasks in brain yet' });
-
-    // Among seeded nodes, look for conversation/qa/task nodes carrying a CLI.
-    const now = Date.now();
-    const halfLifeMs = 30 * 24 * 60 * 60 * 1000; // 30 days
-    const perCli = new Map();
-    for (const sid of seedIds) {
-      const n = g.nodes.find(x => x.id === sid);
-      if (!n) continue;
-      if (n.kind !== 'conversation' && n.kind !== 'drawer') continue;
-      const cli = n.createdBy;
-      if (!cli || cli === 'system' || cli === 'orchestrator' || cli === 'unknown') continue;
-      const age = n.createdAt ? Math.max(0, now - new Date(n.createdAt).getTime()) : halfLifeMs;
-      const recencyScore = Math.exp(-age / halfLifeMs);
-      const slot = perCli.get(cli) || { cli, count: 0, score: 0, latest: null, examples: [] };
-      slot.count += 1;
-      slot.score += recencyScore;
-      if (!slot.latest || (n.createdAt && n.createdAt > slot.latest)) slot.latest = n.createdAt || slot.latest;
-      if (slot.examples.length < 3) slot.examples.push({ id: n.id, label: (n.label || '').slice(0, 80), createdAt: n.createdAt });
-      perCli.set(cli, slot);
-    }
-    const suggestions = Array.from(perCli.values()).sort((a, b) => b.score - a.score).slice(0, limit);
-    return json(res, {
-      question: q.slice(0, 200),
-      suggestions,
-      note: suggestions.length ? 'advisory only; model-router still authoritative for intent-based picks' : 'no past CLI activity for similar tasks',
-    });
-  });
 
   // ── Wake-up (L0+L1 layered context for prompt injection) ─────────────────
   addRoute('GET', '/api/mind/wakeup', (req, res) => {
@@ -291,16 +242,6 @@ function mountMind(addRoute, json, ctx) {
   });
 
 
-  addRoute('GET', '/api/mind/jobs', (req, res) => {
-    const url = new URL(req.url, 'http://x');
-    const id = url.searchParams.get('id');
-    if (id) {
-      const j = jobs.get(id);
-      if (!j) return json(res, { error: 'not found' }, 404);
-      return json(res, j);
-    }
-    return json(res, { jobs: Array.from(jobs.values()).slice(-50) });
-  });
 
   addRoute('GET', '/api/mind/instructions', (req, res) => {
     const p = path.join(__dirname, 'instructions.md');
@@ -468,130 +409,9 @@ function mountMind(addRoute, json, ctx) {
     });
   });
 
-  // ── Visualisation (mermaid text + interactive HTML viewer) ──────────────
-  addRoute('POST', '/api/mind/visualize', async (req, res) => {
-    const body = await readBody(req).catch(() => ({}));
-    const space = getSpace();
-    const g = store.loadGraph(repoRoot, space);
-    if (!g) return json(res, { error: 'graph empty' }, 404);
-    const mode = (body.mode || 'mermaid').toLowerCase();
-    if (mode === 'mermaid') {
-      return json(res, { mode, mermaid: viz.mermaidGraph(g, { focus: body.focus || null, max: body.max || 200 }) });
-    }
-    if (mode === 'interactive') {
-      const opts = { focus: body.focus || null, layout: body.layout || 'cose', title: `Mind: ${space}` };
-      if (body.inline) {
-        const html = viz.interactiveHtml(g, opts);
-        return json(res, { mode, html, openIn: 'inline' });
-      }
-      const out = viz.writeInteractive(g, opts);
-      return json(res, { mode, ...out, openIn: 'webview' });
-    }
-    return json(res, { error: 'mode must be mermaid or interactive' }, 400);
-  });
 
 
-  // ── CLI coverage diagnostic ─────────────────────────────────────────────
-  // Symphonee is a multi-CLI system - this endpoint shows per-CLI evidence
-  // in the brain so the user can verify nothing's silently missing. For
-  // each known CLI, returns: memory file presence (in active repo),
-  // node count by tag, recent conversation count, history nodes, drawer
-  // nodes. If a CLI has zero coverage that's a real signal something is
-  // wrong (extractor bug, missing convention, etc), not a quirk.
-  addRoute('GET', '/api/mind/cli-coverage', (req, res) => {
-    const space = getSpace();
-    const ui = getUiContext ? getUiContext() : {};
-    const fs = require('fs');
-    const path = require('path');
-    const allRepos = (typeof ctx.getAllRepos === 'function' ? (ctx.getAllRepos() || {}) : {});
-    const reposToCheck = Object.entries(allRepos).length ? Object.entries(allRepos) : [[ui.activeRepo || '_active', ui.activeRepoPath]];
 
-    const KNOWN = ['claude', 'codex', 'gemini', 'grok', 'qwen', 'copilot', 'cursor', 'windsurf'];
-    const { CLI_MEMORY_FILES } = require('./extractors/cli-memory');
-    const memoryConventions = Object.fromEntries(CLI_MEMORY_FILES.map(e => [e.cli, e.paths]));
-
-    const g = store.loadGraph(repoRoot, space);
-    const nodes = (g && g.nodes) || [];
-    const counts = {};
-    for (const cli of KNOWN) counts[cli] = { memoryFiles: 0, conversations: 0, drawers: 0, history: 0, skills: 0, plugins: 0 };
-
-    for (const n of nodes) {
-      // memory nodes are id-prefixed climem_<cli>
-      if (typeof n.id === 'string' && n.id.startsWith('climem_')) {
-        const cli = n.id.replace('climem_', '');
-        if (counts[cli]) counts[cli].memoryFiles += 1;
-      }
-      const cb = n.createdBy || '';
-      if (n.kind === 'conversation' && KNOWN.includes(cb)) counts[cb].conversations += 1;
-      if (n.kind === 'drawer' && KNOWN.includes(cb)) counts[cb].drawers += 1;
-      if (n.source && n.source.type === 'cli-history' && KNOWN.includes(n.source.cli)) counts[n.source.cli].history += 1;
-      // skills, agents, plugins are tagged via createdBy 'mind/cli-skills' but
-      // each node has tags like cli:claude / cli:codex
-      if (Array.isArray(n.tags)) {
-        for (const t of n.tags) {
-          for (const cli of KNOWN) {
-            if (t === 'cli:' + cli || t === cli) {
-              if (n.kind === 'plugin') counts[cli].plugins += 1;
-              else if (n.kind === 'recipe' || n.kind === 'concept' || n.kind === 'doc') {
-                if (Array.isArray(n.tags) && (n.tags.includes('skill') || n.tags.includes('agent'))) {
-                  counts[cli].skills += 1;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Per-repo memory file presence
-    const memoryFilesByRepo = {};
-    for (const [repoName, p] of reposToCheck) {
-      if (!p) continue;
-      memoryFilesByRepo[repoName] = {};
-      for (const cli of KNOWN) {
-        const candidates = memoryConventions[cli] || [];
-        const found = candidates.find(rel => fs.existsSync(path.join(p, rel)));
-        memoryFilesByRepo[repoName][cli] = found || null;
-      }
-    }
-
-    return json(res, {
-      space,
-      cliKnown: KNOWN,
-      counts,
-      memoryConventions,
-      memoryFilesByRepo,
-      note: 'Symphonee is multi-CLI. Every supported CLI ingests symmetrically. A CLI with zero memory file in this repo simply means the file does not exist there, NOT that the CLI is unsupported.',
-    });
-  });
-
-  // ── Quality (resolved-import ratio + unresolved examples) ────────────────
-  // Surfaced even before Phase 1 ships ast-grep so the UI pill has something
-  // to render. Returns { totalImportEdges, resolvedPct, unresolvedExamples }.
-  addRoute('GET', '/api/mind/quality', (req, res) => {
-    const space = getSpace();
-    const g = store.loadGraph(repoRoot, space);
-    if (!g) return json(res, { space, totalImportEdges: 0, resolvedPct: null, unresolvedExamples: [] });
-    let total = 0, resolved = 0;
-    const unresolved = [];
-    const nodeIds = new Set(g.nodes.map(n => n.id));
-    for (const e of g.edges) {
-      if (e.relation !== 'imports') continue;
-      total += 1;
-      const targetExists = nodeIds.has(e.target);
-      const targetMarkedExternal = e.unresolved === true || (typeof e.target === 'string' && e.target.startsWith('ext_'));
-      if (targetExists && !targetMarkedExternal) resolved += 1;
-      else if (unresolved.length < 25) unresolved.push({ from: e.source, spec: e.target });
-    }
-    return json(res, {
-      space,
-      totalImportEdges: total,
-      resolvedPct: total ? Math.round((resolved / total) * 1000) / 10 : null,
-      resolvedCount: resolved,
-      unresolvedExamples: unresolved,
-      lastBuildAt: g.generatedAt,
-    });
-  });
 
   // ── Query (BFS sub-graph + suggested answer scaffold) ────────────────────
   addRoute('POST', '/api/mind/query', async (req, res) => {
@@ -735,78 +555,6 @@ function mountMind(addRoute, json, ctx) {
   // collapse into ONE searchable row instead of fragmenting across kinds. Each
   // subject carries the seed ids needed to export everything connected to it
   // (code + notes + conversations + concepts), plus a tally of what that is.
-  addRoute('GET', '/api/mind/anchors', (req, res) => {
-    const space = getSpace();
-    const g = store.loadGraph(repoRoot, space);
-    if (!g || !Array.isArray(g.nodes)) return json(res, { subjects: [], anchors: [], space });
-
-    const byId = new Map();
-    for (const n of g.nodes) if (n && n.id) byId.set(n.id, n);
-
-    const deg = new Map();
-    const adj = new Map();
-    for (const e of (g.edges || [])) {
-      if (!e) continue;
-      deg.set(e.source, (deg.get(e.source) || 0) + 1);
-      deg.set(e.target, (deg.get(e.target) || 0) + 1);
-      if (!adj.has(e.source)) adj.set(e.source, []);
-      if (!adj.has(e.target)) adj.set(e.target, []);
-      adj.get(e.source).push(e.target);
-      adj.get(e.target).push(e.source);
-    }
-
-    const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/^@+/, '').replace(/[_\s\-/]+/g, ' ').trim();
-    const rank = (k) => k === 'repo' ? 0 : k === 'entity' ? 1 : k === 'tag' ? 2 : 3;
-
-    // 1) Seed subjects from repos + entities; merge by normalized label.
-    const subjects = new Map();
-    function fold(node) {
-      const key = norm(node.label);
-      if (!key) return;
-      let s = subjects.get(key);
-      if (!s) { s = { key, label: node.label, kind: node.kind, primaryId: node.id, seedIds: [] }; subjects.set(key, s); }
-      if (rank(node.kind) < rank(s.kind)) { s.kind = node.kind; s.label = node.label; s.primaryId = node.id; }
-      if (!s.seedIds.includes(node.id)) s.seedIds.push(node.id);
-    }
-    for (const n of g.nodes) { if (n && n.label && (n.kind === 'repo' || n.kind === 'entity')) fold(n); }
-    // 2) Fold tags ONLY into subjects that already exist (an @cwd tag joins its
-    //    repo; a tag with no repo/entity does NOT become its own noisy row).
-    for (const n of g.nodes) { if (n && n.kind === 'tag' && n.label && subjects.has(norm(n.label))) fold(n); }
-
-    // 3) Tally the 1-hop neighborhood kinds so the UI shows what an export pulls.
-    function tally(seedIds) {
-      const seen = new Set(seedIds);
-      const counts = {};
-      for (const sid of seedIds) {
-        for (const nb of (adj.get(sid) || [])) {
-          if (seen.has(nb)) continue;
-          seen.add(nb);
-          const k = (byId.get(nb) || {}).kind || 'node';
-          counts[k] = (counts[k] || 0) + 1;
-        }
-      }
-      return { counts, reach: seen.size };
-    }
-
-    const subjectsOut = [];
-    for (const s of subjects.values()) {
-      const t = tally(s.seedIds);
-      const degree = s.seedIds.reduce((a, id) => a + (deg.get(id) || 0), 0);
-      subjectsOut.push({
-        id: s.primaryId,
-        label: String(s.label).slice(0, 120),
-        kind: s.kind,
-        seedIds: s.seedIds.slice(0, 16),
-        degree,
-        counts: t.counts,
-        reach: t.reach,
-      });
-    }
-    subjectsOut.sort((a, b) => b.degree - a.degree);
-
-    // `anchors` kept as an alias for any existing caller.
-    return json(res, { subjects: subjectsOut, anchors: subjectsOut, space, total: subjectsOut.length });
-  });
 
   // Startup readiness for the boot loading overlay. `ready` flips true only once
   // the deferred startup refresh has run AND the graph build lock is free (so a
@@ -1738,11 +1486,13 @@ function mountMind(addRoute, json, ctx) {
   });
 
   // ── Extracted route groups (decoupled reads/IO; see routes-*.js) ─────────
-  const routeDeps = { repoRoot, getSpace, getUiContext, readBody, ctx, tryDenseSeeds };
+  const routeDeps = { repoRoot, getSpace, getUiContext, readBody, ctx, tryDenseSeeds, jobs };
   require('./routes-graph-detail').register(addRoute, json, routeDeps);
   require('./routes-code-intel').register(addRoute, json, routeDeps);
   require('./routes-artifacts').register(addRoute, json, routeDeps);
   require('./routes-layout').register(addRoute, json, routeDeps);
+  require('./routes-graph-reads').register(addRoute, json, routeDeps);
+  require('./routes-diagnostics').register(addRoute, json, routeDeps);
 
   return {
     // For the bootstrap composer
