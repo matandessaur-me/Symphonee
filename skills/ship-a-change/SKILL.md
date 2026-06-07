@@ -27,8 +27,10 @@ every step in order; the order is load-bearing.
    style, naming, and comment density.
 4. Verify before showing anything:
    - JS modules: `node --check <file>`.
-   - Editing `index.html` (inline scripts): compile every inline `<script>` block
-     with `vm.Script` (see the `verify-frontend-edit` skill).
+   - Renderer edits (`app/src/parts/*`, `mind-ui/src/*`, or `index.html` inline
+     scripts): edit the SOURCE, run `npm run build:renderer`, and NEVER hand-edit
+     the generated `dashboard/public/js/app.js` or `mind-ui.js` (see the
+     `verify-frontend-edit` skill). Commit both source and rebuilt output.
    - Run any fast, relevant unit check.
 5. Show the diff as its OWN step, then PAUSE. Use the built-in diff viewer
    (`/api/ui/view-diff`, or `Show-Diff.ps1 -Repo '<name>'` where available) --
@@ -50,7 +52,8 @@ every step in order; the order is load-bearing.
   happen so the approval modal is not a surprise.
 
 ## Verification
-- The change builds / type-checks / passes `node --check` (or inline-script check).
+- The change builds / type-checks / passes `node --check` (or rebuilds cleanly for
+  renderer edits).
 - The diff was shown in the built-in viewer as its own step.
 - The commit exists with a clear message; nothing was pushed/merged unless asked.
 - If you said it is done, it is actually done and verified -- no hedging.
