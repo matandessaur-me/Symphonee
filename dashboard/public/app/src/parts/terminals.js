@@ -765,6 +765,12 @@ function connect() {
           appsAutomationsStopRecording();
         }
         break;
+      case 'action':
+        if (typeof ledgerOnAction === 'function') ledgerOnAction(msg.entry);
+        break;
+      case 'action-patch':
+        if (typeof ledgerOnActionPatch === 'function') ledgerOnActionPatch(msg.id, msg.fields);
+        break;
     }
   };
   state.ws.onclose = () => {

@@ -257,6 +257,7 @@
           <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
           <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
           <button class="tab-btn" data-tab="mind" onclick="switchTab('mind')" title="Symphonee's shared knowledge graph">Mind</button>
+          <button class="tab-btn" data-tab="ledger" onclick="switchTab('ledger')" title="Everything the AI did -- live action history with undo">Activity</button>
         </div>
         <button class="tab-scroll-arrow right" id="tabScrollRight" onclick="scrollTabs(200)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div>
@@ -673,6 +674,45 @@
         <div class="mind-body" style="flex:1;display:flex;min-height:0;">
           <div id="mindMain" style="flex:1;overflow:auto;padding:14px 18px;min-width:0;"></div>
           <div id="mindDetail" style="width:340px;border-left:1px solid var(--surface0);background:var(--mantle);overflow:auto;padding:14px;flex-shrink:0;display:none;"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Activity Ledger (cross-CLI action history + checkpoints/undo) -->
+    <div class="tab-panel" id="panel-ledger">
+      <div class="ledger-root">
+        <div class="ledger-toolbar">
+          <span class="ledger-title">Activity</span>
+          <span class="ledger-sub">Everything the AI did, live</span>
+          <span class="ledger-spacer"></span>
+          <select id="ledgerFilterCategory" class="ledger-select" onchange="ledgerSetFilter('category', this.value)" title="Filter by category">
+            <option value="">All categories</option>
+            <option value="api">API</option>
+            <option value="git">Git</option>
+            <option value="cli">Worker / CLI</option>
+            <option value="plugin">Plugin</option>
+            <option value="apps">Apps</option>
+            <option value="browser">Browser</option>
+            <option value="mind">Mind</option>
+            <option value="orchestrator">Orchestrator</option>
+            <option value="system">System</option>
+          </select>
+          <select id="ledgerFilterOutcome" class="ledger-select" onchange="ledgerSetFilter('outcome', this.value)" title="Filter by outcome">
+            <option value="">Any outcome</option>
+            <option value="ok">OK</option>
+            <option value="blocked">Blocked</option>
+            <option value="error">Error</option>
+            <option value="pending">Pending</option>
+          </select>
+          <input id="ledgerSearch" class="ledger-search" type="text" placeholder="Search actions..." oninput="ledgerSetFilter('q', this.value)" autocomplete="off" spellcheck="false">
+          <button class="tab-bar-btn" onclick="ledgerCheckpointNow()" title="Snapshot the active repo's working tree so you can undo to it">Checkpoint now</button>
+          <button class="tab-bar-btn" onclick="ledgerLoad()" title="Reload">Refresh</button>
+        </div>
+        <div class="ledger-body">
+          <div class="ledger-list" id="ledgerList"></div>
+          <div class="ledger-side">
+            <div class="ledger-side-title">Checkpoints</div>
+            <div id="ledgerCheckpoints"></div>
+          </div>
         </div>
       </div>
     </div>

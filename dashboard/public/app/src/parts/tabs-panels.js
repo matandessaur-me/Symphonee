@@ -145,6 +145,7 @@ function switchTab(tab, preserveSearch) {
     } catch (_) {}
   }
   if (tab === 'orchestrator') orchRefresh();
+  if (tab === 'ledger' && typeof ledgerLoad === 'function') ledgerLoad();
   if (panelTab === 'apps' && typeof appsRefreshWindows === 'function') appsRefreshWindows();
   notifyPluginIframes('tabActivated', {
     tab: panelTab

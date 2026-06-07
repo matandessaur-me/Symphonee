@@ -725,6 +725,10 @@ permissions.setRecorder(({ action, decision, outcome, label }) => {
   });
 });
 
+// Git-based checkpoints (the "undo" behind the ledger). Stored alongside the
+// ledger under .symphonee/ledger/checkpoints/<id>.json.
+const checkpoint = require('./lib/checkpoint').init({ dir: path.join(repoRoot, '.symphonee', 'ledger', 'checkpoints') });
+
 const writePluginHints = createPluginHints({ repoRoot, pluginsDir, getConfig, getUiContext: getUiContextWithPath, broadcast });
 
 function handleHealthCheck(res) {
@@ -881,7 +885,52 @@ addRoute('GET', '/api/ledger/stats', (req, res, url) => {
   const p = url.searchParams;
   json(res, ledger.stats({ space: p.get('space') || getSpace(), since: p.get('since') || undefined }));
 });
-console.log('  Ledger mounted (/api/ledger) - cross-CLI action history');
+
+// Checkpoints (undo). create = non-destructive snapshot (ungated, like a read).
+// undo = mutates the working tree, so it goes through permGate.
+addRoute('GET', '/api/ledger/checkpoints', (req, res, url) => {
+  const repo = url.searchParams.get('repo') || undefined;
+  json(res, { checkpoints: checkpoint.list({ repo, limit: Number(url.searchParams.get('limit')) || 50 }) });
+});
+addRoute('POST', '/api/ledger/checkpoint', async (req, res) => {
+  const body = await readBody(req);
+  const ui = getUiContextWithPath();
+  const repoName = body.repo || (ui && ui.activeRepo);
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'No repo selected or repo not found' }, 400);
+  try {
+    const cp = await checkpoint.create(repoPath, { label: body.label, repo: repoName });
+    ledger.record({
+      category: 'git', action: 'checkpoint.create', resource: repoName,
+      decision: null, outcome: 'ok', actor: body.actor || 'main',
+      space: (ui && ui.activeSpace) || null, repo: repoName,
+      detail: (cp.label ? cp.label + ' -- ' : '') + cp.changed + ' changed', checkpointId: cp.id,
+    });
+    json(res, { checkpoint: cp });
+  } catch (e) { json(res, { error: e.message }, 400); }
+});
+addRoute('POST', '/api/ledger/undo', async (req, res) => {
+  const body = await readBody(req);
+  const cp = checkpoint.get(body.checkpointId);
+  if (!cp) return json(res, { error: 'Checkpoint not found' }, 404);
+  if (!await permGate(res, 'api', 'POST /api/ledger/undo', 'Undo ' + (cp.repo || 'repo') + ' to checkpoint "' + (cp.label || cp.id) + '"')) return;
+  const ui = getUiContextWithPath();
+  try {
+    const r = await checkpoint.restore(body.checkpointId);
+    ledger.record({
+      category: 'git', action: 'checkpoint.undo', resource: cp.repo,
+      decision: 'allow', outcome: 'ok', actor: body.actor || 'main',
+      space: (ui && ui.activeSpace) || null, repo: cp.repo,
+      detail: 'Reverted to "' + (cp.label || cp.id) + '"' + (r.safety ? ' (safety ' + r.safety.id + ')' : ''),
+      checkpointId: cp.id,
+    });
+    json(res, { ok: true, ...r });
+  } catch (e) {
+    ledger.record({ category: 'git', action: 'checkpoint.undo', resource: cp.repo, outcome: 'error', detail: e.message, repo: cp.repo, space: (ui && ui.activeSpace) || null, checkpointId: cp.id });
+    json(res, { error: e.message }, 400);
+  }
+});
+console.log('  Ledger mounted (/api/ledger) - cross-CLI action history + checkpoints');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
 // with the brain's current state (node count, staleness, query URL), and
 // every completed task gets saved back as a shared conversation node.
