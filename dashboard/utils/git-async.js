@@ -3,7 +3,7 @@
  * Replaces synchronous execSync git calls with non-blocking child_process.spawn.
  * Includes timeout guards, busy locks, and streaming support.
  */
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -154,15 +154,16 @@ function parseArgs(cmd) {
  * Wraps execSync but with better error handling.
  */
 function gitSync(repoPath, cmd, timeoutMs) {
-  const { execSync } = require('child_process');
-  const authPrefix = githubAuthFlags().map(a => a.includes(' ') ? `"${a.replace(/"/g, '\\"')}"` : a).join(' ');
-  const prefix = authPrefix ? `${authPrefix} ` : '';
   try {
-    return execSync(`git ${prefix}-C "${repoPath}" ${cmd}`, {
+    const result = spawnSync('git', [...githubAuthFlags(), '-C', repoPath, ...parseArgs(cmd)], {
       encoding: 'utf8',
       timeout: timeoutMs || 10000,
       stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+      windowsHide: true,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
+    if (!result.error && result.status === 0) return (result.stdout || '').trim();
+    return (result.stderr || result.stdout || (result.error && result.error.message) || '').trim();
   } catch (e) {
     return (e.stdout || e.stderr || e.message || '').trim();
   }

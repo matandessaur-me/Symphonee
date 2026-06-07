@@ -10,7 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const { gitAsync, gitSync } = require('../utils/git-async');
 
 function readBody(req) {
@@ -24,6 +24,14 @@ function readBody(req) {
 
 function mountGit(addRoute, json, ctx) {
   const { getRepoPath, broadcast, swrGit, guard } = ctx;
+
+  function isUnsafeBranchName(branch) {
+    return !branch ||
+      branch.startsWith('-') ||
+      /\s/.test(branch) ||
+      /[;|&$`"'\\]/.test(branch) ||
+      /[\r\n]/.test(branch);
+  }
 
   // Legacy sync wrapper (kept for non-critical reads; async preferred for new code)
   function gitExec(repoPath, cmd, timeoutMs) {
@@ -186,6 +194,7 @@ function mountGit(addRoute, json, ctx) {
       const repoPath = getRepoPath(body.repo);
       if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
       if (!body.branch) return json(res, { error: 'branch required' }, 400);
+      if (isUnsafeBranchName(body.branch)) return json(res, { error: 'Invalid branch name' }, 400);
 
       await guard.run(`git:${repoPath}`, 'checkout', async () => {
         // Check for uncommitted changes
@@ -246,6 +255,9 @@ function mountGit(addRoute, json, ctx) {
 
       await guard.run(`git:${repoPath}`, 'push', async () => {
         const branch = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+        if (isUnsafeBranchName(branch)) {
+          throw Object.assign(new Error('Current branch name is unsafe to use in git commands.'), { invalidBranch: true });
+        }
         await gitAsync(repoPath, 'fetch --prune', { timeout: 30000 });
 
         let behindCount = 0;
@@ -268,7 +280,7 @@ function mountGit(addRoute, json, ctx) {
         json(res, { ok: true, branch, message: result || 'Pushed successfully' });
       }, 60000);
     } catch (e) {
-      const status = e.needsPull ? 409 : (e.message.includes('busy') ? 409 : 500);
+      const status = e.invalidBranch ? 400 : (e.needsPull ? 409 : (e.message.includes('busy') ? 409 : 500));
       json(res, { error: e.message, needsPull: e.needsPull || false }, status);
     }
   }
@@ -338,7 +350,14 @@ function mountGit(addRoute, json, ctx) {
       // Get the original version from git
       let original = '';
       try {
-        original = execSync(`git -C "${repoPath}" show ${base}:"${filePath}"`, { encoding: 'utf8', timeout: 10000 });
+        const result = spawnSync('git', ['-C', repoPath, 'show', `${base}:${filePath}`], {
+          encoding: 'utf8',
+          timeout: 10000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+        if (!result.error && result.status === 0) original = result.stdout || '';
       } catch (_) { original = ''; }
 
       // Get the current version from disk

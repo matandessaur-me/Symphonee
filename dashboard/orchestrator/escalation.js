@@ -4,6 +4,7 @@
 // Mixed into Orchestrator.prototype. Extracted from orchestrator.js (behavior-preserving).
 
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { STATE } = require('./state');
 const { ESCALATION_ORDER } = require('./cli-config');
 const { scoreResult } = require('./reliability');
@@ -60,14 +61,23 @@ module.exports = {
    */
   spawnInWorktree({ repoPath, branch, ...opts }) {
     if (!repoPath) throw new Error('repoPath is required for worktree spawn');
-    const { execSync } = require('child_process');
     const taskId = opts.taskId || this._id();
     const branchName = branch || `orch/${taskId}`;
     const worktreePath = path.join(repoPath, '..', `.worktree-${taskId}`);
 
     try {
       // Create worktree with a new branch
-      execSync(`git worktree add "${worktreePath}" -b "${branchName}"`, { cwd: repoPath, timeout: 10000, encoding: 'utf8' });
+      const result = spawnSync('git', ['worktree', 'add', worktreePath, '-b', branchName], {
+        cwd: repoPath,
+        timeout: 10000,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+      if (result.error || result.status !== 0) {
+        throw new Error((result.stderr || result.stdout || (result.error && result.error.message) || 'git worktree add failed').trim());
+      }
     } catch (e) {
       throw new Error(`Failed to create worktree: ${e.message}`);
     }
@@ -102,11 +112,29 @@ module.exports = {
   cleanupWorktree(taskId) {
     const task = this.tasks.get(taskId);
     if (!task || !task.worktree) return { ok: false, error: 'Task has no worktree' };
-    const { execSync } = require('child_process');
     try {
-      execSync(`git worktree remove "${task.worktree.path}" --force`, { cwd: task.worktree.repoPath, timeout: 10000 });
+      const removeResult = spawnSync('git', ['worktree', 'remove', task.worktree.path, '--force'], {
+        cwd: task.worktree.repoPath,
+        timeout: 10000,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+      if (removeResult.error || removeResult.status !== 0) {
+        throw new Error((removeResult.stderr || removeResult.stdout || (removeResult.error && removeResult.error.message) || 'git worktree remove failed').trim());
+      }
       // Delete the branch too
-      try { execSync(`git branch -D "${task.worktree.branch}"`, { cwd: task.worktree.repoPath, timeout: 5000 }); } catch (_) {}
+      try {
+        spawnSync('git', ['branch', '-D', task.worktree.branch], {
+          cwd: task.worktree.repoPath,
+          timeout: 5000,
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        });
+      } catch (_) {}
       delete task.worktree;
       return { ok: true };
     } catch (e) {
