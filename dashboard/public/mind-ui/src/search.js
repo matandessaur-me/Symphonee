@@ -2,7 +2,7 @@
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
 import { $, savePrefs, state } from './core.js';
 import { showNodeDetail } from './detailActions.js';
-import { buildNetworkAsync } from './graph.js';
+import { buildNetwork, buildNetworkAsync } from './graph.js';
 import { render } from './router.js';
 
   let searchBound = false;

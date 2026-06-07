@@ -1,9 +1,10 @@
 // mind-ui :: specs module. Extracted verbatim from the original single-file
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
 import { $ } from './core.js';
-import { showNodeDetail } from './detailActions.js';
+import { build, showNodeDetail } from './detailActions.js';
 import { KIND_COLOR } from './graph.js';
 import { escapeHtml, nodeLabel } from './helpers.js';
+import { render } from './router.js';
 
   const _spec = { anchors: null, selected: null, kit: null, fg: null, filter: '' };
   function _toast(msg, kind) { try { if (typeof window.toast === 'function') window.toast(msg, kind); } catch (_) {} }
