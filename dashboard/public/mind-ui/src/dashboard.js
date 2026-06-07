@@ -1,7 +1,7 @@
 // mind-ui :: dashboard module. Extracted verbatim from the original single-file
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
 import { $, API, state } from './core.js';
-import { showCommunityDetail, showNodeDetail } from './detailActions.js';
+import { build, showCommunityDetail, showNodeDetail } from './detailActions.js';
 import { communityColor } from './graph.js';
 import { escapeHtml, formatRelativeMs, nodeLabel } from './helpers.js';
 

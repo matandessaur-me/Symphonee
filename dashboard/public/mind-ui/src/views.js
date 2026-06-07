@@ -2,7 +2,7 @@
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
 import { $, API, state } from './core.js';
 import { setStatus } from './data.js';
-import { showNodeDetail } from './detailActions.js';
+import { build, showNodeDetail } from './detailActions.js';
 import { renderGraph } from './graph.js';
 import { escapeHtml, renderWakeupPreview } from './helpers.js';
 
