@@ -85,7 +85,7 @@ function mountNotes(addRoute, json, ctx) {
     const { dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
     const filePath = path.join(dir, name + '.md');
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
+    if (resolved !== path.resolve(dir) && !resolved.startsWith(path.resolve(dir) + path.sep)) return json(res, { error: 'Invalid path' }, 403);
     try {
       const content = fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
       json(res, { name, content });
@@ -101,7 +101,7 @@ function mountNotes(addRoute, json, ctx) {
     const { dir } = _pickNotesNsFromReq(body);
     const filePath = path.join(dir, name + '.md');
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
+    if (resolved !== path.resolve(dir) && !resolved.startsWith(path.resolve(dir) + path.sep)) return json(res, { error: 'Invalid path' }, 403);
     atomicWriteSync(resolved, content || '');
     broadcast({ type: 'ui-action', action: 'refresh-notes' });
     if (hybridSearch) hybridSearch.indexNote(resolved).catch(() => {});
@@ -129,7 +129,7 @@ function mountNotes(addRoute, json, ctx) {
     const { ns, dir } = _pickNotesNsFromReq({ ns: url.searchParams.get('ns') });
     const filePath = path.join(dir, name + '.md');
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
+    if (resolved !== path.resolve(dir) && !resolved.startsWith(path.resolve(dir) + path.sep)) return json(res, { error: 'Invalid path' }, 403);
     if (!fs.existsSync(resolved)) return json(res, { error: 'Not found' }, 404);
     const bodyTxt = fs.readFileSync(resolved, 'utf8');
     const safeName = name.replace(/[\\/:*?"<>|]/g, '_');
@@ -213,7 +213,7 @@ function mountNotes(addRoute, json, ctx) {
     const { dir } = _pickNotesNsFromReq(body);
     const filePath = path.join(dir, name + '.md');
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(dir))) return json(res, { error: 'Invalid path' }, 403);
+    if (resolved !== path.resolve(dir) && !resolved.startsWith(path.resolve(dir) + path.sep)) return json(res, { error: 'Invalid path' }, 403);
     if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
     broadcast({ type: 'ui-action', action: 'refresh-notes' });
     json(res, { ok: true });

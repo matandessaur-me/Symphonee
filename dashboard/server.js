@@ -75,6 +75,38 @@ const repoRoot = path.resolve(__dirname, '..');
 // defined above the init site can close over it without a TDZ hazard.
 let _ledger = null;
 
+// ── Origin / Host firewall (anti-CSRF, anti-DNS-rebinding) ──────────────────
+// The local API runs high-privilege actions (terminals, git, file I/O,
+// automation, plugins) and has no auth token yet, so it MUST reject any request
+// that didn't come from the app's own renderer or a local CLI. Rules:
+//   - A browser cross-site request ALWAYS carries an Origin header; CLIs / curl
+//     / server-to-server send NONE. So "no Origin" = trusted local caller.
+//   - The renderer is same-origin (http://127.0.0.1:PORT) -> allowed.
+//   - Any foreign Origin (a malicious page the user merely opens) -> 403.
+//   - The Host header must be loopback; a DNS-rebinding page rebinds its domain
+//     to 127.0.0.1 but still sends Host: attacker.com -> 403.
+const ALLOWED_ORIGINS = new Set([
+  `http://${HOST}:${PORT}`, `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
+]);
+const ALLOWED_HOSTS = new Set([
+  `${HOST}:${PORT}`, `localhost:${PORT}`, `127.0.0.1:${PORT}`,
+  HOST, 'localhost', '127.0.0.1', `[::1]:${PORT}`, '[::1]',
+]);
+function _hostIsLoopback(host) {
+  if (!host) return true; // HTTP/1.0 / some local clients omit Host
+  return ALLOWED_HOSTS.has(String(host).toLowerCase());
+}
+function _originAllowed(origin) {
+  if (!origin) return true;            // not a browser cross-site request
+  const o = String(origin).toLowerCase();
+  if (o === 'null') return false;      // opaque/sandboxed origin -> reject
+  return ALLOWED_ORIGINS.has(o);
+}
+// True if the request may proceed. Used for both HTTP (below) and WS upgrades.
+function isRequestAllowed(req) {
+  return _hostIsLoopback(req.headers && req.headers.host) && _originAllowed(req.headers && req.headers.origin);
+}
+
 const publicDir = path.join(__dirname, 'public');
 const notesDir = path.join(repoRoot, 'notes'); // shared: hybrid-search index + note path-guards (note ROUTES live in routes/notes.js)
 const nodeModules = path.join(repoRoot, 'node_modules');
@@ -162,6 +194,12 @@ function gitExec(repoPath, cmd, timeoutMs) {
 
 // ── HTTP server ─────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
+  // Origin/Host firewall: block cross-site (CSRF) and DNS-rebinding before any
+  // route runs. Local CLIs (no Origin) and the same-origin renderer pass.
+  if (!isRequestAllowed(req)) {
+    try { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Cross-origin request blocked' })); } catch (_) {}
+    return;
+  }
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
 
   // Pluggable routes first
@@ -263,7 +301,7 @@ const server = http.createServer(async (req, res) => {
         const name = String(body.name || '').replace(/\.\./g, '');
         if (!name) return json(res, { error: 'name required' }, 400);
         const candidate = path.join(notesDir, name.endsWith('.md') ? name : name + '.md');
-        if (!path.resolve(candidate).startsWith(path.resolve(notesDir))) return json(res, { error: 'Invalid path' }, 403);
+        { const _r = path.resolve(candidate), _b = path.resolve(notesDir); if (_r !== _b && !_r.startsWith(_b + path.sep)) return json(res, { error: 'Invalid path' }, 403); }
         target = candidate;
       } else if (type === 'file') {
         const repoName = String(body.repo || '').trim();
@@ -272,7 +310,7 @@ const server = http.createServer(async (req, res) => {
         const repoPath = (cfg.Repos || {})[repoName];
         if (!repoPath) return json(res, { error: `Repo '${repoName}' not configured` }, 400);
         const candidate = rel ? path.join(repoPath, rel) : repoPath;
-        if (!path.resolve(candidate).startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+        { const _r = path.resolve(candidate), _b = path.resolve(repoPath); if (_r !== _b && !_r.startsWith(_b + path.sep)) return json(res, { error: 'Invalid path' }, 403); }
         target = candidate;
       } else {
         return json(res, { error: "type must be 'note' or 'file'" }, 400);
@@ -689,7 +727,7 @@ function getRepoPath(repoName) {
 // repo no longer exists in config, fall back to nothing.
 const { createUiContextStore } = require('./lib/ui-context');
 const { createTerminalHub } = require('./lib/terminal-hub');
-const _termHub = createTerminalHub({ httpServer: server, repoRoot, getConfig });
+const _termHub = createTerminalHub({ httpServer: server, repoRoot, getConfig, verifyUpgrade: isRequestAllowed });
 const { broadcast, terminals, termAiMeta, createTerminal, killTerminal } = _termHub;
 const _uiCtxStore = createUiContextStore({ repoRoot, getConfig, broadcast, onActiveRepoChange: () => { try { writePluginHints(); } catch (_) {} } });
 const getUiContextWithPath = _uiCtxStore.getUiContext;
@@ -1312,7 +1350,11 @@ writePluginHints();
       if (!entry || !entry.repo) continue;
       const destDir = path.join(pluginsDir, id);
       try {
-        execSync('git clone "' + entry.repo + '.git" "' + destDir + '"', { encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'] });
+        // Arg array (no shell) so a crafted/MITM'd registry `repo` value can't
+        // inject shell commands.
+        const { spawnSync } = require('child_process');
+        const cloneRes = spawnSync('git', ['clone', entry.repo + '.git', destDir], { encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+        if (cloneRes.status !== 0) throw new Error('git clone failed: ' + String(cloneRes.stderr || cloneRes.error || '').slice(0, 200));
         if (!fs.existsSync(path.join(destDir, 'plugin.json'))) {
           fs.rmSync(destDir, { recursive: true, force: true });
           continue;

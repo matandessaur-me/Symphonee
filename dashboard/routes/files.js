@@ -186,7 +186,8 @@ function mountFiles(addRoute, json, ctx) {
 
     const fullPath = path.join(repoPath, filePath);
     const resolved = path.resolve(fullPath);
-    if (!resolved.startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+    const _base = path.resolve(repoPath);
+    if (resolved !== _base && !resolved.startsWith(_base + path.sep)) return json(res, { error: 'Invalid path' }, 403);
 
     try {
       const st = fs.statSync(resolved);
@@ -219,7 +220,8 @@ function mountFiles(addRoute, json, ctx) {
 
     const fullPath = path.join(repoPath, filePath);
     const resolved = path.resolve(fullPath);
-    if (!resolved.startsWith(path.resolve(repoPath))) return json(res, { error: 'Invalid path' }, 403);
+    const _base = path.resolve(repoPath);
+    if (resolved !== _base && !resolved.startsWith(_base + path.sep)) return json(res, { error: 'Invalid path' }, 403);
 
     try {
       fs.writeFileSync(resolved, content, 'utf8');
@@ -267,7 +269,7 @@ function mountFiles(addRoute, json, ctx) {
 
     const fullPath = path.join(repoPath, filePath);
     const resolved = path.resolve(fullPath);
-    if (!resolved.startsWith(path.resolve(repoPath))) { res.writeHead(403); return res.end('Forbidden'); }
+    if (resolved !== path.resolve(repoPath) && !resolved.startsWith(path.resolve(repoPath) + path.sep)) { res.writeHead(403); return res.end('Forbidden'); }
     if (!fs.existsSync(resolved)) { res.writeHead(404); return res.end('Not found'); }
 
     const ext = path.extname(resolved).slice(1).toLowerCase();

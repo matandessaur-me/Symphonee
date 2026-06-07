@@ -17,7 +17,7 @@ const { WebSocketServer } = require('ws');
 const { atomicWriteSync } = require('../utils/atomic-write');
 const { detectPwsh } = require('./detect-cli');
 
-function createTerminalHub({ httpServer, repoRoot, getConfig }) {
+function createTerminalHub({ httpServer, repoRoot, getConfig, verifyUpgrade }) {
   const terminals = new Map();   // termId -> { pty, cols, rows, cwd, label }
   const termAiMeta = new Map();  // termId -> { cli, launched, updatedAt }
   let defaultCols = 120, defaultRows = 30;
@@ -147,7 +147,21 @@ function createTerminalHub({ httpServer, repoRoot, getConfig }) {
   }
 
   // ── WebSocket ────────────────────────────────────────────────────────────
-  const wss = new WebSocketServer({ server: httpServer });
+  // Same Origin/Host firewall as the HTTP server: a malicious web page can open
+  // a WebSocket to ws://127.0.0.1:PORT (WS has no same-origin restriction at the
+  // protocol level), so we reject foreign origins / non-loopback hosts at the
+  // upgrade handshake. The renderer (same-origin) and local clients pass.
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info, cb) => {
+      try {
+        if (typeof verifyUpgrade === 'function' && !verifyUpgrade(info.req)) {
+          return cb(false, 403, 'Forbidden');
+        }
+      } catch (_) { return cb(false, 403, 'Forbidden'); }
+      return cb(true);
+    },
+  });
 
   wss.on('connection', (ws) => {
     // First connection after an app restart: bring back saved shells.

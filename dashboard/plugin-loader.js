@@ -540,6 +540,12 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
       });
       const { id, repo } = body;
       if (!id || !repo) { json(res, { error: 'id and repo required' }, 400); return; }
+      // Plugins run as in-process Node code, so installing one is code execution.
+      // Gate it (so a prompt-injected AI can't silently install one); user-driven
+      // installs surface an explicit confirm.
+      if (shellDeps && typeof shellDeps.permGate === 'function') {
+        if (!await shellDeps.permGate(res, 'api', 'POST /api/plugins/install-from-registry', 'Install plugin "' + id + '" from ' + repo)) return;
+      }
       const destDir = path.join(pluginsDir, id);
       if (fs.existsSync(destDir)) { json(res, { error: 'Plugin "' + id + '" already installed' }, 409); return; }
       // Clone the repo
@@ -591,6 +597,10 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
       });
       const { id, repo } = body;
       if (!id || !repo) { json(res, { error: 'id and repo required' }, 400); return; }
+      // Re-cloning plugin code is also code execution -- gate it.
+      if (shellDeps && typeof shellDeps.permGate === 'function') {
+        if (!await shellDeps.permGate(res, 'api', 'POST /api/plugins/update', 'Update plugin "' + id + '" from ' + repo)) return;
+      }
       const destDir = path.join(pluginsDir, id);
       if (!fs.existsSync(destDir)) { json(res, { error: 'Plugin "' + id + '" is not installed' }, 404); return; }
       // Backup config.json if it exists
