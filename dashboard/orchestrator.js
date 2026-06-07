@@ -21,6 +21,7 @@ const { pretrustFolderForCli } = require('./orchestrator/pretrust');
 const { HEADLESS_FLAGS, CLI_MODELS, CLI_CONFIG, ESCALATION_ORDER } = require('./orchestrator/cli-config');
 const { CircuitBreaker, classifyError, retryDelay, scoreResult, MAX_RETRIES } = require('./orchestrator/reliability');
 const { registerOrchestratorRoutes } = require('./orchestrator/routes');
+const { STATE, DEFAULT_REACTIONS } = require('./orchestrator/state');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const TASK_TIMEOUT_MS = 0;  // 0 = no timeout (unlimited)
@@ -33,24 +34,6 @@ const SPAWN_STAGGER_MS = 200;       // delay between parallel spawns to prevent 
 
 // ── Reaction System ─────────────────────────────────────────────────────────
 // Configurable per-event reactions: auto-send instructions, retry, escalate to human
-const DEFAULT_REACTIONS = {
-  'task-failed':    { action: 'retry',    maxRetries: 2, escalateAfterMs: 5 * 60 * 1000 },
-  'task-timeout':   { action: 'retry',    maxRetries: 1, escalateAfterMs: 3 * 60 * 1000 },
-  'agent-stale':    { action: 'nudge',    maxRetries: 3, escalateAfterMs: 10 * 60 * 1000 },
-  'circuit-open':   { action: 'escalate', maxRetries: 0, escalateAfterMs: 0 },
-};
-
-// ── Task states ──────────────────────────────────────────────────────────────
-const STATE = {
-  PENDING:   'pending',
-  QUEUED:    'queued',      // waiting for dependencies
-  RUNNING:   'running',
-  COMPLETED: 'completed',
-  FAILED:    'failed',
-  CANCELLED: 'cancelled',
-  TIMEOUT:   'timeout',
-};
-
 // ── Orchestrator class ───────────────────────────────────────────────────────
 class Orchestrator extends EventEmitter {
   /**
