@@ -343,6 +343,8 @@ function mountMind(addRoute, json, ctx) {
     const h = provider
       ? await embeddings.health({ provider, fresh })
       : await embeddings.health({ fresh });
+    let memory = null;
+    try { memory = _miniHealth(store.loadGraph(repoRoot, space)); } catch (_) {}
     return json(res, {
       space,
       embeddings: h,
@@ -353,6 +355,7 @@ function mountMind(addRoute, json, ctx) {
         model: vs.model,
         ok: vs.count() > 0,
       },
+      memory,
     });
   });
 
@@ -798,12 +801,16 @@ function mountMind(addRoute, json, ctx) {
       pendingIntegrityInsights: pending.length,
       ok: flagged.size === 0,
       auditUrl: '/api/mind/audit',
-      healthUrl: '/api/mind/health',
+      integrityUrl: '/api/mind/integrity',
     };
   }
   ctx._miniHealth = _miniHealth;
 
-  addRoute('GET', '/api/mind/health', (req, res) => {
+  // NOTE: GET /api/mind/health already exists above (embeddings + vectors). We
+  // augment THAT handler with a `memory` block rather than registering a second
+  // /api/mind/health (first-registered wins, so a duplicate would be dead). The
+  // deep staleness scan stays on POST /api/mind/audit and GET /api/mind/integrity.
+  addRoute('GET', '/api/mind/integrity', (req, res) => {
     try { return json(res, _memoryHealth()); } catch (e) { return json(res, { ok: false, error: e.message }, 500); }
   });
 
