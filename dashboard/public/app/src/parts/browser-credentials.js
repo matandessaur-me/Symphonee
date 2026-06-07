@@ -1,16 +1,17 @@
 // ── Browser Credential Management ───────────────────────────────────────
 function _renderBrowserCredsInto(listEl) {
   if (!listEl) return;
-  const creds = configData.BrowserCredentials || {};
+  const creds = state.configData.BrowserCredentials || {};
   const entries = Object.entries(creds);
-  if (!entries.length) { listEl.innerHTML = '<div style="font-size:11px;color:var(--subtext1);padding:4px 0;">No credentials saved.</div>'; return; }
-  listEl.innerHTML = entries.map(([name, data]) =>
-    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--surface0);">
+  if (!entries.length) {
+    listEl.innerHTML = '<div style="font-size:11px;color:var(--subtext1);padding:4px 0;">No credentials saved.</div>';
+    return;
+  }
+  listEl.innerHTML = entries.map(([name, data]) => `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--surface0);">
       <span style="font-size:12px;color:var(--text);flex:1;">${esc(name)}</span>
       <span style="font-size:11px;color:var(--subtext0);flex:1;">${esc(data.email || '')}</span>
       <button class="modal-btn" onclick="removeBrowserCredential('${esc(name)}')" style="padding:2px 8px;font-size:10px;color:var(--red);">Remove</button>
-    </div>`
-  ).join('');
+    </div>`).join('');
 }
 function renderBrowserCreds() {
   // Render into both surfaces (legacy AI Tools section, and the dedicated
@@ -18,14 +19,19 @@ function renderBrowserCreds() {
   _renderBrowserCredsInto(document.getElementById('browserCredList'));
   _renderBrowserCredsInto(document.getElementById('browserCredListBrowser'));
 }
-
 function addBrowserCredential() {
   const name = document.getElementById('browserCredName').value.trim();
   const email = document.getElementById('browserCredEmail').value.trim();
   const pass = document.getElementById('browserCredPass').value;
-  if (!name || !email || !pass) { toast('All fields required', 'error'); return; }
-  if (!configData.BrowserCredentials) configData.BrowserCredentials = {};
-  configData.BrowserCredentials[name] = { email, password: pass };
+  if (!name || !email || !pass) {
+    toast('All fields required', 'error');
+    return;
+  }
+  if (!state.configData.BrowserCredentials) state.configData.BrowserCredentials = {};
+  state.configData.BrowserCredentials[name] = {
+    email,
+    password: pass
+  };
   document.getElementById('browserCredName').value = '';
   document.getElementById('browserCredEmail').value = '';
   document.getElementById('browserCredPass').value = '';
@@ -35,42 +41,58 @@ function addBrowserCredentialBrowserTab() {
   const name = document.getElementById('browserCredNameBrowser').value.trim();
   const email = document.getElementById('browserCredEmailBrowser').value.trim();
   const pass = document.getElementById('browserCredPassBrowser').value;
-  if (!name || !email || !pass) { toast('All fields required', 'error'); return; }
-  if (!configData.BrowserCredentials) configData.BrowserCredentials = {};
-  configData.BrowserCredentials[name] = { email, password: pass };
+  if (!name || !email || !pass) {
+    toast('All fields required', 'error');
+    return;
+  }
+  if (!state.configData.BrowserCredentials) state.configData.BrowserCredentials = {};
+  state.configData.BrowserCredentials[name] = {
+    email,
+    password: pass
+  };
   document.getElementById('browserCredNameBrowser').value = '';
   document.getElementById('browserCredEmailBrowser').value = '';
   document.getElementById('browserCredPassBrowser').value = '';
   renderBrowserCreds();
 }
-
 function removeBrowserCredential(name) {
-  if (configData.BrowserCredentials) delete configData.BrowserCredentials[name];
+  if (state.configData.BrowserCredentials) delete state.configData.BrowserCredentials[name];
   renderBrowserCreds();
 }
 
 // ── Browser settings tab loader / saver ────────────────────────────────────
 async function refreshBrowserSettings() {
   // Router defaults (live in main config under BrowserRouter).
-  const r = (configData.BrowserRouter || {});
+  const r = state.configData.BrowserRouter || {};
   const defEl = document.getElementById('settingsBrowserRouterDefault');
   if (defEl) defEl.value = r.default || 'auto';
   const preferEl = document.getElementById('settingsBrowserRouterPreferStagehand');
   if (preferEl) {
     preferEl.checked = r.preferStagehand !== false;
     _syncPluginToggleVisual(preferEl);
-    if (!preferEl._wired) { preferEl.addEventListener('change', () => _syncPluginToggleVisual(preferEl)); preferEl._wired = true; }
+    if (!preferEl._wired) {
+      preferEl.addEventListener('change', () => _syncPluginToggleVisual(preferEl));
+      preferEl._wired = true;
+    }
   }
 
   // Populate dynamic model dropdowns.
   const inAppModelEl = document.getElementById('settingsInAppAgentModel');
-  if (inAppModelEl) _populatePluginSettingOptions(inAppModelEl, { optionsFrom: 'aiModels', placeholder: 'Default (auto-pick from saved keys)' });
+  if (inAppModelEl) _populatePluginSettingOptions(inAppModelEl, {
+    optionsFrom: 'aiModels',
+    placeholder: 'Default (auto-pick from saved keys)'
+  });
   const stagehandModelEl = document.getElementById('settingsStagehandModel');
-  if (stagehandModelEl) _populatePluginSettingOptions(stagehandModelEl, { optionsFrom: 'aiModels', placeholder: 'Default (Claude Sonnet 4.6)' });
+  if (stagehandModelEl) _populatePluginSettingOptions(stagehandModelEl, {
+    optionsFrom: 'aiModels',
+    placeholder: 'Default (Claude Sonnet 4.6)'
+  });
 
   // Stagehand plugin settings live on the plugin's own config endpoint.
   try {
-    const res = await fetch('/api/plugins/stagehand/config', { cache: 'no-store' });
+    const res = await fetch('/api/plugins/stagehand/config', {
+      cache: 'no-store'
+    });
     const cfg = res.ok ? await res.json() : {};
     if (stagehandModelEl) {
       if (cfg.model !== undefined) {
@@ -83,12 +105,15 @@ async function refreshBrowserSettings() {
       // Manifest default is on; treat undefined as on.
       headlessEl.checked = cfg.headless !== false;
       _syncPluginToggleVisual(headlessEl);
-      if (!headlessEl._wired) { headlessEl.addEventListener('change', () => _syncPluginToggleVisual(headlessEl)); headlessEl._wired = true; }
+      if (!headlessEl._wired) {
+        headlessEl.addEventListener('change', () => _syncPluginToggleVisual(headlessEl));
+        headlessEl._wired = true;
+      }
     }
   } catch (_) {}
 
   // In-app agent model (lives under InAppAgent in main config).
-  const inApp = (configData.InAppAgent || {});
+  const inApp = state.configData.InAppAgent || {};
   if (inAppModelEl && inApp.model) {
     inAppModelEl.value = inApp.model;
     if (inAppModelEl.value !== inApp.model) inAppModelEl.dataset.pendingValue = inApp.model;
@@ -97,7 +122,6 @@ async function refreshBrowserSettings() {
   // Refresh the credentials list.
   renderBrowserCreds();
 }
-
 async function saveBrowserSettings() {
   // Router and in-app agent prefs go into the main config payload via
   // saveSettings(); this helper just persists the plugin-scoped Stagehand
@@ -105,31 +129,36 @@ async function saveBrowserSettings() {
   try {
     const stagehandModel = (document.getElementById('settingsStagehandModel') || {}).value || '';
     const stagehandHeadless = !!(document.getElementById('settingsStagehandHeadless') || {}).checked;
-    const body = { headless: stagehandHeadless };
+    const body = {
+      headless: stagehandHeadless
+    };
     if (stagehandModel) body.model = stagehandModel;
     await fetch('/api/plugins/stagehand/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
     });
   } catch (_) {}
 }
-
-var _registryPlugins = [];
-var _pluginRecommendations = {};
-
+state._registryPlugins = [];
+state._pluginRecommendations = {};
 async function loadPluginRecommendations() {
   try {
-    var res = await fetch('/api/plugins/recommendations', { cache: 'no-store' });
+    var res = await fetch('/api/plugins/recommendations', {
+      cache: 'no-store'
+    });
     var data = await res.json();
-    _pluginRecommendations = {};
-    (data.recommendations || []).forEach(function (r) { _pluginRecommendations[r.id] = r; });
+    state._pluginRecommendations = {};
+    (data.recommendations || []).forEach(function (r) {
+      state._pluginRecommendations[r.id] = r;
+    });
   } catch (_) {
-    _pluginRecommendations = {};
+    state._pluginRecommendations = {};
   }
-  return _pluginRecommendations;
+  return state._pluginRecommendations;
 }
-
 function sortPluginsWithRecommendations(plugins, recommendations) {
   recommendations = recommendations || {};
   return (plugins || []).slice().sort(function (a, b) {
@@ -141,12 +170,11 @@ function sortPluginsWithRecommendations(plugins, recommendations) {
     return (a.name || a.id || '').localeCompare(b.name || b.id || '');
   });
 }
-
 async function browsePlugins() {
   document.getElementById('registryModal').classList.add('open');
   document.getElementById('registrySearch').value = '';
   document.getElementById('registryFilter').value = '';
-  _registryNeedsRestart = false;
+  state._registryNeedsRestart = false;
   var closeBtn = document.getElementById('registryCloseBtn');
   if (closeBtn) {
     closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
@@ -154,57 +182,58 @@ async function browsePlugins() {
     closeBtn.style.cssText = 'background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;';
   }
   document.getElementById('registryList').innerHTML = '<div style="text-align:center;padding:40px;color:var(--subtext0);font-size:12px;">Loading registry...</div>';
-
   try {
     var recPromise = loadPluginRecommendations();
     var res = await fetch('/api/plugins/registry');
     var data = await res.json();
     await recPromise;
-    if (data.error) { document.getElementById('registryList').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;">Error: ' + data.error + '</div>'; return; }
-    _registryPlugins = data.plugins || [];
+    if (data.error) {
+      document.getElementById('registryList').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;">Error: ' + data.error + '</div>';
+      return;
+    }
+    state._registryPlugins = data.plugins || [];
     filterRegistry();
   } catch (e) {
     document.getElementById('registryList').innerHTML = '<div style="padding:20px;color:var(--red);font-size:12px;">Failed to load: ' + e.message + '</div>';
   }
 }
-
-var _registryNeedsRestart = false;
-
+state._registryNeedsRestart = false;
 function markRegistryNeedsRestart() {
-  _registryNeedsRestart = true;
+  state._registryNeedsRestart = true;
   var btn = document.getElementById('registryCloseBtn');
   if (!btn) return;
   btn.innerHTML = 'Save & Restart';
   btn.title = 'Restart the app to apply plugin changes';
   btn.style.cssText = 'font-size:12px;padding:4px 14px;background:var(--accent);color:var(--crust);border:1px solid var(--accent);border-radius:var(--radius);cursor:pointer;font-weight:600;font-family:var(--font-ui);';
 }
-
 function closeRegistryModal() {
-  if (_registryNeedsRestart) {
-    _registryNeedsRestart = false;
+  if (state._registryNeedsRestart) {
+    state._registryNeedsRestart = false;
     document.getElementById('registryModal').classList.remove('open');
     toast('Restarting to apply plugin changes...', 'success');
-    setTimeout(function() { restartApp(); }, 500);
+    setTimeout(function () {
+      restartApp();
+    }, 500);
     return;
   }
   document.getElementById('registryModal').classList.remove('open');
 }
-
 function filterRegistry() {
   var q = (document.getElementById('registrySearch').value || '').toLowerCase();
   var filter = document.getElementById('registryFilter').value;
-  var visible = _registryPlugins.filter(function(p) {
-    if (q && p.name.toLowerCase().indexOf(q) === -1 && p.description.toLowerCase().indexOf(q) === -1 && !(p.tags || []).some(function(t) { return t.toLowerCase().indexOf(q) !== -1; })) return false;
+  var visible = state._registryPlugins.filter(function (p) {
+    if (q && p.name.toLowerCase().indexOf(q) === -1 && p.description.toLowerCase().indexOf(q) === -1 && !(p.tags || []).some(function (t) {
+      return t.toLowerCase().indexOf(q) !== -1;
+    })) return false;
     if (filter === 'installed' && !p.installed) return false;
     if (filter === 'available' && p.installed) return false;
     if (filter === 'updates' && !p.updateAvailable) return false;
     return true;
   });
-  visible = sortPluginsWithRecommendations(visible, _pluginRecommendations);
-  document.getElementById('registryCount').textContent = visible.length + ' of ' + _registryPlugins.length + ' plugins';
+  visible = sortPluginsWithRecommendations(visible, state._pluginRecommendations);
+  document.getElementById('registryCount').textContent = visible.length + ' of ' + state._registryPlugins.length + ' plugins';
   renderRegistryList(visible);
 }
-
 function renderRegistryList(plugins) {
   if (!plugins.length) {
     document.getElementById('registryList').innerHTML = '<div style="text-align:center;padding:40px;color:var(--subtext0);font-size:13px;">No plugins match your search</div>';
@@ -218,7 +247,7 @@ function renderRegistryList(plugins) {
     html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">';
     html += '<span style="font-size:15px;font-weight:600;">' + esc(p.name) + '</span>';
     html += '<span style="font-size:10px;color:var(--subtext0);background:var(--surface1);padding:1px 6px;border-radius:3px;">v' + esc(p.version) + '</span>';
-    var rec = _pluginRecommendations[p.id];
+    var rec = state._pluginRecommendations[p.id];
     if (rec && !p.installed) {
       html += '<span style="font-size:10px;color:var(--green);background:rgba(166,227,161,0.1);padding:1px 6px;border-radius:3px;">Recommended</span>';
     }
@@ -233,7 +262,9 @@ function renderRegistryList(plugins) {
     html += '<div style="display:flex;align-items:center;gap:8px;">';
     html += '<span style="font-size:10px;color:var(--overlay1);">by ' + esc(p.author) + '</span>';
     if (p.tags && p.tags.length) {
-      p.tags.forEach(function(t) { html += '<span style="font-size:9px;padding:1px 6px;border-radius:99px;background:var(--surface1);color:var(--subtext0);">' + esc(t) + '</span>'; });
+      p.tags.forEach(function (t) {
+        html += '<span style="font-size:9px;padding:1px 6px;border-radius:99px;background:var(--surface1);color:var(--subtext0);">' + esc(t) + '</span>';
+      });
     }
     html += '<div style="flex:1;"></div>';
     if (p.installed && p.updateAvailable) {
@@ -254,13 +285,18 @@ function renderRegistryList(plugins) {
   }
   document.getElementById('registryList').innerHTML = html;
 }
-
 async function installFromRegistry(id, repo, name) {
   if (!confirm('Install "' + name + '" plugin?')) return;
   try {
     var res = await fetch('/api/plugins/install-from-registry', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id, repo: repo })
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: id,
+        repo: repo
+      })
     });
     var data = await res.json();
     if (data.ok) {
@@ -269,20 +305,27 @@ async function installFromRegistry(id, repo, name) {
       // Refresh registry to show "Installed"
       var r = await fetch('/api/plugins/registry');
       var d = await r.json();
-      _registryPlugins = d.plugins || [];
+      state._registryPlugins = d.plugins || [];
       filterRegistry();
     } else {
       toast(data.error || 'Install failed', 'error');
     }
-  } catch (e) { toast('Install failed: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Install failed: ' + e.message, 'error');
+  }
 }
-
 async function updatePlugin(id, repo, name) {
   if (!confirm('Update "' + name + '"? Your settings will be preserved.')) return;
   try {
     var res = await fetch('/api/plugins/update', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id, repo: repo })
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: id,
+        repo: repo
+      })
     });
     var data = await res.json();
     if (data.ok) {
@@ -290,27 +333,41 @@ async function updatePlugin(id, repo, name) {
       markRegistryNeedsRestart();
       var r = await fetch('/api/plugins/registry');
       var d = await r.json();
-      _registryPlugins = d.plugins || [];
+      state._registryPlugins = d.plugins || [];
       filterRegistry();
     } else {
       toast(data.error || 'Update failed', 'error');
     }
-  } catch (e) { toast('Update failed: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Update failed: ' + e.message, 'error');
+  }
 }
-
 async function installPluginPrompt() {
   try {
-    var browse = await fetch('/api/browse-folder', { method: 'POST' });
+    var browse = await fetch('/api/browse-folder', {
+      method: 'POST'
+    });
     var result = await browse.json();
     if (result.canceled || !result.path) return;
     var res = await fetch('/api/plugins/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: result.path })
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        path: result.path
+      })
     });
     var data = await res.json();
-    if (data.ok) { toast('Plugin "' + data.name + '" installed.', 'success'); markRegistryNeedsRestart(); }
-    else { toast(data.error || 'Install failed', 'error'); }
-  } catch (e) { toast('Install failed', 'error'); }
+    if (data.ok) {
+      toast('Plugin "' + data.name + '" installed.', 'success');
+      markRegistryNeedsRestart();
+    } else {
+      toast(data.error || 'Install failed', 'error');
+    }
+  } catch (e) {
+    toast('Install failed', 'error');
+  }
 }
 
 // Save plugin settings (called from saveSettings)
@@ -318,23 +375,27 @@ async function uninstallPlugin(id, name) {
   if (!confirm('Uninstall "' + name + '"? This will delete the plugin folder. You will need to restart the app.')) return;
   // Second prompt: keep the plugin's configuration for next install, or wipe
   // it so the next install is clean. OK = KEEP, Cancel = DELETE.
-  var keepConfig = confirm(
-    'Keep "' + name + '" configuration for next install?\n\n' +
-    'OK = keep (next install will be pre-configured)\n' +
-    'Cancel = delete (next install will be clean)'
-  );
+  var keepConfig = confirm('Keep "' + name + '" configuration for next install?\n\n' + 'OK = keep (next install will be pre-configured)\n' + 'Cancel = delete (next install will be clean)');
   try {
     var res = await fetch('/api/plugins/uninstall', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id, keepConfig: keepConfig })
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: id,
+        keepConfig: keepConfig
+      })
     });
     var data = await res.json();
     if (data.ok) {
       toast(name + ' uninstalled' + (keepConfig ? ' (config kept)' : '') + '. Restart to apply.', 'success');
       // Mark settings as needing restart
       var settingsBtn = document.getElementById('settingsSaveBtn');
-      if (settingsBtn) { settingsBtn.textContent = 'Save & Restart'; settingsBtn._needsRestart = true; }
+      if (settingsBtn) {
+        settingsBtn.textContent = 'Save & Restart';
+        settingsBtn._needsRestart = true;
+      }
       // Also mark registry modal if open
       if (document.getElementById('registryModal').classList.contains('open')) markRegistryNeedsRestart();
     } else {
@@ -344,7 +405,6 @@ async function uninstallPlugin(id, name) {
     toast('Failed: ' + e.message, 'error');
   }
 }
-
 async function savePluginSettings() {
   var inputs = document.querySelectorAll('.plugin-setting-input');
   var byPlugin = {};
@@ -368,10 +428,11 @@ async function savePluginSettings() {
     try {
       await fetch('/api/plugins/' + pid + '/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(byPlugin[pid])
       });
     } catch (_) {}
   }
 }
-

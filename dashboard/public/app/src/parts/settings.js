@@ -12,11 +12,9 @@ function openCreateModal(type) {
   // Load team members for assign dropdown
   loadTeamMembers();
 }
-
 function closeCreateModal() {
   document.getElementById('createModal').classList.remove('open');
 }
-
 async function submitCreateWorkItem() {
   const body = {
     type: document.getElementById('createType').value,
@@ -27,19 +25,32 @@ async function submitCreateWorkItem() {
     storyPoints: document.getElementById('createPoints').value,
     assignedTo: document.getElementById('createAssign').value,
     tags: document.getElementById('createTags').value,
-    iterationPath: document.getElementById('sprintSelect').value,
+    iterationPath: document.getElementById('sprintSelect').value
   };
-
-  if (!body.title) { toast('Title is required', 'error'); return; }
-
+  if (!body.title) {
+    toast('Title is required', 'error');
+    return;
+  }
   try {
     const pf = window.Symphonee?.contributions?.providerFetch;
-    const res = pf && await pf('workItem', 'createRoute', {
-      init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
-    });
-    if (!res) { toast('No work item provider installed', 'error'); return; }
+    const res = pf && (await pf('workItem', 'createRoute', {
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      }
+    }));
+    if (!res) {
+      toast('No work item provider installed', 'error');
+      return;
+    }
     const data = await res.json();
-    if (data.error) { toast(data.error, 'error'); return; }
+    if (data.error) {
+      toast(data.error, 'error');
+      return;
+    }
     toast(`Created #${data.id}: ${data.title}`, 'success');
     closeCreateModal();
     loadWorkItems(true);
@@ -50,46 +61,72 @@ async function submitCreateWorkItem() {
 
 // ── AI Tools Detection & Install ─────────────────────────────────────────
 const AI_TOOLS_META = {
-  claude:  { name: 'Claude Code',  color: '#d97757', pkg: '@anthropic-ai/claude-code', docs: 'https://docs.anthropic.com/en/docs/claude-code' },
-  gemini:  { name: 'Gemini CLI',   color: '#078efa', pkg: '@google/gemini-cli', docs: 'https://github.com/google-gemini/gemini-cli' },
-  copilot: { name: 'Copilot CLI',  color: '#8534f3', pkg: '@github/copilot', docs: 'https://www.npmjs.com/package/@github/copilot' },
-  codex:   { name: 'Codex CLI',    color: '#10a37f', pkg: '@openai/codex', docs: 'https://github.com/openai/codex' },
-
-  grok:    { name: 'Grok Code',    color: '#ef4444', pkg: '@webdevtoday/grok-cli', docs: 'https://github.com/superagent-ai/grok-cli' },
-  qwen:    { name: 'Qwen Code',    color: '#615ced', pkg: '@qwen-code/qwen-code', docs: 'https://github.com/QwenLM/qwen-code' },
+  claude: {
+    name: 'Claude Code',
+    color: '#d97757',
+    pkg: '@anthropic-ai/claude-code',
+    docs: 'https://docs.anthropic.com/en/docs/claude-code'
+  },
+  gemini: {
+    name: 'Gemini CLI',
+    color: '#078efa',
+    pkg: '@google/gemini-cli',
+    docs: 'https://github.com/google-gemini/gemini-cli'
+  },
+  copilot: {
+    name: 'Copilot CLI',
+    color: '#8534f3',
+    pkg: '@github/copilot',
+    docs: 'https://www.npmjs.com/package/@github/copilot'
+  },
+  codex: {
+    name: 'Codex CLI',
+    color: '#10a37f',
+    pkg: '@openai/codex',
+    docs: 'https://github.com/openai/codex'
+  },
+  grok: {
+    name: 'Grok Code',
+    color: '#ef4444',
+    pkg: '@webdevtoday/grok-cli',
+    docs: 'https://github.com/superagent-ai/grok-cli'
+  },
+  qwen: {
+    name: 'Qwen Code',
+    color: '#615ced',
+    pkg: '@qwen-code/qwen-code',
+    docs: 'https://github.com/QwenLM/qwen-code'
+  }
 };
-
-let _aiToolsStatus = {}; // cli -> { installed, path }
-let _pwshStatus = { installed: false };
-// CLI ids whose install is currently in-flight. Kept in the model (not just on
+state._aiToolsStatus = {}; // cli -> { installed, path }
+state._pwshStatus = {
+  installed: false
+}; // CLI ids whose install is currently in-flight. Kept in the model (not just on
 // the button) so a full renderAiTools() re-render -- triggered when a SIBLING
 // install finishes -- does not reset a still-installing tool back to "Install".
 const _aiInstalling = new Set();
-
 async function detectAiTools() {
   const container = document.getElementById('settingsAiTools');
   container.innerHTML = '<div style="font-size:11px;color:var(--subtext0);">Detecting installed AI CLIs...</div>';
-
   try {
     const res = await fetch('/api/prerequisites');
     const data = await res.json();
-    _aiToolsStatus = data.cliTools || {};
-    _pwshStatus = data.pwsh || { installed: false };
+    state._aiToolsStatus = data.cliTools || {};
+    state._pwshStatus = data.pwsh || {
+      installed: false
+    };
     renderAiTools();
   } catch (e) {
     container.innerHTML = '<div style="font-size:11px;color:var(--red);">Failed to detect AI tools</div>';
   }
 }
-
 function renderAiTools() {
   const container = document.getElementById('settingsAiTools');
 
   // PowerShell 7 prerequisite card
-  const pwshInstalled = _pwshStatus.installed;
+  const pwshInstalled = state._pwshStatus.installed;
   const pwshInstalling = _aiInstalling.has('pwsh');
-  const pwshBtn = pwshInstalling
-    ? `<button class="ai-tool-btn installing" id="aiToolBtn-pwsh" disabled>Installing...</button>`
-    : `<button class="ai-tool-btn ${pwshInstalled ? 'installed' : 'install'}" id="aiToolBtn-pwsh"
+  const pwshBtn = pwshInstalling ? `<button class="ai-tool-btn installing" id="aiToolBtn-pwsh" disabled>Installing...</button>` : `<button class="ai-tool-btn ${pwshInstalled ? 'installed' : 'install'}" id="aiToolBtn-pwsh"
                 onclick="${pwshInstalled ? '' : "installCli('pwsh')"}"
                 ${pwshInstalled ? 'disabled' : ''}>${pwshInstalled ? 'Installed' : 'Install'}</button>`;
   const pwshCard = `
@@ -99,9 +136,7 @@ function renderAiTools() {
         <div class="ai-tool-dot" style="background:var(--blue)"></div>
         <div class="ai-tool-info">
           <div class="ai-tool-name">PowerShell 7</div>
-          ${pwshInstalled
-            ? '<span class="ai-tool-status installed">Installed</span>'
-            : '<span class="ai-tool-status not-installed" style="color:var(--yellow);">Required for AI CLI tools</span>'}
+          ${pwshInstalled ? '<span class="ai-tool-status installed">Installed</span>' : '<span class="ai-tool-status not-installed" style="color:var(--yellow);">Required for AI CLI tools</span>'}
         </div>
         ${pwshBtn}
       </div>
@@ -112,21 +147,18 @@ function renderAiTools() {
 
   // AI tool cards
   const toolCards = Object.entries(AI_TOOLS_META).map(([id, meta]) => {
-    const status = _aiToolsStatus[id] || { installed: false };
+    const status = state._aiToolsStatus[id] || {
+      installed: false
+    };
     const isInstalled = status.installed;
     const isInstalling = _aiInstalling.has(id);
-    const statusText = isInstalled
-      ? `<span class="ai-tool-status installed">Installed</span>`
-      : `<span class="ai-tool-status not-installed">Not installed &middot; <code style="font-size:9px;color:var(--subtext0);">npm i -g ${meta.pkg}</code></span>`;
+    const statusText = isInstalled ? `<span class="ai-tool-status installed">Installed</span>` : `<span class="ai-tool-status not-installed">Not installed &middot; <code style="font-size:9px;color:var(--subtext0);">npm i -g ${meta.pkg}</code></span>`;
 
     // In-progress installs win over the installed/not-installed state so a
     // re-render (e.g. a sibling install finishing) keeps showing "Installing...".
-    const btn = isInstalling
-      ? `<button class="ai-tool-btn installing" id="aiToolBtn-${id}" disabled>Installing...</button>`
-      : `<button class="ai-tool-btn ${isInstalled ? 'installed' : 'install'}" id="aiToolBtn-${id}"
+    const btn = isInstalling ? `<button class="ai-tool-btn installing" id="aiToolBtn-${id}" disabled>Installing...</button>` : `<button class="ai-tool-btn ${isInstalled ? 'installed' : 'install'}" id="aiToolBtn-${id}"
                 onclick="${isInstalled ? '' : `installCli('${id}')`}"
                 ${isInstalled ? 'disabled' : ''}>${isInstalled ? 'Installed' : 'Install'}</button>`;
-
     return `
       <div class="ai-tool-card" id="aiToolCard-${id}">
         <div class="ai-tool-dot" style="background:${meta.color}"></div>
@@ -137,10 +169,8 @@ function renderAiTools() {
         ${btn}
       </div>`;
   }).join('');
-
   container.innerHTML = pwshCard + toolCards;
 }
-
 async function installCli(cli) {
   const btn = document.getElementById(`aiToolBtn-${cli}`);
   if (!btn) return;
@@ -151,19 +181,30 @@ async function installCli(cli) {
   // Clear any previous fallback hint
   const prevHint = btn.closest('.ai-tool-card')?.querySelector('.install-fallback-hint');
   if (prevHint) prevHint.remove();
-
   try {
     const res = await fetch('/api/cli/install', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cli }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        cli
+      })
     });
     const data = await res.json();
-
-    const displayName = cli === 'pwsh' ? 'PowerShell 7' : (AI_TOOLS_META[cli]?.name || cli);
+    const displayName = cli === 'pwsh' ? 'PowerShell 7' : AI_TOOLS_META[cli]?.name || cli;
     if (data.ok && data.installed) {
-      if (cli === 'pwsh') { _pwshStatus = { installed: true, path: data.path }; }
-      else { _aiToolsStatus[cli] = { installed: true, path: data.path }; }
+      if (cli === 'pwsh') {
+        state._pwshStatus = {
+          installed: true,
+          path: data.path
+        };
+      } else {
+        state._aiToolsStatus[cli] = {
+          installed: true,
+          path: data.path
+        };
+      }
       if (data.needsRestart) {
         toast(`${displayName} installed! Restart the app so the terminal can use it.`, 'success');
       } else {
@@ -178,7 +219,9 @@ async function installCli(cli) {
       btn.disabled = false;
       const errMsg = data.error || 'Unknown error';
       toast(`Failed to install ${displayName}: ${errMsg}`, 'error');
-      if (data.fallbackCmd) { showInstallFallbackHint(btn, data.fallbackCmd, errMsg); }
+      if (data.fallbackCmd) {
+        showInstallFallbackHint(btn, data.fallbackCmd, errMsg);
+      }
     }
   } catch (e) {
     _aiInstalling.delete(cli);
@@ -199,47 +242,55 @@ function switchSettingsTab(tabId, btn) {
   // Trigger AI detection when switching to AI tab
   if (tabId === 'ai') detectAiTools();
   if (tabId === 'theme') renderThemeList();
-  if (tabId === 'hotkeys') { try { renderHotkeys(); } catch (_) {} }
-  if (tabId === 'repos') { try { renderSettingsSpaces(); } catch (_) {} }
+  if (tabId === 'hotkeys') {
+    try {
+      renderHotkeys();
+    } catch (_) {}
+  }
+  if (tabId === 'repos') {
+    try {
+      renderSettingsSpaces();
+    } catch (_) {}
+  }
   // Semi-transparent overlay on theme tab so user can preview live
   const modal = document.getElementById('settingsModal');
   if (modal) modal.classList.toggle('theme-preview', tabId === 'theme');
 }
-
 function openSettings(tab) {
-  document.getElementById('settingsOrg').value = configData.AzureDevOpsOrg || '';
-  document.getElementById('settingsPAT').value = configData.AzureDevOpsPAT || '';
-  document.getElementById('settingsUser').value = configData.DefaultUser || '';
-  document.getElementById('settingsGitHubPAT').value = configData.GitHubPAT || '';
+  document.getElementById('settingsOrg').value = state.configData.AzureDevOpsOrg || '';
+  document.getElementById('settingsPAT').value = state.configData.AzureDevOpsPAT || '';
+  document.getElementById('settingsUser').value = state.configData.DefaultUser || '';
+  document.getElementById('settingsGitHubPAT').value = state.configData.GitHubPAT || '';
   const continuousEl = document.getElementById('settingsEnableContinuousLearning');
-  if (continuousEl) continuousEl.checked = configData.EnableContinuousLearning === true;
+  if (continuousEl) continuousEl.checked = state.configData.EnableContinuousLearning === true;
   refreshSmartSearchStatus();
   // AI API keys
-  const aiKeys = configData.AiApiKeys || {};
+  const aiKeys = state.configData.AiApiKeys || {};
   document.getElementById('settingsOpenaiKey').value = aiKeys.OPENAI_API_KEY || '';
   document.getElementById('settingsGeminiKey').value = aiKeys.GEMINI_API_KEY || '';
   document.getElementById('settingsAnthropicKey').value = aiKeys.ANTHROPIC_API_KEY || '';
   document.getElementById('settingsXaiKey').value = aiKeys.XAI_API_KEY || '';
   renderBrowserCreds();
   // Populate orchestrator CLI checkboxes
-  var orchList = Array.isArray(configData.OrchestrateCliList) ? configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok', 'qwen'];
-  document.querySelectorAll('.orch-cli-cb').forEach(function(cb) { cb.checked = orchList.includes(cb.value); });
-  document.getElementById('settingsDefaultCli').value = configData.DefaultCli || activeCli || 'claude';
-  document.getElementById('settingsTeam').value = configData.DefaultTeam || '';
+  var orchList = Array.isArray(state.configData.OrchestrateCliList) ? state.configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok', 'qwen'];
+  document.querySelectorAll('.orch-cli-cb').forEach(function (cb) {
+    cb.checked = orchList.includes(cb.value);
+  });
+  document.getElementById('settingsDefaultCli').value = state.configData.DefaultCli || state.activeCli || 'claude';
+  document.getElementById('settingsTeam').value = state.configData.DefaultTeam || '';
   // Initialize projects list from config
-  const rawProjects = Array.isArray(configData.AzureDevOpsProjects) ? configData.AzureDevOpsProjects : [];
-  _settingsProjects = rawProjects.map(p => typeof p === 'object' ? p.name : p);
-  _settingsActiveProject = configData.AzureDevOpsProject || '';
+  const rawProjects = Array.isArray(state.configData.AzureDevOpsProjects) ? state.configData.AzureDevOpsProjects : [];
+  state._settingsProjects = rawProjects.map(p => typeof p === 'object' ? p.name : p);
+  state._settingsActiveProject = state.configData.AzureDevOpsProject || '';
   // Migration: if there's an active project not in the list, add it
-  if (_settingsActiveProject && !_settingsProjects.includes(_settingsActiveProject)) {
-    _settingsProjects.unshift(_settingsActiveProject);
+  if (state._settingsActiveProject && !state._settingsProjects.includes(state._settingsActiveProject)) {
+    state._settingsProjects.unshift(state._settingsActiveProject);
   }
   renderSettingsProjects();
   renderSettingsRepos();
   // Reset to requested tab. Default = first visible nav button (usually 'ai' now that 'ado' is gone).
-  const firstVisibleBtn = Array.from(document.querySelectorAll('.settings-nav-btn'))
-    .find(b => b.offsetParent !== null && b.style.display !== 'none');
-  const targetTab = tab || (firstVisibleBtn && firstVisibleBtn.dataset.settingsTab) || 'ai';
+  const firstVisibleBtn = Array.from(document.querySelectorAll('.settings-nav-btn')).find(b => b.offsetParent !== null && b.style.display !== 'none');
+  const targetTab = tab || firstVisibleBtn && firstVisibleBtn.dataset.settingsTab || 'ai';
   document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.settings-nav-btn').forEach(b => b.classList.remove('active'));
   const targetPanel = document.getElementById(`settingsTab-${targetTab}`);
@@ -254,14 +305,15 @@ function openSettings(tab) {
   // showed an empty panel until the user tabbed away and back.
   if (targetTab === 'ai') detectAiTools();
   if (targetTab === 'theme') renderThemeList();
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
 }
-
 function closeSettings() {
   document.getElementById('settingsModal').classList.remove('open');
   // Revert unsaved theme editor changes
-  if (_themeEditorDirty) {
-    _themeEditorDirty = false;
+  if (state._themeEditorDirty) {
+    state._themeEditorDirty = false;
     const status = document.getElementById('themeEditorStatus');
     if (status) status.style.display = 'none';
     // Clear inline custom vars and restore the real theme
@@ -269,18 +321,16 @@ function closeSettings() {
     restoreCustomTheme();
   }
 }
-
-let _settingsProjects = [];
-let _settingsActiveProject = '';
-
+state._settingsProjects = [];
+state._settingsActiveProject = '';
 function renderSettingsProjects() {
   const container = document.getElementById('settingsProjectList');
-  if (!_settingsProjects.length) {
+  if (!state._settingsProjects.length) {
     container.innerHTML = '<div style="font-size:11px;color:var(--subtext0);padding:4px 0;">No projects added yet.</div>';
     return;
   }
-  container.innerHTML = _settingsProjects.map(name => {
-    const isActive = name === _settingsActiveProject;
+  container.innerHTML = state._settingsProjects.map(name => {
+    const isActive = name === state._settingsActiveProject;
     return `<div class="project-item${isActive ? ' active' : ''}" onclick="setActiveProject('${esc(name)}')">
       <div class="project-item-radio"></div>
       <span class="project-item-name">${esc(name)}</span>
@@ -288,32 +338,28 @@ function renderSettingsProjects() {
     </div>`;
   }).join('');
 }
-
 function addProjectFromSettings() {
   const input = document.getElementById('settingsProjectInput');
   const name = input.value.trim();
-  if (!name || _settingsProjects.includes(name)) return;
-  _settingsProjects.push(name);
-  if (!_settingsActiveProject) _settingsActiveProject = name;
+  if (!name || state._settingsProjects.includes(name)) return;
+  state._settingsProjects.push(name);
+  if (!state._settingsActiveProject) state._settingsActiveProject = name;
   input.value = '';
   renderSettingsProjects();
 }
-
 function deleteProjectFromSettings(name) {
-  _settingsProjects = _settingsProjects.filter(p => p !== name);
-  if (_settingsActiveProject === name) {
-    _settingsActiveProject = _settingsProjects[0] || '';
+  state._settingsProjects = state._settingsProjects.filter(p => p !== name);
+  if (state._settingsActiveProject === name) {
+    state._settingsActiveProject = state._settingsProjects[0] || '';
   }
   renderSettingsProjects();
 }
-
 function setActiveProject(name) {
-  _settingsActiveProject = name;
+  state._settingsActiveProject = name;
   renderSettingsProjects();
 }
-
 function renderSettingsRepos() {
-  const repos = configData.Repos || {};
+  const repos = state.configData.Repos || {};
   const container = document.getElementById('settingsRepoList');
   container.innerHTML = Object.entries(repos).map(([name, path]) => `
     <div class="repo-item">
@@ -324,48 +370,49 @@ function renderSettingsRepos() {
   `).join('');
   renderCloneSourceButtons('settingsRepoAddBtns', 'settings', 'modal-btn');
 }
-
 function addRepoFromSettings() {
   const name = document.getElementById('settingsRepoName').value.trim();
   const path = document.getElementById('settingsRepoPath').value.trim();
   if (!name || !path) return;
-  configData.Repos = configData.Repos || {};
-  configData.Repos[name] = path;
+  state.configData.Repos = state.configData.Repos || {};
+  state.configData.Repos[name] = path;
   document.getElementById('settingsRepoName').value = '';
   document.getElementById('settingsRepoPath').value = '';
   renderSettingsRepos();
 }
-
 function deleteRepoFromSettings(name) {
-  if (configData.Repos) delete configData.Repos[name];
+  if (state.configData.Repos) delete state.configData.Repos[name];
   renderSettingsRepos();
 }
 
 // ── Shared Repo Add flows (used by Settings & Onboarding) ──────────────────
 function _repoAddCommit(ctx, name, repoPath) {
   if (ctx === 'settings') {
-    configData.Repos = configData.Repos || {};
-    configData.Repos[name] = repoPath;
+    state.configData.Repos = state.configData.Repos || {};
+    state.configData.Repos[name] = repoPath;
     renderSettingsRepos();
   } else {
-    _obData.repos[name] = repoPath;
+    state._obData.repos[name] = repoPath;
     obRenderRepos();
   }
 }
-
 function _repoPanel(ctx) {
   return document.getElementById(ctx === 'settings' ? 'settingsRepoAddPanel' : 'obRepoAddPanel');
 }
-
 function _repoHidePanel(ctx) {
   const panel = _repoPanel(ctx);
-  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+  if (panel) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+  }
 }
 
 // ── Browse Local Folder ─────────────────────────────────────────────────────
 async function repoAddBrowse(ctx) {
   try {
-    const res = await fetch('/api/browse-folder', { method: 'POST' });
+    const res = await fetch('/api/browse-folder', {
+      method: 'POST'
+    });
     const data = await res.json();
     if (data.canceled) return;
     _repoAddCommit(ctx, data.name, data.path);
@@ -380,7 +427,7 @@ const _repoSrcCache = new Map(); // sourceId -> { list, ts }
 
 function _repoSources() {
   const d = window.Symphonee?.contributions?.data;
-  return (d && Array.isArray(d.repoSources)) ? d.repoSources : [];
+  return d && Array.isArray(d.repoSources) ? d.repoSources : [];
 }
 function _repoSourceById(id) {
   return _repoSources().find(s => s.id === id) || null;
@@ -388,7 +435,6 @@ function _repoSourceById(id) {
 function _resolveRoute(source, field) {
   return window.Symphonee?.contributions?.resolve?.(source, field) || null;
 }
-
 async function _fetchPluginRepos(source, query) {
   if (!source) throw new Error('No repo source');
   const now = Date.now();
@@ -402,10 +448,12 @@ async function _fetchPluginRepos(source, query) {
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   const repos = data.repos || data.items || data;
-  if (!query) _repoSrcCache.set(source.id, { list: repos, ts: now });
+  if (!query) _repoSrcCache.set(source.id, {
+    list: repos,
+    ts: now
+  });
   return repos;
 }
-
 function _renderPluginRepoList(source, repos, ctx, mode) {
   if (!repos.length) return '<div style="font-size:11px;color:var(--subtext0);padding:8px 0;">No repos found.</div>';
   window._pluginRepoPicks = window._pluginRepoPicks || {};
@@ -426,12 +474,14 @@ function _renderPluginRepoList(source, repos, ctx, mode) {
       </div>`;
   }).join('');
 }
-
 async function _showPluginClonePicker(source, ctx, mode) {
-  if (!source) { toast('No clone source available', 'error'); return; }
+  if (!source) {
+    toast('No clone source available', 'error');
+    return;
+  }
   const panel = _repoPanel(ctx);
   panel.style.display = 'block';
-  const label = source.label || ('Clone from ' + source.id);
+  const label = source.label || 'Clone from ' + source.id;
   panel.innerHTML = `
     <div style="margin-top:8px;border:1px solid var(--surface1);border-radius:var(--radius);background:var(--surface0);overflow:hidden;">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--surface1);">
@@ -443,24 +493,27 @@ async function _showPluginClonePicker(source, ctx, mode) {
         <div style="font-size:11px;color:var(--subtext0);padding:8px;">Loading...</div>
       </div>
     </div>`;
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
   try {
     const repos = await _fetchPluginRepos(source);
     const results = document.getElementById(`pluginRepoResults_${ctx}`);
     if (results) {
       results.innerHTML = _renderPluginRepoList(source, repos, ctx, mode);
-      try { lucide.createIcons(); } catch (_) {}
+      try {
+        lucide.createIcons();
+      } catch (_) {}
     }
   } catch (e) {
     const results = document.getElementById(`pluginRepoResults_${ctx}`);
     if (results) results.innerHTML = `<div style="font-size:11px;color:var(--red);padding:8px;">${esc(e.message)}</div>`;
   }
 }
-
-let _pluginRepoSearchTimer = null;
+state._pluginRepoSearchTimer = null;
 function _pluginRepoSearch(sourceId, ctx, mode) {
-  clearTimeout(_pluginRepoSearchTimer);
-  _pluginRepoSearchTimer = setTimeout(async () => {
+  clearTimeout(state._pluginRepoSearchTimer);
+  state._pluginRepoSearchTimer = setTimeout(async () => {
     const input = document.getElementById(`pluginRepoSearch_${ctx}`);
     const query = input ? input.value.trim() : '';
     const results = document.getElementById(`pluginRepoResults_${ctx}`);
@@ -470,41 +523,54 @@ function _pluginRepoSearch(sourceId, ctx, mode) {
     try {
       const repos = await _fetchPluginRepos(source, query);
       results.innerHTML = _renderPluginRepoList(source, repos, ctx, mode);
-      try { lucide.createIcons(); } catch (_) {}
+      try {
+        lucide.createIcons();
+      } catch (_) {}
     } catch (e) {
       results.innerHTML = `<div style="font-size:11px;color:var(--red);padding:8px;">${esc(e.message)}</div>`;
     }
   }, 300);
 }
-
 async function _pluginRepoSelected(sourceId, ctx, mode, idx) {
   const source = _repoSourceById(sourceId);
   const repo = window._pluginRepoPicks && window._pluginRepoPicks[sourceId] && window._pluginRepoPicks[sourceId][idx];
   if (!source || !repo) return;
   _repoHidePanel(ctx);
   try {
-    const res = await fetch('/api/browse-folder', { method: 'POST' });
+    const res = await fetch('/api/browse-folder', {
+      method: 'POST'
+    });
     const data = await res.json();
     if (data.canceled) return;
     const displayName = repo.full_name || repo.name || '';
     toast('Cloning ' + displayName + '...', 'info');
     const cloneUrl = repo.clone_url || repo.cloneUrl || repo.http_url_to_repo || repo.ssh_url || '';
     const cloneRouteUrl = _resolveRoute(source, 'cloneRoute');
-    if (!cloneRouteUrl) { toast('Clone route missing for ' + sourceId, 'error'); return; }
+    if (!cloneRouteUrl) {
+      toast('Clone route missing for ' + sourceId, 'error');
+      return;
+    }
     const cloneRes = await fetch(cloneRouteUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cloneUrl, destPath: data.path }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        cloneUrl,
+        destPath: data.path
+      })
     });
     const cloneData = await cloneRes.json();
-    if (cloneData.error) { toast('Clone failed: ' + cloneData.error, 'error'); return; }
+    if (cloneData.error) {
+      toast('Clone failed: ' + cloneData.error, 'error');
+      return;
+    }
     _repoAddCommit(ctx, cloneData.name, cloneData.path);
     toast('Cloned and added: ' + cloneData.name, 'success');
   } catch (e) {
     toast('Clone failed: ' + e.message, 'error');
   }
 }
-
 function repoAddPluginClone(sourceId, ctx) {
   const source = _repoSourceById(sourceId);
   _showPluginClonePicker(source, ctx, 'clone');
@@ -523,17 +589,27 @@ function renderCloneSourceButtons(containerId, ctx, btnClass) {
     btn.setAttribute('data-plugin-clone-btn', src.id);
     btn.style.cssText = 'padding:6px 12px;font-size:11px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;';
     btn.onclick = () => repoAddPluginClone(src.id, ctx);
-    btn.innerHTML = `<i data-lucide="${esc(src.icon || 'git-branch')}" style="width:13px;height:13px;"></i> ${esc(src.label || ('Clone from ' + src.id))}`;
+    btn.innerHTML = `<i data-lucide="${esc(src.icon || 'git-branch')}" style="width:13px;height:13px;"></i> ${esc(src.label || 'Clone from ' + src.id)}`;
     host.appendChild(btn);
   }
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
 }
 
 // Legacy aliases so older HTML/call-sites keep working until they're swept.
-function repoAddGitHubClone(ctx) { repoAddPluginClone('github', ctx); }
-async function _fetchGitHubRepos(query) { return _fetchPluginRepos(_repoSourceById('github'), query); }
-function _renderGitHubRepoList(repos, ctx, mode) { return _renderPluginRepoList(_repoSourceById('github'), repos, ctx, mode); }
-async function _showGitHubPicker(ctx, mode) { return _showPluginClonePicker(_repoSourceById('github'), ctx, mode); }
+function repoAddGitHubClone(ctx) {
+  repoAddPluginClone('github', ctx);
+}
+async function _fetchGitHubRepos(query) {
+  return _fetchPluginRepos(_repoSourceById('github'), query);
+}
+function _renderGitHubRepoList(repos, ctx, mode) {
+  return _renderPluginRepoList(_repoSourceById('github'), repos, ctx, mode);
+}
+async function _showGitHubPicker(ctx, mode) {
+  return _showPluginClonePicker(_repoSourceById('github'), ctx, mode);
+}
 
 // Track which settings require an app restart when changed.
 // No setting currently requires a restart, so this is a no-op kept
@@ -560,9 +636,7 @@ async function refreshSmartSearchStatus() {
     const ol = r.ollama || {};
     if (r.activeProvider === 'ollama') {
       var chat = r.chat || {};
-      var chatLine = chat.preferredModel
-        ? ' Reflection model: ' + chat.preferredModel + '.'
-        : ' Reflection model: downloading in background...';
+      var chatLine = chat.preferredModel ? ' Reflection model: ' + chat.preferredModel + '.' : ' Reflection model: downloading in background...';
       statusEl.textContent = 'Active: Local AI (Ollama / ' + (ol.model || '') + ') -- ' + (v.count || 0) + ' vectors. Runs entirely on your machine. New nodes embed automatically.' + chatLine;
       // Everything works -- expose the manual re-run as a quiet escape hatch.
       btn.style.display = 'inline-block';
@@ -582,7 +656,6 @@ async function refreshSmartSearchStatus() {
     statusEl.textContent = 'Could not reach the Mind status endpoint.';
   }
 }
-
 async function startSmartSearchSetup() {
   const btn = document.getElementById('smartSearchSetupBtn');
   const progress = document.getElementById('smartSearchProgress');
@@ -592,7 +665,13 @@ async function startSmartSearchSetup() {
   progress.style.display = 'block';
   progress.textContent = 'Starting...';
   try {
-    await fetch('/api/mind/embed-setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    await fetch('/api/mind/embed-setup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: '{}'
+    });
   } catch (e) {
     progress.textContent = 'Setup request failed: ' + e.message;
     btn.disabled = false;
@@ -600,7 +679,6 @@ async function startSmartSearchSetup() {
   }
   // Progress arrives via WebSocket mind-update events handled below.
 }
-
 function handleEmbedSetupEvent(payload) {
   const progress = document.getElementById('smartSearchProgress');
   const btn = document.getElementById('smartSearchSetupBtn');
@@ -608,34 +686,26 @@ function handleEmbedSetupEvent(payload) {
   progress.style.display = 'block';
   const s = payload.step;
   const auto = payload.source === 'auto';
-  if (s === 'detect') progress.textContent = (auto ? '[auto] ' : '') + 'Looking for Ollama...';
-  else if (s === 'needs-install') {
+  if (s === 'detect') progress.textContent = (auto ? '[auto] ' : '') + 'Looking for Ollama...';else if (s === 'needs-install') {
     progress.textContent = 'Ollama is the only thing Symphonee cannot install for you. Use the download link above. Once installed, Mind picks it up automatically -- no clicks required.';
     refreshSmartSearchStatus();
-  }
-  else if (s === 'launching') progress.textContent = (auto ? '[auto] ' : '') + 'Launching Ollama...';
-  else if (s === 'launch-failed') progress.textContent = 'Could not launch Ollama: ' + (payload.hint || payload.reason || 'unknown');
-  else if (s === 'pulling-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading embedding model (' + (payload.model || '') + ')...';
-  else if (s === 'pulling-chat-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading reflection model (' + (payload.model || '') + ')...';
-  else if (s === 'chat-model-ready') { progress.textContent = 'Reflection model ready (' + (payload.model || '') + ').'; refreshSmartSearchStatus(); }
-  else if (s === 'pull-failed') progress.textContent = 'Model download failed: ' + (payload.error || 'unknown');
-  else if (s === 'dropping-old-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Clearing old vectors...';
-  else if (s === 'rebuilding-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Building semantic search index...';
-  else if (s === 'embed-progress') progress.textContent = (auto ? '[auto] ' : '') + (payload.msg || 'Embedding...');
-  else if (s === 'embed-failed') progress.textContent = 'Embedding failed: ' + (payload.error || 'unknown');
-  else if (s === 'done') {
-    progress.textContent = 'Done. Local smart search is active.';
-    if (btn) { btn.disabled = false; btn.textContent = 'Re-run setup manually'; }
+  } else if (s === 'launching') progress.textContent = (auto ? '[auto] ' : '') + 'Launching Ollama...';else if (s === 'launch-failed') progress.textContent = 'Could not launch Ollama: ' + (payload.hint || payload.reason || 'unknown');else if (s === 'pulling-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading embedding model (' + (payload.model || '') + ')...';else if (s === 'pulling-chat-model') progress.textContent = (auto ? '[auto] ' : '') + 'Downloading reflection model (' + (payload.model || '') + ')...';else if (s === 'chat-model-ready') {
+    progress.textContent = 'Reflection model ready (' + (payload.model || '') + ').';
     refreshSmartSearchStatus();
-  }
-  else if (s === 'error') progress.textContent = 'Error: ' + (payload.error || 'unknown');
+  } else if (s === 'pull-failed') progress.textContent = 'Model download failed: ' + (payload.error || 'unknown');else if (s === 'dropping-old-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Clearing old vectors...';else if (s === 'rebuilding-vectors') progress.textContent = (auto ? '[auto] ' : '') + 'Building semantic search index...';else if (s === 'embed-progress') progress.textContent = (auto ? '[auto] ' : '') + (payload.msg || 'Embedding...');else if (s === 'embed-failed') progress.textContent = 'Embedding failed: ' + (payload.error || 'unknown');else if (s === 'done') {
+    progress.textContent = 'Done. Local smart search is active.';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Re-run setup manually';
+    }
+    refreshSmartSearchStatus();
+  } else if (s === 'error') progress.textContent = 'Error: ' + (payload.error || 'unknown');
 }
-
 function handleOllamaPullEvent(payload) {
   const progress = document.getElementById('smartSearchProgress');
   if (!progress) return;
   if (payload.total && payload.completed) {
-    const mb = (n) => (n / 1048576).toFixed(1);
+    const mb = n => (n / 1048576).toFixed(1);
     progress.textContent = 'Downloading ' + (payload.model || 'model') + ': ' + mb(payload.completed) + ' MB / ' + mb(payload.total) + ' MB';
   } else if (payload.status) {
     progress.textContent = 'Ollama: ' + payload.status;
@@ -653,40 +723,51 @@ document.addEventListener('DOMContentLoaded', () => {
 // custom event that the main handler dispatches. To keep things simple
 // we hook the message globally — the main handler ignores unknown types
 // so re-dispatching here is safe.
-window.addEventListener('symphonee-mind-update', (ev) => {
+window.addEventListener('symphonee-mind-update', ev => {
   const payload = ev.detail || {};
-  if (payload.kind === 'embed-setup') handleEmbedSetupEvent(payload);
-  else if (payload.kind === 'ollama-pull') handleOllamaPullEvent(payload);
+  if (payload.kind === 'embed-setup') handleEmbedSetupEvent(payload);else if (payload.kind === 'ollama-pull') handleOllamaPullEvent(payload);
 });
-
 function openFactoryResetModal() {
   const el = document.getElementById('factoryResetModal');
   if (!el) return;
   el.classList.add('open');
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
 }
-
 function closeFactoryResetModal() {
   const el = document.getElementById('factoryResetModal');
   if (el) el.classList.remove('open');
 }
-
 function factoryResetExportFirst() {
   const a = document.createElement('a');
   a.href = '/api/config/export';
   a.download = 'symphonee-settings.json';
-  document.body.appendChild(a); a.click(); a.remove();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
   toast('Exported. Reopen the reset dialog when ready.', 'info');
   closeFactoryResetModal();
 }
-
 async function factoryResetConfirm() {
   closeFactoryResetModal();
   showLoading('Resetting...');
   try {
-    const r = await fetch('/api/config/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+    const r = await fetch('/api/config/reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        confirm: true
+      })
+    });
     const d = await r.json();
-    if (!r.ok || !d.ok) { hideLoading(); toast(d.error || 'Reset failed', 'error'); return; }
+    if (!r.ok || !d.ok) {
+      hideLoading();
+      toast(d.error || 'Reset failed', 'error');
+      return;
+    }
     // Wipe every client-side preference (custom themes, active theme, open
     // tabs, expanded parents, etc.) so the app relaunches truly from scratch
     // with the industrial-blue default rather than a stale localStorage entry.
@@ -705,48 +786,57 @@ async function factoryResetConfirm() {
     toast('Reset failed: ' + e.message, 'error');
   }
 }
-
 async function saveSettings() {
   // Safe readers - plugin-contributed settings fields can disappear from the
   // DOM when their owning plugin is uninstalled, and we still want the save +
   // restart flow to complete in that case (the uninstall already ran
   // server-side; we just need the relaunch).
-  const _txt = (id) => { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
-  const _chk = (id) => { const el = document.getElementById(id); return !!(el && el.checked); };
+  const _txt = id => {
+    const el = document.getElementById(id);
+    return el ? (el.value || '').trim() : '';
+  };
+  const _chk = id => {
+    const el = document.getElementById(id);
+    return !!(el && el.checked);
+  };
   try {
-    const defaultCli = _txt('settingsDefaultCli') || activeCli || 'claude';
+    const defaultCli = _txt('settingsDefaultCli') || state.activeCli || 'claude';
     const payload = {
       AzureDevOpsOrg: _txt('settingsOrg'),
-      AzureDevOpsProject: _settingsActiveProject,
-      AzureDevOpsProjects: _settingsProjects,
+      AzureDevOpsProject: state._settingsActiveProject,
+      AzureDevOpsProjects: state._settingsProjects,
       AzureDevOpsPAT: _txt('settingsPAT'),
       DefaultTeam: _txt('settingsTeam'),
       DefaultUser: _txt('settingsUser'),
       GitHubPAT: _txt('settingsGitHubPAT'),
-      OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function(cb) { return cb.value; }),
+      OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function (cb) {
+        return cb.value;
+      }),
       EnableContinuousLearning: _chk('settingsEnableContinuousLearning'),
       AiApiKeys: {
         OPENAI_API_KEY: _txt('settingsOpenaiKey') || undefined,
         GEMINI_API_KEY: _txt('settingsGeminiKey') || undefined,
         ANTHROPIC_API_KEY: _txt('settingsAnthropicKey') || undefined,
-        XAI_API_KEY: _txt('settingsXaiKey') || undefined,
+        XAI_API_KEY: _txt('settingsXaiKey') || undefined
       },
       OrchestrateResultDelivery: 'inject',
-      BrowserCredentials: configData.BrowserCredentials || {},
+      BrowserCredentials: state.configData.BrowserCredentials || {},
       BrowserRouter: {
         default: _txt('settingsBrowserRouterDefault') || 'auto',
-        preferStagehand: _chk('settingsBrowserRouterPreferStagehand'),
+        preferStagehand: _chk('settingsBrowserRouterPreferStagehand')
       },
       InAppAgent: {
-        model: _txt('settingsInAppAgentModel') || undefined,
+        model: _txt('settingsInAppAgentModel') || undefined
       },
       DefaultCli: defaultCli,
-      Repos: configData.Repos || {},
+      Repos: state.configData.Repos || {}
     };
     const res = await fetch('/api/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     // Also save plugin settings + the Browser tab's plugin-scoped fields.
@@ -767,7 +857,7 @@ async function saveSettings() {
       // in the initPlugins IIFE and don't reconcile live, so the simplest
       // correct path is to restart when activation changes.
       const delta = await refreshPluginActivation();
-      if ((delta.added && delta.added.length) || (delta.removed && delta.removed.length)) {
+      if (delta.added && delta.added.length || delta.removed && delta.removed.length) {
         closeSettings();
         toast('Plugin activation changed. Restarting to apply...', 'success');
         setTimeout(() => restartApp(), 500);
@@ -776,7 +866,7 @@ async function saveSettings() {
       closeSettings();
       showLoading('Loading...');
       const minWait = new Promise(r => setTimeout(r, 4000));
-      if (defaultCli && defaultCli !== activeCli) {
+      if (defaultCli && defaultCli !== state.activeCli) {
         switchCli(defaultCli);
       }
       const _sprintSel = document.getElementById('sprintSelect');
@@ -797,7 +887,10 @@ async function saveSettings() {
 function openExportImportMenu(btn) {
   // Close existing menu if any
   const existing = document.querySelector('.export-import-menu');
-  if (existing) { existing.remove(); return; }
+  if (existing) {
+    existing.remove();
+    return;
+  }
   const menu = document.createElement('div');
   menu.className = 'export-import-menu';
   menu.innerHTML = `
@@ -809,14 +902,20 @@ function openExportImportMenu(btn) {
     </button>`;
   btn.style.position = 'relative';
   btn.appendChild(menu);
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
   // Close on outside click
   setTimeout(() => {
-    const close = (e) => { if (!menu.contains(e.target) && e.target !== btn) { menu.remove(); document.removeEventListener('click', close); } };
+    const close = e => {
+      if (!menu.contains(e.target) && e.target !== btn) {
+        menu.remove();
+        document.removeEventListener('click', close);
+      }
+    };
     document.addEventListener('click', close);
   }, 0);
 }
-
 function exportSettings() {
   document.querySelector('.export-import-menu')?.remove();
   const a = document.createElement('a');
@@ -825,13 +924,12 @@ function exportSettings() {
   a.click();
   toast('Settings exported (PATs excluded for security)', 'success');
 }
-
 function importSettings() {
   document.querySelector('.export-import-menu')?.remove();
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json';
-  input.onchange = async (e) => {
+  input.onchange = async e => {
     const file = e.target.files[0];
     if (!file) return;
     try {
@@ -839,8 +937,10 @@ function importSettings() {
       const data = JSON.parse(text);
       const res = await fetch('/api/config/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
       });
       const result = await res.json();
       if (result.ok) {
@@ -866,4 +966,3 @@ function importSettings() {
   };
   input.click();
 }
-

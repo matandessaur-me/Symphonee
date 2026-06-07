@@ -5,7 +5,7 @@
 function _getInappWebview() {
   return document.querySelector('#inappBrowserFrame webview, #inappBrowserFrame iframe');
 }
-let _inappBrowserZoomFactor = 1;
+state._inappBrowserZoomFactor = 1;
 function _clampInappBrowserZoomFactor(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 1;
@@ -16,14 +16,16 @@ function _formatInappBrowserZoom(factor) {
 }
 function _syncInappBrowserZoomUi() {
   const label = document.getElementById('inappBrowserZoomValue');
-  if (label) label.textContent = _formatInappBrowserZoom(_inappBrowserZoomFactor);
+  if (label) label.textContent = _formatInappBrowserZoom(state._inappBrowserZoomFactor);
 }
 function _applyInappBrowserZoom(view) {
   if (!view) return;
-  const factor = _clampInappBrowserZoomFactor(_inappBrowserZoomFactor);
+  const factor = _clampInappBrowserZoomFactor(state._inappBrowserZoomFactor);
   const tag = (view.tagName || '').toLowerCase();
   if (tag === 'webview') {
-    try { view.setZoomFactor(factor); } catch (_) {}
+    try {
+      view.setZoomFactor(factor);
+    } catch (_) {}
   } else {
     view.style.transformOrigin = 'top left';
     if (Math.abs(factor - 1) < 0.001) {
@@ -39,14 +41,14 @@ function _applyInappBrowserZoom(view) {
   _syncInappBrowserZoomUi();
 }
 function inappBrowserSetZoomFactor(nextFactor) {
-  _inappBrowserZoomFactor = _clampInappBrowserZoomFactor(nextFactor);
+  state._inappBrowserZoomFactor = _clampInappBrowserZoomFactor(nextFactor);
   _applyInappBrowserZoom(_getInappWebview());
 }
 function inappBrowserZoomIn() {
-  inappBrowserSetZoomFactor(_inappBrowserZoomFactor + 0.1);
+  inappBrowserSetZoomFactor(state._inappBrowserZoomFactor + 0.1);
 }
 function inappBrowserZoomOut() {
-  inappBrowserSetZoomFactor(_inappBrowserZoomFactor - 0.1);
+  inappBrowserSetZoomFactor(state._inappBrowserZoomFactor - 0.1);
 }
 function inappBrowserZoomReset() {
   inappBrowserSetZoomFactor(1);
@@ -93,7 +95,7 @@ function applyInappBrowserAppearance() {
 function _shortenBrowserText(text, maxLen) {
   const s = String(text || '').replace(/\s+/g, ' ').trim();
   if (!s) return '';
-  return s.length <= maxLen ? s : (s.slice(0, Math.max(0, maxLen - 3)) + '...');
+  return s.length <= maxLen ? s : s.slice(0, Math.max(0, maxLen - 3)) + '...';
 }
 function _clearBrowserSelection() {
   _browserInspectState.selected = null;
@@ -103,7 +105,9 @@ function _clearBrowserSelectionAndHighlight() {
   _clearBrowserSelection();
   const view = _getInappWebview();
   if (view && view.tagName.toLowerCase() === 'webview') {
-    try { view.executeJavaScript("(function(){var k='__symphoneeInspectBridge';if(window[k]&&window[k].clearSelected)window[k].clearSelected();})();", true).catch(() => {}); } catch (_) {}
+    try {
+      view.executeJavaScript("(function(){var k='__symphoneeInspectBridge';if(window[k]&&window[k].clearSelected)window[k].clearSelected();})();", true).catch(() => {});
+    } catch (_) {}
   }
 }
 function _getBrowserAgentInput() {
@@ -118,14 +122,41 @@ function _autosizeAgentInput(el) {
   input.style.height = Math.max(min, Math.min(input.scrollHeight, max)) + 'px';
 }
 const _FRIENDLY_TAGS = {
-  a: 'link', button: 'button', img: 'image', svg: 'icon',
-  h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading',
-  p: 'paragraph', input: 'input', textarea: 'text field', select: 'dropdown',
-  form: 'form', label: 'label', nav: 'nav', header: 'header', footer: 'footer',
-  main: 'main', section: 'section', article: 'article', aside: 'aside',
-  li: 'list item', ul: 'list', ol: 'list', table: 'table', tr: 'row',
-  td: 'cell', th: 'cell', video: 'video', audio: 'audio', iframe: 'frame',
-  span: 'text', div: 'block',
+  a: 'link',
+  button: 'button',
+  img: 'image',
+  svg: 'icon',
+  h1: 'heading',
+  h2: 'heading',
+  h3: 'heading',
+  h4: 'heading',
+  h5: 'heading',
+  h6: 'heading',
+  p: 'paragraph',
+  input: 'input',
+  textarea: 'text field',
+  select: 'dropdown',
+  form: 'form',
+  label: 'label',
+  nav: 'nav',
+  header: 'header',
+  footer: 'footer',
+  main: 'main',
+  section: 'section',
+  article: 'article',
+  aside: 'aside',
+  li: 'list item',
+  ul: 'list',
+  ol: 'list',
+  table: 'table',
+  tr: 'row',
+  td: 'cell',
+  th: 'cell',
+  video: 'video',
+  audio: 'audio',
+  iframe: 'frame',
+  span: 'text',
+  div: 'block'
 };
 function _friendlySelectionLabel(sel) {
   if (!sel) return '';
@@ -144,11 +175,18 @@ function _renderBrowserSelection() {
   const target = document.getElementById('inappAgentSelectionTarget');
   if (panel && target) {
     const sel = _browserInspectState.selected;
-    if (!sel) { panel.classList.remove('open'); target.textContent = ''; }
-    else { panel.classList.add('open'); target.textContent = _friendlySelectionLabel(sel); }
+    if (!sel) {
+      panel.classList.remove('open');
+      target.textContent = '';
+    } else {
+      panel.classList.add('open');
+      target.textContent = _friendlySelectionLabel(sel);
+    }
   }
   if (_inappToolsState.open && _inappToolsState.current === 'inspect') {
-    try { _renderInappCodeInspect(); } catch (_) {}
+    try {
+      _renderInappCodeInspect();
+    } catch (_) {}
   }
 }
 function _syncInappInspectButton() {
@@ -312,7 +350,9 @@ function _handleInappBrowserConsoleMessage(message) {
   const text = String(message || '');
   const keyPrefix = '__SYMPHONEE_KEY__';
   if (text.startsWith(keyPrefix)) {
-    try { _dispatchForwardedKey(JSON.parse(text.slice(keyPrefix.length))); } catch (_) {}
+    try {
+      _dispatchForwardedKey(JSON.parse(text.slice(keyPrefix.length)));
+    } catch (_) {}
     return;
   }
   const prefix = '__SYMPHONEE_INSPECT__';
@@ -326,7 +366,9 @@ function _handleInappBrowserConsoleMessage(message) {
       const input = _getBrowserAgentInput();
       if (input) {
         input.focus();
-        try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+        try {
+          input.setSelectionRange(input.value.length, input.value.length);
+        } catch (_) {}
       }
     }
     // One-shot capture: turn the picker off after a target lands so the user
@@ -337,9 +379,15 @@ function _handleInappBrowserConsoleMessage(message) {
       _browserInspectState.enabled = false;
       _syncInappInspectButton();
       const view = _ensureInappBrowser();
-      if (view) { try { _applyInappInspectMode(view); } catch (_) {} }
+      if (view) {
+        try {
+          _applyInappInspectMode(view);
+        } catch (_) {}
+      }
       if (_inappToolsState.open && _inappToolsState.current === 'menu') {
-        try { _renderInappToolsMenu(); } catch (_) {}
+        try {
+          _renderInappToolsMenu();
+        } catch (_) {}
       }
     }
   } catch (_) {}
@@ -350,25 +398,72 @@ function _dispatchForwardedKey(payload) {
   const k = payload.key;
   const shift = !!payload.shift;
   const ctrl = !!payload.ctrl;
-  if (ctrl && (k === 'k' || k === 'K')) { openCmdPalette(); return; }
-  if (k === 'Escape') {
-    if (_inspectIsEditing) { _inspectToggleEdit(); return; }
-    if (_colorPopoverEl) { _closeColorPopover(); return; }
-    const overlay = document.getElementById('symShortcutsOverlay');
-    if (overlay && overlay.classList.contains('open')) { hideInappShortcutsHelp(); return; }
-    if (_inappToolsState.open) { closeInappToolsPanel(); return; }
-    if (_browserAgentState.open) { toggleBrowserAgentPanel(); return; }
-    if (_browserInspectState.enabled) { toggleInappInspectMode(false); return; }
+  if (ctrl && (k === 'k' || k === 'K')) {
+    openCmdPalette();
     return;
   }
-  if (k === '?' || (k === '/' && shift)) { showInappShortcutsHelp(); return; }
+  if (k === 'Escape') {
+    if (state._inspectIsEditing) {
+      _inspectToggleEdit();
+      return;
+    }
+    if (state._colorPopoverEl) {
+      _closeColorPopover();
+      return;
+    }
+    const overlay = document.getElementById('symShortcutsOverlay');
+    if (overlay && overlay.classList.contains('open')) {
+      hideInappShortcutsHelp();
+      return;
+    }
+    if (_inappToolsState.open) {
+      closeInappToolsPanel();
+      return;
+    }
+    if (_browserAgentState.open) {
+      toggleBrowserAgentPanel();
+      return;
+    }
+    if (_browserInspectState.enabled) {
+      toggleInappInspectMode(false);
+      return;
+    }
+    return;
+  }
+  if (k === '?' || k === '/' && shift) {
+    showInappShortcutsHelp();
+    return;
+  }
   const low = k.toLowerCase();
-  if (low === 'i') { toggleInappInspectMode(); return; }
-  if (low === 'h') { if (shift) { _ensureSymKit().then(() => _symKitCall('unhideAll')); toast('Un-hid all', 'info', { duration: 1000 }); } else if (_inspectActiveSelector) _inspectHideSelected(); return; }
-  if (low === 'g') { toggleInappGrayscale(); return; }
-  if (low === 'f') { toggleInappFocusMode(); return; }
-  if (low === 't') { toggleInappToolsPanelMenu(); return; }
-  if (low === 'e') { _inspectToggleEdit(); return; }
+  if (low === 'i') {
+    toggleInappInspectMode();
+    return;
+  }
+  if (low === 'h') {
+    if (shift) {
+      _ensureSymKit().then(() => _symKitCall('unhideAll'));
+      toast('Un-hid all', 'info', {
+        duration: 1000
+      });
+    } else if (state._inspectActiveSelector) _inspectHideSelected();
+    return;
+  }
+  if (low === 'g') {
+    toggleInappGrayscale();
+    return;
+  }
+  if (low === 'f') {
+    toggleInappFocusMode();
+    return;
+  }
+  if (low === 't') {
+    toggleInappToolsPanelMenu();
+    return;
+  }
+  if (low === 'e') {
+    _inspectToggleEdit();
+    return;
+  }
 }
 function toggleInappInspectMode(forceState) {
   const nextState = typeof forceState === 'boolean' ? forceState : !_browserInspectState.enabled;
@@ -377,13 +472,9 @@ function toggleInappInspectMode(forceState) {
   _syncInappInspectButton();
   const view = _ensureInappBrowser();
   if (view) _applyInappInspectMode(view);
-  toast(
-    _browserInspectState.enabled
-      ? 'Inspect mode is on. Click an element in the page to select it.'
-      : 'Inspect mode is off.',
-    'info',
-    { duration: 2600 }
-  );
+  toast(_browserInspectState.enabled ? 'Inspect mode is on. Click an element in the page to select it.' : 'Inspect mode is off.', 'info', {
+    duration: 2600
+  });
 }
 function _ensureInappBrowser(initialUrl) {
   const frame = document.getElementById('inappBrowserFrame');
@@ -403,13 +494,31 @@ function _ensureInappBrowser(initialUrl) {
       if (_browserInspectState.enabled) _applyInappInspectMode(view);
       _applyInappBrowserZoom(view);
     });
-    view.addEventListener('did-navigate', (e) => { _syncInappUrl(e.url); _clearBrowserSelection(); _resetOverlayStateForNewPage(); try { _pageMapCache.url = ''; _pageMapCache.map = null; } catch (_) {} });
-    view.addEventListener('did-navigate-in-page', (e) => { _syncInappUrl(e.url); _clearBrowserSelection(); _resetOverlayStateForNewPage(); try { _pageMapCache.url = ''; _pageMapCache.map = null; } catch (_) {} });
+    view.addEventListener('did-navigate', e => {
+      _syncInappUrl(e.url);
+      _clearBrowserSelection();
+      _resetOverlayStateForNewPage();
+      try {
+        _pageMapCache.url = '';
+        _pageMapCache.map = null;
+      } catch (_) {}
+    });
+    view.addEventListener('did-navigate-in-page', e => {
+      _syncInappUrl(e.url);
+      _clearBrowserSelection();
+      _resetOverlayStateForNewPage();
+      try {
+        _pageMapCache.url = '';
+        _pageMapCache.map = null;
+      } catch (_) {}
+    });
     view.addEventListener('page-title-updated', () => {/* could update tab title */});
-    view.addEventListener('console-message', (e) => _handleInappBrowserConsoleMessage(e && e.message));
+    view.addEventListener('console-message', e => _handleInappBrowserConsoleMessage(e && e.message));
   } else {
     view.addEventListener('load', () => {
-      try { _syncInappUrl(view.contentWindow.location.href); } catch (_) {}
+      try {
+        _syncInappUrl(view.contentWindow.location.href);
+      } catch (_) {}
       _applyInappBrowserZoom(view);
     });
   }
@@ -437,7 +546,11 @@ function inappBrowserGo() {
   const view = _ensureInappBrowser(url);
   if (!view) return;
   if (view.tagName.toLowerCase() === 'webview') {
-    try { view.loadURL(url); } catch (_) { view.src = url; }
+    try {
+      view.loadURL(url);
+    } catch (_) {
+      view.src = url;
+    }
   } else {
     view.src = url;
   }
@@ -445,34 +558,67 @@ function inappBrowserGo() {
   input.value = url;
 }
 function inappBrowserBack() {
-  const v = _getInappWebview(); if (!v) return;
-  if (v.tagName.toLowerCase() === 'webview') { try { v.goBack(); } catch (_) {} }
-  else { try { v.contentWindow.history.back(); } catch (_) {} }
+  const v = _getInappWebview();
+  if (!v) return;
+  if (v.tagName.toLowerCase() === 'webview') {
+    try {
+      v.goBack();
+    } catch (_) {}
+  } else {
+    try {
+      v.contentWindow.history.back();
+    } catch (_) {}
+  }
 }
 function inappBrowserForward() {
-  const v = _getInappWebview(); if (!v) return;
-  if (v.tagName.toLowerCase() === 'webview') { try { v.goForward(); } catch (_) {} }
-  else { try { v.contentWindow.history.forward(); } catch (_) {} }
+  const v = _getInappWebview();
+  if (!v) return;
+  if (v.tagName.toLowerCase() === 'webview') {
+    try {
+      v.goForward();
+    } catch (_) {}
+  } else {
+    try {
+      v.contentWindow.history.forward();
+    } catch (_) {}
+  }
 }
 function inappBrowserReload() {
-  const v = _getInappWebview(); if (!v) return;
-  if (v.tagName.toLowerCase() === 'webview') { try { v.reload(); } catch (_) {} }
-  else { try { v.contentWindow.location.reload(); } catch (_) {} }
+  const v = _getInappWebview();
+  if (!v) return;
+  if (v.tagName.toLowerCase() === 'webview') {
+    try {
+      v.reload();
+    } catch (_) {}
+  } else {
+    try {
+      v.contentWindow.location.reload();
+    } catch (_) {}
+  }
 }
 function inappBrowserOpenExternal() {
   const input = document.getElementById('inappBrowserUrl');
   const url = input && input.value ? input.value : 'https://duckduckgo.com/';
-  try { window.open(url, '_blank'); } catch (_) {}
+  try {
+    window.open(url, '_blank');
+  } catch (_) {}
 }
 // Open the browser tab (used by command palette / playwright automation).
 function openBrowserTab(initialUrl) {
   const btn = document.getElementById('browserTabBtn');
-  if (btn) { btn.style.removeProperty('display'); btn.removeAttribute('hidden'); }
+  if (btn) {
+    btn.style.removeProperty('display');
+    btn.removeAttribute('hidden');
+  }
   switchTab('browser');
   if (initialUrl) {
     const input = document.getElementById('inappBrowserUrl');
     if (input) input.value = initialUrl;
-    setTimeout(() => { try { inappBrowserGo(); } catch (_) {} }, 50);
+    setTimeout(() => {
+      try {
+        inappBrowserGo();
+      } catch (_) {}
+    }, 50);
   }
 }
 // Hide the browser tab. If it was active, fall back to terminal.

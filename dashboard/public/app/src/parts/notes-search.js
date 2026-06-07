@@ -1,61 +1,74 @@
 // ═══ Notes search (uses /api/search) ════════════════════════════════════
-let _notesSearchTimer = null;
+state._notesSearchTimer = null;
 function onNotesSearchInput() {
-  clearTimeout(_notesSearchTimer);
-  _notesSearchTimer = setTimeout(runNotesSearch, 200);
+  clearTimeout(state._notesSearchTimer);
+  state._notesSearchTimer = setTimeout(runNotesSearch, 200);
 }
 // ═══ In-note find bar (Ctrl+F when focused in the notes editor) ═════════
-let _noteFindMatches = [];
-let _noteFindIndex = -1;
-
+state._noteFindMatches = [];
+state._noteFindIndex = -1;
 function openNoteFind(prefill) {
   const ta = document.getElementById('noteTextarea');
   if (!ta) return;
   // Find bar only makes sense in edit mode (textarea visible)
-  if (noteMode !== 'edit') setNoteMode('edit');
+  if (state.noteMode !== 'edit') setNoteMode('edit');
   const bar = document.getElementById('noteFindBar');
   bar.style.display = 'flex';
   const input = document.getElementById('noteFindInput');
   if (prefill && !input.value) input.value = prefill;
-  setTimeout(() => { input.focus(); input.select(); }, 0);
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 0);
   if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
   updateNoteFindMatches(true);
 }
-
 function closeNoteFind() {
   const bar = document.getElementById('noteFindBar');
   if (bar) bar.style.display = 'none';
-  _noteFindMatches = [];
-  _noteFindIndex = -1;
+  state._noteFindMatches = [];
+  state._noteFindIndex = -1;
   paintNoteHighlights('', -1);
 }
-
 function updateNoteFindMatches(jumpToFirst) {
   const ta = document.getElementById('noteTextarea');
   const term = (document.getElementById('noteFindInput').value || '').toLowerCase();
   const countEl = document.getElementById('noteFindCount');
-  if (!term) { _noteFindMatches = []; _noteFindIndex = -1; countEl.textContent = '0/0'; return; }
+  if (!term) {
+    state._noteFindMatches = [];
+    state._noteFindIndex = -1;
+    countEl.textContent = '0/0';
+    return;
+  }
   const text = ta.value.toLowerCase();
   const matches = [];
   let i = 0;
-  while ((i = text.indexOf(term, i)) !== -1) { matches.push(i); i += term.length; }
-  _noteFindMatches = matches;
-  if (matches.length === 0) { _noteFindIndex = -1; countEl.textContent = '0/0'; return; }
-  if (jumpToFirst || _noteFindIndex < 0 || _noteFindIndex >= matches.length) _noteFindIndex = 0;
+  while ((i = text.indexOf(term, i)) !== -1) {
+    matches.push(i);
+    i += term.length;
+  }
+  state._noteFindMatches = matches;
+  if (matches.length === 0) {
+    state._noteFindIndex = -1;
+    countEl.textContent = '0/0';
+    return;
+  }
+  if (jumpToFirst || state._noteFindIndex < 0 || state._noteFindIndex >= matches.length) state._noteFindIndex = 0;
   noteFindHighlight();
 }
-
 function noteFindStep(delta) {
-  if (_noteFindMatches.length === 0) return;
-  _noteFindIndex = (_noteFindIndex + delta + _noteFindMatches.length) % _noteFindMatches.length;
+  if (state._noteFindMatches.length === 0) return;
+  state._noteFindIndex = (state._noteFindIndex + delta + state._noteFindMatches.length) % state._noteFindMatches.length;
   noteFindHighlight();
 }
-
 function noteFindHighlight() {
   const ta = document.getElementById('noteTextarea');
   const term = document.getElementById('noteFindInput').value;
-  if (_noteFindIndex < 0 || !term) { paintNoteHighlights('', -1); return; }
-  const start = _noteFindMatches[_noteFindIndex];
+  if (state._noteFindIndex < 0 || !term) {
+    paintNoteHighlights('', -1);
+    return;
+  }
+  const start = state._noteFindMatches[state._noteFindIndex];
   const end = start + term.length;
   // Native textarea selection (works only while textarea is focused)
   ta.setSelectionRange(start, end);
@@ -64,9 +77,9 @@ function noteFindHighlight() {
   const lines = before.split('\n').length;
   const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 24;
   ta.scrollTop = Math.max(0, lines * lineHeight - ta.clientHeight / 2);
-  document.getElementById('noteFindCount').textContent = (_noteFindIndex + 1) + '/' + _noteFindMatches.length;
+  document.getElementById('noteFindCount').textContent = state._noteFindIndex + 1 + '/' + state._noteFindMatches.length;
   // Paint the overlay so highlights stay visible regardless of which element is focused
-  paintNoteHighlights(term, _noteFindIndex);
+  paintNoteHighlights(term, state._noteFindIndex);
   syncNoteHighlightScroll();
 }
 
@@ -79,7 +92,10 @@ function paintNoteHighlights(term, currentIdx) {
   const ta = document.getElementById('noteTextarea');
   if (!layer || !ta) return;
   const text = ta.value;
-  if (!term) { layer.innerHTML = escapeHtml(text); return; }
+  if (!term) {
+    layer.innerHTML = escapeHtml(text);
+    return;
+  }
   const lower = text.toLowerCase();
   const t = term.toLowerCase();
   let html = '';
@@ -87,16 +103,18 @@ function paintNoteHighlights(term, currentIdx) {
   let occ = 0;
   while (true) {
     const next = lower.indexOf(t, i);
-    if (next === -1) { html += escapeHtml(text.slice(i)); break; }
+    if (next === -1) {
+      html += escapeHtml(text.slice(i));
+      break;
+    }
     html += escapeHtml(text.slice(i, next));
-    const cls = (occ === currentIdx) ? 'note-find-current' : 'note-find';
+    const cls = occ === currentIdx ? 'note-find-current' : 'note-find';
     html += `<mark class="${cls}">${escapeHtml(text.slice(next, next + term.length))}</mark>`;
     i = next + term.length;
     occ++;
   }
   layer.innerHTML = html;
 }
-
 function syncNoteHighlightScroll() {
   const layer = document.getElementById('noteHighlightLayer');
   const ta = document.getElementById('noteTextarea');
@@ -113,7 +131,6 @@ function updateNoteHighlightsLive() {
     updateNoteFindMatches(false);
   }
 }
-
 function onNoteFindKeydown(e) {
   if (e.key === 'Enter') {
     e.preventDefault();
@@ -131,7 +148,11 @@ function onNoteFindKeydown(e) {
 async function runNotesSearch() {
   const q = document.getElementById('notesSearchInput').value.trim();
   const host = document.getElementById('notesSearchResults');
-  if (!q) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  if (!q) {
+    host.style.display = 'none';
+    host.innerHTML = '';
+    return;
+  }
   try {
     // Notes tab search is scoped to notes in the active space's namespace;
     // cross-corpus/cross-space search lives in the command palette.
@@ -153,7 +174,7 @@ async function runNotesSearch() {
       } else if (x.titleMatches > 0) {
         matchLabel = 'match in title';
       } else if (x.matches > 0) {
-        matchLabel = `${x.matches} match${x.matches===1?'':'es'}`;
+        matchLabel = `${x.matches} match${x.matches === 1 ? '' : 'es'}`;
       } else {
         matchLabel = 'related';
       }
@@ -174,13 +195,13 @@ async function runNotesSearch() {
         // Only ask openNote to jump (and switch to edit mode) when the term
         // actually appears in the body. Otherwise just open in preview --
         // the title matched, the user wants to read the note normally.
-        const jumpTo = (result.bodyMatches > 0) ? term : null;
-        openNote(name, jumpTo ? { jumpTo } : null);
+        const jumpTo = result.bodyMatches > 0 ? term : null;
+        openNote(name, jumpTo ? {
+          jumpTo
+        } : null);
         if (!jumpTo && (result.titleMatches > 0 || result.matches === 0)) {
           // Toast a hint so they know why no highlight appeared
-          toast(result.titleMatches > 0
-            ? `"${term}" appears in the title only, not in the body.`
-            : `"${term}" is related but not literally in this note.`, 'success');
+          toast(result.titleMatches > 0 ? `"${term}" appears in the title only, not in the body.` : `"${term}" is related but not literally in this note.`, 'success');
         }
       });
     });
@@ -190,40 +211,50 @@ async function runNotesSearch() {
   }
 }
 
-
 // Each variable: human-readable label first, then the {{ token }} as secondary text.
-const RE_CONTEXT_VARS = [
-  { label: 'Selected Repo', token: 'context.activeRepo', desc: 'Name of the repo currently selected in the sidebar' },
-  { label: 'Selected Repo Path', token: 'context.activeRepoPath', desc: 'Full on-disk path of the selected repo' },
-  { label: 'Selected Iteration', token: 'context.selectedIterationName', desc: 'Name of the active Azure DevOps iteration' },
-  { label: 'Selected Area', token: 'context.selectedAreaName', desc: 'Active Azure DevOps area path' },
-  { label: 'OS Username', token: 'env.USERNAME', desc: 'Operating system username' },
-];
-const RE_SNIPPETS = [
-  { label: 'Run a script', desc: 'Bash-friendly invocation of a PowerShell script', text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/<Name>.ps1"' },
-  { label: 'Save a note', desc: 'Persist markdown to the Notes tab', text: 'node scripts/save-note.js "Title here" --file .ai-workspace/output.md' },
-  { label: 'Show diff viewer', desc: 'Open the built-in side-by-side diff for the active repo', text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Show-Diff.ps1 -Repo \'{{ context.activeRepo }}\'"' },
-  { label: 'List work items', desc: 'Active items in the current iteration', text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Find-WorkItems.ps1 -State Active"' },
-  { label: 'Pick best model for a task', desc: 'Ask the model router for the right CLI/model', text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Get-ModelRecommendation.ps1 -Intent quick-summary"' },
-  { label: 'Start a graph run', desc: 'Launch a multi-step durable workflow from a JSON definition', text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/Start-GraphRun.ps1" -File ".ai-workspace/my-graph.json"' },
-];
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+const RE_CONTEXT_VARS = [{
+  label: 'Selected Repo',
+  token: 'context.activeRepo',
+  desc: 'Name of the repo currently selected in the sidebar'
+}, {
+  label: 'Selected Repo Path',
+  token: 'context.activeRepoPath',
+  desc: 'Full on-disk path of the selected repo'
+}, {
+  label: 'Selected Iteration',
+  token: 'context.selectedIterationName',
+  desc: 'Name of the active Azure DevOps iteration'
+}, {
+  label: 'Selected Area',
+  token: 'context.selectedAreaName',
+  desc: 'Active Azure DevOps area path'
+}, {
+  label: 'OS Username',
+  token: 'env.USERNAME',
+  desc: 'Operating system username'
+}];
+const RE_SNIPPETS = [{
+  label: 'Run a script',
+  desc: 'Bash-friendly invocation of a PowerShell script',
+  text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/<Name>.ps1"'
+}, {
+  label: 'Save a note',
+  desc: 'Persist markdown to the Notes tab',
+  text: 'node scripts/save-note.js "Title here" --file .ai-workspace/output.md'
+}, {
+  label: 'Show diff viewer',
+  desc: 'Open the built-in side-by-side diff for the active repo',
+  text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Show-Diff.ps1 -Repo \'{{ context.activeRepo }}\'"'
+}, {
+  label: 'List work items',
+  desc: 'Active items in the current iteration',
+  text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Find-WorkItems.ps1 -State Active"'
+}, {
+  label: 'Pick best model for a task',
+  desc: 'Ask the model router for the right CLI/model',
+  text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "./scripts/Get-ModelRecommendation.ps1 -Intent quick-summary"'
+}, {
+  label: 'Start a graph run',
+  desc: 'Launch a multi-step durable workflow from a JSON definition',
+  text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/Start-GraphRun.ps1" -File ".ai-workspace/my-graph.json"'
+}];
