@@ -24,6 +24,7 @@
   "keyboard.js",
   "command-palette.js",
   "activity-timeline.js",
+  "activity-ledger.js",
   "plugins.js",
   "browser-credentials.js",
   "permissions.js",

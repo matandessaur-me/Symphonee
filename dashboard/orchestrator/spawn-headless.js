@@ -102,6 +102,18 @@ module.exports = {
       } catch (_) {}
     }
 
+    // Ledger hint: prepend a short "what just happened" digest from the action
+    // ledger so the worker inherits the same recent-activity view the user has
+    // (recent actions/changes + checkpoints it can revert to). Skipped if empty.
+    if (typeof this.getLedgerHint === 'function' && _retryAttempt === 0) {
+      try {
+        const lh = this.getLedgerHint();
+        if (lh && typeof prompt === 'string' && !prompt.includes('[recent activity:')) {
+          prompt = `${lh}\n\n${prompt}`;
+        }
+      } catch (_) {}
+    }
+
     // Circuit breaker: check if CLI is available
     if (!this.circuitBreaker.isAvailable(cli)) {
       throw new Error(`CLI "${cli}" circuit breaker is OPEN (too many recent failures). Try again later or use a different CLI.`);

@@ -65,9 +65,15 @@ function sanitizeText(str) {
     .trim();
 }
 
-const PORT = 3800;
+const PORT = Number(process.env.SYMPHONEE_PORT) || 3800;
 const HOST = '127.0.0.1';
 const repoRoot = path.resolve(__dirname, '..');
+
+// Action Ledger holder. The module is initialised once `broadcast` is available
+// (see below); `permGate` and other early code reference this holder, which is
+// null until then and a no-op-safe instance after. Declared here so functions
+// defined above the init site can close over it without a TDZ hazard.
+let _ledger = null;
 
 const publicDir = path.join(__dirname, 'public');
 const notesDir = path.join(repoRoot, 'notes'); // shared: hybrid-search index + note path-guards (note ROUTES live in routes/notes.js)
@@ -133,6 +139,10 @@ const { buildRepoMap } = require('./repo-map');
 const hybridSearch = new HybridSearchEngine({ repoRoot });
 
 async function permGate(res, type, value, label) {
+  // Ledger recording happens centrally inside permissions.gate() via the
+  // registered recorder (see permissions.setRecorder below), so EVERY gate
+  // caller -- this wrapper, the orchestrator's gateSpawn, the apps routes --
+  // is captured uniformly. Nothing to do here but delegate.
   return permissions.gate(res, { type, value }, { configPath, actionLabel: label });
 }
 
@@ -684,6 +694,41 @@ const { broadcast, terminals, termAiMeta, createTerminal, killTerminal } = _term
 const _uiCtxStore = createUiContextStore({ repoRoot, getConfig, broadcast, onActiveRepoChange: () => { try { writePluginHints(); } catch (_) {} } });
 const getUiContextWithPath = _uiCtxStore.getUiContext;
 
+// Resolve the active space (the ledger + Mind both partition by it).
+const getSpace = () => { try { return getUiContextWithPath().activeSpace || null; } catch (_) { return null; } };
+
+// ── Action Ledger ───────────────────────────────────────────────────────────
+// Initialise now that broadcast exists. `permGate` (defined above) and the
+// orchestrator/git routes (below) record through this. Lives beside Mind under
+// <repoRoot>/.symphonee/ledger/<space>.jsonl.
+_ledger = require('./lib/ledger').init({ dir: path.join(repoRoot, '.symphonee', 'ledger'), broadcast });
+const ledger = _ledger;
+
+// Register the ledger as the permission engine's recorder. Every gate decision
+// (allow/ask/deny/rejected) -- from permGate, the orchestrator's gateSpawn, the
+// apps routes, anywhere -- now lands in the ledger from one chokepoint. This is
+// where permission DENIALS finally get recorded; before, they vanished.
+permissions.setRecorder(({ action, decision, outcome, label }) => {
+  const ui = getUiContextWithPath();
+  const type = (action && action.type) || 'api';
+  const category = type === 'cli' ? 'cli' : (type === 'plugin' ? 'plugin' : (type === 'tool' ? 'system' : 'api'));
+  ledger.record({
+    category,
+    action: (action && action.value) || 'unknown',
+    resource: label || (action && action.value) || null,
+    decision,
+    outcome,
+    actor: 'main',
+    space: (ui && ui.activeSpace) || null,
+    repo: (ui && ui.activeRepo) || null,
+    detail: label || null,
+  });
+});
+
+// Git-based checkpoints (the "undo" behind the ledger). Stored alongside the
+// ledger under .symphonee/ledger/checkpoints/<id>.json.
+const checkpoint = require('./lib/checkpoint').init({ dir: path.join(repoRoot, '.symphonee', 'ledger', 'checkpoints') });
+
 const writePluginHints = createPluginHints({ repoRoot, pluginsDir, getConfig, getUiContext: getUiContextWithPath, broadcast });
 
 function handleHealthCheck(res) {
@@ -816,12 +861,109 @@ const mind = mountMind(addRoute, json, {
 });
 console.log('  Mind mounted (/api/mind/*) - shared knowledge graph');
 trace.mark('server:mind-mounted');
+
+// ── Action Ledger routes ────────────────────────────────────────────────────
+// GET /api/ledger        - newest-first action history (filterable)
+// GET /api/ledger/stats  - aggregate counts for the activity summary
+addRoute('GET', '/api/ledger', (req, res, url) => {
+  const p = url.searchParams;
+  const space = p.get('space') || getSpace();
+  const entries = ledger.query({
+    space,
+    since: p.get('since') || undefined,
+    until: p.get('until') || undefined,
+    category: p.get('category') || undefined,
+    actor: p.get('actor') || undefined,
+    outcome: p.get('outcome') || undefined,
+    decision: p.get('decision') || undefined,
+    q: p.get('q') || undefined,
+    limit: Number(p.get('limit')) || 200,
+  });
+  json(res, { space, entries, count: entries.length });
+});
+addRoute('GET', '/api/ledger/stats', (req, res, url) => {
+  const p = url.searchParams;
+  json(res, ledger.stats({ space: p.get('space') || getSpace(), since: p.get('since') || undefined }));
+});
+
+// Checkpoints (undo). create = non-destructive snapshot (ungated, like a read).
+// undo = mutates the working tree, so it goes through permGate.
+addRoute('GET', '/api/ledger/checkpoints', (req, res, url) => {
+  const repo = url.searchParams.get('repo') || undefined;
+  json(res, { checkpoints: checkpoint.list({ repo, limit: Number(url.searchParams.get('limit')) || 50 }) });
+});
+addRoute('POST', '/api/ledger/checkpoint', async (req, res) => {
+  const body = await readBody(req);
+  const ui = getUiContextWithPath();
+  const repoName = body.repo || (ui && ui.activeRepo);
+  const repoPath = getRepoPath(repoName);
+  if (!repoPath) return json(res, { error: 'No repo selected or repo not found' }, 400);
+  try {
+    const cp = await checkpoint.create(repoPath, { label: body.label, repo: repoName });
+    ledger.record({
+      category: 'git', action: 'checkpoint.create', resource: repoName,
+      decision: null, outcome: 'ok', actor: body.actor || 'main',
+      space: (ui && ui.activeSpace) || null, repo: repoName,
+      detail: (cp.label ? cp.label + ' -- ' : '') + cp.changed + ' changed', checkpointId: cp.id,
+    });
+    json(res, { checkpoint: cp });
+  } catch (e) { json(res, { error: e.message }, 400); }
+});
+addRoute('POST', '/api/ledger/undo', async (req, res) => {
+  const body = await readBody(req);
+  const cp = checkpoint.get(body.checkpointId);
+  if (!cp) return json(res, { error: 'Checkpoint not found' }, 404);
+  if (!await permGate(res, 'api', 'POST /api/ledger/undo', 'Undo ' + (cp.repo || 'repo') + ' to checkpoint "' + (cp.label || cp.id) + '"')) return;
+  const ui = getUiContextWithPath();
+  try {
+    const r = await checkpoint.restore(body.checkpointId);
+    ledger.record({
+      category: 'git', action: 'checkpoint.undo', resource: cp.repo,
+      decision: 'allow', outcome: 'ok', actor: body.actor || 'main',
+      space: (ui && ui.activeSpace) || null, repo: cp.repo,
+      detail: 'Reverted to "' + (cp.label || cp.id) + '"' + (r.safety ? ' (safety ' + r.safety.id + ')' : ''),
+      checkpointId: cp.id,
+    });
+    json(res, { ok: true, ...r });
+  } catch (e) {
+    ledger.record({ category: 'git', action: 'checkpoint.undo', resource: cp.repo, outcome: 'error', detail: e.message, repo: cp.repo, space: (ui && ui.activeSpace) || null, checkpointId: cp.id });
+    json(res, { error: e.message }, 400);
+  }
+});
+console.log('  Ledger mounted (/api/ledger) - cross-CLI action history + checkpoints');
 // Wire orchestrator -> Mind so every dispatched worker prompt is prefixed
 // with the brain's current state (node count, staleness, query URL), and
 // every completed task gets saved back as a shared conversation node.
 if (orchestrator) {
   orchestrator.getMindHint = (opts) => mind.orchestratorHint(opts || {});
   orchestrator.saveTaskToMind = (task) => mind.saveTaskToMind(task);
+  // Context pack: a short "what just happened" digest from the action ledger so
+  // a dispatched worker starts aware of recent actions/changes in the active
+  // repo and the checkpoints it could revert to -- it inherits the same
+  // cross-CLI activity view the user has, instead of starting blind.
+  orchestrator.getLedgerHint = () => {
+    try {
+      const ui = getUiContextWithPath();
+      const space = (ui && ui.activeSpace) || null;
+      const repo = (ui && ui.activeRepo) || null;
+      let rows = ledger.query({ space, limit: 40 });
+      if (repo) rows = rows.filter((r) => !r.repo || r.repo === repo);
+      rows = rows.slice(0, 12);
+      if (!rows.length) return '';
+      const lines = rows.map((r) => {
+        const t = String(r.ts || '').slice(11, 16);
+        const res = r.resource ? ' (' + String(r.resource).slice(0, 60) + ')' : '';
+        const dec = (r.decision && r.decision !== 'allow') ? ' [' + r.decision + ']' : '';
+        return `  - ${t} ${r.actor} ${r.action}${res} -> ${r.outcome}${dec}`;
+      });
+      let cpLine = '';
+      try {
+        const cps = checkpoint.list({ repo, limit: 3 });
+        if (cps.length) cpLine = `\nRecent checkpoints (revert via POST /api/ledger/undo {"checkpointId"}): ${cps.map((c) => c.id + (c.label ? '="' + c.label + '"' : '')).join(', ')}`;
+      } catch (_) {}
+      return `[recent activity: last ${rows.length} server action(s)${repo ? ' in ' + repo : ''}]\n${lines.join('\n')}${cpLine}`;
+    } catch (_) { return ''; }
+  };
 }
 
 // ── Mount Skill Corpus (the procedural layer of the cognitive loop) ─────────

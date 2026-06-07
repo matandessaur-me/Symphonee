@@ -1,0 +1,173 @@
+// ── Activity Ledger ─────────────────────────────────────────────────────────
+// First-class, cross-CLI action history (NOT the Azure DevOps "Activity
+// Timeline", which is plugin-gated). Shows every action that flowed through the
+// server -- automation, plugins, worker spawns, Mind writes, every permission
+// decision incl. denials -- live via the WS 'action' broadcast, with git
+// checkpoints you can undo to. This is the trust surface: what did it do, and
+// can I take it back.
+
+state.ledgerEntries = state.ledgerEntries || [];
+state.ledgerCheckpoints = state.ledgerCheckpoints || [];
+state.ledgerFilter = state.ledgerFilter || { category: '', outcome: '', q: '' };
+
+const LEDGER_CAT_ICON = {
+  api: 'plug', git: 'git-branch', file: 'file-text', terminal: 'square-terminal',
+  plugin: 'puzzle', cli: 'bot', apps: 'app-window', browser: 'globe',
+  mind: 'brain', orchestrator: 'network', system: 'cpu',
+};
+const LEDGER_OUTCOME_CLASS = { ok: 'lg-ok', blocked: 'lg-blocked', error: 'lg-error', pending: 'lg-pending' };
+// Plain-language label for the KIND of action, so each row says what it is.
+const LEDGER_CAT_LABEL = { api: 'Action', git: 'Git', file: 'File', terminal: 'Terminal', plugin: 'Plugin', cli: 'Worker', apps: 'Desktop', browser: 'Browser', mind: 'Mind', orchestrator: 'Orchestrator', system: 'System' };
+
+// Open the History view from the top-bar history icon.
+function openHistory() { if (typeof switchTab === 'function') switchTab('ledger'); }
+
+function _histDayLabel(ts) {
+  const d = new Date(ts); const now = new Date();
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((b - a) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function _ledgerEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function _ledgerTime(ts) {
+  try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (_) { return ''; }
+}
+
+async function ledgerLoad() {
+  try {
+    const [aRes, cRes] = await Promise.all([
+      fetch('/api/ledger?limit=300'),
+      fetch('/api/ledger/checkpoints'),
+    ]);
+    const a = await aRes.json().catch(() => ({}));
+    const c = await cRes.json().catch(() => ({}));
+    state.ledgerEntries = Array.isArray(a.entries) ? a.entries : [];
+    state.ledgerCheckpoints = Array.isArray(c.checkpoints) ? c.checkpoints : [];
+  } catch (_) { /* leave whatever we have */ }
+  ledgerRender();
+  ledgerRenderCheckpoints();
+}
+
+function ledgerSetFilter(key, val) {
+  state.ledgerFilter[key] = val || '';
+  ledgerRender();
+}
+
+function _ledgerPasses(e) {
+  const f = state.ledgerFilter;
+  if (f.category && e.category !== f.category) return false;
+  if (f.outcome && e.outcome !== f.outcome) return false;
+  if (f.q) {
+    const hay = (String(e.action) + ' ' + String(e.resource || '') + ' ' + String(e.detail || '') + ' ' + String(e.actor || '')).toLowerCase();
+    if (!hay.includes(f.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function _ledgerRowHtml(e) {
+  const icon = LEDGER_CAT_ICON[e.category] || 'activity';
+  const label = LEDGER_CAT_LABEL[e.category] || 'Action';
+  const oc = LEDGER_OUTCOME_CLASS[e.outcome] || 'lg-ok';
+  const res = e.resource ? '<span class="hist-res">' + _ledgerEsc(e.resource) + '</span>' : '';
+  // 'ok' is the unremarkable default -- only call out blocked / error / pending.
+  const out = (e.outcome && e.outcome !== 'ok') ? '<span class="hist-out ' + oc + '">' + _ledgerEsc(e.outcome) + '</span>' : '';
+  return '<div class="hist-row">' +
+      '<span class="hist-time">' + _ledgerTime(e.ts) + '</span>' +
+      '<span class="hist-cat hist-cat-' + _ledgerEsc(e.category) + '" title="' + label + ' action"><i data-lucide="' + icon + '"></i>' + label + '</span>' +
+      '<span class="hist-what"><span class="hist-action">' + _ledgerEsc(e.action) + '</span>' + res + '</span>' +
+      '<span class="hist-actor">' + _ledgerEsc(e.actor || 'main') + '</span>' +
+      out +
+    '</div>';
+}
+
+function ledgerRender() {
+  const list = document.getElementById('ledgerList');
+  if (!list) return;
+  const rows = state.ledgerEntries.filter(_ledgerPasses);
+  if (!rows.length) {
+    list.innerHTML = '<div class="lg-empty"><b>Nothing here yet.</b><br><br>This is a running log of everything Symphonee does -- approving or blocking an action, running an automation, spawning a worker, creating a checkpoint. Each row shows <b>when</b> it happened, the <b>kind</b> of action, <b>what</b> it touched, and <b>how it turned out</b>. Newest at the top. Do something and it shows up here instantly.</div>';
+    return;
+  }
+  // Newest-first (already sorted by the API), grouped under day headers so it
+  // reads as a timeline, not a flat wall.
+  let html = ''; let lastDay = null;
+  for (const e of rows) {
+    const day = _histDayLabel(e.ts);
+    if (day !== lastDay) { html += '<div class="hist-day">' + day + '</div>'; lastDay = day; }
+    html += _ledgerRowHtml(e);
+  }
+  list.innerHTML = html;
+  if (typeof lucide !== 'undefined') { try { lucide.createIcons({ el: list }); } catch (_) {} }
+}
+
+function ledgerRenderCheckpoints() {
+  const el = document.getElementById('ledgerCheckpoints');
+  if (!el) return;
+  const cps = state.ledgerCheckpoints;
+  if (!cps.length) {
+    el.innerHTML = '<div class="lg-empty-sm">No checkpoints yet. Take one before risky work, then undo to it in a click.</div>';
+    return;
+  }
+  el.innerHTML = cps.map((c) =>
+    '<div class="lg-cp' + (c.auto ? ' lg-cp-auto' : '') + '">' +
+      '<div class="lg-cp-head">' +
+        '<span class="lg-cp-label">' + _ledgerEsc(c.label || c.id) + '</span>' +
+        '<button class="lg-cp-undo" onclick="ledgerUndo(\'' + _ledgerEsc(c.id) + '\')" title="Revert tracked files to this snapshot">Undo</button>' +
+      '</div>' +
+      '<div class="lg-cp-meta">' + _ledgerTime(c.ts) + ' &middot; ' + _ledgerEsc(c.branch || '') + ' &middot; ' + (c.changed || 0) + ' changed</div>' +
+    '</div>'
+  ).join('');
+}
+
+async function ledgerCheckpointNow() {
+  try {
+    const r = await fetch('/api/ledger/checkpoint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Manual checkpoint' }) });
+    const d = await r.json();
+    if (d.error) { if (typeof toast === 'function') toast(d.error, 'error'); return; }
+    if (typeof toast === 'function') toast('Checkpoint taken (' + (d.checkpoint.changed || 0) + ' changed)', 'success');
+    ledgerLoad();
+  } catch (e) { if (typeof toast === 'function') toast('Checkpoint failed', 'error'); }
+}
+
+async function ledgerUndo(cpId) {
+  const cp = state.ledgerCheckpoints.find((c) => c.id === cpId);
+  const label = cp ? (cp.label || cp.id) : cpId;
+  if (!confirm('Undo to "' + label + '"?\n\nTracked files revert to this snapshot. New (untracked) files are kept, and a safety checkpoint of the current state is taken first, so this is reversible.')) return;
+  try {
+    const r = await fetch('/api/ledger/undo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checkpointId: cpId }) });
+    const d = await r.json();
+    if (d.error) { if (typeof toast === 'function') toast(d.error, 'error'); return; }
+    if (typeof toast === 'function') toast('Reverted to "' + label + '"', 'success');
+    ledgerLoad();
+  } catch (e) { if (typeof toast === 'function') toast('Undo failed', 'error'); }
+}
+
+// ── Live updates from the WS 'action' broadcast (wired in terminals.js) ──────
+function ledgerOnAction(entry) {
+  if (!entry || !entry.id) return;
+  state.ledgerEntries.unshift(entry);
+  if (state.ledgerEntries.length > 1000) state.ledgerEntries.length = 1000;
+  const panel = document.getElementById('panel-ledger');
+  const active = panel && panel.classList.contains('active');
+  // Re-render the feed (cheap; keeps day grouping correct) only while visible.
+  if (active) ledgerRender();
+  // Reflect checkpoint creates/undos in the side list live.
+  if (active && entry.category === 'git' && (entry.action === 'checkpoint.create' || entry.action === 'checkpoint.undo')) {
+    fetch('/api/ledger/checkpoints').then((r) => r.json()).then((c) => { state.ledgerCheckpoints = c.checkpoints || []; ledgerRenderCheckpoints(); }).catch(() => {});
+  }
+}
+
+function ledgerOnActionPatch(id, fields) {
+  if (!id) return;
+  const e = state.ledgerEntries.find((x) => x.id === id);
+  if (e) Object.assign(e, fields || {});
+  const panel = document.getElementById('panel-ledger');
+  if (panel && panel.classList.contains('active')) ledgerRender();
+}

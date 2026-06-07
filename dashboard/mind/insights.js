@@ -31,8 +31,8 @@ const store = require('./store');
 const lock = require('./lock');
 const { sanitizeLabel } = require('./security');
 
-const VALID_CATEGORIES = new Set(['repeated-question', 'co-edit', 'memory-decay', 'cross-repo']);
-const VALID_ACTION_TYPES = new Set(['create-memory', 'create-recipe', 'archive-memories', 'extract-shared']);
+const VALID_CATEGORIES = new Set(['repeated-question', 'co-edit', 'memory-decay', 'cross-repo', 'memory-staleness', 'memory-contradiction']);
+const VALID_ACTION_TYPES = new Set(['create-memory', 'create-recipe', 'archive-memories', 'extract-shared', 'supersede-memory']);
 const VALID_STATUSES = new Set(['pending', 'acted', 'dismissed', 'snoozed']);
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 

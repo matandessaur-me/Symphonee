@@ -224,6 +224,18 @@ async function check(action, configJsonPath, ctx = {}) {
   return result; // caller handles ask however it wants
 }
 
+// ── Action recorder hook (Action Ledger) ────────────────────────────────────
+// server.js registers a recorder so EVERY permission decision -- allow, ask,
+// deny, or user-rejected -- lands in the ledger from this single chokepoint.
+// Decoupled (the engine has no dependency on the ledger). Best-effort: a
+// recorder that throws must never affect the gate's decision.
+let _recorder = null;
+function setRecorder(fn) { _recorder = (typeof fn === 'function') ? fn : null; }
+function _record(action, decision, outcome, opts) {
+  if (!_recorder) return;
+  try { _recorder({ action, decision, outcome, label: (opts && opts.actionLabel) || null, ctx: (opts && opts.ctx) || {} }); } catch (_) {}
+}
+
 // ── Route-level gate ────────────────────────────────────────────────────────
 // Returns true if the request should proceed; false if already handled.
 // On 'ask' with wait=true, blocks until the user resolves via the modal, up to timeoutMs.
@@ -237,13 +249,15 @@ async function gate(res, action, opts = {}) {
   } = opts;
   const settings = loadSettings(configPath);
   const result = evaluate(action, settings, ctx);
-  if (result.decision === 'allow') return true;
+  if (result.decision === 'allow') { _record(action, 'allow', 'ok', opts); return true; }
   if (result.decision === 'deny') {
+    _record(action, 'deny', 'blocked', opts);
     try { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: `Permission denied: ${actionLabel || action.value}`, permission: result })); } catch (_) {}
     return false;
   }
   // ask
   if (!wait) {
+    _record(action, 'ask', 'pending', opts);
     try { res.writeHead(412, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: `Approval required: ${actionLabel || action.value}`, permission: result })); } catch (_) {}
     return false;
   }
@@ -251,7 +265,8 @@ async function gate(res, action, opts = {}) {
   if (ans.promote && ans.decision === 'allow') {
     try { promoteRule(configPath, `${action.type}:${action.value}`, 'allow'); } catch (_) {}
   }
-  if (ans.decision === 'allow') return true;
+  if (ans.decision === 'allow') { _record(action, 'allow', 'ok', opts); return true; }
+  _record(action, ans.decision || 'deny', 'blocked', opts);
   try { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: `Rejected by user: ${actionLabel || action.value}`, permission: { ...result, decision: ans.decision } })); } catch (_) {}
   return false;
 }
@@ -261,5 +276,5 @@ module.exports = {
   evaluate, matches, compilePattern,
   loadSettings, saveSettings, promoteRule,
   requestApproval, resolveApproval, listPending, onEvent,
-  check, gate,
+  check, gate, setRecorder,
 };
