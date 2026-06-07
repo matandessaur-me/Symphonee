@@ -1161,7 +1161,8 @@ function renderRepoPicker(filter) {
   if (!filtered.length && !noRepoMatches) {
     html = `<div style="padding:12px 14px;font-size:11px;color:var(--subtext0);">No repos match "${esc(filter)}".</div>`;
   } else if (!state._repoPickNames.length && !f) {
-    html += `<div style="padding:12px 14px;font-size:11px;color:var(--subtext0);">${state.activeSpace ? 'No repos in this space.' : 'No repos added yet.'}</div>`;
+    html += `<div style="padding:12px 14px 4px;font-size:11px;color:var(--subtext0);">${state.activeSpace ? 'No repos in this space.' : 'No repos added yet.'}</div>`;
+    html += `<div style="padding:4px 14px 12px;"><button type="button" onclick="document.getElementById('repoModal').classList.remove('open'); if(typeof openSettings==='function') openSettings('repos');" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font:600 11px var(--font-ui);cursor:pointer;"><i data-lucide="plus" style="width:13px;height:13px;"></i> Add a repo</button></div>`;
   }
   list.innerHTML = html;
   try {

@@ -198,6 +198,20 @@ Full workflow rules via `/api/instructions`. Key reminders:
 - Plugin-specific branch and commit conventions (work-item linking, PR auto-creation, etc.) live in each plugin's own `instructions.md`, fetched via `/api/plugins/instructions` or `/api/plugins/<id>/instructions` once the user agrees to use it.
 <!-- REPO_CONTEXT_END -->
 
+<!-- REPO_CONTEXT_START -->
+## History + Checkpoints (the undo safety net)
+
+Every action you take through Symphonee is recorded to the History log (the user sees it). More importantly, Symphonee can snapshot the active repo's working tree so the user can roll your work back in one click. Use it.
+
+- BEFORE any substantial or destructive change to the active repo -- bulk edits, a refactor, deletions, a generated rewrite, or running a script that writes files -- take a checkpoint first, without being asked:
+  ```bash
+  curl -s -X POST http://127.0.0.1:3800/api/ledger/checkpoint -H "Content-Type: application/json" -d '{"label":"<what you are about to do>"}'
+  ```
+  It is non-destructive (a git stash snapshot of the active repo) and gives the user a one-click undo if your change is wrong. From PowerShell use `Invoke-RestMethod`.
+- A single small, obvious edit does not need one. Use judgment: checkpoint when a mistake would be painful to undo by hand.
+- The user undoes from the History tab (or `POST /api/ledger/undo {"checkpointId"}`). Undo reverts tracked files, keeps any new files, and takes a safety snapshot first, so it is itself reversible. List checkpoints: `GET /api/ledger/checkpoints?repo=<name>`.
+<!-- REPO_CONTEXT_END -->
+
 <!-- ORCHESTRATION_START -->
 ## Orchestrator (Cross-AI Communication Bus)
 

@@ -715,7 +715,13 @@ function buildProviderRegistry(aiKeys) {
   // actually supporting tool-calling + vision; weaker/smaller models will struggle
   // with the multi-step desktop loop. The model id follows the brain's reasoning
   // model (SYMPHONEE_REASONING_MODEL, default gemma4:26b).
-  {
+  // Only offer the local provider when Ollama is actually reachable (cached
+  // status, refreshed on boot + periodically), so selecting it can't dead-end in
+  // a cryptic ECONNREFUSED after the retry loop. When Ollama is down it simply
+  // isn't listed.
+  let _ollamaReachable = false;
+  try { _ollamaReachable = !!require('./mind/llm').getChatStatus().reachable; } catch (_) {}
+  if (_ollamaReachable) {
     const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
     let host = '127.0.0.1', ollPort = 11434;
     try { const u = new URL(ollamaUrl); host = u.hostname; ollPort = Number(u.port) || 11434; } catch (_) {}

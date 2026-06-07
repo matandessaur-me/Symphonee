@@ -478,9 +478,12 @@ async function _refreshSpaceSwitcher() {
   // Repo row: show when a space is selected (to allow repo picking), when
   // a repo is active, or whenever any repos exist so the user can pick one
   // from "All spaces" without having to create a space first.
-  const showRepo = !!(state.activeSpace || state.activeRepo || Object.keys(repos).length);
-  if (repoChip) repoChip.style.display = showRepo ? '' : 'none';
-  if (repoLabel) repoLabel.textContent = state.activeRepo || 'Select repo';
+  // Always show the repo chip -- a brand-new user with zero repos needs a way
+  // in. When nothing is added yet it reads "+ Add repo"; the picker it opens now
+  // offers an "Add a repo" action even when the list is empty.
+  const hasAnyRepo = Object.keys(repos).length > 0;
+  if (repoChip) repoChip.style.display = '';
+  if (repoLabel) repoLabel.textContent = state.activeRepo || (hasAnyRepo ? 'Select repo' : '+ Add repo');
   const menu = document.getElementById('spaceSwitcherMenu');
   if (menu && menu.classList.contains('open')) _renderSpaceSwitcherMenu(spaces, repos);
 }

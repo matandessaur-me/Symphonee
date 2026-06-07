@@ -1103,9 +1103,20 @@ function runBrainSetup() {
     }
     const toPull = [];
     if (!status.triageModelInstalled) toPull.push({ model: status.triageModel, sizeHint: '~1 GB' });
-    if (!status.reasoningModelInstalled) toPull.push({ model: status.reasoningModel, sizeHint: '~16 GB' });
+    // The heavy reasoning model (~16 GB) is NOT auto-pulled. Forcing that
+    // download -- plus a restart -- on someone's first launch is hostile. It is
+    // installed on demand from Settings > Local AI ("Install brain models").
+    // Just surface that it's optional; memory + triage work fine without it.
+    if (!status.reasoningModelInstalled && typeof broadcast === 'function') {
+      broadcast({
+        type: 'notification',
+        title: 'Optional: deeper reasoning model',
+        body: `${status.reasoningModel} (~16 GB) is optional and not downloaded automatically. Install it any time from Settings > Local AI.`,
+        level: 'info', icon: 'cpu',
+      });
+    }
     if (!toPull.length) {
-      console.log('[brain/setup] all brain dependencies present.');
+      console.log('[brain/setup] all auto brain dependencies present.');
       return;
     }
     for (const { model, sizeHint } of toPull) {
@@ -1126,31 +1137,8 @@ function runBrainSetup() {
             body: 'Download complete. Brain features now active.',
             level: 'success', icon: 'check-circle',
           });
-          // When the heavy reasoning model lands, Symphonee restarts so
-          // every cached chat-status / llm-status / brain-faculty state
-          // starts fresh against the upgraded model. We notify the user
-          // first and wait 10 s so they see what is about to happen and
-          // can save any in-flight work.
-          if (model === status.reasoningModel) {
-            console.log('[brain/setup] reasoning model installed -- scheduling restart in 10 s.');
-            if (typeof broadcast === 'function') broadcast({
-              type: 'notification',
-              title: 'Restarting Symphonee in 10 s',
-              body: `Reasoning model ${model} just installed. Symphonee will restart to activate brain features fully. Save any unfinished work.`,
-              level: 'info', icon: 'rotate-cw',
-            });
-            setTimeout(() => {
-              try {
-                const req = http.request({
-                  hostname: '127.0.0.1', port: PORT, path: '/api/restart-app', method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Content-Length': 2 },
-                });
-                req.on('error', () => { /* server already going down */ });
-                req.write('{}');
-                req.end();
-              } catch (_) { /* swallow */ }
-            }, 10_000);
-          }
+          // (No auto-restart: only the small triage model is auto-pulled now,
+          // and we never force a restart on the user during boot.)
         } else {
           console.warn(`[brain/setup] failed to pull "${model}":`, r && r.error);
           if (typeof broadcast === 'function') broadcast({

@@ -3084,7 +3084,8 @@ function renderRepoPicker(filter) {
   if (!filtered.length && !noRepoMatches) {
     html = `<div style="padding:12px 14px;font-size:11px;color:var(--subtext0);">No repos match "${esc(filter)}".</div>`;
   } else if (!state._repoPickNames.length && !f) {
-    html += `<div style="padding:12px 14px;font-size:11px;color:var(--subtext0);">${state.activeSpace ? 'No repos in this space.' : 'No repos added yet.'}</div>`;
+    html += `<div style="padding:12px 14px 4px;font-size:11px;color:var(--subtext0);">${state.activeSpace ? 'No repos in this space.' : 'No repos added yet.'}</div>`;
+    html += `<div style="padding:4px 14px 12px;"><button type="button" onclick="document.getElementById('repoModal').classList.remove('open'); if(typeof openSettings==='function') openSettings('repos');" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font:600 11px var(--font-ui);cursor:pointer;"><i data-lucide="plus" style="width:13px;height:13px;"></i> Add a repo</button></div>`;
   }
   list.innerHTML = html;
   try {
@@ -6123,9 +6124,25 @@ function launchAiWith(cli) {
     doLaunch();
   }
 }
-function launchAi() {
-  // Launch with the default CLI
-  launchAiWith(state.activeCli);
+async function launchAi() {
+  // Don't dump a bare command into the shell (raw "'claude' is not recognized")
+  // when the default CLI isn't installed. Check first, then guide.
+  if (!state._aiToolsStatus || !Object.keys(state._aiToolsStatus).length) {
+    try { const r = await fetch('/api/prerequisites'); const d = await r.json(); state._aiToolsStatus = d.cliTools || {}; } catch (_) {}
+  }
+  const status = state._aiToolsStatus || {};
+  // Couldn't detect anything -> don't block; fall back to the old behavior.
+  if (!Object.keys(status).length) { launchAiWith(state.activeCli); return; }
+  const active = state.activeCli;
+  if (active && status[active] && status[active].installed) { launchAiWith(active); return; }
+  const installed = Object.keys(status).filter((k) => status[k] && status[k].installed);
+  if (installed.length) {
+    if (typeof toast === 'function') toast('"' + active + '" is not installed -- pick an installed AI.', 'info');
+    if (typeof toggleAi === 'function') toggleAi();
+    return;
+  }
+  if (typeof toast === 'function') toast('No AI CLIs installed yet. Opening Settings > AI Tools.', 'info');
+  if (typeof openSettings === 'function') openSettings('ai');
 }
 function stopAi(termId) {
   const tid = termId || state.activeTermId;
@@ -16889,9 +16906,12 @@ async function _refreshSpaceSwitcher() {
   // Repo row: show when a space is selected (to allow repo picking), when
   // a repo is active, or whenever any repos exist so the user can pick one
   // from "All spaces" without having to create a space first.
-  const showRepo = !!(state.activeSpace || state.activeRepo || Object.keys(repos).length);
-  if (repoChip) repoChip.style.display = showRepo ? '' : 'none';
-  if (repoLabel) repoLabel.textContent = state.activeRepo || 'Select repo';
+  // Always show the repo chip -- a brand-new user with zero repos needs a way
+  // in. When nothing is added yet it reads "+ Add repo"; the picker it opens now
+  // offers an "Add a repo" action even when the list is empty.
+  const hasAnyRepo = Object.keys(repos).length > 0;
+  if (repoChip) repoChip.style.display = '';
+  if (repoLabel) repoLabel.textContent = state.activeRepo || (hasAnyRepo ? 'Select repo' : '+ Add repo');
   const menu = document.getElementById('spaceSwitcherMenu');
   if (menu && menu.classList.contains('open')) _renderSpaceSwitcherMenu(spaces, repos);
 }

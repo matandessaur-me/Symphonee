@@ -426,9 +426,25 @@ function launchAiWith(cli) {
     doLaunch();
   }
 }
-function launchAi() {
-  // Launch with the default CLI
-  launchAiWith(state.activeCli);
+async function launchAi() {
+  // Don't dump a bare command into the shell (raw "'claude' is not recognized")
+  // when the default CLI isn't installed. Check first, then guide.
+  if (!state._aiToolsStatus || !Object.keys(state._aiToolsStatus).length) {
+    try { const r = await fetch('/api/prerequisites'); const d = await r.json(); state._aiToolsStatus = d.cliTools || {}; } catch (_) {}
+  }
+  const status = state._aiToolsStatus || {};
+  // Couldn't detect anything -> don't block; fall back to the old behavior.
+  if (!Object.keys(status).length) { launchAiWith(state.activeCli); return; }
+  const active = state.activeCli;
+  if (active && status[active] && status[active].installed) { launchAiWith(active); return; }
+  const installed = Object.keys(status).filter((k) => status[k] && status[k].installed);
+  if (installed.length) {
+    if (typeof toast === 'function') toast('"' + active + '" is not installed -- pick an installed AI.', 'info');
+    if (typeof toggleAi === 'function') toggleAi();
+    return;
+  }
+  if (typeof toast === 'function') toast('No AI CLIs installed yet. Opening Settings > AI Tools.', 'info');
+  if (typeof openSettings === 'function') openSettings('ai');
 }
 function stopAi(termId) {
   const tid = termId || state.activeTermId;

@@ -847,16 +847,17 @@
       margin-bottom: 12px;
     }
     .apps-viewport-hero .hero-modes {
-      /* Responsive to the Apps PANEL width (auto-fit), not the screen width, so
-         the cards wrap/shrink to fit instead of overflowing + being clipped by
-         the overflow:hidden tab root. */
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-      gap: 14px; width: 100%; max-width: 1080px;
+      /* A stacked list of three full-width rectangles (icon left, text right),
+         instead of a square grid that reflowed awkwardly to 2+1 on narrow
+         panels. */
+      display: flex; flex-direction: column;
+      gap: 12px; width: 100%; max-width: 760px;
     }
     .apps-viewport-hero .hero-mode {
       background: var(--surface0); border: 1px solid var(--surface2); border-radius: 10px;
-      padding: 16px; cursor: pointer;
-      display: flex; flex-direction: column; gap: 8px;
+      padding: 16px 18px; cursor: pointer;
+      display: grid; grid-template-columns: auto 1fr; column-gap: 16px; row-gap: 4px;
+      align-items: start; text-align: left;
       transition: border-color 0.15s ease, transform 0.15s ease;
     }
     .apps-viewport-hero .hero-mode:hover {
@@ -864,25 +865,26 @@
       transform: translateY(-2px);
     }
     .apps-viewport-hero .hero-mode-icon {
-      width: 32px; height: 32px; border-radius: 6px;
+      width: 36px; height: 36px; border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
       background: color-mix(in srgb, var(--accent, var(--blue)) 18%, var(--surface0));
       color: var(--accent, var(--blue));
+      grid-column: 1; grid-row: 1 / span 3; align-self: center;
     }
     .apps-viewport-hero .hero-mode-title {
-      font: 600 14px var(--font-ui);
+      font: 600 14px var(--font-ui); grid-column: 2;
     }
     .apps-viewport-hero .hero-mode-desc {
       font: 400 12px var(--font-ui); color: var(--subtext1);
-      line-height: 1.45;
+      line-height: 1.45; grid-column: 2;
     }
     .apps-viewport-hero .hero-mode-desc code {
       background: var(--surface1); padding: 1px 5px; border-radius: 3px;
       font-size: 11px;
     }
     .apps-viewport-hero .hero-mode-cta {
-      margin-top: auto; font: 600 11px var(--font-ui);
-      color: var(--accent, var(--blue)); letter-spacing: 0.3px;
+      margin-top: 2px; font: 600 11px var(--font-ui);
+      color: var(--accent, var(--blue)); letter-spacing: 0.3px; grid-column: 2;
     }
     .apps-viewport-hero .hero-foot {
       font: 500 11px var(--font-ui); color: var(--subtext0);
@@ -1098,6 +1100,16 @@
       max-width: 100%; max-height: 100%;
       aspect-ratio: 16 / 9;
       border-radius: 6px; border: 1px solid var(--surface1);
+    }
+    /* Empty/hero state only: let the accent gradient bleed flush to the top edge
+       by dropping the centered 16:9 letterbox, border, and wrap padding that
+       left an awkward gap above it. Screenshots (img/grid) keep the boxed look. */
+    .apps-main .apps-viewport-wrap:has(> .apps-viewport > #appsViewportEmpty:not([style*="none"])) {
+      padding: 0; align-items: stretch; justify-content: stretch;
+    }
+    .apps-main .apps-viewport:has(> #appsViewportEmpty:not([style*="none"])) {
+      aspect-ratio: auto; max-width: none; max-height: none; width: 100%; height: 100%;
+      border: none; border-radius: 0;
     }
     .apps-bottom {
       /* Always-visible plan + chat. Fixed share of the pane height, with a
