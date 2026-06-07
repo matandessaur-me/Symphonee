@@ -75,4 +75,18 @@ module.exports = {
     const inboxFile = path.join(this.workspaceDir, 'inboxes', `${termId}.json`);
     try { if (fs.existsSync(inboxFile)) fs.unlinkSync(inboxFile); } catch (_) {}
   },
+
+  // ── Broadcast / Announce ─────────────────────────────────────────────────
+
+  /**
+   * Broadcast a message to ALL terminal inboxes.
+   */
+  broadcastMessage({ from, content, metadata }) {
+    const results = [];
+    for (const [termId] of this.terminals) {
+      if (termId === from) continue; // don't send to self
+      results.push(this.sendMessage({ to: termId, from, content, metadata }));
+    }
+    return results;
+  },
 };
