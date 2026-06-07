@@ -8,7 +8,9 @@
   "scripts": {
     "start": "node dashboard/server.js",
     "electron": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "build:renderer": "node scripts/build-renderer.js",
+    "watch:renderer": "node scripts/build-renderer.js --watch"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.2.1",
