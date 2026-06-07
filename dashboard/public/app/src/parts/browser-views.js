@@ -1,11 +1,20 @@
 // ── Reader view (overlay + scoped minimalist stylesheet) ────────────────
 const _READER_FONT_SIZES = ['15px', '17px', '19px', '21px', '24px'];
-const _inappReaderState = { active: false, sizeIdx: 2, words: 0, minutes: 0, rootTag: '' };
+const _inappReaderState = {
+  active: false,
+  sizeIdx: 2,
+  words: 0,
+  minutes: 0,
+  rootTag: ''
+};
 async function _runInappReaderView() {
   _setInappToolsTitle('Reader view');
   _setInappToolsBodyLoading('Building reader view...');
   const view = _ensureInappBrowser();
-  if (!view || view.tagName.toLowerCase() !== 'webview') { _setInappToolsBodyError('Browser not ready.'); return; }
+  if (!view || view.tagName.toLowerCase() !== 'webview') {
+    _setInappToolsBodyError('Browser not ready.');
+    return;
+  }
   const script = `(function(){
     var KEY = '__symphoneeReader';
     if (window[KEY]) {
@@ -176,8 +185,12 @@ async function _runInappReaderView() {
     return { applied: true, rootTag: (root.tagName || '').toLowerCase(), rootLen: rootLen, words: words, minutes: mins };
   })();`;
   let result;
-  try { result = await view.executeJavaScript(script, true); }
-  catch (e) { _setInappToolsBodyError('Reader view failed: ' + (e.message || String(e))); return; }
+  try {
+    result = await view.executeJavaScript(script, true);
+  } catch (e) {
+    _setInappToolsBodyError('Reader view failed: ' + (e.message || String(e)));
+    return;
+  }
   const on = !!(result && result.applied);
   _inappReaderState.active = on;
   if (on) {
@@ -196,7 +209,7 @@ function _renderInappReaderSidebar() {
     <div style="text-align:center;padding:10px 4px 4px;">
       <i data-lucide="${on ? 'book-open-check' : 'book-open'}" style="width:22px;height:22px;display:block;margin:0 auto 6px;color:var(--accent);"></i>
       <div style="font:600 12px var(--font-ui);color:var(--text);">${on ? 'Reader view on' : 'Reader view off'}</div>
-      <div style="font:11px/1.35 var(--font-ui);margin-top:3px;color:var(--subtext0);">${on ? ('Parsed ' + (_inappReaderState.words||0).toLocaleString() + ' words from &lt;' + _escapeHtml(_inappReaderState.rootTag) + '&gt; &mdash; about ' + (_inappReaderState.minutes||1) + ' min read.') : 'Click Turn on to parse the current page.'}</div>
+      <div style="font:11px/1.35 var(--font-ui);margin-top:3px;color:var(--subtext0);">${on ? 'Parsed ' + (_inappReaderState.words || 0).toLocaleString() + ' words from &lt;' + _escapeHtml(_inappReaderState.rootTag) + '&gt; &mdash; about ' + (_inappReaderState.minutes || 1) + ' min read.' : 'Click Turn on to parse the current page.'}</div>
     </div>
     <div class="inapp-tools-actions" style="margin:8px -12px -12px;gap:4px;">
       <button class="tab-bar-btn" type="button" onclick="_runInappReaderView()"><i data-lucide="repeat" style="width:13px;height:13px;"></i> ${on ? 'Turn off' : 'Turn on'}</button>
@@ -208,11 +221,13 @@ function _renderInappReaderSidebar() {
   `);
   if (on) {
     const minus = document.getElementById('readerSizeMinus');
-    const plus  = document.getElementById('readerSizePlus');
+    const plus = document.getElementById('readerSizePlus');
     if (minus) minus.onclick = () => _inappReaderBumpFontSize(-1);
-    if (plus)  plus.onclick  = () => _inappReaderBumpFontSize(+1);
+    if (plus) plus.onclick = () => _inappReaderBumpFontSize(+1);
   }
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 function _inappReaderBumpFontSize(delta) {
   const max = _READER_FONT_SIZES.length - 1;
@@ -229,7 +244,9 @@ function _inappReaderSetSizeIdx(idx) {
 function _inappReaderSetFontSize(px) {
   const view = _ensureInappBrowser();
   if (!view || view.tagName.toLowerCase() !== 'webview') return;
-  try { view.executeJavaScript('try{window.__symphoneeReaderSetFontSize && window.__symphoneeReaderSetFontSize(' + JSON.stringify(px) + ');}catch(_){}', true); } catch (_) {}
+  try {
+    view.executeJavaScript('try{window.__symphoneeReaderSetFontSize && window.__symphoneeReaderSetFontSize(' + JSON.stringify(px) + ');}catch(_){}', true);
+  } catch (_) {}
 }
 
 // ── Site audit (SEO + performance + a11y) ───────────────────────────────
@@ -311,17 +328,79 @@ const _SITE_AUDIT_SCRIPT = `(function(){
 })();`;
 
 // ── Emulation panel (device + media + throttle) ─────────────────────────
-const _EMULATE_DEVICES = [
-  { id: 'off',       label: 'No override',        w: 0,    h: 0,    dpr: 1, mobile: false, touch: false },
-  { id: 'iphone-14', label: 'iPhone 14',          w: 390,  h: 844,  dpr: 3, mobile: true,  touch: true },
-  { id: 'iphone-se', label: 'iPhone SE',          w: 375,  h: 667,  dpr: 2, mobile: true,  touch: true },
-  { id: 'pixel-7',   label: 'Pixel 7',            w: 412,  h: 915,  dpr: 2.625, mobile: true, touch: true },
-  { id: 'ipad',      label: 'iPad',               w: 820,  h: 1180, dpr: 2, mobile: true,  touch: true },
-  { id: 'ipad-pro',  label: 'iPad Pro 11"',       w: 834,  h: 1194, dpr: 2, mobile: true,  touch: true },
-  { id: 'laptop',    label: 'Laptop (1366x768)',  w: 1366, h: 768,  dpr: 1, mobile: false, touch: false },
-  { id: 'desktop',   label: 'Desktop (1920x1080)',w: 1920, h: 1080, dpr: 1, mobile: false, touch: false },
-];
-const _emulateState = { device: 'off', colorScheme: '', reducedMotion: '', contrast: '', network: 'no-throttle', cpuRate: 1 };
+const _EMULATE_DEVICES = [{
+  id: 'off',
+  label: 'No override',
+  w: 0,
+  h: 0,
+  dpr: 1,
+  mobile: false,
+  touch: false
+}, {
+  id: 'iphone-14',
+  label: 'iPhone 14',
+  w: 390,
+  h: 844,
+  dpr: 3,
+  mobile: true,
+  touch: true
+}, {
+  id: 'iphone-se',
+  label: 'iPhone SE',
+  w: 375,
+  h: 667,
+  dpr: 2,
+  mobile: true,
+  touch: true
+}, {
+  id: 'pixel-7',
+  label: 'Pixel 7',
+  w: 412,
+  h: 915,
+  dpr: 2.625,
+  mobile: true,
+  touch: true
+}, {
+  id: 'ipad',
+  label: 'iPad',
+  w: 820,
+  h: 1180,
+  dpr: 2,
+  mobile: true,
+  touch: true
+}, {
+  id: 'ipad-pro',
+  label: 'iPad Pro 11"',
+  w: 834,
+  h: 1194,
+  dpr: 2,
+  mobile: true,
+  touch: true
+}, {
+  id: 'laptop',
+  label: 'Laptop (1366x768)',
+  w: 1366,
+  h: 768,
+  dpr: 1,
+  mobile: false,
+  touch: false
+}, {
+  id: 'desktop',
+  label: 'Desktop (1920x1080)',
+  w: 1920,
+  h: 1080,
+  dpr: 1,
+  mobile: false,
+  touch: false
+}];
+const _emulateState = {
+  device: 'off',
+  colorScheme: '',
+  reducedMotion: '',
+  contrast: '',
+  network: 'no-throttle',
+  cpuRate: 1
+};
 async function _runInappEmulatePanel() {
   _setInappToolsTitle('Emulate device');
   const devOpts = _EMULATE_DEVICES.map(d => `<option value="${d.id}" ${_emulateState.device === d.id ? 'selected' : ''}>${_escapeHtml(d.label)}${d.w ? ' — ' + d.w + '×' + d.h + ' @' + d.dpr + 'x' : ''}</option>`).join('');
@@ -371,7 +450,7 @@ async function _runInappEmulatePanel() {
         </select>
         <label>CPU throttle</label>
         <select id="emCpu" onchange="_applyEmulateThrottle()">
-          ${[1,2,4,6,10,20].map(r => `<option value="${r}" ${_emulateState.cpuRate === r ? 'selected' : ''}>${r === 1 ? 'No throttling' : r + '× slower'}</option>`).join('')}
+          ${[1, 2, 4, 6, 10, 20].map(r => `<option value="${r}" ${_emulateState.cpuRate === r ? 'selected' : ''}>${r === 1 ? 'No throttling' : r + '× slower'}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -379,7 +458,9 @@ async function _runInappEmulatePanel() {
       <button class="tab-bar-btn" type="button" onclick="_resetAllEmulation()"><i data-lucide="rotate-ccw" style="width:13px;height:13px;"></i> Reset all</button>
     </div>
   `);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 async function _applyEmulateDevice() {
   const sel = document.getElementById('emDevice');
@@ -389,13 +470,39 @@ async function _applyEmulateDevice() {
   _emulateState.device = id;
   try {
     if (id === 'off' || !d.w) {
-      await fetch('/api/browser/emulate/device', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) });
-      toast('Device override off', 'info', { duration: 1200 });
+      await fetch('/api/browser/emulate/device', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reset: true
+        })
+      });
+      toast('Device override off', 'info', {
+        duration: 1200
+      });
     } else {
-      await fetch('/api/browser/emulate/device', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ width: d.w, height: d.h, deviceScaleFactor: d.dpr, mobile: d.mobile, touch: d.touch }) });
-      toast(d.label + ' — ' + d.w + '×' + d.h, 'success', { duration: 1400 });
+      await fetch('/api/browser/emulate/device', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          width: d.w,
+          height: d.h,
+          deviceScaleFactor: d.dpr,
+          mobile: d.mobile,
+          touch: d.touch
+        })
+      });
+      toast(d.label + ' — ' + d.w + '×' + d.h, 'success', {
+        duration: 1400
+      });
     }
-  } catch (e) { toast('Emulate failed: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Emulate failed: ' + e.message, 'error');
+  }
 }
 async function _applyEmulateMedia() {
   _emulateState.colorScheme = (document.getElementById('emColor') || {}).value || '';
@@ -403,49 +510,98 @@ async function _applyEmulateMedia() {
   _emulateState.contrast = (document.getElementById('emContrast') || {}).value || '';
   try {
     await fetch('/api/browser/emulate/media', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         colorScheme: _emulateState.colorScheme,
         reducedMotion: _emulateState.reducedMotion,
-        contrast: _emulateState.contrast,
-      }),
+        contrast: _emulateState.contrast
+      })
     });
-  } catch (e) { toast('Media override failed: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Media override failed: ' + e.message, 'error');
+  }
 }
 async function _applyEmulateThrottle() {
   _emulateState.network = (document.getElementById('emNet') || {}).value || 'no-throttle';
   _emulateState.cpuRate = Number((document.getElementById('emCpu') || {}).value || 1);
   try {
     await fetch('/api/browser/emulate/throttle', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ network: _emulateState.network, cpuRate: _emulateState.cpuRate }),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        network: _emulateState.network,
+        cpuRate: _emulateState.cpuRate
+      })
     });
-  } catch (e) { toast('Throttle failed: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Throttle failed: ' + e.message, 'error');
+  }
 }
 async function _resetAllEmulation() {
-  _emulateState.device = 'off'; _emulateState.colorScheme = ''; _emulateState.reducedMotion = ''; _emulateState.contrast = '';
-  _emulateState.network = 'no-throttle'; _emulateState.cpuRate = 1;
+  _emulateState.device = 'off';
+  _emulateState.colorScheme = '';
+  _emulateState.reducedMotion = '';
+  _emulateState.contrast = '';
+  _emulateState.network = 'no-throttle';
+  _emulateState.cpuRate = 1;
   try {
-    await Promise.all([
-      fetch('/api/browser/emulate/device', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) }),
-      fetch('/api/browser/emulate/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }),
-      fetch('/api/browser/emulate/throttle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ network: 'no-throttle', cpuRate: 1 }) }),
-    ]);
-    toast('All emulation reset', 'success', { duration: 1200 });
+    await Promise.all([fetch('/api/browser/emulate/device', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        reset: true
+      })
+    }), fetch('/api/browser/emulate/media', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    }), fetch('/api/browser/emulate/throttle', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        network: 'no-throttle',
+        cpuRate: 1
+      })
+    })]);
+    toast('All emulation reset', 'success', {
+      duration: 1200
+    });
     _runInappEmulatePanel();
-  } catch (e) { toast('Reset failed: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Reset failed: ' + e.message, 'error');
+  }
 }
 
 // ── Browser issues panel (Audits.issueAdded) ────────────────────────────
 async function _runInappIssuesPanel() {
   _setInappToolsTitle('Browser issues');
   _setInappToolsBodyLoading('Starting capture...');
-  try { await fetch('/api/browser/issues/start', { method: 'POST' }); } catch (_) {}
+  try {
+    await fetch('/api/browser/issues/start', {
+      method: 'POST'
+    });
+  } catch (_) {}
   await _refreshIssuesPanel();
 }
 async function _refreshIssuesPanel() {
-  let data = { issues: [], count: 0 };
-  try { data = await fetch('/api/browser/issues').then(r => r.json()); } catch (_) {}
+  let data = {
+    issues: [],
+    count: 0
+  };
+  try {
+    data = await fetch('/api/browser/issues').then(r => r.json());
+  } catch (_) {}
   _renderIssuesPanel(data);
 }
 function _issueSummary(it) {
@@ -461,7 +617,10 @@ function _issueSummary(it) {
   if (details.thresholdRatio != null) parts.push('contrast ' + details.thresholdRatio.toFixed(2));
   if (details.reason) parts.push('reason: ' + details.reason);
   if (details.message) parts.push(details.message);
-  return { code, line: parts.join(' · ').slice(0, 180) };
+  return {
+    code,
+    line: parts.join(' · ').slice(0, 180)
+  };
 }
 function _issueSeverity(code) {
   if (/SameSite|ContentSecurityPolicy|MixedContent|Heavy/i.test(code)) return 'error';
@@ -481,7 +640,9 @@ function _renderIssuesPanel(data) {
         <button class="tab-bar-btn" type="button" onclick="_refreshIssuesPanel()"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i> Refresh</button>
       </div>
     `);
-    try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+    try {
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    } catch (_) {}
     return;
   }
   // Group by code for compactness.
@@ -495,7 +656,7 @@ function _renderIssuesPanel(data) {
   for (const [code, list] of byCode.entries()) {
     const sev = _issueSeverity(code);
     const color = sev === 'error' ? 'var(--red)' : sev === 'warn' ? 'var(--yellow)' : 'var(--accent)';
-    const items = list.slice(-20).map((it) => {
+    const items = list.slice(-20).map(it => {
       const s = _issueSummary(it);
       return `<div style="padding:6px 10px;border-top:1px solid var(--surface0);font:11px var(--font-mono);color:var(--subtext1);">${s.line ? _escapeHtml(s.line) : '<em>no details</em>'}</div>`;
     }).join('');
@@ -518,21 +679,33 @@ function _renderIssuesPanel(data) {
     </div>
     <div style="display:flex;flex-direction:column;gap:6px;">${cards.join('')}</div>
   `);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 async function _clearIssues() {
-  try { await fetch('/api/browser/issues/clear', { method: 'POST' }); } catch (_) {}
+  try {
+    await fetch('/api/browser/issues/clear', {
+      method: 'POST'
+    });
+  } catch (_) {}
   _refreshIssuesPanel();
 }
-
 async function _runInappSiteAudit() {
   _setInappToolsTitle('Site audit');
   _setInappToolsBodyLoading('Auditing page...');
   const view = _ensureInappBrowser();
-  if (!view || view.tagName.toLowerCase() !== 'webview') { _setInappToolsBodyError('Browser not ready.'); return; }
+  if (!view || view.tagName.toLowerCase() !== 'webview') {
+    _setInappToolsBodyError('Browser not ready.');
+    return;
+  }
   let data;
-  try { data = await view.executeJavaScript(_SITE_AUDIT_SCRIPT, true); }
-  catch (e) { _setInappToolsBodyError('Audit failed: ' + (e.message || String(e))); return; }
+  try {
+    data = await view.executeJavaScript(_SITE_AUDIT_SCRIPT, true);
+  } catch (e) {
+    _setInappToolsBodyError('Audit failed: ' + (e.message || String(e)));
+    return;
+  }
   _inappToolsState.audit = data;
   _renderInappAuditPanel(data);
 }
@@ -548,43 +721,17 @@ function _fmtMs(n) {
   return (n / 1000).toFixed(2) + ' s';
 }
 function _auditCheck(pass, warn, text) {
-  const status = pass ? 'pass' : (warn ? 'warn' : 'fail');
+  const status = pass ? 'pass' : warn ? 'warn' : 'fail';
   const color = pass ? 'var(--green)' : warn ? 'var(--yellow)' : 'var(--red)';
   const icon = pass ? 'check-circle-2' : warn ? 'alert-triangle' : 'x-circle';
   return `<div class="audit-check" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;font:12px var(--font-ui);"><i data-lucide="${icon}" style="width:14px;height:14px;flex-shrink:0;margin-top:2px;color:${color};"></i><span style="color:var(--text);flex:1;min-width:0;">${text}</span></div>`;
 }
 function _renderInappAuditPanel(d) {
-  const seoChecks = [
-    _auditCheck(!!d.title && d.title.length >= 10 && d.title.length <= 70, d.title && (d.title.length > 70 || d.title.length < 10), `<strong>Title:</strong> ${d.title ? d.title.length + ' chars' : 'missing'}${d.title ? ' — ' + _escapeHtml(d.title.slice(0, 60)) + (d.title.length > 60 ? '...' : '') : ''}`),
-    _auditCheck(!!d.description && d.description.length >= 70 && d.description.length <= 170, !!d.description, `<strong>Meta description:</strong> ${d.description ? d.description.length + ' chars' : 'missing (recommend 120-160)'}`),
-    _auditCheck(!!d.canonical, false, `<strong>Canonical:</strong> ${d.canonical ? _escapeHtml(d.canonical) : 'missing'}`),
-    _auditCheck(d.h1Count === 1, d.h1Count > 0, `<strong>H1:</strong> ${d.h1Count} on page${d.h1s[0] ? ' — "' + _escapeHtml(d.h1s[0]) + '"' : ''}`),
-    _auditCheck(!!d.lang, false, `<strong>Lang attribute:</strong> ${d.lang || 'missing'}`),
-    _auditCheck(!!d.viewport, false, `<strong>Viewport meta:</strong> ${d.viewport ? 'set' : 'missing (mobile responsiveness)'}`),
-    _auditCheck(!!(d.og && d.og.title && d.og.description && d.og.image), !!(d.og && (d.og.title || d.og.description)), `<strong>Open Graph:</strong> ${[d.og.title && 'title', d.og.description && 'description', d.og.image && 'image'].filter(Boolean).join(', ') || 'none'}`),
-    _auditCheck(!!(d.twitter && d.twitter.card), false, `<strong>Twitter card:</strong> ${(d.twitter && d.twitter.card) || 'missing'}`),
-    _auditCheck(d.secure, false, `<strong>HTTPS:</strong> ${d.secure ? 'yes' : 'no (SEO / security penalty)'}`),
-    d.robots ? _auditCheck(!/noindex/i.test(d.robots), /noindex/i.test(d.robots), `<strong>Robots:</strong> ${_escapeHtml(d.robots)}`) : '',
-  ].filter(Boolean).join('');
-
-  const perfChecks = d.timing ? [
-    _auditCheck(d.timing.ttfb < 600, d.timing.ttfb < 1500, `<strong>TTFB:</strong> ${_fmtMs(d.timing.ttfb)} <span style="color:var(--subtext0);">(target &lt;600 ms)</span>`),
-    _auditCheck(d.timing.domContentLoaded < 2500, d.timing.domContentLoaded < 5000, `<strong>DOM ready:</strong> ${_fmtMs(d.timing.domContentLoaded)}`),
-    _auditCheck(d.timing.loadEvent < 4000, d.timing.loadEvent < 8000, `<strong>Load event:</strong> ${_fmtMs(d.timing.loadEvent)}`),
-    _auditCheck(d.resources.totalTransferBytes < 2 * 1024 * 1024, d.resources.totalTransferBytes < 5 * 1024 * 1024, `<strong>Transfer size:</strong> ${_fmtBytes(d.resources.totalTransferBytes)} across ${d.resources.total} resources`),
-    _auditCheck(d.nodeCount < 1500, d.nodeCount < 3000, `<strong>DOM size:</strong> ${d.nodeCount.toLocaleString()} elements`),
-  ].join('') : '<div class="inapp-tools-empty" style="padding:10px;">No navigation timing available (try reloading the page).</div>';
-
-  const a11yChecks = [
-    _auditCheck(d.images.total === 0 || d.images.missingAlt === 0, d.images.missingAlt < 3, `<strong>Images without alt:</strong> ${d.images.missingAlt} of ${d.images.total}`),
-    _auditCheck(d.a11y.buttonsWithoutLabels === 0, d.a11y.buttonsWithoutLabels < 3, `<strong>Buttons without accessible text:</strong> ${d.a11y.buttonsWithoutLabels}`),
-    _auditCheck(d.a11y.inputsWithoutLabels === 0, d.a11y.inputsWithoutLabels < 3, `<strong>Form inputs without labels:</strong> ${d.a11y.inputsWithoutLabels}`),
-    _auditCheck(d.a11y.headingSkips === 0, d.a11y.headingSkips < 3, `<strong>Heading-level skips:</strong> ${d.a11y.headingSkips}`),
-  ].join('');
-
+  const seoChecks = [_auditCheck(!!d.title && d.title.length >= 10 && d.title.length <= 70, d.title && (d.title.length > 70 || d.title.length < 10), `<strong>Title:</strong> ${d.title ? d.title.length + ' chars' : 'missing'}${d.title ? ' — ' + _escapeHtml(d.title.slice(0, 60)) + (d.title.length > 60 ? '...' : '') : ''}`), _auditCheck(!!d.description && d.description.length >= 70 && d.description.length <= 170, !!d.description, `<strong>Meta description:</strong> ${d.description ? d.description.length + ' chars' : 'missing (recommend 120-160)'}`), _auditCheck(!!d.canonical, false, `<strong>Canonical:</strong> ${d.canonical ? _escapeHtml(d.canonical) : 'missing'}`), _auditCheck(d.h1Count === 1, d.h1Count > 0, `<strong>H1:</strong> ${d.h1Count} on page${d.h1s[0] ? ' — "' + _escapeHtml(d.h1s[0]) + '"' : ''}`), _auditCheck(!!d.lang, false, `<strong>Lang attribute:</strong> ${d.lang || 'missing'}`), _auditCheck(!!d.viewport, false, `<strong>Viewport meta:</strong> ${d.viewport ? 'set' : 'missing (mobile responsiveness)'}`), _auditCheck(!!(d.og && d.og.title && d.og.description && d.og.image), !!(d.og && (d.og.title || d.og.description)), `<strong>Open Graph:</strong> ${[d.og.title && 'title', d.og.description && 'description', d.og.image && 'image'].filter(Boolean).join(', ') || 'none'}`), _auditCheck(!!(d.twitter && d.twitter.card), false, `<strong>Twitter card:</strong> ${d.twitter && d.twitter.card || 'missing'}`), _auditCheck(d.secure, false, `<strong>HTTPS:</strong> ${d.secure ? 'yes' : 'no (SEO / security penalty)'}`), d.robots ? _auditCheck(!/noindex/i.test(d.robots), /noindex/i.test(d.robots), `<strong>Robots:</strong> ${_escapeHtml(d.robots)}`) : ''].filter(Boolean).join('');
+  const perfChecks = d.timing ? [_auditCheck(d.timing.ttfb < 600, d.timing.ttfb < 1500, `<strong>TTFB:</strong> ${_fmtMs(d.timing.ttfb)} <span style="color:var(--subtext0);">(target &lt;600 ms)</span>`), _auditCheck(d.timing.domContentLoaded < 2500, d.timing.domContentLoaded < 5000, `<strong>DOM ready:</strong> ${_fmtMs(d.timing.domContentLoaded)}`), _auditCheck(d.timing.loadEvent < 4000, d.timing.loadEvent < 8000, `<strong>Load event:</strong> ${_fmtMs(d.timing.loadEvent)}`), _auditCheck(d.resources.totalTransferBytes < 2 * 1024 * 1024, d.resources.totalTransferBytes < 5 * 1024 * 1024, `<strong>Transfer size:</strong> ${_fmtBytes(d.resources.totalTransferBytes)} across ${d.resources.total} resources`), _auditCheck(d.nodeCount < 1500, d.nodeCount < 3000, `<strong>DOM size:</strong> ${d.nodeCount.toLocaleString()} elements`)].join('') : '<div class="inapp-tools-empty" style="padding:10px;">No navigation timing available (try reloading the page).</div>';
+  const a11yChecks = [_auditCheck(d.images.total === 0 || d.images.missingAlt === 0, d.images.missingAlt < 3, `<strong>Images without alt:</strong> ${d.images.missingAlt} of ${d.images.total}`), _auditCheck(d.a11y.buttonsWithoutLabels === 0, d.a11y.buttonsWithoutLabels < 3, `<strong>Buttons without accessible text:</strong> ${d.a11y.buttonsWithoutLabels}`), _auditCheck(d.a11y.inputsWithoutLabels === 0, d.a11y.inputsWithoutLabels < 3, `<strong>Form inputs without labels:</strong> ${d.a11y.inputsWithoutLabels}`), _auditCheck(d.a11y.headingSkips === 0, d.a11y.headingSkips < 3, `<strong>Heading-level skips:</strong> ${d.a11y.headingSkips}`)].join('');
   const resByType = d.resources.byType;
-  const resBreakdown = Object.entries(resByType).filter(([,v]) => v).map(([k, v]) => `<span style="display:inline-block;margin:0 8px 4px 0;padding:2px 8px;border-radius:10px;background:var(--surface0);color:var(--subtext1);font:10px var(--font-mono);">${k}: ${v}</span>`).join('');
-
+  const resBreakdown = Object.entries(resByType).filter(([, v]) => v).map(([k, v]) => `<span style="display:inline-block;margin:0 8px 4px 0;padding:2px 8px;border-radius:10px;background:var(--surface0);color:var(--subtext1);font:10px var(--font-mono);">${k}: ${v}</span>`).join('');
   _setInappToolsBodyHtml(`
     <div class="brand-header">
       <div class="brand-header-logo"><i data-lucide="gauge" style="width:22px;height:22px;color:var(--accent);"></i></div>
@@ -605,7 +752,9 @@ function _renderInappAuditPanel(d) {
       <button class="tab-bar-btn" type="button" onclick="_runInappSiteAudit()"><i data-lucide="refresh-cw" style="width:13px;height:13px;"></i> Re-run</button>
     </div>
   `);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 async function _saveAuditToNote() {
   const d = _inappToolsState.audit;
@@ -624,7 +773,7 @@ async function _saveAuditToNote() {
   lines.push(`- Lang: ${d.lang || '**missing**'}`);
   lines.push(`- Viewport meta: ${d.viewport || '**missing**'}`);
   lines.push(`- Open Graph: ${[d.og.title && 'title', d.og.description && 'description', d.og.image && 'image', d.og.type && 'type'].filter(Boolean).join(', ') || 'none'}`);
-  lines.push(`- Twitter card: ${(d.twitter && d.twitter.card) || 'missing'}`);
+  lines.push(`- Twitter card: ${d.twitter && d.twitter.card || 'missing'}`);
   lines.push(`- HTTPS: ${d.secure ? 'yes' : '**no**'}`);
   if (d.robots) lines.push(`- Robots: ${d.robots}`);
   lines.push('');
@@ -637,7 +786,7 @@ async function _saveAuditToNote() {
     lines.push(`- Transfer size (navigation): ${_fmtBytes(d.timing.transferSize)}`);
   }
   lines.push(`- Total resource transfer: ${_fmtBytes(d.resources.totalTransferBytes)} across ${d.resources.total} requests`);
-  Object.entries(d.resources.byType).filter(([,v]) => v).forEach(([k, v]) => lines.push(`  - ${k}: ${v}`));
+  Object.entries(d.resources.byType).filter(([, v]) => v).forEach(([k, v]) => lines.push(`  - ${k}: ${v}`));
   lines.push(`- DOM size: ${d.nodeCount} elements`);
   lines.push('');
   lines.push('## Accessibility');
@@ -647,10 +796,29 @@ async function _saveAuditToNote() {
   lines.push(`- Heading-level skips: ${d.a11y.headingSkips}`);
   const name = 'Audit — ' + (d.title || d.host).replace(/[^\w\s-]/g, '').slice(0, 70);
   try {
-    await notesFetch('/api/notes/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-    await notesFetch('/api/notes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content: lines.join('\n') }) });
+    await notesFetch('/api/notes/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name
+      })
+    });
+    await notesFetch('/api/notes/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name,
+        content: lines.join('\n')
+      })
+    });
     toast('Saved to note: ' + name, 'success');
-  } catch (e) { toast('Save failed: ' + (e.message || String(e)), 'error'); }
+  } catch (e) {
+    toast('Save failed: ' + (e.message || String(e)), 'error');
+  }
 }
 
 // Lazy-create the webview on first tab activation so we do not pay the cost
@@ -663,6 +831,8 @@ async function _saveAuditToNote() {
       _ensureInappBrowser();
     }
   });
-  obs.observe(panel, { attributes: true, attributeFilter: ['class'] });
+  obs.observe(panel, {
+    attributes: true,
+    attributeFilter: ['class']
+  });
 })();
-

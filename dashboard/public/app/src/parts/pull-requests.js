@@ -1,64 +1,62 @@
 // ── Pull Requests ───────────────────────────────────────────────────────
-let prsData = [];
-let prsCurrentNumber = null;
-let prsCurrentRepo = '';
-let prsCurrentFiles = [];
-
+state.prsData = [];
+state.prsCurrentNumber = null;
+state.prsCurrentRepo = '';
+state.prsCurrentFiles = [];
 function populatePRsRepoSelect() {
   const sel = document.getElementById('prsRepoSelect');
-  const repos = configData.Repos || {};
+  const repos = state.configData.Repos || {};
   const names = Object.keys(repos);
   // Default to activeRepo if no PR repo selected yet
-  if (!prsCurrentRepo && activeRepo) prsCurrentRepo = activeRepo;
-  if (!prsCurrentRepo && names.length) prsCurrentRepo = names[0];
-  sel.innerHTML = names.length
-    ? names.map(n => `<option value="${esc(n)}"${n === prsCurrentRepo ? ' selected' : ''}>${esc(n)}</option>`).join('')
-    : '<option value="">No repos configured</option>';
+  if (!state.prsCurrentRepo && state.activeRepo) state.prsCurrentRepo = state.activeRepo;
+  if (!state.prsCurrentRepo && names.length) state.prsCurrentRepo = names[0];
+  sel.innerHTML = names.length ? names.map(n => `<option value="${esc(n)}"${n === state.prsCurrentRepo ? ' selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">No repos configured</option>';
 }
-
 async function loadPRs() {
   const repo = document.getElementById('prsRepoSelect').value;
   if (!repo) return;
-  prsCurrentRepo = repo;
+  state.prsCurrentRepo = repo;
   // Sync active repo across tabs
-  if (repo !== activeRepo) selectRepo(repo);
+  if (repo !== state.activeRepo) selectRepo(repo);
   const state = document.getElementById('prsStateSelect').value;
   const list = document.getElementById('prsList');
   list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="spinner"></div></div>';
   try {
     const prQs = `repo=${encodeURIComponent(repo)}&state=${state}`;
-    const res = await (window.Symphonee?.contributions?.providerFetch?.('pr', 'listRoute', { query: prQs }));
-    if (!res) { prsData = []; renderPRList(); return; }
+    const res = await window.Symphonee?.contributions?.providerFetch?.('pr', 'listRoute', {
+      query: prQs
+    });
+    if (!res) {
+      state.prsData = [];
+      renderPRList();
+      return;
+    }
     const data = await res.json();
-    if (data.error) { list.innerHTML = `<div class="empty-state" style="padding:20px;"><div class="empty-state-text">${esc(data.error)}</div></div>`; return; }
-    prsData = data.pulls || [];
+    if (data.error) {
+      list.innerHTML = `<div class="empty-state" style="padding:20px;"><div class="empty-state-text">${esc(data.error)}</div></div>`;
+      return;
+    }
+    state.prsData = data.pulls || [];
     renderPRList();
     // Also refresh the currently open PR detail
-    if (prsCurrentNumber) viewPR(prsCurrentNumber);
+    if (state.prsCurrentNumber) viewPR(state.prsCurrentNumber);
   } catch (e) {
     list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">Failed to load PRs</div></div>';
   }
 }
-
 function renderPRList() {
   const list = document.getElementById('prsList');
-  if (!prsData.length) {
+  if (!state.prsData.length) {
     list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="empty-state-text">No pull requests</div></div>';
     return;
   }
-  list.innerHTML = prsData.map(pr => {
-    const active = pr.number === prsCurrentNumber ? ' active' : '';
+  list.innerHTML = state.prsData.map(pr => {
+    const active = pr.number === state.prsCurrentNumber ? ' active' : '';
     const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join('');
     const draft = pr.draft ? '<span class="pr-draft-badge">Draft</span>' : '';
     const ago = timeAgo(pr.updatedAt);
-    const reviewBadge = pr.reviewStatus === 'approved'
-      ? '<span class="pr-review-badge pr-review-approved" title="Approved"><i data-lucide="check-circle" style="width:12px;height:12px;"></i></span>'
-      : pr.reviewStatus === 'changes_requested'
-        ? '<span class="pr-review-badge pr-review-changes" title="Changes requested"><i data-lucide="alert-circle" style="width:12px;height:12px;"></i></span>'
-        : '';
-    const commentsBadge = pr.comments > 0
-      ? `<span class="pr-comments-badge" title="${pr.comments} comment${pr.comments !== 1 ? 's' : ''}"><i data-lucide="message-square" style="width:10px;height:10px;"></i> ${pr.comments}</span>`
-      : '';
+    const reviewBadge = pr.reviewStatus === 'approved' ? '<span class="pr-review-badge pr-review-approved" title="Approved"><i data-lucide="check-circle" style="width:12px;height:12px;"></i></span>' : pr.reviewStatus === 'changes_requested' ? '<span class="pr-review-badge pr-review-changes" title="Changes requested"><i data-lucide="alert-circle" style="width:12px;height:12px;"></i></span>' : '';
+    const commentsBadge = pr.comments > 0 ? `<span class="pr-comments-badge" title="${pr.comments} comment${pr.comments !== 1 ? 's' : ''}"><i data-lucide="message-square" style="width:10px;height:10px;"></i> ${pr.comments}</span>` : '';
     return `<div class="pr-item${active}" onclick="viewPR(${pr.number})">
       <div class="pr-item-top">
         <span class="pr-item-leading"><span class="pr-item-number">#${pr.number}</span>${reviewBadge}</span>
@@ -73,9 +71,10 @@ function renderPRList() {
       </div>
     </div>`;
   }).join('');
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
 }
-
 function timeAgo(dateStr) {
   const s = Math.floor((Date.now() - new Date(dateStr)) / 1000);
   if (s < 60) return 'just now';
@@ -83,51 +82,56 @@ function timeAgo(dateStr) {
   if (s < 86400) return Math.floor(s / 3600) + 'h ago';
   return Math.floor(s / 86400) + 'd ago';
 }
-
 async function viewPR(number) {
-  prsCurrentNumber = number;
+  state.prsCurrentNumber = number;
   renderPRList(); // update active state
   const detail = document.getElementById('prsDetail');
   detail.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
   try {
-    const repo = prsCurrentRepo;
+    const repo = state.prsCurrentRepo;
     const pf = window.Symphonee?.contributions?.providerFetch;
-    if (!pf) { detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">No pull request provider installed</div></div>'; return; }
-    const [prRes, filesRes, timelineRes] = await Promise.all([
-      pf('pr', 'detailRoute',   { query: { repo, number } }),
-      pf('pr', 'filesRoute',    { query: { repo, number } }),
-      pf('pr', 'timelineRoute', { query: { repo, number } }),
-    ]);
-    if (!prRes || !filesRes || !timelineRes) { detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">No pull request provider installed</div></div>'; return; }
+    if (!pf) {
+      detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">No pull request provider installed</div></div>';
+      return;
+    }
+    const [prRes, filesRes, timelineRes] = await Promise.all([pf('pr', 'detailRoute', {
+      query: {
+        repo,
+        number
+      }
+    }), pf('pr', 'filesRoute', {
+      query: {
+        repo,
+        number
+      }
+    }), pf('pr', 'timelineRoute', {
+      query: {
+        repo,
+        number
+      }
+    })]);
+    if (!prRes || !filesRes || !timelineRes) {
+      detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">No pull request provider installed</div></div>';
+      return;
+    }
     const pr = await prRes.json();
     const filesData = await filesRes.json();
     const timelineData = await timelineRes.json();
-    if (pr.error) { detail.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(pr.error)}</div></div>`; return; }
-    prsCurrentFiles = filesData.files || [];
+    if (pr.error) {
+      detail.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(pr.error)}</div></div>`;
+      return;
+    }
+    state.prsCurrentFiles = filesData.files || [];
     const timeline = timelineData.events || [];
-    renderPRDetail(pr, prsCurrentFiles, timeline);
+    renderPRDetail(pr, state.prsCurrentFiles, timeline);
   } catch (e) {
     detail.innerHTML = '<div class="empty-state"><div class="empty-state-text">Failed to load PR</div></div>';
   }
 }
-
 function renderPRDetail(pr, files, timeline) {
-  const statusBadge = pr.merged
-    ? '<span style="color:var(--mauve);font-weight:600;">Merged</span>'
-    : pr.state === 'closed'
-      ? '<span style="color:var(--red);font-weight:600;">Closed</span>'
-      : pr.draft
-        ? '<span style="color:var(--overlay1);font-weight:600;">Draft</span>'
-        : '<span style="color:var(--green);font-weight:600;">Open</span>';
-
+  const statusBadge = pr.merged ? '<span style="color:var(--mauve);font-weight:600;">Merged</span>' : pr.state === 'closed' ? '<span style="color:var(--red);font-weight:600;">Closed</span>' : pr.draft ? '<span style="color:var(--overlay1);font-weight:600;">Draft</span>' : '<span style="color:var(--green);font-weight:600;">Open</span>';
   const labels = pr.labels.map(l => `<span class="pr-label" style="background:#${l.color}22;color:#${l.color};">${esc(l.name)}</span>`).join(' ');
-
-  const reviewBadge = pr.reviewStatus === 'approved'
-    ? '<span style="color:var(--green);font-weight:600;display:inline-flex;align-items:center;gap:4px;"><i data-lucide="check-circle" style="width:13px;height:13px;"></i> Approved</span>'
-    : pr.reviewStatus === 'changes_requested'
-      ? '<span style="color:var(--peach);font-weight:600;display:inline-flex;align-items:center;gap:4px;"><i data-lucide="alert-circle" style="width:13px;height:13px;"></i> Changes requested</span>'
-      : '';
-
+  const reviewBadge = pr.reviewStatus === 'approved' ? '<span style="color:var(--green);font-weight:600;display:inline-flex;align-items:center;gap:4px;"><i data-lucide="check-circle" style="width:13px;height:13px;"></i> Approved</span>' : pr.reviewStatus === 'changes_requested' ? '<span style="color:var(--peach);font-weight:600;display:inline-flex;align-items:center;gap:4px;"><i data-lucide="alert-circle" style="width:13px;height:13px;"></i> Changes requested</span>' : '';
   const filesHtml = files.map((f, i) => {
     const statusCls = f.status === 'added' ? 'added' : f.status === 'removed' ? 'removed' : f.status === 'renamed' ? 'renamed' : 'modified';
     return `<div class="pr-file-item" onclick="selectPRFile(${i})" data-idx="${i}">
@@ -139,17 +143,16 @@ function renderPRDetail(pr, files, timeline) {
 
   // Build timeline HTML
   const timelineHtml = renderPRTimeline(timeline);
-
   document.getElementById('prsDetail').innerHTML = `
     <div class="pr-detail">
       <div class="pr-detail-header">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
           <div class="pr-detail-title">${esc(pr.title)}</div>
           ${pr.htmlUrl ? (() => {
-            const _prov = window.Symphonee?.contributions?.activePrProvider?.();
-            const _lbl = 'Open on ' + ((_prov && _prov.label) || 'provider');
-            return `<a href="${esc(pr.htmlUrl)}" target="_blank" class="pr-btn pr-btn-github" title="${esc(_lbl)}" style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 10px;white-space:nowrap;text-decoration:none;"><i data-lucide="external-link" style="width:13px;height:13px;"></i> ${esc(_lbl)}</a>`;
-          })() : ''}
+    const _prov = window.Symphonee?.contributions?.activePrProvider?.();
+    const _lbl = 'Open on ' + (_prov && _prov.label || 'provider');
+    return `<a href="${esc(pr.htmlUrl)}" target="_blank" class="pr-btn pr-btn-github" title="${esc(_lbl)}" style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 10px;white-space:nowrap;text-decoration:none;"><i data-lucide="external-link" style="width:13px;height:13px;"></i> ${esc(_lbl)}</a>`;
+  })() : ''}
         </div>
         <div class="pr-detail-meta">
           ${statusBadge}
@@ -165,7 +168,7 @@ function renderPRDetail(pr, files, timeline) {
       <div class="pr-section">
         <div class="pr-section-title">Conversation</div>
         <div class="pr-timeline">
-          ${(pr.bodyHtml || pr.body) ? renderTimelineComment(pr.author, pr.authorAvatar, pr.createdAt, pr.bodyHtml || renderMarkdown(pr.body), true) : ''}
+          ${pr.bodyHtml || pr.body ? renderTimelineComment(pr.author, pr.authorAvatar, pr.createdAt, pr.bodyHtml || renderMarkdown(pr.body), true) : ''}
           ${timelineHtml}
         </div>
       </div>
@@ -180,19 +183,19 @@ function renderPRDetail(pr, files, timeline) {
       <button class="pr-expand-btn" onclick="openPRCommentModal()" title="Expand"><i data-lucide="expand" style="width:14px;height:14px;"></i></button>
       <button class="pr-btn pr-btn-comment" onclick="addPRComment()">Comment</button>
       <button class="pr-btn pr-btn-changes" onclick="openRequestChangesModal()">Request Changes</button>
-      ${pr.reviewStatus === 'approved' && pr.htmlUrl
-        ? (() => {
-            const _prov = window.Symphonee?.contributions?.activePrProvider?.();
-            const _lbl = 'Merge on ' + ((_prov && _prov.label) || 'provider');
-            return `<a href="${esc(pr.htmlUrl)}" target="_blank" class="pr-btn pr-btn-merge" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px;"><i data-lucide="git-merge" style="width:13px;height:13px;"></i> ${esc(_lbl)}</a>`;
-          })()
-        : `<button class="pr-btn pr-btn-approve" onclick="submitPRReview('APPROVE')">Approve</button>`}
+      ${pr.reviewStatus === 'approved' && pr.htmlUrl ? (() => {
+    const _prov = window.Symphonee?.contributions?.activePrProvider?.();
+    const _lbl = 'Merge on ' + (_prov && _prov.label || 'provider');
+    return `<a href="${esc(pr.htmlUrl)}" target="_blank" class="pr-btn pr-btn-merge" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px;"><i data-lucide="git-merge" style="width:13px;height:13px;"></i> ${esc(_lbl)}</a>`;
+  })() : `<button class="pr-btn pr-btn-approve" onclick="submitPRReview('APPROVE')">Approve</button>`}
     </div>`;
-  try { lucide.createIcons(); } catch (_) {}
+  try {
+    lucide.createIcons();
+  } catch (_) {}
 }
-
-function _li(name) { return `<i data-lucide="${name}" style="width:14px;height:14px;"></i>`; }
-
+function _li(name) {
+  return `<i data-lucide="${name}" style="width:14px;height:14px;"></i>`;
+}
 function renderTimelineComment(author, avatar, date, bodyHtml, isHtml) {
   const content = isHtml ? renderHtmlBody(bodyHtml) : renderMarkdown(bodyHtml);
   return `<div class="pr-tl-item">
@@ -205,55 +208,55 @@ function renderTimelineComment(author, avatar, date, bodyHtml, isHtml) {
     </div>
   </div>`;
 }
-
 function renderTimelineEvent(icon, html) {
   return `<div class="pr-tl-item">
     <div class="pr-tl-avatar"><div class="pr-tl-avatar-icon">${icon}</div></div>
     <div class="pr-tl-content"><div class="pr-tl-event">${html}</div></div>
   </div>`;
 }
-
 function renderPRTimeline(events) {
   return events.map(e => {
     switch (e.type) {
       case 'commented':
         return renderTimelineComment(e.author, e.avatar, e.createdAt, e.bodyHtml || e.body, !!e.bodyHtml);
-      case 'reviewed': {
-        const stateMap = {
-          APPROVED: ['approved', 'approved', 'check-circle'],
-          CHANGES_REQUESTED: ['changes', 'requested changes', 'alert-circle'],
-          COMMENTED: ['commented', 'reviewed', 'message-square'],
-          DISMISSED: ['dismissed', 'dismissed review', 'x-circle'],
-        };
-        const [cls, label, iconName] = stateMap[e.state] || ['commented', e.state, 'message-square'];
-        let html = `<div class="pr-tl-item">
+      case 'reviewed':
+        {
+          const stateMap = {
+            APPROVED: ['approved', 'approved', 'check-circle'],
+            CHANGES_REQUESTED: ['changes', 'requested changes', 'alert-circle'],
+            COMMENTED: ['commented', 'reviewed', 'message-square'],
+            DISMISSED: ['dismissed', 'dismissed review', 'x-circle']
+          };
+          const [cls, label, iconName] = stateMap[e.state] || ['commented', e.state, 'message-square'];
+          let html = `<div class="pr-tl-item">
           <div class="pr-tl-avatar">${e.avatar ? `<img src="${esc(e.avatar)}" alt="">` : `<div class="pr-tl-avatar-icon">${_li(iconName)}</div>`}</div>
           <div class="pr-tl-content">`;
-        if (e.body || e.bodyHtml) {
-          html += `<div class="pr-tl-comment-box">
+          if (e.body || e.bodyHtml) {
+            html += `<div class="pr-tl-comment-box">
             <div class="pr-tl-comment-header"><strong>${esc(e.author)}</strong> ${label} ${timeAgo(e.createdAt)} <span class="pr-tl-review-badge pr-tl-review-${cls}">${esc(e.state)}</span></div>
             <div class="pr-tl-comment-body">${e.bodyHtml ? renderHtmlBody(e.bodyHtml) : renderMarkdown(e.body)}</div>
           </div>`;
-        } else {
-          html += `<div class="pr-tl-event"><strong>${esc(e.author)}</strong> ${label} ${timeAgo(e.createdAt)} <span class="pr-tl-review-badge pr-tl-review-${cls}">${esc(e.state)}</span></div>`;
-        }
-        // Render inline review comments attached to this review
-        if (e.comments && e.comments.length) {
-          html += '<div class="pr-tl-review-comments">';
-          for (const c of e.comments) {
-            html += renderReviewComment(c);
+          } else {
+            html += `<div class="pr-tl-event"><strong>${esc(e.author)}</strong> ${label} ${timeAgo(e.createdAt)} <span class="pr-tl-review-badge pr-tl-review-${cls}">${esc(e.state)}</span></div>`;
           }
-          html += '</div>';
+          // Render inline review comments attached to this review
+          if (e.comments && e.comments.length) {
+            html += '<div class="pr-tl-review-comments">';
+            for (const c of e.comments) {
+              html += renderReviewComment(c);
+            }
+            html += '</div>';
+          }
+          html += '</div></div>';
+          return html;
         }
-        html += '</div></div>';
-        return html;
-      }
       case 'review_comment':
         return renderReviewCommentItem(e);
-      case 'committed': {
-        const sha = (e.sha || '').substring(0, 7);
-        return renderTimelineEvent(_li('git-commit'), `<strong>${esc(e.author)}</strong> committed <span class="pr-tl-commit-sha">${sha}</span> <span class="pr-tl-commit-msg">${esc((e.message || '').split('\n')[0])}</span>`);
-      }
+      case 'committed':
+        {
+          const sha = (e.sha || '').substring(0, 7);
+          return renderTimelineEvent(_li('git-commit'), `<strong>${esc(e.author)}</strong> committed <span class="pr-tl-commit-sha">${sha}</span> <span class="pr-tl-commit-msg">${esc((e.message || '').split('\n')[0])}</span>`);
+        }
       case 'review_requested':
         return renderTimelineEvent(_li('eye'), `<strong>${esc(e.actor)}</strong> requested review from <strong>${esc(e.reviewer)}</strong> ${timeAgo(e.createdAt)}`);
       case 'assigned':
@@ -277,7 +280,6 @@ function renderPRTimeline(events) {
     }
   }).join('');
 }
-
 function renderReviewComment(c) {
   const fileLine = c.line ? `${esc(c.path)}:${c.line}` : esc(c.path);
   let html = `<div class="pr-tl-review-comment">
@@ -291,7 +293,6 @@ function renderReviewComment(c) {
   </div>`;
   return html;
 }
-
 function renderReviewCommentItem(e) {
   const fileLine = e.line ? `${esc(e.path)}:${e.line}` : esc(e.path);
   let html = `<div class="pr-tl-item">
@@ -309,9 +310,8 @@ function renderReviewCommentItem(e) {
   </div>`;
   return html;
 }
-
 function selectPRFile(idx) {
-  const file = prsCurrentFiles[idx];
+  const file = state.prsCurrentFiles[idx];
   if (!file) return;
   // Highlight active file
   document.querySelectorAll('.pr-file-item').forEach(el => el.classList.toggle('active', parseInt(el.dataset.idx) === idx));
@@ -325,7 +325,6 @@ function selectPRFile(idx) {
   area.innerHTML = '<div class="pr-diff-container"><div id="prDiffContent"></div></div>';
   renderInlineDiff(document.getElementById('prDiffContent'), diffText);
 }
-
 function openPRCommentModal() {
   const inline = document.getElementById('prCommentInput');
   const modal = document.getElementById('prCommentModal');
@@ -334,63 +333,113 @@ function openPRCommentModal() {
   modal.classList.add('open');
   setTimeout(() => textarea.focus(), 100);
 }
-
 function closePRCommentModal() {
   document.getElementById('prCommentModal').classList.remove('open');
 }
-
 async function submitPRCommentModal() {
   const textarea = document.getElementById('prCommentModalInput');
   const body = textarea.value.trim();
   if (!body) return;
   try {
     const pf = window.Symphonee?.contributions?.providerFetch;
-    const res = pf && await pf('pr', 'commentRoute', {
-      init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, body }) },
-    });
-    if (!res) { toast('No PR provider installed', 'error'); return; }
+    const res = pf && (await pf('pr', 'commentRoute', {
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          repo: state.prsCurrentRepo,
+          number: state.prsCurrentNumber,
+          body
+        })
+      }
+    }));
+    if (!res) {
+      toast('No PR provider installed', 'error');
+      return;
+    }
     const data = await res.json();
-    if (data.error) { toast(data.error, 'error'); return; }
+    if (data.error) {
+      toast(data.error, 'error');
+      return;
+    }
     textarea.value = '';
     document.getElementById('prCommentInput').value = '';
     closePRCommentModal();
     toast('Comment added', 'success');
-    setTimeout(() => viewPR(prsCurrentNumber), 1500); // brief delay for provider API propagation
-  } catch (e) { toast('Failed to add comment', 'error'); }
+    setTimeout(() => viewPR(state.prsCurrentNumber), 1500); // brief delay for provider API propagation
+  } catch (e) {
+    toast('Failed to add comment', 'error');
+  }
 }
-
 async function addPRComment() {
   const input = document.getElementById('prCommentInput');
   const body = input.value.trim();
   if (!body) return;
   try {
     const pf = window.Symphonee?.contributions?.providerFetch;
-    const res = pf && await pf('pr', 'commentRoute', {
-      init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, body }) },
-    });
-    if (!res) { toast('No PR provider installed', 'error'); return; }
+    const res = pf && (await pf('pr', 'commentRoute', {
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          repo: state.prsCurrentRepo,
+          number: state.prsCurrentNumber,
+          body
+        })
+      }
+    }));
+    if (!res) {
+      toast('No PR provider installed', 'error');
+      return;
+    }
     const data = await res.json();
-    if (data.error) { toast(data.error, 'error'); return; }
+    if (data.error) {
+      toast(data.error, 'error');
+      return;
+    }
     input.value = '';
     toast('Comment added', 'success');
-    setTimeout(() => viewPR(prsCurrentNumber), 1500); // brief delay for provider API propagation
-  } catch (e) { toast('Failed to add comment', 'error'); }
+    setTimeout(() => viewPR(state.prsCurrentNumber), 1500); // brief delay for provider API propagation
+  } catch (e) {
+    toast('Failed to add comment', 'error');
+  }
 }
-
 async function submitPRReview(event, body) {
   try {
     const pf = window.Symphonee?.contributions?.providerFetch;
-    const res = pf && await pf('pr', 'reviewRoute', {
-      init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: prsCurrentRepo, number: prsCurrentNumber, event, body: body || '' }) },
-    });
-    if (!res) { toast('No PR provider installed', 'error'); return; }
+    const res = pf && (await pf('pr', 'reviewRoute', {
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          repo: state.prsCurrentRepo,
+          number: state.prsCurrentNumber,
+          event,
+          body: body || ''
+        })
+      }
+    }));
+    if (!res) {
+      toast('No PR provider installed', 'error');
+      return;
+    }
     const data = await res.json();
-    if (data.error) { toast(data.error, 'error'); return; }
+    if (data.error) {
+      toast(data.error, 'error');
+      return;
+    }
     toast(event === 'APPROVE' ? 'PR approved' : 'Changes requested', 'success');
-    setTimeout(() => viewPR(prsCurrentNumber), 1500);
-  } catch (e) { toast('Failed to submit review', 'error'); }
+    setTimeout(() => viewPR(state.prsCurrentNumber), 1500);
+  } catch (e) {
+    toast('Failed to submit review', 'error');
+  }
 }
-
 function openRequestChangesModal() {
   const modal = document.getElementById('prRequestChangesModal');
   const textarea = document.getElementById('prRequestChangesInput');
@@ -398,16 +447,16 @@ function openRequestChangesModal() {
   modal.classList.add('open');
   setTimeout(() => textarea.focus(), 100);
 }
-
 function closeRequestChangesModal() {
   document.getElementById('prRequestChangesModal').classList.remove('open');
 }
-
 async function submitRequestChanges() {
   const textarea = document.getElementById('prRequestChangesInput');
   const body = textarea.value.trim();
-  if (!body) { toast('Please describe the changes needed', 'info'); return; }
+  if (!body) {
+    toast('Please describe the changes needed', 'info');
+    return;
+  }
   closeRequestChangesModal();
   await submitPRReview('REQUEST_CHANGES', body);
 }
-

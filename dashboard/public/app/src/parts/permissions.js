@@ -1,12 +1,22 @@
 // ═══ Permission Mode + Approval Modal ══════════════════════════════════════
-const PERM_MODE_COLORS = { review: '#4a9eff', edit: '#9acd32', trusted: '#f5b800', bypass: '#ff6b6b' };
-let permModeCache = { mode: 'edit' };
+const PERM_MODE_COLORS = {
+  review: '#4a9eff',
+  edit: '#9acd32',
+  trusted: '#f5b800',
+  bypass: '#ff6b6b'
+};
+state.permModeCache = {
+  mode: 'edit'
+};
 async function refreshPermMode() {
   try {
     const r = await fetch('/api/permissions');
     const data = await r.json();
-    const mode = (data.settings && data.settings.mode) || 'edit';
-    permModeCache = { mode, settings: data.settings };
+    const mode = data.settings && data.settings.mode || 'edit';
+    state.permModeCache = {
+      mode,
+      settings: data.settings
+    };
     const chip = document.getElementById('permModeChip');
     const label = document.getElementById('permModeLabel');
     if (label) label.textContent = mode.toUpperCase();
@@ -22,16 +32,31 @@ function openPermModeMenu(ev) {
   if (!m) return;
   m.style.display = m.style.display === 'none' ? 'block' : 'none';
   if (m.style.display === 'block') {
-    setTimeout(() => document.addEventListener('click', closePermModeMenuOnce, { once: true }), 0);
+    setTimeout(() => document.addEventListener('click', closePermModeMenuOnce, {
+      once: true
+    }), 0);
   }
 }
-function closePermModeMenuOnce() { const m = document.getElementById('permModeMenu'); if (m) m.style.display = 'none'; }
+function closePermModeMenuOnce() {
+  const m = document.getElementById('permModeMenu');
+  if (m) m.style.display = 'none';
+}
 async function setPermMode(mode) {
   try {
-    await fetch('/api/permissions/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
+    await fetch('/api/permissions/mode', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        mode
+      })
+    });
     closePermModeMenuOnce();
     refreshPermMode();
-  } catch (e) { console.error('setPermMode failed', e); }
+  } catch (e) {
+    console.error('setPermMode failed', e);
+  }
 }
 
 // The Symphonee brain is always on and intentionally has no UI surface
@@ -42,30 +67,41 @@ async function setPermMode(mode) {
 // (or in-app inspector) can subscribe without re-adding chip code.
 
 // ── Approval modal: polls both permission + graph-run approval queues ──
-let _approvalShown = null;
+state._approvalShown = null;
 async function pollApprovals() {
   try {
     const all = [];
     try {
       const r1 = await fetch('/api/permissions/pending');
       const list1 = await r1.json();
-      if (Array.isArray(list1)) for (const p of list1) all.push({ kind: 'permission', key: p.id, data: p });
+      if (Array.isArray(list1)) for (const p of list1) all.push({
+        kind: 'permission',
+        key: p.id,
+        data: p
+      });
     } catch (_) {}
     try {
       const r2 = await fetch('/api/graph-runs/pending-approvals');
       if (r2.ok) {
         const list2 = await r2.json();
-        if (Array.isArray(list2)) for (const g of list2) all.push({ kind: 'graph-run', key: g.runId + ':' + g.nodeId, data: g });
+        if (Array.isArray(list2)) for (const g of list2) all.push({
+          kind: 'graph-run',
+          key: g.runId + ':' + g.nodeId,
+          data: g
+        });
       }
     } catch (_) {}
     if (all.length === 0) {
-      if (_approvalShown) { hideApprovalModal(); _approvalShown = null; }
+      if (state._approvalShown) {
+        hideApprovalModal();
+        state._approvalShown = null;
+      }
       return;
     }
     const next = all[0];
-    if (_approvalShown && _approvalShown.key === next.key) return;
+    if (state._approvalShown && state._approvalShown.key === next.key) return;
     showApprovalModal(next);
-    _approvalShown = next;
+    state._approvalShown = next;
   } catch (_) {}
 }
 function showApprovalModal(entry) {
@@ -85,7 +121,6 @@ function showApprovalModal(entry) {
   const header = document.getElementById('approvalHeader');
   const body = document.getElementById('approvalBody');
   const buttons = document.getElementById('approvalButtons');
-
   if (entry.kind === 'permission') {
     const p = entry.data;
     const a = p.action || {};
@@ -113,31 +148,50 @@ function showApprovalModal(entry) {
       <button onclick="resolveGraphApproval(false)" style="padding:6px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:4px;color:var(--text);cursor:pointer;font-size:11px;">Reject</button>
       <button onclick="resolveGraphApproval(true)" style="padding:6px 14px;background:var(--accent);border:none;border-radius:4px;color:#000;cursor:pointer;font-size:11px;font-weight:600;">Approve</button>`;
   }
-
   overlay.style.display = 'flex';
   if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
 }
-function hideApprovalModal() { const o = document.getElementById('approvalOverlay'); if (o) o.style.display = 'none'; }
-async function resolveApproval(decision, promote) {
-  if (!_approvalShown || _approvalShown.kind !== 'permission') return;
-  try {
-    await fetch('/api/permissions/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: _approvalShown.data.id, decision, promote }) });
-  } catch (_) {}
-  hideApprovalModal();
-  _approvalShown = null;
+function hideApprovalModal() {
+  const o = document.getElementById('approvalOverlay');
+  if (o) o.style.display = 'none';
 }
-
-async function resolveGraphApproval(approved) {
-  if (!_approvalShown || _approvalShown.kind !== 'graph-run') return;
-  const g = _approvalShown.data;
+async function resolveApproval(decision, promote) {
+  if (!state._approvalShown || state._approvalShown.kind !== 'permission') return;
   try {
-    await fetch(`/api/graph-runs/${encodeURIComponent(g.runId)}/approve/${encodeURIComponent(g.nodeId)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved, note: '' }),
+    await fetch('/api/permissions/resolve', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: state._approvalShown.data.id,
+        decision,
+        promote
+      })
     });
   } catch (_) {}
   hideApprovalModal();
-  _approvalShown = null;
+  state._approvalShown = null;
 }
-document.addEventListener('DOMContentLoaded', () => { refreshPermMode(); setInterval(pollApprovals, 3000); });
-
+async function resolveGraphApproval(approved) {
+  if (!state._approvalShown || state._approvalShown.kind !== 'graph-run') return;
+  const g = state._approvalShown.data;
+  try {
+    await fetch(`/api/graph-runs/${encodeURIComponent(g.runId)}/approve/${encodeURIComponent(g.nodeId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        approved,
+        note: ''
+      })
+    });
+  } catch (_) {}
+  hideApprovalModal();
+  state._approvalShown = null;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  refreshPermMode();
+  setInterval(pollApprovals, 3000);
+});

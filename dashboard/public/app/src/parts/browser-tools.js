@@ -1,9 +1,17 @@
 // ── Browser Agent chat panel ──────────────────────────────────────────────
 // Talks to /api/browser/agent/* and listens for WS `browser-agent-step`
 // frames so the user sees the agent's actions stream in real time.
-const _browserAgentState = { threadId: 'default', running: false, open: false, provider: null, providers: [] };
-const _browserInspectState = { enabled: false, selected: null };
-
+const _browserAgentState = {
+  threadId: 'default',
+  running: false,
+  open: false,
+  provider: null,
+  providers: []
+};
+const _browserInspectState = {
+  enabled: false,
+  selected: null
+};
 async function _loadBrowserAgentStatus() {
   try {
     const r = await fetch('/api/browser/agent/status?threadId=' + encodeURIComponent(_browserAgentState.threadId));
@@ -13,7 +21,6 @@ async function _loadBrowserAgentStatus() {
     _populateBrowserAgentProviderSelect();
   } catch (_) {}
 }
-
 function _populateBrowserAgentProviderSelect() {
   const sel = document.getElementById('inappAgentProvider');
   if (!sel) return;
@@ -28,9 +35,14 @@ function _populateBrowserAgentProviderSelect() {
       btn.className = 'inapp-agent-configure';
       btn.title = 'Open AI settings to add an API key';
       btn.innerHTML = '<i data-lucide="key" style="width:12px;height:12px;"></i> Configure API Keys';
-      btn.onclick = function() { openSettings('ai'); toggleBrowserAgentPanel(); };
+      btn.onclick = function () {
+        openSettings('ai');
+        toggleBrowserAgentPanel();
+      };
       row.insertBefore(btn, sel);
-      if (typeof lucide !== 'undefined') lucide.createIcons({ el: btn });
+      if (typeof lucide !== 'undefined') lucide.createIcons({
+        el: btn
+      });
     }
     return;
   }
@@ -39,12 +51,10 @@ function _populateBrowserAgentProviderSelect() {
   sel.disabled = false;
   sel.innerHTML = opts.map(p => `<option value="${p.key}"${p.key === _browserAgentState.provider ? ' selected' : ''}>${p.label}</option>`).join('');
 }
-
 function _onBrowserAgentProviderChange() {
   const sel = document.getElementById('inappAgentProvider');
   if (sel && sel.value) _browserAgentState.provider = sel.value;
 }
-
 function toggleBrowserAgentPanel() {
   const panel = document.getElementById('inappAgentPanel');
   const chip = document.getElementById('inappAgentChip');
@@ -54,10 +64,12 @@ function toggleBrowserAgentPanel() {
   if (chip) chip.classList.toggle('active', _browserAgentState.open);
   if (_browserAgentState.open) {
     _loadBrowserAgentStatus();
-    setTimeout(() => { const i = document.getElementById('inappAgentInput'); if (i) i.focus(); }, 50);
+    setTimeout(() => {
+      const i = document.getElementById('inappAgentInput');
+      if (i) i.focus();
+    }, 50);
   }
 }
-
 function _setBrowserAgentRunning(running) {
   _browserAgentState.running = !!running;
   const chip = document.getElementById('inappAgentChip');
@@ -65,18 +77,20 @@ function _setBrowserAgentRunning(running) {
   const stopBtn = document.getElementById('inappAgentStopBtn');
   const send = document.getElementById('inappAgentSend');
   if (chip) chip.classList.toggle('running', running);
-  if (state) { state.textContent = running ? 'running' : 'idle'; state.className = 'inapp-agent-state' + (running ? ' running' : ''); }
+  if (state) {
+    state.textContent = running ? 'running' : 'idle';
+    state.className = 'inapp-agent-state' + (running ? ' running' : '');
+  }
   if (stopBtn) stopBtn.style.display = running ? 'inline-block' : 'none';
   if (send) send.disabled = running;
 }
-
 function _appendBrowserActionReports(row, reports) {
   if (!row || !Array.isArray(reports) || !reports.length) return;
   const body = row.querySelector('.agent-msg-body');
   if (!body) return;
   const wrap = document.createElement('div');
   wrap.className = 'browser-action-report-group';
-  reports.slice(-4).forEach((report) => {
+  reports.slice(-4).forEach(report => {
     const card = document.createElement('div');
     card.className = 'browser-action-report';
     const head = document.createElement('div');
@@ -90,7 +104,7 @@ function _appendBrowserActionReports(row, reports) {
     if (lines.length) {
       const list = document.createElement('ul');
       list.className = 'browser-action-report-list';
-      lines.forEach((line) => {
+      lines.forEach(line => {
         const li = document.createElement('li');
         li.textContent = line;
         list.appendChild(li);
@@ -108,31 +122,30 @@ function _appendBrowserActionReports(row, reports) {
     btn.type = 'button';
     btn.className = 'browser-action-report-expand';
     btn.textContent = 'Expand';
-    btn.onclick = function() { openBrowserAgentDetailModal(report); };
+    btn.onclick = function () {
+      openBrowserAgentDetailModal(report);
+    };
     actions.appendChild(btn);
     card.appendChild(actions);
     wrap.appendChild(card);
   });
   body.appendChild(wrap);
 }
-
 function openBrowserAgentDetailModal(report) {
   const modal = document.getElementById('browserAgentDetailModal');
   const title = document.getElementById('browserAgentDetailTitle');
   const summary = document.getElementById('browserAgentDetailSummary');
   const pre = document.getElementById('browserAgentDetailPre');
   if (!modal || !title || !summary || !pre) return;
-  title.textContent = (report && report.title) || 'Browser Action Details';
+  title.textContent = report && report.title || 'Browser Action Details';
   summary.textContent = Array.isArray(report && report.summaryLines) ? report.summaryLines.join(' ') : '';
-  pre.textContent = JSON.stringify((report && report.detail) || report || {}, null, 2);
+  pre.textContent = JSON.stringify(report && report.detail || report || {}, null, 2);
   modal.classList.add('open');
 }
-
 function closeBrowserAgentDetailModal() {
   const modal = document.getElementById('browserAgentDetailModal');
   if (modal) modal.classList.remove('open');
 }
-
 function _appendAgentLog(kind, text, extra) {
   const log = document.getElementById('inappAgentLog');
   if (!log) return null;
@@ -158,7 +171,6 @@ function _appendAgentLog(kind, text, extra) {
   log.scrollTop = log.scrollHeight;
   return row;
 }
-
 function _appendBrowserAgentWaitingRow(message) {
   const log = document.getElementById('inappAgentLog');
   if (!log) return null;
@@ -179,14 +191,18 @@ function _appendBrowserAgentWaitingRow(message) {
   btn.type = 'button';
   btn.textContent = 'Resume';
   btn.style.cssText = 'padding:4px 12px; border:1px solid var(--border, #555); background:var(--accent, #2a7); color:#fff; border-radius:4px; cursor:pointer; font-size:12px;';
-  btn.onclick = async function() {
+  btn.onclick = async function () {
     btn.disabled = true;
     btn.textContent = 'Resuming...';
     try {
       await fetch('/api/browser/agent/resume', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: _browserAgentState.threadId }),
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          threadId: _browserAgentState.threadId
+        })
       });
       row.remove();
     } catch (e) {
@@ -209,7 +225,10 @@ function _appendBrowserAgentWaitingRow(message) {
 // of the Automation parent tab whenever automation is running (Stagehand or
 // browser-use). Pings are debounced -- the dot stays for 8s after the last
 // signal, then disappears.
-const _automationActivity = { lastPing: 0, idleTimer: null };
+const _automationActivity = {
+  lastPing: 0,
+  idleTimer: null
+};
 function _markAutomationActive() {
   _automationActivity.lastPing = Date.now();
   const btn = document.getElementById('automationTabBtn');
@@ -228,7 +247,9 @@ function _markAutomationActive() {
   }, 8500);
 }
 // Backwards-compat alias for older call sites.
-function _markBrowserTabActive() { _markAutomationActive(); }
+function _markBrowserTabActive() {
+  _markAutomationActive();
+}
 function _focusAutomationBrowser() {
   try {
     if (typeof switchTab === 'function') switchTab('automation');
@@ -240,7 +261,11 @@ function _focusAutomationBrowser() {
 // Renders the CDP screencast frames broadcast by the Stagehand plugin so the
 // user sees Stagehand's session inside the same Browser tab they use for the
 // in-app webview. Auto-shows on first frame, auto-hides after 8s of silence.
-const _stagehandCast = { lastFrame: 0, idleTimer: null, img: null };
+const _stagehandCast = {
+  lastFrame: 0,
+  idleTimer: null,
+  img: null
+};
 function handleStagehandScreencast(msg) {
   if (!msg || !msg.data) return;
   _markAutomationActive();
@@ -273,13 +298,15 @@ function handleStagehandScreencast(msg) {
     if (canvas.height !== img.naturalHeight) canvas.height = img.naturalHeight || 720;
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   };
-  img.onerror = () => { /* ignore malformed frame */ };
+  img.onerror = () => {/* ignore malformed frame */};
   img.src = 'data:image/jpeg;base64,' + msg.data;
 }
 function closeStagehandScreencast() {
   const overlay = document.getElementById('stagehandScreencastOverlay');
   if (overlay) overlay.style.display = 'none';
-  fetch('/api/plugins/stagehand/screencast/stop', { method: 'POST' }).catch(() => {});
+  fetch('/api/plugins/stagehand/screencast/stop', {
+    method: 'POST'
+  }).catch(() => {});
 }
 function handleBrowserRouterDispatch(msg) {
   if (!msg) return;
@@ -305,33 +332,33 @@ function handleBrowserRouterDispatch(msg) {
     if (overlay) overlay.style.display = 'none';
     // Stop the Chromium-side screencast so we're not paying for frames the
     // user can no longer see.
-    fetch('/api/plugins/stagehand/screencast/stop', { method: 'POST' }).catch(() => {});
+    fetch('/api/plugins/stagehand/screencast/stop', {
+      method: 'POST'
+    }).catch(() => {});
   }
   if (stagehandFallback && typeof notify === 'function') {
-    notify(
-      'Stagehand unavailable',
-      (stagehandFallback.reason || 'Stagehand failed') + '. Fell back to browser-use.',
-      { icon: 'alert-triangle' }
-    );
+    notify('Stagehand unavailable', (stagehandFallback.reason || 'Stagehand failed') + '. Fell back to browser-use.', {
+      icon: 'alert-triangle'
+    });
   } else if (msg.phase === 'error' && msg.driver === 'stagehand' && typeof notify === 'function') {
-    notify(
-      'Stagehand failed',
-      msg.error || 'Browser automation failed before a fallback could run.',
-      { icon: 'alert-circle' }
-    );
+    notify('Stagehand failed', msg.error || 'Browser automation failed before a fallback could run.', {
+      icon: 'alert-circle'
+    });
   }
 }
-
 function handleBrowserAgentStep(msg) {
   if (!msg) return;
   _markBrowserTabActive();
   if (msg.threadId !== _browserAgentState.threadId) return;
   switch (msg.kind) {
-    case 'provider': {
-      const state = document.getElementById('inappAgentState');
-      if (state) { state.textContent = msg.label || msg.provider || 'running'; }
-      break;
-    }
+    case 'provider':
+      {
+        const state = document.getElementById('inappAgentState');
+        if (state) {
+          state.textContent = msg.label || msg.provider || 'running';
+        }
+        break;
+      }
     case 'user':
       // Echoed back; we already rendered locally when sending.
       break;
@@ -349,7 +376,9 @@ function handleBrowserAgentStep(msg) {
       _appendAgentLog('action', msg.summary || msg.tool || 'action');
       break;
     case 'observation':
-      if (msg.ok === false) _appendAgentLog('action', (msg.tool || 'tool') + ' failed: ' + (msg.error || ''), { fail: true });
+      if (msg.ok === false) _appendAgentLog('action', (msg.tool || 'tool') + ' failed: ' + (msg.error || ''), {
+        fail: true
+      });
       break;
     case 'waiting':
       _browserAgentState._thinkingRow && (_browserAgentState._thinkingRow.remove(), _browserAgentState._thinkingRow = null);
@@ -364,7 +393,9 @@ function handleBrowserAgentStep(msg) {
       _setBrowserAgentRunning(false);
       if (typeof toast === 'function') {
         const summary = String(msg.summary || 'Browser automation completed.').replace(/\s+/g, ' ').slice(0, 200);
-        toast('Browser - ' + summary, 'success', { duration: 5000 });
+        toast('Browser - ' + summary, 'success', {
+          duration: 5000
+        });
       }
       break;
     case 'stopped':
@@ -377,29 +408,21 @@ function handleBrowserAgentStep(msg) {
       break;
   }
 }
-
 function _composeBrowserAgentTask(task) {
   const rawTask = String(task || '').trim();
   if (!rawTask) return '';
   if (!_browserInspectState.selected) return rawTask;
-  return [
-    'Use the current browser page to help the user. You have full control of this browser and can do anything a human user could do here - navigate, click, type, scroll, fill forms, inspect, modify the DOM, read any content on the page. Act directly; do not ask for permission on routine browser actions.',
-    '',
-    'A page element is currently selected. Treat it as the target element unless the user explicitly overrides that target. If the request says "this", "it", "selected", "remove this", or is otherwise ambiguous, assume it refers to the selected element below.',
-    '',
-    'Selected element:',
-    '```json',
-    JSON.stringify(_browserInspectState.selected, null, 2),
-    '```',
-    '',
-    'User request: ' + rawTask,
-  ].join('\n');
+  return ['Use the current browser page to help the user. You have full control of this browser and can do anything a human user could do here - navigate, click, type, scroll, fill forms, inspect, modify the DOM, read any content on the page. Act directly; do not ask for permission on routine browser actions.', '', 'A page element is currently selected. Treat it as the target element unless the user explicitly overrides that target. If the request says "this", "it", "selected", "remove this", or is otherwise ambiguous, assume it refers to the selected element below.', '', 'Selected element:', '```json', JSON.stringify(_browserInspectState.selected, null, 2), '```', '', 'User request: ' + rawTask].join('\n');
 }
 
 // ── Pre-flight page map (analyze before acting) ──────────────────────────
 // Cache keyed by URL so we don't re-scan on every message. Invalidated by
 // navigation events elsewhere in the agent code.
-const _pageMapCache = { url: '', map: null, ts: 0 };
+const _pageMapCache = {
+  url: '',
+  map: null,
+  ts: 0
+};
 const PAGE_MAP_SCRIPT = `(function(){
   function parseColor(str){
     if (!str) return null;
@@ -558,22 +581,28 @@ const PAGE_MAP_SCRIPT = `(function(){
     surface: surface,
   };
 })();`;
-
 async function _runPageMap() {
-  const view = (typeof _ensureInappBrowser === 'function') ? _ensureInappBrowser() : null;
+  const view = typeof _ensureInappBrowser === 'function' ? _ensureInappBrowser() : null;
   if (!view || view.tagName.toLowerCase() !== 'webview') return null;
   let url = '';
-  try { url = view.getURL ? view.getURL() : (view.src || ''); } catch (_) {}
-  if (url && _pageMapCache.url === url && _pageMapCache.map && (Date.now() - _pageMapCache.ts) < 5 * 60 * 1000) {
+  try {
+    url = view.getURL ? view.getURL() : view.src || '';
+  } catch (_) {}
+  if (url && _pageMapCache.url === url && _pageMapCache.map && Date.now() - _pageMapCache.ts < 5 * 60 * 1000) {
     return _pageMapCache.map;
   }
   try {
     const map = await view.executeJavaScript(PAGE_MAP_SCRIPT, true);
-    if (map) { _pageMapCache.url = url; _pageMapCache.map = map; _pageMapCache.ts = Date.now(); }
+    if (map) {
+      _pageMapCache.url = url;
+      _pageMapCache.map = map;
+      _pageMapCache.ts = Date.now();
+    }
     return map;
-  } catch (_) { return null; }
+  } catch (_) {
+    return null;
+  }
 }
-
 function _summarizePageMapForPrompt(map) {
   if (!map) return '';
   const lines = [];
@@ -614,7 +643,6 @@ function _summarizePageMapForPrompt(map) {
   lines.push('Use this map to avoid guessing selectors. If it looks stale, call get_page_source or inspect_dom to refresh.');
   return lines.join('\n');
 }
-
 async function _sendBrowserAgentTask(task, displayText, options) {
   if (!task) return;
   if (_browserAgentState.running) return;
@@ -628,22 +656,30 @@ async function _sendBrowserAgentTask(task, displayText, options) {
   try {
     const view = _ensureInappBrowser && _ensureInappBrowser();
     let curUrl = '';
-    try { curUrl = view && view.getURL ? view.getURL() : (view ? (view.src || '') : ''); } catch (_) {}
-    const cached = curUrl && _pageMapCache.url === curUrl && _pageMapCache.map && (Date.now() - _pageMapCache.ts) < 5 * 60 * 1000;
+    try {
+      curUrl = view && view.getURL ? view.getURL() : view ? view.src || '' : '';
+    } catch (_) {}
+    const cached = curUrl && _pageMapCache.url === curUrl && _pageMapCache.map && Date.now() - _pageMapCache.ts < 5 * 60 * 1000;
     if (!cached) analyzeRow = _appendAgentLog('action', 'Analyzing page...');
     pageMap = await _runPageMap();
     if (analyzeRow) {
       // _appendAgentLog('action', ...) renders as [glyph][#text]. Replace the
       // trailing text node with the finished summary without touching glyph.
-      const newLabel = pageMap ? 'Page map ready (' + (pageMap.regions ? pageMap.regions.length : 0) + ' regions, ' + ((pageMap.palette || []).length) + ' colors)' : 'Page analysis skipped';
+      const newLabel = pageMap ? 'Page map ready (' + (pageMap.regions ? pageMap.regions.length : 0) + ' regions, ' + (pageMap.palette || []).length + ' colors)' : 'Page analysis skipped';
       let replaced = false;
       for (let i = analyzeRow.childNodes.length - 1; i >= 0; i--) {
         const n = analyzeRow.childNodes[i];
-        if (n && n.nodeType === 3) { n.nodeValue = newLabel; replaced = true; break; }
+        if (n && n.nodeType === 3) {
+          n.nodeValue = newLabel;
+          replaced = true;
+          break;
+        }
       }
       if (!replaced) analyzeRow.appendChild(document.createTextNode(newLabel));
     }
-  } catch (_) { pageMap = null; }
+  } catch (_) {
+    pageMap = null;
+  }
   let composedTask = _composeBrowserAgentTask(task, options || {});
   if (pageMap) {
     const summary = _summarizePageMapForPrompt(pageMap);
@@ -652,23 +688,28 @@ async function _sendBrowserAgentTask(task, displayText, options) {
   try {
     const res = await fetch('/api/browser/agent/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task: composedTask, threadId: _browserAgentState.threadId, provider: _browserAgentState.provider || undefined }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        task: composedTask,
+        threadId: _browserAgentState.threadId,
+        provider: _browserAgentState.provider || undefined
+      })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      _appendAgentLog('error', data.error || ('HTTP ' + res.status));
+      _appendAgentLog('error', data.error || 'HTTP ' + res.status);
       _setBrowserAgentRunning(false);
     } else if (data.label) {
       const state = document.getElementById('inappAgentState');
       if (state) state.title = data.label + ' (' + (data.model || '') + ')';
     }
   } catch (e) {
-      _appendAgentLog('error', e.message || String(e));
-      _setBrowserAgentRunning(false);
-    }
+    _appendAgentLog('error', e.message || String(e));
+    _setBrowserAgentRunning(false);
+  }
 }
-
 async function sendBrowserAgent() {
   const input = document.getElementById('inappAgentInput');
   if (!input) return;
@@ -678,22 +719,32 @@ async function sendBrowserAgent() {
   _autosizeAgentInput(input);
   await _sendBrowserAgentTask(task);
 }
-
 async function refineBrowserAgentRequest() {
   const input = document.getElementById('inappAgentInput');
   const btn = document.getElementById('inappAgentRefine');
   if (!input) return;
   const draft = (input.value || '').trim();
-  if (!draft) { toast('Type something first.', 'info', { duration: 1500 }); return; }
-  if (btn) { btn.classList.add('refining'); btn.textContent = 'Refining...'; }
+  if (!draft) {
+    toast('Type something first.', 'info', {
+      duration: 1500
+    });
+    return;
+  }
+  if (btn) {
+    btn.classList.add('refining');
+    btn.textContent = 'Refining...';
+  }
   try {
     const res = await fetch('/api/browser/agent/refine', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         draft,
         selection: _browserInspectState.selected || null,
-        provider: _browserAgentState.provider || undefined,
-      }),
+        provider: _browserAgentState.provider || undefined
+      })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) throw new Error(data.error || 'Refine failed');
@@ -702,34 +753,49 @@ async function refineBrowserAgentRequest() {
       input.value = refined;
       _autosizeAgentInput(input);
       input.focus();
-      try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
-      toast('Refined.', 'success', { duration: 1400 });
+      try {
+        input.setSelectionRange(input.value.length, input.value.length);
+      } catch (_) {}
+      toast('Refined.', 'success', {
+        duration: 1400
+      });
     } else {
-      toast('No changes — looked good already.', 'info', { duration: 1800 });
+      toast('No changes — looked good already.', 'info', {
+        duration: 1800
+      });
     }
   } catch (e) {
     toast('Refine failed: ' + (e && e.message ? e.message : String(e)), 'error');
   } finally {
-    if (btn) { btn.classList.remove('refining'); btn.textContent = 'Refine with AI'; }
+    if (btn) {
+      btn.classList.remove('refining');
+      btn.textContent = 'Refine with AI';
+    }
   }
 }
-
 async function stopBrowserAgent() {
   try {
     await fetch('/api/browser/agent/stop', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: _browserAgentState.threadId }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        threadId: _browserAgentState.threadId
+      })
     });
   } catch (_) {}
 }
-
 async function resetBrowserAgent() {
   try {
     await fetch('/api/browser/agent/reset', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: _browserAgentState.threadId }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        threadId: _browserAgentState.threadId
+      })
     });
   } catch (_) {}
   const log = document.getElementById('inappAgentLog');
@@ -743,13 +809,19 @@ async function resetBrowserAgent() {
 // clear the URL field, and wipe the agent chat. The webview will be
 // recreated fresh on the next inappBrowserGo.
 async function resetBrowserTab() {
-  try { await resetBrowserAgent(); } catch (_) {}
+  try {
+    await resetBrowserAgent();
+  } catch (_) {}
   const frame = document.getElementById('inappBrowserFrame');
   if (frame) frame.innerHTML = '';
   const input = document.getElementById('inappBrowserUrl');
   if (input) input.value = '';
-  try { _clearBrowserSelection && _clearBrowserSelection(); } catch (_) {}
-  try { _resetOverlayStateForNewPage && _resetOverlayStateForNewPage(); } catch (_) {}
+  try {
+    _clearBrowserSelection && _clearBrowserSelection();
+  } catch (_) {}
+  try {
+    _resetOverlayStateForNewPage && _resetOverlayStateForNewPage();
+  } catch (_) {}
   if (typeof toast === 'function') toast('Browser tab reset.', 'info');
 }
 
@@ -946,11 +1018,12 @@ const _SYM_BROWSER_KIT = `(function(){
   };
   return 'installed';
 })();`;
-
 async function _ensureSymKit() {
   const view = _ensureInappBrowser();
   if (!view || view.tagName.toLowerCase() !== 'webview') return null;
-  try { await view.executeJavaScript(_SYM_BROWSER_KIT, true); } catch (_) {}
+  try {
+    await view.executeJavaScript(_SYM_BROWSER_KIT, true);
+  } catch (_) {}
   return view;
 }
 // On navigation, injected styles are wiped but renderer state isn't. Reset
@@ -964,15 +1037,33 @@ function _resetOverlayStateForNewPage() {
 async function _symKitCall(method, ...args) {
   const view = await _ensureSymKit();
   if (!view) return null;
-  const js = `(function(){ try { return window.__symKit && window.__symKit.${method} ? window.__symKit.${method}(${args.map((a) => JSON.stringify(a)).join(',')}) : null; } catch (e) { return { error: e.message || String(e) }; } })();`;
-  try { return await view.executeJavaScript(js, true); } catch (_) { return null; }
+  const js = `(function(){ try { return window.__symKit && window.__symKit.${method} ? window.__symKit.${method}(${args.map(a => JSON.stringify(a)).join(',')}) : null; } catch (e) { return { error: e.message || String(e) }; } })();`;
+  try {
+    return await view.executeJavaScript(js, true);
+  } catch (_) {
+    return null;
+  }
 }
 
 // ── In-browser Tools (sidebar menu + sub-views) ─────────────────────────
-const _inappToolsState = { open: false, current: null, brand: null, audit: null, patches: { loaded: null, list: [] }, grayscale: false, focus: false };
+const _inappToolsState = {
+  open: false,
+  current: null,
+  brand: null,
+  audit: null,
+  patches: {
+    loaded: null,
+    list: []
+  },
+  grayscale: false,
+  focus: false
+};
 
 // Legacy no-ops so any stray callers (keyboard shortcuts, etc.) keep working.
-function toggleInappToolsMenu(ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); toggleInappToolsPanelMenu(); }
+function toggleInappToolsMenu(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  toggleInappToolsPanelMenu();
+}
 function closeInappToolsMenu() {}
 function _closeInappToolsMenu() {}
 
@@ -988,63 +1079,118 @@ function toggleInappToolsPanelMenu() {
 }
 
 // Tool registry: items shown in the menu. Keep order stable.
-const _INAPP_TOOLS_ITEMS = [
-  { kind: 'select',   icon: 'crosshair',     title: 'Select element',   sub: 'Select and ask AI about this element.', toggle: true },
-  { kind: 'sep' },
-  { kind: 'brand',    icon: 'palette',       title: 'Detect brand',     sub: 'Extract colors, fonts, logo, and meta from the current page.' },
-  { kind: 'inspect',  icon: 'code-2',        title: 'Inspect code',     sub: 'Human-readable view of tag, attributes, and computed styles.' },
-  { kind: 'reader',   icon: 'book-open',     title: 'Reader view',      sub: 'Strip the page down to its main article.' },
-  { kind: 'audit',    icon: 'gauge',         title: 'Site audit',       sub: 'SEO checks, performance timing, accessibility hints.' },
-  { kind: 'emulate',  icon: 'smartphone',    title: 'Emulate device',   sub: 'Viewport presets, color-scheme, reduced-motion.' },
-  { kind: 'issues',   icon: 'alert-octagon', title: 'Browser issues',   sub: 'Live problems Chrome reports (CSP, mixed content, cookies).' },
-  { kind: 'sep' },
-  { kind: 'grayscale', icon: 'contrast', title: 'Grayscale',  sub: 'Strip color for design/accessibility review.', toggle: true },
-  { kind: 'focus',     icon: 'focus',    title: 'Focus mode', sub: 'Hide navs, banners, sticky overlays.',        toggle: true },
-  { kind: 'sep' },
-  { kind: 'patches',  icon: 'history',   title: 'Saved patches',      sub: 'Re-apply saved DOM/style edits for this URL.' },
-  { kind: 'shortcuts', icon: 'keyboard', title: 'Keyboard shortcuts', sub: 'i / h / ? / Esc' },
-];
-
+const _INAPP_TOOLS_ITEMS = [{
+  kind: 'select',
+  icon: 'crosshair',
+  title: 'Select element',
+  sub: 'Select and ask AI about this element.',
+  toggle: true
+}, {
+  kind: 'sep'
+}, {
+  kind: 'brand',
+  icon: 'palette',
+  title: 'Detect brand',
+  sub: 'Extract colors, fonts, logo, and meta from the current page.'
+}, {
+  kind: 'inspect',
+  icon: 'code-2',
+  title: 'Inspect code',
+  sub: 'Human-readable view of tag, attributes, and computed styles.'
+}, {
+  kind: 'reader',
+  icon: 'book-open',
+  title: 'Reader view',
+  sub: 'Strip the page down to its main article.'
+}, {
+  kind: 'audit',
+  icon: 'gauge',
+  title: 'Site audit',
+  sub: 'SEO checks, performance timing, accessibility hints.'
+}, {
+  kind: 'emulate',
+  icon: 'smartphone',
+  title: 'Emulate device',
+  sub: 'Viewport presets, color-scheme, reduced-motion.'
+}, {
+  kind: 'issues',
+  icon: 'alert-octagon',
+  title: 'Browser issues',
+  sub: 'Live problems Chrome reports (CSP, mixed content, cookies).'
+}, {
+  kind: 'sep'
+}, {
+  kind: 'grayscale',
+  icon: 'contrast',
+  title: 'Grayscale',
+  sub: 'Strip color for design/accessibility review.',
+  toggle: true
+}, {
+  kind: 'focus',
+  icon: 'focus',
+  title: 'Focus mode',
+  sub: 'Hide navs, banners, sticky overlays.',
+  toggle: true
+}, {
+  kind: 'sep'
+}, {
+  kind: 'patches',
+  icon: 'history',
+  title: 'Saved patches',
+  sub: 'Re-apply saved DOM/style edits for this URL.'
+}, {
+  kind: 'shortcuts',
+  icon: 'keyboard',
+  title: 'Keyboard shortcuts',
+  sub: 'i / h / ? / Esc'
+}];
 function _renderInappToolsMenu() {
   _setInappToolsTitle('Tools');
   const body = document.getElementById('inappToolsBody');
   if (!body) return;
   const esc = _escapeHtml;
-  const isActive = (kind) => {
-    if (kind === 'select')    return !!(window._browserInspectState && _browserInspectState.enabled);
+  const isActive = kind => {
+    if (kind === 'select') return !!(window._browserInspectState && _browserInspectState.enabled);
     if (kind === 'grayscale') return !!_inappToolsState.grayscale;
-    if (kind === 'focus')     return !!_inappToolsState.focus;
+    if (kind === 'focus') return !!_inappToolsState.focus;
     return false;
   };
-  const rows = _INAPP_TOOLS_ITEMS.map((it) => {
+  const rows = _INAPP_TOOLS_ITEMS.map(it => {
     if (it.kind === 'sep') return '<div class="inapp-tools-sep"></div>';
     const active = it.toggle && isActive(it.kind) ? ' data-active="1"' : '';
-    const badge = (it.toggle && isActive(it.kind)) ? '<span class="inapp-tools-pill">On</span>' : '';
-    return '<button class="inapp-tools-item" type="button"' + active + ' data-tool-kind="' + esc(it.kind) + '">'
-      + '<i data-lucide="' + esc(it.icon) + '"></i>'
-      + '<div class="inapp-tools-item-copy">'
-        + '<div class="inapp-tools-item-title">' + esc(it.title) + '</div>'
-        + '<div class="inapp-tools-item-sub">' + esc(it.sub) + '</div>'
-      + '</div>'
-      + badge
-      + '</button>';
+    const badge = it.toggle && isActive(it.kind) ? '<span class="inapp-tools-pill">On</span>' : '';
+    return '<button class="inapp-tools-item" type="button"' + active + ' data-tool-kind="' + esc(it.kind) + '">' + '<i data-lucide="' + esc(it.icon) + '"></i>' + '<div class="inapp-tools-item-copy">' + '<div class="inapp-tools-item-title">' + esc(it.title) + '</div>' + '<div class="inapp-tools-item-sub">' + esc(it.sub) + '</div>' + '</div>' + badge + '</button>';
   }).join('');
   body.innerHTML = '<div class="inapp-tools-menu-list">' + rows + '</div>';
-  body.onclick = function(ev) {
+  body.onclick = function (ev) {
     const item = ev.target && ev.target.closest && ev.target.closest('[data-tool-kind]');
     if (!item) return;
     ev.preventDefault();
     const kind = item.getAttribute('data-tool-kind');
     _runInappToolFromMenu(kind);
   };
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
-
 function _runInappToolFromMenu(kind) {
-  if (kind === 'select')    { toggleInappInspectMode(); _renderInappToolsMenu(); return; }
-  if (kind === 'grayscale') { toggleInappGrayscale().then(() => _renderInappToolsMenu()); return; }
-  if (kind === 'focus')     { toggleInappFocusMode().then(() => _renderInappToolsMenu()); return; }
-  if (kind === 'shortcuts') { showInappShortcutsHelp(); return; }
+  if (kind === 'select') {
+    toggleInappInspectMode();
+    _renderInappToolsMenu();
+    return;
+  }
+  if (kind === 'grayscale') {
+    toggleInappGrayscale().then(() => _renderInappToolsMenu());
+    return;
+  }
+  if (kind === 'focus') {
+    toggleInappFocusMode().then(() => _renderInappToolsMenu());
+    return;
+  }
+  if (kind === 'shortcuts') {
+    showInappShortcutsHelp();
+    return;
+  }
   openInappTool(kind);
 }
 
@@ -1061,13 +1207,24 @@ function _setInappToolsHeadBack(label) {
   btn.title = 'Back to tools';
   btn.setAttribute('aria-label', 'Back to tools');
   btn.innerHTML = '<i data-lucide="chevron-left"></i>';
-  btn.onclick = () => { _inappToolsState.current = 'menu'; _renderInappToolsMenu(); _setInappToolsHeadBack(''); };
+  btn.onclick = () => {
+    _inappToolsState.current = 'menu';
+    _renderInappToolsMenu();
+    _setInappToolsHeadBack('');
+  };
   head.prepend(btn);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons({ nodes: [btn] }); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons({
+      nodes: [btn]
+    });
+  } catch (_) {}
 }
 
 // Legacy shims so any stray callers continue to work.
-function toggleInappMoreMenu(ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); toggleInappMorePanel(); }
+function toggleInappMoreMenu(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  toggleInappMorePanel();
+}
 function closeInappMoreMenu() {}
 
 // "More" opens inside the same tools sidebar as a dedicated sub-view.
@@ -1113,19 +1270,39 @@ function _renderInappMorePanel() {
       </div>
     </div>
   `;
-  body.onclick = function(ev) {
+  body.onclick = function (ev) {
     const t = ev.target && ev.target.closest && ev.target.closest('[data-more-action]');
     if (!t) return;
     ev.preventDefault();
     const action = t.getAttribute('data-more-action');
-    if (action === 'reset')       { resetBrowserTab(); closeInappToolsPanel(); return; }
-    if (action === 'external')    { inappBrowserOpenExternal(); return; }
-    if (action === 'zoom-out')    { inappBrowserZoomOut(); return; }
-    if (action === 'zoom-reset')  { inappBrowserZoomReset(); return; }
-    if (action === 'zoom-in')     { inappBrowserZoomIn(); return; }
+    if (action === 'reset') {
+      resetBrowserTab();
+      closeInappToolsPanel();
+      return;
+    }
+    if (action === 'external') {
+      inappBrowserOpenExternal();
+      return;
+    }
+    if (action === 'zoom-out') {
+      inappBrowserZoomOut();
+      return;
+    }
+    if (action === 'zoom-reset') {
+      inappBrowserZoomReset();
+      return;
+    }
+    if (action === 'zoom-in') {
+      inappBrowserZoomIn();
+      return;
+    }
   };
-  try { _syncInappBrowserZoomUi(); } catch (_) {}
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    _syncInappBrowserZoomUi();
+  } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 function _openInappToolsPanel() {
   const p = document.getElementById('inappToolsPanel');
@@ -1145,7 +1322,9 @@ function closeInappToolsPanel() {
   // Auto-reset device emulation on close so users can't get stuck with a
   // glitched page after leaving the Emulate tool with overrides applied.
   if (wasEmulate && typeof _emulateState !== 'undefined' && (_emulateState.device !== 'off' || _emulateState.colorScheme || _emulateState.reducedMotion || _emulateState.contrast || _emulateState.network !== 'no-throttle' || _emulateState.cpuRate !== 1)) {
-    try { _resetAllEmulation(); } catch (_) {}
+    try {
+      _resetAllEmulation();
+    } catch (_) {}
   }
 }
 function _setInappToolsTitle(text) {
@@ -1158,14 +1337,24 @@ function _setInappToolsBodyHtml(html) {
 }
 function _setInappToolsBodyLoading(text) {
   _setInappToolsBodyHtml('<div class="inapp-tools-empty"><i data-lucide="loader"></i>' + (text || 'Working...') + '</div>');
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 function _setInappToolsBodyError(text) {
   _setInappToolsBodyHtml('<div class="inapp-tools-empty" style="color:var(--red);"><i data-lucide="alert-triangle"></i>' + _escapeHtml(text || 'Something went wrong.') + '</div>');
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 function _escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[c]);
 }
 async function openInappTool(kind) {
   _openInappToolsPanel();
@@ -1176,14 +1365,29 @@ async function openInappTool(kind) {
   const body = document.getElementById('inappToolsBody');
   if (body) body.onclick = null;
   switch (kind) {
-    case 'brand':     await _runInappBrandDetect(); break;
-    case 'inspect':   _runInappCodeInspect(); break;
-    case 'reader':    await _runInappReaderView(); break;
-    case 'audit':     await _runInappSiteAudit(); break;
-    case 'emulate':   await _runInappEmulatePanel(); break;
-    case 'issues':    await _runInappIssuesPanel(); break;
-    case 'patches':   await _runInappPatchesPanel(); break;
-    default:          _setInappToolsBodyHtml('<div class="inapp-tools-empty">Unknown tool.</div>');
+    case 'brand':
+      await _runInappBrandDetect();
+      break;
+    case 'inspect':
+      _runInappCodeInspect();
+      break;
+    case 'reader':
+      await _runInappReaderView();
+      break;
+    case 'audit':
+      await _runInappSiteAudit();
+      break;
+    case 'emulate':
+      await _runInappEmulatePanel();
+      break;
+    case 'issues':
+      await _runInappIssuesPanel();
+      break;
+    case 'patches':
+      await _runInappPatchesPanel();
+      break;
+    default:
+      _setInappToolsBodyHtml('<div class="inapp-tools-empty">Unknown tool.</div>');
   }
 }
 
@@ -1333,7 +1537,6 @@ const _BRAND_EXTRACT_SCRIPT = `(function(){
 
   return { title: title, url: url, host: host, themeColor: themeColor, ogImage: ogImage, ogSiteName: ogSiteName, description: description, favicon: favicon, palette: palette, cssVars: cssVars, fonts: fonts.slice(0, 4) };
 })();`;
-
 async function _runInappBrandDetect() {
   _setInappToolsTitle('Brand');
   _setInappToolsBodyLoading('Analyzing page...');
@@ -1349,19 +1552,31 @@ async function _runInappBrandDetect() {
     _setInappToolsBodyError('Extraction failed: ' + (e && e.message ? e.message : String(e)));
     return;
   }
-  if (!data) { _setInappToolsBodyError('No data returned.'); return; }
+  if (!data) {
+    _setInappToolsBodyError('No data returned.');
+    return;
+  }
   _inappToolsState.brand = data;
   _renderInappBrandPanel(data);
 }
 function _renderInappBrandPanel(data) {
   const brandName = data.ogSiteName || data.title || data.host;
   const logoSrc = data.ogImage || data.favicon;
-  const roleLabel = (r) => ({
-    'theme':'Theme','background':'Background','text':'Text','link':'Link','heading':'Heading',
-    'button-bg':'Button bg','button-text':'Button text','border':'Border',
-    'input-bg':'Input bg','input-text':'Input text','css-var':'CSS variable','color':'Color',
+  const roleLabel = r => ({
+    'theme': 'Theme',
+    'background': 'Background',
+    'text': 'Text',
+    'link': 'Link',
+    'heading': 'Heading',
+    'button-bg': 'Button bg',
+    'button-text': 'Button text',
+    'border': 'Border',
+    'input-bg': 'Input bg',
+    'input-text': 'Input text',
+    'css-var': 'CSS variable',
+    'color': 'Color'
   })[r] || r;
-  const palette = (data.palette || []).map((p) => {
+  const palette = (data.palette || []).map(p => {
     const extraRoles = (p.roles || []).filter(r => r !== p.role);
     const subtitle = extraRoles.length ? extraRoles.map(roleLabel).join(', ') : '';
     return `
@@ -1373,25 +1588,32 @@ function _renderInappBrandPanel(data) {
     </div>
   `;
   }).join('');
-  const cssVars = (data.cssVars || []).map((v) => `
+  const cssVars = (data.cssVars || []).map(v => `
     <div class="brand-meta-row" onclick="_copyText('${_escapeHtml(v.name)}')" style="cursor:pointer;" title="Click to copy ${_escapeHtml(v.name)}">
       <span class="k" style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${_escapeHtml(v.hex)};border:1px solid rgba(0,0,0,0.15);"></span><code>${_escapeHtml(v.name)}</code></span>
       <span class="v" style="font:500 11px var(--font-mono);">${_escapeHtml(v.hex)}</span>
     </div>
   `).join('');
-  const fonts = (data.fonts || []).map((f) => `
+  const fonts = (data.fonts || []).map(f => `
     <div class="brand-font" style="font-family:${_escapeHtml(f.family)};">
       <div class="brand-font-role">${_escapeHtml(f.roles.join(' + '))}</div>
       <div class="brand-font-family">The quick brown fox</div>
       <div class="brand-font-meta">${_escapeHtml(f.family)}${f.size ? ' — ' + _escapeHtml(f.size) : ''}</div>
     </div>
   `).join('');
-  const meta = [
-    data.description ? { k: 'Description', v: data.description } : null,
-    data.themeColor ? { k: 'Theme color', v: data.themeColor } : null,
-    { k: 'Host', v: data.host },
-    { k: 'URL', v: data.url },
-  ].filter(Boolean).map((r) => `<div class="brand-meta-row"><span class="k">${_escapeHtml(r.k)}</span><span class="v">${_escapeHtml(r.v)}</span></div>`).join('');
+  const meta = [data.description ? {
+    k: 'Description',
+    v: data.description
+  } : null, data.themeColor ? {
+    k: 'Theme color',
+    v: data.themeColor
+  } : null, {
+    k: 'Host',
+    v: data.host
+  }, {
+    k: 'URL',
+    v: data.url
+  }].filter(Boolean).map(r => `<div class="brand-meta-row"><span class="k">${_escapeHtml(r.k)}</span><span class="v">${_escapeHtml(r.v)}</span></div>`).join('');
   const html = `
     <div class="brand-header">
       <div class="brand-header-logo">${logoSrc ? '<img src="' + _escapeHtml(logoSrc) + '" alt="" onerror="this.remove()"/>' : ''}</div>
@@ -1411,44 +1633,45 @@ function _renderInappBrandPanel(data) {
     </div>
   `;
   _setInappToolsBodyHtml(html);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 function _copyText(text) {
-  try { navigator.clipboard.writeText(text); toast('Copied ' + text, 'success', { duration: 1400 }); } catch (_) {}
+  try {
+    navigator.clipboard.writeText(text);
+    toast('Copied ' + text, 'success', {
+      duration: 1400
+    });
+  } catch (_) {}
 }
 async function _saveBrandToNote() {
   const data = _inappToolsState.brand;
   if (!data) return;
   const brandName = data.ogSiteName || data.title || data.host;
-  const palette = (data.palette || []).map((p) => `- \`${p.hex}\` — ${p.role}`).join('\n');
-  const fonts = (data.fonts || []).map((f) => `- **${f.roles.join(' + ')}:** ${f.family}${f.size ? ' (' + f.size + ')' : ''}`).join('\n');
-  const md = [
-    `# ${brandName}`,
-    '',
-    data.description ? `> ${data.description}` : null,
-    '',
-    `- **URL:** ${data.url}`,
-    data.themeColor ? `- **Theme color:** \`${data.themeColor}\`` : null,
-    data.ogImage ? `- **Logo:** ${data.ogImage}` : null,
-    data.favicon ? `- **Favicon:** ${data.favicon}` : null,
-    '',
-    '## Palette',
-    palette || '_None detected._',
-    '',
-    '## Typography',
-    fonts || '_None detected._',
-    '',
-    `_Captured ${new Date().toISOString()}_`,
-  ].filter((l) => l !== null).join('\n');
+  const palette = (data.palette || []).map(p => `- \`${p.hex}\` — ${p.role}`).join('\n');
+  const fonts = (data.fonts || []).map(f => `- **${f.roles.join(' + ')}:** ${f.family}${f.size ? ' (' + f.size + ')' : ''}`).join('\n');
+  const md = [`# ${brandName}`, '', data.description ? `> ${data.description}` : null, '', `- **URL:** ${data.url}`, data.themeColor ? `- **Theme color:** \`${data.themeColor}\`` : null, data.ogImage ? `- **Logo:** ${data.ogImage}` : null, data.favicon ? `- **Favicon:** ${data.favicon}` : null, '', '## Palette', palette || '_None detected._', '', '## Typography', fonts || '_None detected._', '', `_Captured ${new Date().toISOString()}_`].filter(l => l !== null).join('\n');
   const safeName = 'Brand — ' + (brandName || data.host).replace(/[^\w\s-]/g, '').slice(0, 80);
   try {
     await notesFetch('/api/notes/create', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: safeName }),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: safeName
+      })
     });
     await notesFetch('/api/notes/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: safeName, content: md }),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: safeName,
+        content: md
+      })
     });
     toast('Saved to note: ' + safeName, 'success');
   } catch (e) {
@@ -1461,20 +1684,14 @@ function _refineBrandWithAi() {
   _ensureBrowserAgentPanelOpen();
   const input = _getBrowserAgentInput();
   if (!input) return;
-  const lines = [
-    "Refine and enrich this brand snapshot I extracted from the current page. Identify the actual brand name if different from what's here, dedupe near-duplicate colors, label primary / secondary / accent roles, and suggest a concise brand description. Respond with a clean Markdown brief.",
-    '',
-    '```json',
-    JSON.stringify(data, null, 2),
-    '```',
-  ];
+  const lines = ["Refine and enrich this brand snapshot I extracted from the current page. Identify the actual brand name if different from what's here, dedupe near-duplicate colors, label primary / secondary / accent roles, and suggest a concise brand description. Respond with a clean Markdown brief.", '', '```json', JSON.stringify(data, null, 2), '```'];
   input.value = lines.join('\n');
   _autosizeAgentInput(input);
   input.focus();
 }
 
 // ── Code inspect ─────────────────────────────────────────────────────────
-let _inspectActiveSelector = '';
+state._inspectActiveSelector = '';
 function _runInappCodeInspect() {
   _setInappToolsTitle('Inspect code');
   _ensureSymKit();
@@ -1489,16 +1706,16 @@ function _runInappCodeInspect() {
 function _renderInappCodeInspect() {
   const sel = _browserInspectState.selected;
   if (!sel) {
-    _inspectActiveSelector = '';
+    state._inspectActiveSelector = '';
     _setInappToolsBodyHtml('<div class="code-inspect-empty"><i data-lucide="mouse-pointer-click" style="width:24px;height:24px;display:block;margin:0 auto 10px;color:var(--subtext1);"></i>Inspect mode is on. Click any element in the page to inspect its code.</div>');
-    try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+    try {
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    } catch (_) {}
     return;
   }
-  _inspectActiveSelector = sel.selector || '';
+  state._inspectActiveSelector = sel.selector || '';
   const attrs = sel.attributes || {};
-  const attrRows = Object.keys(attrs).length
-    ? Object.entries(attrs).map(([k, v]) => `<div class="k">${_escapeHtml(k)}</div><div class="v">${_escapeHtml(v)}</div>`).join('')
-    : '<div class="k" style="grid-column:1/-1;color:var(--subtext0);">No attributes</div>';
+  const attrRows = Object.keys(attrs).length ? Object.entries(attrs).map(([k, v]) => `<div class="k">${_escapeHtml(k)}</div><div class="v">${_escapeHtml(v)}</div>`).join('') : '<div class="k" style="grid-column:1/-1;color:var(--subtext0);">No attributes</div>';
   _setInappToolsBodyHtml(`
     <div class="code-inspect-head">
       <div style="display:flex;gap:6px;align-items:center;">
@@ -1519,11 +1736,13 @@ function _renderInappCodeInspect() {
     </div>
     <div id="inappCodeInspectStyles"><div class="inapp-tools-empty"><i data-lucide="loader" style="width:20px;height:20px;"></i>Loading computed styles...</div></div>
   `);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
   _loadCodeInspectAll(sel).catch(() => {});
 }
 async function _loadCodeInspectAll(sel) {
-  const selector = _inspectActiveSelector || sel.selector || '';
+  const selector = state._inspectActiveSelector || sel.selector || '';
   if (!selector) return;
   await _ensureSymKit();
   _renderInspectAltSelectors(selector).catch(() => {});
@@ -1534,21 +1753,24 @@ async function _renderInspectAltSelectors(selector) {
   const target = document.getElementById('inappInspectAltSelectors');
   if (!target) return;
   const alts = await _symKitCall('altSelectors', selector);
-  if (!Array.isArray(alts) || !alts.length) { target.innerHTML = ''; return; }
+  if (!Array.isArray(alts) || !alts.length) {
+    target.innerHTML = '';
+    return;
+  }
   target.innerHTML = `
     <div class="code-inspect-group">
       <div class="code-inspect-group-title">Selectors</div>
       <div onmouseleave="_symKitCall('clearHighlight')">
-        ${alts.map((a) => {
-          const s = JSON.stringify(a.selector).replace(/"/g, '&quot;');
-          return `<div class="alt-selector-row ${a.selector === _inspectActiveSelector ? 'active' : ''}" onmouseenter="_symKitCall('highlightAll', ${s})" onclick="_pickInspectSelector(${s})"><span class="sel">${_escapeHtml(a.selector)}</span><span class="count">${a.count}</span><span class="label">${_escapeHtml(a.label)}</span></div>`;
-        }).join('')}
+        ${alts.map(a => {
+    const s = JSON.stringify(a.selector).replace(/"/g, '&quot;');
+    return `<div class="alt-selector-row ${a.selector === state._inspectActiveSelector ? 'active' : ''}" onmouseenter="_symKitCall('highlightAll', ${s})" onclick="_pickInspectSelector(${s})"><span class="sel">${_escapeHtml(a.selector)}</span><span class="count">${a.count}</span><span class="label">${_escapeHtml(a.label)}</span></div>`;
+  }).join('')}
       </div>
     </div>
   `;
 }
 function _pickInspectSelector(selector) {
-  _inspectActiveSelector = selector;
+  state._inspectActiveSelector = selector;
   _renderInspectAltSelectors(selector).catch(() => {});
   _renderInspectBoxModel(selector).catch(() => {});
   const sel = _browserInspectState.selected || {};
@@ -1558,8 +1780,11 @@ async function _renderInspectBoxModel(selector) {
   const target = document.getElementById('inappInspectBoxModel');
   if (!target) return;
   const bm = await _symKitCall('getBoxModel', selector);
-  if (!bm) { target.innerHTML = ''; return; }
-  const r = (n) => n || 0;
+  if (!bm) {
+    target.innerHTML = '';
+    return;
+  }
+  const r = n => n || 0;
   target.innerHTML = `
     <div class="code-inspect-group">
       <div class="code-inspect-group-title">Box model</div>
@@ -1593,7 +1818,7 @@ async function _renderInspectBoxModel(selector) {
 function _renderInspectQuickEdit(selector, styles) {
   const target = document.getElementById('inappInspectQuickEdit');
   if (!target) return;
-  const esc = (v) => _escapeHtml(v || '');
+  const esc = v => _escapeHtml(v || '');
   const S = JSON.stringify(selector).replace(/"/g, '&quot;');
   const color = (styles['color'] || '').trim();
   const bg = (styles['background-color'] || '').trim();
@@ -1616,13 +1841,13 @@ function _renderInspectQuickEdit(selector, styles) {
         <label>Font size</label>
         <input type="text" value="${esc(styles['font-size'])}" onchange="_applyInspectStyle(${S}, 'font-size', this.value)" placeholder="e.g. 16px">
         <label>Font weight</label>
-        <select onchange="_applyInspectStyle(${S}, 'font-weight', this.value)">${['100','200','300','400','500','600','700','800','900','normal','bold'].map((w) => `<option value="${w}" ${String(styles['font-weight']).trim() === w ? 'selected' : ''}>${w}</option>`).join('')}</select>
+        <select onchange="_applyInspectStyle(${S}, 'font-weight', this.value)">${['100', '200', '300', '400', '500', '600', '700', '800', '900', 'normal', 'bold'].map(w => `<option value="${w}" ${String(styles['font-weight']).trim() === w ? 'selected' : ''}>${w}</option>`).join('')}</select>
         <label>Padding</label>
         <input type="text" value="${esc(styles['padding'])}" onchange="_applyInspectStyle(${S}, 'padding', this.value)" placeholder="e.g. 12px 20px">
         <label>Margin</label>
         <input type="text" value="${esc(styles['margin'])}" onchange="_applyInspectStyle(${S}, 'margin', this.value)" placeholder="e.g. 0 auto">
         <label>Display</label>
-        <select onchange="_applyInspectStyle(${S}, 'display', this.value)">${['block','inline','inline-block','flex','inline-flex','grid','inline-grid','none','contents'].map((d) => `<option value="${d}" ${String(styles['display']).trim() === d ? 'selected' : ''}>${d}</option>`).join('')}</select>
+        <select onchange="_applyInspectStyle(${S}, 'display', this.value)">${['block', 'inline', 'inline-block', 'flex', 'inline-flex', 'grid', 'inline-grid', 'none', 'contents'].map(d => `<option value="${d}" ${String(styles['display']).trim() === d ? 'selected' : ''}>${d}</option>`).join('')}</select>
       </div>
     </div>
   `;
@@ -1643,16 +1868,21 @@ async function _loadCodeInspectStyles(sel, forcedSelector) {
     } catch (e) { return null; }
   })();`;
   let styles = null;
-  try { styles = await view.executeJavaScript(script, true); } catch (_) {}
+  try {
+    styles = await view.executeJavaScript(script, true);
+  } catch (_) {}
   _renderInspectQuickEdit(selector, styles || {});
   const target = document.getElementById('inappCodeInspectStyles');
   if (!target) return;
-  if (!styles) { target.innerHTML = '<div class="inapp-tools-empty" style="color:var(--subtext0);">Could not read computed styles.</div>'; return; }
+  if (!styles) {
+    target.innerHTML = '<div class="inapp-tools-empty" style="color:var(--subtext0);">Could not read computed styles.</div>';
+    return;
+  }
   const groups = {
-    'Typography': ['font-family','font-size','font-weight','line-height','letter-spacing','text-transform','text-align'],
-    'Colors': ['color','background-color','background-image','border','border-radius','box-shadow','opacity'],
-    'Layout': ['display','position','z-index','width','height','padding','margin','cursor','transform'],
-    'Motion': ['transition'],
+    'Typography': ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'text-transform', 'text-align'],
+    'Colors': ['color', 'background-color', 'background-image', 'border', 'border-radius', 'box-shadow', 'opacity'],
+    'Layout': ['display', 'position', 'z-index', 'width', 'height', 'padding', 'margin', 'cursor', 'transform'],
+    'Motion': ['transition']
   };
   function isColor(key, val) {
     if (!val) return false;
@@ -1663,7 +1893,7 @@ async function _loadCodeInspectStyles(sel, forcedSelector) {
     return String(val).replace(/(-?\d+(?:\.\d+)?)(px|em|rem|%)/g, '<span class="scrub" data-unit="$2" data-val="$1" onmousedown="_scrubStart(event, this)" title="Alt+drag to scrub">$1$2</span>');
   }
   const blocks = Object.entries(groups).map(([groupName, keys]) => {
-    const rows = keys.filter((k) => styles[k] && styles[k].trim()).map((k) => {
+    const rows = keys.filter(k => styles[k] && styles[k].trim()).map(k => {
       const v = styles[k];
       const scrubbable = !isColor(k, v) && /\d+(px|em|rem|%)/.test(v);
       let displayV = _escapeHtml(v);
@@ -1671,7 +1901,7 @@ async function _loadCodeInspectStyles(sel, forcedSelector) {
       let swatch = '';
       if (isColor(k, v)) {
         const hex = _rgbToHex(v) || v;
-        const S = JSON.stringify(_inspectActiveSelector).replace(/"/g, '&quot;');
+        const S = JSON.stringify(state._inspectActiveSelector).replace(/"/g, '&quot;');
         const K = JSON.stringify(k).replace(/"/g, '&quot;');
         const H = JSON.stringify(hex).replace(/"/g, '&quot;');
         swatch = `<span class="chip" style="background:${_escapeHtml(v)}" onclick="_openColorEditorAtChip(this, ${S}, ${K}, ${H})"></span>`;
@@ -1687,13 +1917,16 @@ async function _loadCodeInspectStyles(sel, forcedSelector) {
   }).join('');
   target.innerHTML = blocks || '<div class="inapp-tools-empty">No styles.</div>';
 }
-
 async function _inspectHideSelected() {
-  const sel = _inspectActiveSelector; if (!sel) return;
+  const sel = state._inspectActiveSelector;
+  if (!sel) return;
   await _ensureSymKit();
   const res = await _symKitCall('toggleVisibility', sel);
   const nowHidden = !!(res && res.nowHidden);
-  if (nowHidden) _recordPatch({ op: 'hide', selector: sel });
+  if (nowHidden) _recordPatch({
+    op: 'hide',
+    selector: sel
+  });
   // Swap the icon between "eye-off" (element is currently hidden, click to
   // show) and "eye" (element is visible, click to hide). Lucide replaces
   // the <i> tag with an <svg> on first render, so toggling data-lucide on
@@ -1705,41 +1938,66 @@ async function _inspectHideSelected() {
     btn.title = nowHidden ? 'Show element (H)' : 'Hide element (H)';
     const iconName = nowHidden ? 'eye-off' : 'eye';
     btn.innerHTML = '<i data-lucide="' + iconName + '" style="width:13px;height:13px;"></i>';
-    try { lucide.createIcons({ nodes: [btn] }); } catch (_) {}
+    try {
+      lucide.createIcons({
+        nodes: [btn]
+      });
+    } catch (_) {}
   }
-  toast(nowHidden ? 'Hidden (click again to show)' : 'Shown', 'success', { duration: 1200 });
+  toast(nowHidden ? 'Hidden (click again to show)' : 'Shown', 'success', {
+    duration: 1200
+  });
 }
 async function _inspectRemoveSelected() {
-  const sel = _inspectActiveSelector; if (!sel) return;
-  const view = _getInappWebview(); if (!view) return;
+  const sel = state._inspectActiveSelector;
+  if (!sel) return;
+  const view = _getInappWebview();
+  if (!view) return;
   const js = `(function(){ var el = document.querySelector(${JSON.stringify(sel)}); if (el && el.parentNode) { el.parentNode.removeChild(el); return true; } return false; })();`;
-  try { await view.executeJavaScript(js, true); } catch (_) {}
-  _recordPatch({ op: 'remove', selector: sel });
+  try {
+    await view.executeJavaScript(js, true);
+  } catch (_) {}
+  _recordPatch({
+    op: 'remove',
+    selector: sel
+  });
   _clearBrowserSelection();
-  toast('Removed', 'success', { duration: 1200 });
+  toast('Removed', 'success', {
+    duration: 1200
+  });
 }
 async function _inspectScrollSelected() {
-  const sel = _inspectActiveSelector; if (!sel) return;
-  const view = _getInappWebview(); if (!view) return;
+  const sel = state._inspectActiveSelector;
+  if (!sel) return;
+  const view = _getInappWebview();
+  if (!view) return;
   const js = `(function(){ var el = document.querySelector(${JSON.stringify(sel)}); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return true; })();`;
-  try { await view.executeJavaScript(js, true); } catch (_) {}
+  try {
+    await view.executeJavaScript(js, true);
+  } catch (_) {}
 }
 
 // ── Inline text editor ──────────────────────────────────────────────────
-let _inspectIsEditing = false;
-let _inspectEditStartHtml = '';
-let _inspectEditingSelector = '';
-let _inspectWasInspectOnBeforeEdit = false;
+state._inspectIsEditing = false;
+state._inspectEditStartHtml = '';
+state._inspectEditingSelector = '';
+state._inspectWasInspectOnBeforeEdit = false;
 async function _inspectToggleEdit() {
   // While editing, we already have the target - ignore the live selector
   // (which may have been cleared when we paused inspect mode on entry).
-  const sel = _inspectIsEditing ? _inspectEditingSelector : _inspectActiveSelector;
-  if (!sel) { toast('Select an element first', 'info', { duration: 1200 }); return; }
-  const view = _getInappWebview(); if (!view) return;
+  const sel = state._inspectIsEditing ? state._inspectEditingSelector : state._inspectActiveSelector;
+  if (!sel) {
+    toast('Select an element first', 'info', {
+      duration: 1200
+    });
+    return;
+  }
+  const view = _getInappWebview();
+  if (!view) return;
   const btn = document.getElementById('inspectEditBtn');
-  if (!_inspectIsEditing) {
+  if (!state._inspectIsEditing) {
     // Enter edit mode. Inspect mode captures clicks globally, so pause it.
-    _inspectWasInspectOnBeforeEdit = _browserInspectState.enabled;
+    state._inspectWasInspectOnBeforeEdit = _browserInspectState.enabled;
     if (_browserInspectState.enabled) toggleInappInspectMode(false);
     const entered = await view.executeJavaScript(`(function(){
       var el = document.querySelector(${JSON.stringify(sel)});
@@ -1793,12 +2051,17 @@ async function _inspectToggleEdit() {
       document.documentElement.appendChild(done);
       return { html: el.innerHTML };
     })();`, true);
-    if (!entered) { toast('Element not found', 'error'); return; }
-    _inspectEditStartHtml = entered.html || '';
-    _inspectEditingSelector = sel;
-    _inspectIsEditing = true;
+    if (!entered) {
+      toast('Element not found', 'error');
+      return;
+    }
+    state._inspectEditStartHtml = entered.html || '';
+    state._inspectEditingSelector = sel;
+    state._inspectIsEditing = true;
     if (btn) btn.classList.add('inspecting');
-    toast('Editing — press Esc or click Done editing to save', 'info', { duration: 2400 });
+    toast('Editing — press Esc or click Done editing to save', 'info', {
+      duration: 2400
+    });
   } else {
     // Exit edit mode, commit changes.
     const committed = await view.executeJavaScript(`(function(){
@@ -1822,40 +2085,62 @@ async function _inspectToggleEdit() {
       window.__symphoneeEditState = null;
       return { html: el.innerHTML };
     })();`, true);
-    _inspectIsEditing = false;
+    state._inspectIsEditing = false;
     if (btn) btn.classList.remove('inspecting');
-    if (committed && committed.html !== _inspectEditStartHtml) {
-      _recordPatch({ op: 'html', selector: sel, html: committed.html });
-      toast('Edit saved', 'success', { duration: 1200 });
+    if (committed && committed.html !== state._inspectEditStartHtml) {
+      _recordPatch({
+        op: 'html',
+        selector: sel,
+        html: committed.html
+      });
+      toast('Edit saved', 'success', {
+        duration: 1200
+      });
     } else {
-      toast('No changes', 'info', { duration: 1000 });
+      toast('No changes', 'info', {
+        duration: 1000
+      });
     }
-    _inspectEditStartHtml = '';
-    _inspectEditingSelector = '';
-    if (_inspectWasInspectOnBeforeEdit) toggleInappInspectMode(true);
+    state._inspectEditStartHtml = '';
+    state._inspectEditingSelector = '';
+    if (state._inspectWasInspectOnBeforeEdit) toggleInappInspectMode(true);
   }
 }
 async function _applyInspectStyle(selector, prop, value) {
-  const view = _getInappWebview(); if (!view) return;
+  const view = _getInappWebview();
+  if (!view) return;
   const js = `(function(){ var el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.style.setProperty(${JSON.stringify(prop)}, ${JSON.stringify(String(value || ''))}); return true; })();`;
-  try { await view.executeJavaScript(js, true); } catch (_) {}
-  _recordPatch({ op: 'style', selector, prop, value });
+  try {
+    await view.executeJavaScript(js, true);
+  } catch (_) {}
+  _recordPatch({
+    op: 'style',
+    selector,
+    prop,
+    value
+  });
   _renderInspectBoxModel(selector).catch(() => {});
 }
 
 // ── Color popover ────────────────────────────────────────────────────────
-let _colorPopoverEl = null;
-function _closeColorPopover() { if (_colorPopoverEl) { _colorPopoverEl.remove(); _colorPopoverEl = null; } document.removeEventListener('mousedown', _colorPopoverClickAway, true); }
-function _colorPopoverClickAway(ev) { if (_colorPopoverEl && !_colorPopoverEl.contains(ev.target)) _closeColorPopover(); }
+state._colorPopoverEl = null;
+function _closeColorPopover() {
+  if (state._colorPopoverEl) {
+    state._colorPopoverEl.remove();
+    state._colorPopoverEl = null;
+  }
+  document.removeEventListener('mousedown', _colorPopoverClickAway, true);
+}
+function _colorPopoverClickAway(ev) {
+  if (state._colorPopoverEl && !state._colorPopoverEl.contains(ev.target)) _closeColorPopover();
+}
 function _openColorEditorAtChip(chipEl, selector, prop, initialHex) {
   _closeColorPopover();
   const rect = chipEl.getBoundingClientRect();
   const pop = document.createElement('div');
   pop.className = 'sym-color-popover';
-  const palette = (_inappToolsState.brand && _inappToolsState.brand.palette) || [];
-  const swatchHtml = palette.length
-    ? `<div class="sym-color-popover-title">Brand palette</div><div class="swatches">${palette.slice(0, 12).map((p) => `<div class="sw" style="background:${_escapeHtml(p.hex)}" title="${_escapeHtml(p.hex)} — ${_escapeHtml(p.role)}" data-hex="${_escapeHtml(p.hex)}"></div>`).join('')}</div>`
-    : '';
+  const palette = _inappToolsState.brand && _inappToolsState.brand.palette || [];
+  const swatchHtml = palette.length ? `<div class="sym-color-popover-title">Brand palette</div><div class="swatches">${palette.slice(0, 12).map(p => `<div class="sw" style="background:${_escapeHtml(p.hex)}" title="${_escapeHtml(p.hex)} — ${_escapeHtml(p.role)}" data-hex="${_escapeHtml(p.hex)}"></div>`).join('')}</div>` : '';
   pop.innerHTML = `
     <div class="sym-color-popover-title">${_escapeHtml(prop)}</div>
     <input type="color" value="${_escapeHtml(initialHex || '#000000')}">
@@ -1866,27 +2151,46 @@ function _openColorEditorAtChip(chipEl, selector, prop, initialHex) {
   const popW = pop.offsetWidth || 240;
   const left = Math.min(window.innerWidth - popW - 8, Math.max(8, rect.left));
   const top = Math.min(window.innerHeight - pop.offsetHeight - 8, rect.bottom + 6);
-  pop.style.left = left + 'px'; pop.style.top = top + 'px';
-  _colorPopoverEl = pop;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  state._colorPopoverEl = pop;
   const colorInput = pop.querySelector('input[type="color"]');
   const hexInput = pop.querySelector('input.hex');
-  function apply(hex) { hexInput.value = hex; colorInput.value = hex; _applyInspectStyle(selector, prop, hex); chipEl.style.background = hex; }
+  function apply(hex) {
+    hexInput.value = hex;
+    colorInput.value = hex;
+    _applyInspectStyle(selector, prop, hex);
+    chipEl.style.background = hex;
+  }
   colorInput.oninput = () => apply(colorInput.value);
-  hexInput.oninput = () => { const v = hexInput.value.trim(); if (/^#?[0-9a-fA-F]{6}$/.test(v)) apply(v.startsWith('#') ? v : '#' + v); };
-  pop.querySelectorAll('.sw').forEach((sw) => { sw.onclick = () => apply(sw.dataset.hex); });
+  hexInput.oninput = () => {
+    const v = hexInput.value.trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(v)) apply(v.startsWith('#') ? v : '#' + v);
+  };
+  pop.querySelectorAll('.sw').forEach(sw => {
+    sw.onclick = () => apply(sw.dataset.hex);
+  });
   setTimeout(() => document.addEventListener('mousedown', _colorPopoverClickAway, true), 0);
 }
 function _rgbToHex(rgb) {
   if (!rgb) return null;
   const m = String(rgb).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (!m) return /^#[0-9a-fA-F]{3,8}$/.test(rgb) ? rgb : null;
-  const h = (v) => { const x = parseInt(v, 10).toString(16); return x.length < 2 ? '0' + x : x; };
+  const h = v => {
+    const x = parseInt(v, 10).toString(16);
+    return x.length < 2 ? '0' + x : x;
+  };
   return '#' + h(m[1]) + h(m[2]) + h(m[3]);
 }
 
 // ── QuickView popover ────────────────────────────────────────────────────
-let _quickviewEl = null;
-function _quickviewHide() { if (_quickviewEl) { _quickviewEl.remove(); _quickviewEl = null; } }
+state._quickviewEl = null;
+function _quickviewHide() {
+  if (state._quickviewEl) {
+    state._quickviewEl.remove();
+    state._quickviewEl = null;
+  }
+}
 function _quickviewShow(ev, prop, value) {
   _quickviewHide();
   let content = '';
@@ -1898,9 +2202,9 @@ function _quickviewShow(ev, prop, value) {
   } else {
     const bez = String(value).match(/cubic-bezier\(([^)]+)\)/);
     if (bez) {
-      const pts = bez[1].split(',').map((s) => parseFloat(s));
-      if (pts.length === 4 && pts.every((n) => !isNaN(n))) {
-        content = `<svg width="160" height="80" viewBox="0 0 160 80"><path d="M 0 80 C ${pts[0]*160} ${80-pts[1]*80}, ${pts[2]*160} ${80-pts[3]*80}, 160 0" fill="none" stroke="#89b4fa" stroke-width="2"/></svg><div style="font:10px var(--font-mono);margin-top:4px;">${_escapeHtml(value)}</div>`;
+      const pts = bez[1].split(',').map(s => parseFloat(s));
+      if (pts.length === 4 && pts.every(n => !isNaN(n))) {
+        content = `<svg width="160" height="80" viewBox="0 0 160 80"><path d="M 0 80 C ${pts[0] * 160} ${80 - pts[1] * 80}, ${pts[2] * 160} ${80 - pts[3] * 80}, 160 0" fill="none" stroke="#89b4fa" stroke-width="2"/></svg><div style="font:10px var(--font-mono);margin-top:4px;">${_escapeHtml(value)}</div>`;
       }
     }
   }
@@ -1912,43 +2216,122 @@ function _quickviewShow(ev, prop, value) {
   const r = ev.target.getBoundingClientRect();
   const top = Math.min(window.innerHeight - qv.offsetHeight - 8, r.bottom + 6);
   const left = Math.min(window.innerWidth - qv.offsetWidth - 8, r.left);
-  qv.style.left = left + 'px'; qv.style.top = top + 'px';
-  _quickviewEl = qv;
+  qv.style.left = left + 'px';
+  qv.style.top = top + 'px';
+  state._quickviewEl = qv;
 }
 
 // ── Property docs ────────────────────────────────────────────────────────
 const _PROP_DOCS = {
-  'color': { sum: 'Sets the foreground (text) color.', vals: '<color> | currentColor | inherit' },
-  'background-color': { sum: 'Sets the background color.', vals: '<color> | transparent | currentColor' },
-  'background-image': { sum: 'One or more background images. Multiple images stack, first on top.', vals: 'none | <image> | url() | linear-gradient() | radial-gradient()' },
-  'font-family': { sum: 'Prioritized list of font families.', vals: '<family-name>, <generic> (serif | sans-serif | monospace)' },
-  'font-size': { sum: 'Size of the text.', vals: '<length> | <percentage> | xx-small..xx-large' },
-  'font-weight': { sum: 'Weight (boldness) of the font.', vals: '100..900 | normal | bold | lighter | bolder' },
-  'line-height': { sum: 'Distance between lines of text.', vals: 'normal | <number> | <length> | <percentage>' },
-  'letter-spacing': { sum: 'Horizontal spacing between characters.', vals: 'normal | <length>' },
-  'text-transform': { sum: 'Capitalization.', vals: 'none | capitalize | uppercase | lowercase' },
-  'text-align': { sum: 'Horizontal alignment of inline content.', vals: 'left | right | center | justify | start | end' },
-  'padding': { sum: 'Space inside the border. Shorthand 1-4 values.', vals: '<length> | <percentage>' },
-  'margin': { sum: 'Space outside the border. auto centers.', vals: '<length> | <percentage> | auto' },
-  'border': { sum: 'Shorthand for border-width/style/color.', vals: '<line-width> <line-style> <color>' },
-  'border-radius': { sum: 'Rounds the corners.', vals: '<length> | <percentage>' },
-  'box-shadow': { sum: 'Drop shadow. Multiple comma-separated.', vals: '[inset?] <x> <y> <blur> <spread>? <color>' },
-  'opacity': { sum: 'Transparency of the element and all children.', vals: '0 .. 1' },
-  'display': { sum: 'How the element participates in layout.', vals: 'block | inline | inline-block | flex | grid | none | contents' },
-  'position': { sum: 'Positioning scheme.', vals: 'static | relative | absolute | fixed | sticky' },
-  'z-index': { sum: 'Stacking order on the Z axis.', vals: 'auto | <integer>' },
-  'width': { sum: 'Inner width of the content box.', vals: '<length> | <percentage> | auto | min/max/fit-content' },
-  'height': { sum: 'Inner height of the content box.', vals: '<length> | <percentage> | auto | min/max-content' },
-  'cursor': { sum: 'Mouse cursor on hover.', vals: 'auto | pointer | text | move | grab | not-allowed | ...' },
-  'transform': { sum: 'Geometric transforms.', vals: 'translate() | scale() | rotate() | skew() | matrix()' },
-  'transition': { sum: 'Shorthand for transition-*.', vals: '<property> <duration> <timing>? <delay>?' },
+  'color': {
+    sum: 'Sets the foreground (text) color.',
+    vals: '<color> | currentColor | inherit'
+  },
+  'background-color': {
+    sum: 'Sets the background color.',
+    vals: '<color> | transparent | currentColor'
+  },
+  'background-image': {
+    sum: 'One or more background images. Multiple images stack, first on top.',
+    vals: 'none | <image> | url() | linear-gradient() | radial-gradient()'
+  },
+  'font-family': {
+    sum: 'Prioritized list of font families.',
+    vals: '<family-name>, <generic> (serif | sans-serif | monospace)'
+  },
+  'font-size': {
+    sum: 'Size of the text.',
+    vals: '<length> | <percentage> | xx-small..xx-large'
+  },
+  'font-weight': {
+    sum: 'Weight (boldness) of the font.',
+    vals: '100..900 | normal | bold | lighter | bolder'
+  },
+  'line-height': {
+    sum: 'Distance between lines of text.',
+    vals: 'normal | <number> | <length> | <percentage>'
+  },
+  'letter-spacing': {
+    sum: 'Horizontal spacing between characters.',
+    vals: 'normal | <length>'
+  },
+  'text-transform': {
+    sum: 'Capitalization.',
+    vals: 'none | capitalize | uppercase | lowercase'
+  },
+  'text-align': {
+    sum: 'Horizontal alignment of inline content.',
+    vals: 'left | right | center | justify | start | end'
+  },
+  'padding': {
+    sum: 'Space inside the border. Shorthand 1-4 values.',
+    vals: '<length> | <percentage>'
+  },
+  'margin': {
+    sum: 'Space outside the border. auto centers.',
+    vals: '<length> | <percentage> | auto'
+  },
+  'border': {
+    sum: 'Shorthand for border-width/style/color.',
+    vals: '<line-width> <line-style> <color>'
+  },
+  'border-radius': {
+    sum: 'Rounds the corners.',
+    vals: '<length> | <percentage>'
+  },
+  'box-shadow': {
+    sum: 'Drop shadow. Multiple comma-separated.',
+    vals: '[inset?] <x> <y> <blur> <spread>? <color>'
+  },
+  'opacity': {
+    sum: 'Transparency of the element and all children.',
+    vals: '0 .. 1'
+  },
+  'display': {
+    sum: 'How the element participates in layout.',
+    vals: 'block | inline | inline-block | flex | grid | none | contents'
+  },
+  'position': {
+    sum: 'Positioning scheme.',
+    vals: 'static | relative | absolute | fixed | sticky'
+  },
+  'z-index': {
+    sum: 'Stacking order on the Z axis.',
+    vals: 'auto | <integer>'
+  },
+  'width': {
+    sum: 'Inner width of the content box.',
+    vals: '<length> | <percentage> | auto | min/max/fit-content'
+  },
+  'height': {
+    sum: 'Inner height of the content box.',
+    vals: '<length> | <percentage> | auto | min/max-content'
+  },
+  'cursor': {
+    sum: 'Mouse cursor on hover.',
+    vals: 'auto | pointer | text | move | grab | not-allowed | ...'
+  },
+  'transform': {
+    sum: 'Geometric transforms.',
+    vals: 'translate() | scale() | rotate() | skew() | matrix()'
+  },
+  'transition': {
+    sum: 'Shorthand for transition-*.',
+    vals: '<property> <duration> <timing>? <delay>?'
+  }
 };
-let _propdocEl = null;
-function _propdocHide() { if (_propdocEl) { _propdocEl.remove(); _propdocEl = null; } }
+state._propdocEl = null;
+function _propdocHide() {
+  if (state._propdocEl) {
+    state._propdocEl.remove();
+    state._propdocEl = null;
+  }
+}
 function _propdocShow(ev, targetEl) {
   _propdocHide();
   const prop = targetEl && targetEl.dataset ? targetEl.dataset.prop : '';
-  const info = _PROP_DOCS[prop]; if (!info) return;
+  const info = _PROP_DOCS[prop];
+  if (!info) return;
   const d = document.createElement('div');
   d.className = 'sym-propdoc';
   d.innerHTML = `<div class="name">${_escapeHtml(prop)}</div><div class="sum">${_escapeHtml(info.sum)}</div><div class="vals">${_escapeHtml(info.vals)}</div>`;
@@ -1956,39 +2339,48 @@ function _propdocShow(ev, targetEl) {
   const r = targetEl.getBoundingClientRect();
   const left = Math.min(window.innerWidth - d.offsetWidth - 8, r.right + 8);
   const top = Math.min(window.innerHeight - d.offsetHeight - 8, r.top);
-  d.style.left = left + 'px'; d.style.top = top + 'px';
-  _propdocEl = d;
+  d.style.left = left + 'px';
+  d.style.top = top + 'px';
+  state._propdocEl = d;
 }
 
 // ── Number scrubbing (Alt+drag) ─────────────────────────────────────────
-let _scrubState = null;
+state._scrubState = null;
 function _scrubStart(ev, el) {
   if (!ev.altKey) return;
   ev.preventDefault();
   const unit = el.dataset.unit;
   const base = parseFloat(el.dataset.val) || 0;
   const prop = el.parentElement && el.parentElement.dataset ? el.parentElement.dataset.prop : null;
-  if (!prop || !_inspectActiveSelector) return;
-  _scrubState = { startX: ev.clientX, base, unit, prop, el, selector: _inspectActiveSelector, last: base };
+  if (!prop || !state._inspectActiveSelector) return;
+  state._scrubState = {
+    startX: ev.clientX,
+    base,
+    unit,
+    prop,
+    el,
+    selector: state._inspectActiveSelector,
+    last: base
+  };
   document.addEventListener('mousemove', _scrubMove, true);
   document.addEventListener('mouseup', _scrubEnd, true);
   document.body.style.cursor = 'ew-resize';
 }
 function _scrubMove(ev) {
-  if (!_scrubState) return;
-  const delta = ev.clientX - _scrubState.startX;
+  if (!state._scrubState) return;
+  const delta = ev.clientX - state._scrubState.startX;
   const step = ev.shiftKey ? 10 : 1;
-  const next = Math.round((_scrubState.base + delta * step) * 100) / 100;
-  if (next === _scrubState.last) return;
-  _scrubState.last = next;
-  _scrubState.el.textContent = next;
-  _applyInspectStyle(_scrubState.selector, _scrubState.prop, next + _scrubState.unit);
+  const next = Math.round((state._scrubState.base + delta * step) * 100) / 100;
+  if (next === state._scrubState.last) return;
+  state._scrubState.last = next;
+  state._scrubState.el.textContent = next;
+  _applyInspectStyle(state._scrubState.selector, state._scrubState.prop, next + state._scrubState.unit);
 }
 function _scrubEnd() {
   document.removeEventListener('mousemove', _scrubMove, true);
   document.removeEventListener('mouseup', _scrubEnd, true);
   document.body.style.cursor = '';
-  _scrubState = null;
+  state._scrubState = null;
 }
 
 // ── Saved patches (localStorage per URL) ────────────────────────────────
@@ -2003,40 +2395,64 @@ function _currentPageKey() {
   } catch (_) {}
   return '';
 }
-function _loadAllPatches() { try { return JSON.parse(localStorage.getItem(_PATCH_STORAGE_KEY) || '{}'); } catch (_) { return {}; } }
-function _saveAllPatches(all) { try { localStorage.setItem(_PATCH_STORAGE_KEY, JSON.stringify(all)); } catch (_) {} }
+function _loadAllPatches() {
+  try {
+    return JSON.parse(localStorage.getItem(_PATCH_STORAGE_KEY) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+function _saveAllPatches(all) {
+  try {
+    localStorage.setItem(_PATCH_STORAGE_KEY, JSON.stringify(all));
+  } catch (_) {}
+}
 function _recordPatch(entry) {
-  const key = _currentPageKey(); if (!key) return;
+  const key = _currentPageKey();
+  if (!key) return;
   const all = _loadAllPatches();
   const list = all[key] || [];
-  list.push({ ...entry, at: Date.now() });
+  list.push({
+    ...entry,
+    at: Date.now()
+  });
   all[key] = list.slice(-200);
   _saveAllPatches(all);
 }
 async function _applyStoredPatch(p) {
-  const view = _getInappWebview(); if (!view) return;
+  const view = _getInappWebview();
+  if (!view) return;
   await _ensureSymKit();
-  if (p.op === 'hide') { await _symKitCall('setVisibility', p.selector, true); return; }
+  if (p.op === 'hide') {
+    await _symKitCall('setVisibility', p.selector, true);
+    return;
+  }
   if (p.op === 'remove') {
     const js = `(function(){ var el = document.querySelector(${JSON.stringify(p.selector)}); if (el && el.parentNode) el.parentNode.removeChild(el); })();`;
-    try { await view.executeJavaScript(js, true); } catch (_) {}
+    try {
+      await view.executeJavaScript(js, true);
+    } catch (_) {}
     return;
   }
   if (p.op === 'style') {
     const js = `(function(){ var el = document.querySelector(${JSON.stringify(p.selector)}); if (!el) return; el.style.setProperty(${JSON.stringify(p.prop)}, ${JSON.stringify(String(p.value || ''))}); })();`;
-    try { await view.executeJavaScript(js, true); } catch (_) {}
+    try {
+      await view.executeJavaScript(js, true);
+    } catch (_) {}
     return;
   }
   if (p.op === 'html') {
     const js = `(function(){ var el = document.querySelector(${JSON.stringify(p.selector)}); if (!el) return; el.innerHTML = ${JSON.stringify(String(p.html || ''))}; })();`;
-    try { await view.executeJavaScript(js, true); } catch (_) {}
+    try {
+      await view.executeJavaScript(js, true);
+    } catch (_) {}
   }
 }
 function _patchSummary(p) {
   const sel = _escapeHtml(String(p.selector || '').slice(0, 70));
   if (p.op === 'style') return `<code style="color:var(--subtext1);">${_escapeHtml(p.prop)}:</code> <strong>${_escapeHtml(String(p.value || '').slice(0, 50))}</strong> on <code style="color:var(--accent);">${sel}</code>`;
-  if (p.op === 'html')  return `Edited text on <code style="color:var(--accent);">${sel}</code>`;
-  if (p.op === 'hide')  return `Hid <code style="color:var(--accent);">${sel}</code>`;
+  if (p.op === 'html') return `Edited text on <code style="color:var(--accent);">${sel}</code>`;
+  if (p.op === 'hide') return `Hid <code style="color:var(--accent);">${sel}</code>`;
   if (p.op === 'remove') return `Removed <code style="color:var(--accent);">${sel}</code>`;
   return `<code>${sel}</code>`;
 }
@@ -2065,19 +2481,30 @@ function _patchDetailsHtml(p, realIdx) {
 async function _runInappPatchesPanel() {
   _setInappToolsTitle('Saved patches');
   const key = _currentPageKey();
-  if (!key) { _setInappToolsBodyHtml('<div class="inapp-tools-empty">Open a page first.</div>'); return; }
+  if (!key) {
+    _setInappToolsBodyHtml('<div class="inapp-tools-empty">Open a page first.</div>');
+    return;
+  }
   const all = _loadAllPatches();
   const list = all[key] || [];
-  _inappToolsState.patches = { loaded: key, list };
+  _inappToolsState.patches = {
+    loaded: key,
+    list
+  };
   if (!list.length) {
     _setInappToolsBodyHtml(`<div class="inapp-tools-empty"><i data-lucide="history" style="width:24px;height:24px;display:block;margin:0 auto 10px;color:var(--subtext1);"></i>No saved patches for this page yet.<div style="margin-top:8px;font-size:11px;">Use Inspect code to hide, remove, style, or edit elements - they're recorded here automatically.</div></div>`);
-    try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+    try {
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    } catch (_) {}
     return;
   }
   const chev = '<svg class="sym-patch-chev" viewBox="0 0 10 10"><path d="M3 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
   const rows = list.slice().reverse().map((p, i) => {
     const realIdx = list.length - 1 - i;
-    const when = new Date(p.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const when = new Date(p.at).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
     return `
       <div class="sym-patch-card" data-patch-id="${realIdx}">
         <div class="sym-patch-head" onclick="this.parentElement.classList.toggle('open')">
@@ -2098,13 +2525,18 @@ async function _runInappPatchesPanel() {
     </div>
     <div style="display:flex;flex-direction:column;gap:6px;">${rows}</div>
   `);
-  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+  try {
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  } catch (_) {}
 }
 async function _applyPatchByIndex(i) {
   const list = _inappToolsState.patches.list || [];
-  const p = list[i]; if (!p) return;
+  const p = list[i];
+  if (!p) return;
   await _applyStoredPatch(p);
-  toast('Patch applied', 'success', { duration: 1200 });
+  toast('Patch applied', 'success', {
+    duration: 1200
+  });
 }
 function _removePatchByIndex(i) {
   const key = _inappToolsState.patches.loaded;
@@ -2146,38 +2578,100 @@ async function toggleInappFocusMode() {
 }
 
 // ── Shortcuts help ──────────────────────────────────────────────────────
-function showInappShortcutsHelp() { const o = document.getElementById('symShortcutsOverlay'); if (o) o.classList.add('open'); }
-function hideInappShortcutsHelp() { const o = document.getElementById('symShortcutsOverlay'); if (o) o.classList.remove('open'); }
+function showInappShortcutsHelp() {
+  const o = document.getElementById('symShortcutsOverlay');
+  if (o) o.classList.add('open');
+}
+function hideInappShortcutsHelp() {
+  const o = document.getElementById('symShortcutsOverlay');
+  if (o) o.classList.remove('open');
+}
 
 // ── Global keyboard shortcuts (Browser tab only; ignores field focus) ───
-document.addEventListener('keydown', function(ev) {
+document.addEventListener('keydown', function (ev) {
   const browserTab = document.getElementById('panel-browser');
   if (!browserTab || !browserTab.classList.contains('active')) return;
   const t = ev.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
   if (ev.metaKey || ev.ctrlKey) return;
   if (ev.key === 'Escape') {
-    if (_inspectIsEditing) { _inspectToggleEdit(); ev.preventDefault(); return; }
-    if (_colorPopoverEl) { _closeColorPopover(); ev.preventDefault(); return; }
+    if (state._inspectIsEditing) {
+      _inspectToggleEdit();
+      ev.preventDefault();
+      return;
+    }
+    if (state._colorPopoverEl) {
+      _closeColorPopover();
+      ev.preventDefault();
+      return;
+    }
     const overlay = document.getElementById('symShortcutsOverlay');
-    if (overlay && overlay.classList.contains('open')) { hideInappShortcutsHelp(); ev.preventDefault(); return; }
-    if (_inappToolsState.open) { closeInappToolsPanel(); ev.preventDefault(); return; }
-    if (_browserAgentState.open) { toggleBrowserAgentPanel(); ev.preventDefault(); return; }
-    if (_browserInspectState.enabled) { toggleInappInspectMode(false); ev.preventDefault(); return; }
+    if (overlay && overlay.classList.contains('open')) {
+      hideInappShortcutsHelp();
+      ev.preventDefault();
+      return;
+    }
+    if (_inappToolsState.open) {
+      closeInappToolsPanel();
+      ev.preventDefault();
+      return;
+    }
+    if (_browserAgentState.open) {
+      toggleBrowserAgentPanel();
+      ev.preventDefault();
+      return;
+    }
+    if (_browserInspectState.enabled) {
+      toggleInappInspectMode(false);
+      ev.preventDefault();
+      return;
+    }
     return;
   }
-  if (ev.key === '?' || (ev.key === '/' && ev.shiftKey)) { showInappShortcutsHelp(); ev.preventDefault(); return; }
-  const k = ev.key.toLowerCase();
-  if (k === 'i') { toggleInappInspectMode(); ev.preventDefault(); return; }
-  if (k === 'h') {
-    if (ev.shiftKey) { _ensureSymKit().then(() => _symKitCall('unhideAll')); toast('Un-hid all', 'info', { duration: 1000 }); }
-    else if (_inspectActiveSelector) _inspectHideSelected();
-    ev.preventDefault(); return;
+  if (ev.key === '?' || ev.key === '/' && ev.shiftKey) {
+    showInappShortcutsHelp();
+    ev.preventDefault();
+    return;
   }
-  if (k === 'g') { toggleInappGrayscale(); ev.preventDefault(); return; }
-  if (k === 'f') { toggleInappFocusMode(); ev.preventDefault(); return; }
-  if (k === 't') { toggleInappToolsPanelMenu(); ev.preventDefault(); return; }
-  if (k === 'k') { toggleBrowserAgentPanel(); ev.preventDefault(); return; }
-  if (k === 'e') { _inspectToggleEdit(); ev.preventDefault(); return; }
+  const k = ev.key.toLowerCase();
+  if (k === 'i') {
+    toggleInappInspectMode();
+    ev.preventDefault();
+    return;
+  }
+  if (k === 'h') {
+    if (ev.shiftKey) {
+      _ensureSymKit().then(() => _symKitCall('unhideAll'));
+      toast('Un-hid all', 'info', {
+        duration: 1000
+      });
+    } else if (state._inspectActiveSelector) _inspectHideSelected();
+    ev.preventDefault();
+    return;
+  }
+  if (k === 'g') {
+    toggleInappGrayscale();
+    ev.preventDefault();
+    return;
+  }
+  if (k === 'f') {
+    toggleInappFocusMode();
+    ev.preventDefault();
+    return;
+  }
+  if (k === 't') {
+    toggleInappToolsPanelMenu();
+    ev.preventDefault();
+    return;
+  }
+  if (k === 'k') {
+    toggleBrowserAgentPanel();
+    ev.preventDefault();
+    return;
+  }
+  if (k === 'e') {
+    _inspectToggleEdit();
+    ev.preventDefault();
+    return;
+  }
 }, true);
-
