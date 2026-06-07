@@ -29,6 +29,7 @@ const repeatedQuestionAnalyser = require('./analysers/repeated-question');
 const coEditAnalyser = require('./analysers/co-edit');
 const memoryDecayAnalyser = require('./analysers/memory-decay');
 const crossRepoAnalyser = require('./analysers/cross-repo');
+const memoryStalenessAnalyser = require('./analysers/memory-staleness');
 const memoryModule = require('./memory');
 const ollamaSetup = require('./ollama-setup');
 const llm = require('./llm');
@@ -674,7 +675,7 @@ function mountMind(addRoute, json, ctx) {
     const space = getSpace();
     const ui = getUiContext ? getUiContext() : {};
     const enabled = !categories || categories.length === 0
-      ? ['repeated-question', 'co-edit', 'memory-decay', 'cross-repo']
+      ? ['repeated-question', 'co-edit', 'memory-decay', 'cross-repo', 'memory-staleness']
       : categories;
     const candidates = [];
     if (enabled.includes('repeated-question')) {
@@ -688,6 +689,9 @@ function mountMind(addRoute, json, ctx) {
     }
     if (enabled.includes('cross-repo')) {
       try { candidates.push(...await crossRepoAnalyser.detect({ repoRoot, space })); } catch (e) { console.warn('[insights/D]', e.message); }
+    }
+    if (enabled.includes('memory-staleness')) {
+      try { candidates.push(...memoryStalenessAnalyser.detect({ repoRoot, space, getUiContext, getAllRepos: ctx.getAllRepos })); } catch (e) { console.warn('[insights/E]', e.message); }
     }
     const added = [];
     for (const spec of candidates) {
@@ -743,6 +747,72 @@ function mountMind(addRoute, json, ctx) {
     startInsightsScheduler();
   }
 
+  // ── Memory integrity: health + on-demand audit ───────────────────────────
+  // health is a cheap read (counts + a staleness scan) surfaced in bootstrap so
+  // every CLI sees brain quality at login. audit runs the memory analysers and
+  // persists findings as insights (the same surface the scheduler feeds).
+  function _memoryHealth() {
+    const space = getSpace();
+    let total = 0, archived = 0, unreferenced = 0;
+    try {
+      const g = store.loadGraph(repoRoot, space);
+      const mem = (g && g.nodes || []).filter((n) => n.kind === 'memory');
+      archived = mem.filter((n) => n.status === 'archived').length;
+      const live = mem.filter((n) => n.status !== 'archived');
+      total = live.length;
+      unreferenced = live.filter((n) => !Array.isArray(n.referencedAt) || n.referencedAt.length === 0).length;
+    } catch (_) {}
+    let stale = [];
+    try { stale = memoryStalenessAnalyser.scan({ repoRoot, space, getUiContext, getAllRepos: ctx.getAllRepos }).stale || []; } catch (_) {}
+    return {
+      ok: stale.length === 0,
+      memories: total,
+      archived,
+      unreferenced,
+      stale: stale.length,
+      staleSamples: stale.slice(0, 5).map((s) => ({ id: s.id, label: s.label, missing: s.missing })),
+      ranAt: new Date().toISOString(),
+    };
+  }
+
+  // Lightweight, graph-only health for the bootstrap field (no disk walk). It
+  // reflects integrity findings the scheduler / audit already surfaced as
+  // pending insights, so every CLI sees brain quality at login without paying
+  // a filesystem scan on each bootstrap.
+  function _miniHealth(g) {
+    if (!g || !Array.isArray(g.nodes)) return null;
+    const mem = g.nodes.filter((n) => n.kind === 'memory');
+    const live = mem.filter((n) => n.status !== 'archived');
+    const pending = g.nodes.filter((n) => n.kind === 'insight' && n.status === 'pending' && (n.category === 'memory-staleness' || n.category === 'memory-contradiction'));
+    const flagged = new Set();
+    pending.forEach((i) => (i.evidence || []).forEach((id) => flagged.add(id)));
+    return {
+      memories: live.length,
+      archived: mem.length - live.length,
+      unreferenced: live.filter((n) => !Array.isArray(n.referencedAt) || !n.referencedAt.length).length,
+      flagged: flagged.size,
+      pendingIntegrityInsights: pending.length,
+      ok: flagged.size === 0,
+      auditUrl: '/api/mind/audit',
+      healthUrl: '/api/mind/health',
+    };
+  }
+  ctx._miniHealth = _miniHealth;
+
+  addRoute('GET', '/api/mind/health', (req, res) => {
+    try { return json(res, _memoryHealth()); } catch (e) { return json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  addRoute('POST', '/api/mind/audit', async (req, res) => {
+    try {
+      const r = await generateInsights({ source: 'audit', categories: ['memory-staleness', 'memory-decay'] });
+      return json(res, { ...r, health: _memoryHealth() });
+    } catch (e) { return json(res, { ok: false, error: e.message }, 500); }
+  });
+
+  // Expose for the bootstrap composer (see /api/bootstrap) without re-querying.
+  ctx._memoryHealth = _memoryHealth;
+
   addRoute('GET', '/api/mind/watch', (req, res) => {
     return json(res, { enabled: !!(watcher && watcher._enabled) });
   });
@@ -795,10 +865,12 @@ function mountMind(addRoute, json, ctx) {
       // grouped by kind) so it stays concrete and token-cheap. Only ships when
       // the active repo actually has connected knowledge beyond its own node.
       let spec = null;
+      let healthField = null;
       if (stats) {
         try {
           const g = store.loadGraph(repoRoot, space);
           if (g) {
+            try { healthField = _miniHealth(g); } catch (_) {}
             wakeup = composeWakeUp(g, {
               activeRepo: ui.activeRepo, activeRepoPath: ui.activeRepoPath, space,
               budgetTokens: 600,
@@ -841,6 +913,7 @@ function mountMind(addRoute, json, ctx) {
         graphStats: stats || null,
         wakeup,
         spec,
+        health: healthField,
         vectors: vectorsField,
         instructionsUrl: '/api/mind/instructions',
         queryUrl: '/api/mind/query',
