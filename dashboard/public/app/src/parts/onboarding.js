@@ -249,47 +249,62 @@ const OB_GUIDE_VIDEOS = [{
   desc: 'Add integrations per project from Settings.'
 }];
 state._obNeedsRestart = false; // set when a step did something that needs a relaunch
+state._obBrainReady = false;   // gates the Local AI step: Ollama + both models installed
+// Required local-AI setup. Walks the user through: install Ollama (gated) ->
+// install the triage (~1GB) + reasoning (~16GB) models (each with live progress).
+// Sets state._obBrainReady when fully set up, which the step's validate() checks.
 async function obCheckBrain() {
   const status = document.getElementById('obBrainStatus');
   const actions = document.getElementById('obBrainActions');
   if (!status) return;
-  try {
-    const r = await fetch('/api/symphonee/setup/check');
-    const d = await r.json();
-    if (d.ready) {
-      status.innerHTML = '<span style="color:var(--green);">Local AI is ready.</span> The Mind and instant local answers are enabled.';
-      if (actions) actions.innerHTML = '';
-    } else if (!d.ollamaInstalled) {
-      status.innerHTML = 'Ollama is not installed. Install it to enable local AI (the Mind and instant local question answers).';
-      if (actions) actions.innerHTML = '<button class="onboarding-btn onboarding-btn-primary" onclick="openExternal(\'https://ollama.com/download\')" style="font-size:11px;padding:6px 16px;">Get Ollama</button><button class="onboarding-btn onboarding-btn-secondary" onclick="obCheckBrain()" style="font-size:11px;padding:6px 16px;">Re-check</button>';
-    } else {
-      status.innerHTML = 'Ollama is installed. Pull the local model to enable the Mind + instant answers (one-time download).';
-      if (actions) actions.innerHTML = '<button class="onboarding-btn onboarding-btn-primary" onclick="obPullBrain(this)" style="font-size:11px;padding:6px 16px;">Enable local AI</button>';
-    }
-  } catch (_) {
-    status.innerHTML = 'Could not check local AI status. You can set this up later from Settings.';
+  let d = {};
+  try { d = await fetch('/api/symphonee/setup/check').then(r => r.json()); }
+  catch (_) { status.innerHTML = 'Could not check local AI status. Make sure the app is running, then re-check.'; if (actions) actions.innerHTML = '<button class="onboarding-btn onboarding-btn-secondary" onclick="obCheckBrain()">Re-check</button>'; return; }
+
+  const triage = d.triageModel || 'qwen2.5:1.5b';
+  const reasoning = d.reasoningModel || 'gemma4:26b';
+  const triageOk = !!d.triageModelInstalled;
+  const reasonOk = !!d.reasoningModelInstalled;
+  state._obBrainReady = !!(d.ollamaInstalled && d.ollamaRunning && triageOk && reasonOk);
+
+  if (!d.ollamaInstalled) {
+    status.innerHTML = '<b>Step 1 of 2: Install Ollama.</b><br>Symphonee\'s brain runs locally on Ollama - private, no API keys, no quota. Install it (free, a few minutes), then re-check.';
+    actions.innerHTML = '<button class="onboarding-btn onboarding-btn-primary" onclick="openExternal(\'https://ollama.com/download\')">Get Ollama</button>'
+      + '<button class="onboarding-btn onboarding-btn-secondary" onclick="obCheckBrain()">I installed it - re-check</button>';
+  } else if (!d.ollamaRunning) {
+    status.innerHTML = 'Ollama is installed but not running. Start Ollama, then re-check.';
+    actions.innerHTML = '<button class="onboarding-btn onboarding-btn-primary" onclick="obCheckBrain()">Re-check</button>';
+  } else if (state._obBrainReady) {
+    status.innerHTML = '<span style="color:var(--green);font-weight:600;">Local AI is fully set up.</span><br>Both models are installed - the Mind, instant local answers, and local automation are ready. Click Next.';
+    actions.innerHTML = '';
+  } else {
+    status.innerHTML = '<b>Step 2 of 2: Install the brain models.</b><br>Two one-time downloads: the small <b>triage</b> model and the larger <b>reasoning</b> model. Both are required.';
+    actions.innerHTML =
+      (triageOk
+        ? '<div class="ob-model-row ob-model-done"><i data-lucide="check-circle"></i> Triage model (' + esc(triage) + ') installed</div>'
+        : '<button class="onboarding-btn onboarding-btn-primary ob-model-btn" data-ob-model="' + esc(triage) + '" onclick="obInstallModel(this)">Install triage model (' + esc(triage) + ', ~1 GB)</button>')
+      + (reasonOk
+        ? '<div class="ob-model-row ob-model-done"><i data-lucide="check-circle"></i> Reasoning model (' + esc(reasoning) + ') installed</div>'
+        : '<button class="onboarding-btn onboarding-btn-primary ob-model-btn" data-ob-model="' + esc(reasoning) + '" onclick="obInstallModel(this)">Install reasoning model (' + esc(reasoning) + ', ~16 GB)</button>');
   }
-  try {
-    lucide.createIcons();
-  } catch (_) {}
+  try { lucide.createIcons(); } catch (_) {}
 }
-async function obPullBrain(btn) {
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Starting download...';
-  }
+async function obInstallModel(btn) {
+  const model = btn.getAttribute('data-ob-model');
+  if (!model) return;
+  btn.disabled = true;
+  btn.textContent = 'Starting ' + model + '...';
   state._obNeedsRestart = true;
-  try {
-    await fetch('/api/symphonee/setup/pull', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: '{}'
-    });
-    const status = document.getElementById('obBrainStatus');
-    if (status) status.innerHTML = 'Downloading the local model in the background - it keeps going after setup. Symphonee will relaunch when you finish so it activates.';
-  } catch (_) {}
+  const onPull = (e) => {
+    const p = e.detail || {};
+    if (p.kind !== 'ollama-pull' || (p.model && p.model !== model)) return;
+    if (p.status === 'success') { window.removeEventListener('symphonee-mind-update', onPull); obCheckBrain(); return; }
+    if (p.status === 'error') { window.removeEventListener('symphonee-mind-update', onPull); btn.disabled = false; btn.textContent = 'Download failed - retry ' + model; return; }
+    const gb = (n) => Math.round((n || 0) / 1e9 * 10) / 10;
+    btn.textContent = (p.status || 'downloading') + (p.total ? ' - ' + gb(p.completed) + ' / ' + gb(p.total) + ' GB' : '');
+  };
+  window.addEventListener('symphonee-mind-update', onPull);
+  try { await fetch('/api/symphonee/setup/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) }); } catch (_) {}
 }
 const OB_STEPS = [
 // 0: Display name
@@ -311,10 +326,7 @@ const OB_STEPS = [
     </div>
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--surface1);display:flex;gap:8px;justify-content:center;">
       <button class="onboarding-btn onboarding-btn-secondary" onclick="obImportSettings()" style="font-size:11px;padding:6px 16px;opacity:0.85;">
-        <i data-lucide="upload" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"></i> Import settings
-      </button>
-      <button class="onboarding-btn onboarding-btn-secondary" onclick="obSkipToEnd()" style="font-size:11px;padding:6px 16px;opacity:0.85;" title="Use as a terminal only; configure plugins later from Settings">
-        <i data-lucide="fast-forward" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"></i> Just the terminal
+        <i data-lucide="upload" style="width:12px;height:12px;vertical-align:-2px;margin-right:4px;"></i> Import settings from another machine
       </button>
     </div>`
 }),
@@ -342,7 +354,19 @@ const OB_STEPS = [
       <div class="onboarding-hint" style="margin-top:12px;">Click a theme to preview it instantly. The current terminal(s) will refresh so the new colors apply cleanly.</div>`;
   }()
 }),
-// 3: AI Tools
+// 3: Set up local AI (Ollama + brain models) -- REQUIRED + GATED. Comes before
+// tools/plugins/repos so the brain is ready by the time the user finishes.
+() => ({
+  title: 'Set up local AI',
+  subtitle: "Symphonee's brain runs locally on Ollama - private, no API keys, no quota. This is required to finish setup, and it's a one-time install.",
+  html: `<div id="obBrainStatus" style="margin-top:8px;font-size:12.5px;color:var(--subtext1);line-height:1.6;">Checking local AI...</div>
+      <div id="obBrainActions" style="margin-top:16px;display:flex;flex-direction:column;gap:8px;"></div>`,
+  onEnter: () => obCheckBrain(),
+  validate: () => state._obBrainReady,
+  validateMsg: 'Install Ollama and both brain models to continue.',
+  nextLabel: 'Next'
+}),
+// 4: AI Tools
 () => ({
   title: 'AI Tools',
   subtitle: 'Symphonee works with AI assistants to help you write code and manage your work. Check which ones are installed, then pick your default.',
@@ -452,30 +476,19 @@ const OB_STEPS = [
     </div>`,
   nextLabel: 'Next'
 }),
-// 9: Local AI (Ollama) -- optional. Powers the Mind and instant local answers.
-() => ({
-  title: 'Local AI (optional)',
-  subtitle: 'Symphonee can power its Mind and answer quick questions locally with Ollama - no cloud, no API keys. Optional; enable it later from Settings any time.',
-  html: `<div id="obBrainStatus" style="margin-top:8px;font-size:12px;color:var(--subtext0);line-height:1.5;">Checking local AI...</div>
-      <div id="obBrainActions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;"></div>`,
-  onEnter: () => obCheckBrain(),
-  nextLabel: 'Next'
-}),
-// 10: Final -- how to use Symphonee, with short video guides.
+// 9: Final -- everything is set up; Complete restarts into a ready Symphonee.
 () => ({
   title: "You're all set!",
-  subtitle: 'A few short guides to get you going. Reopen them any time from the command palette.',
-  html: `<div class="ob-video-grid">
-        ${OB_GUIDE_VIDEOS.map(v => `<div class="ob-video-card" title="Guide clips coming soon">
-          <div class="ob-video-thumb"><i data-lucide="${v.icon}" style="width:22px;height:22px;"></i><span class="ob-video-play"><i data-lucide="play" style="width:13px;height:13px;"></i></span></div>
-          <div class="ob-video-title">${esc(v.title)}</div>
-          <div class="ob-video-desc">${esc(v.desc)}</div>
-        </div>`).join('')}
+  subtitle: 'Everything you chose is installed and configured. Clicking Complete restarts Symphonee so it all activates - then you can just start working.',
+  html: `<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px;">
+        <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="cpu" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Local AI ready</strong><span>Ollama + the brain models are installed</span></div></div>
+        <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="bot" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI tools & plugins</strong><span>Whatever you installed is wired up</span></div></div>
+        <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="search" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Command palette</strong><span>Press <code style="background:var(--surface0);padding:1px 4px;border-radius:2px;font-size:10px;">Ctrl+K</code> to jump anywhere or ask a quick question</span></div></div>
       </div>
-      <div style="margin-top:14px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);font-size:11px;color:var(--subtext0);border-left:2px solid var(--accent);">
-        Tip: the command palette is your fastest path - jump anywhere, ask a quick question for an instant local answer, or run an action.
+      <div style="margin-top:16px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);font-size:11px;color:var(--subtext0);border-left:2px solid var(--accent);">
+        Tip: manage everything later from Settings (bottom-left). Guided video walkthroughs are coming soon.
       </div>`,
-  nextLabel: 'Restart & Start'
+  nextLabel: 'Complete & Restart'
 })];
 state._obInstalledPluginIds = new Set();
 async function _obRefreshInstalledPlugins() {
@@ -594,7 +607,7 @@ async function obNav(dir) {
   if (dir > 0) {
     const step = OB_STEPS[state._obStep]();
     if (step.validate && !step.validate()) {
-      toast('Please fill in the required field', 'info');
+      toast(step.validateMsg || 'Please fill in the required field', 'info');
       return;
     }
     if (state._obStep === OB_STEPS.length - 1) {

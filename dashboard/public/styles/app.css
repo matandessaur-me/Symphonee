@@ -4856,6 +4856,12 @@
     .ob-video-title { font-size: 12px; font-weight: 600; color: var(--text); }
     .ob-video-desc { font-size: 10px; color: var(--subtext0); line-height: 1.4; margin-top: 2px; }
 
+    /* Onboarding: required brain-model install rows. */
+    .ob-model-btn { justify-content: center; width: 100%; }
+    .ob-model-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 9px 13px; border-radius: var(--radius); }
+    .ob-model-done { background: color-mix(in srgb, var(--green, #5fb389) 14%, var(--surface0)); color: var(--green, #5fb389); font-weight: 600; }
+    .ob-model-done i { width: 15px; height: 15px; flex-shrink: 0; }
+
     /* ── Point-of-need local-model install prompt ───────────────────────────── */
     .symph-mm-overlay {
       position: fixed; inset: 0; z-index: 4000; display: flex; align-items: center; justify-content: center;
