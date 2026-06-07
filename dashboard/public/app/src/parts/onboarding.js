@@ -317,7 +317,7 @@ const OB_STEPS = [
 // 1: Welcome
 () => ({
   title: `Welcome, ${esc(state._obData.displayName.split(' ')[0])}!`,
-  subtitle: "Symphonee is an AI terminal with a plugin system. Everything beyond the terminal and recipes is opt-in - install only the integrations you need.",
+  subtitle: "Let's get Symphonee set up. We'll install the local AI it runs on, then you can add AI tools, plugins, and your repos. Almost everything here can be changed later from Settings.",
   html: `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline</span></div></div>
       <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="bot" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Tools</strong><span>Detect and install AI assistants</span></div></div>
@@ -368,8 +368,8 @@ const OB_STEPS = [
 }),
 // 4: AI Tools
 () => ({
-  title: 'AI Tools',
-  subtitle: 'Symphonee works with AI assistants to help you write code and manage your work. Check which ones are installed, then pick your default.',
+  title: 'AI tools (optional)',
+  subtitle: 'Symphonee works with AI assistants like Claude, Gemini, and Codex. Install the ones you want now (or later from Settings), then pick your default. Skip if you only need the local AI.',
   html: `<div id="obAiTools" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"><div style="font-size:11px;color:var(--subtext0);">Detecting...</div></div>
       <div class="onboarding-field"><label>Default AI</label><select id="obDefaultCli" onchange="_obData.defaultCli=this.value" style="padding:8px 10px;font-size:13px;">
         <option value="claude"${state._obData.defaultCli === 'claude' ? ' selected' : ''}>Claude Code</option>
@@ -417,8 +417,8 @@ const OB_STEPS = [
 }),
 // 6: Repositories
 () => ({
-  title: 'Repositories',
-  subtitle: 'Add the local repositories you work with. Symphonee uses these for file browsing, diffs, commits, and pull requests.',
+  title: 'Repositories (optional)',
+  subtitle: 'Point Symphonee at the local repos you work with - for file browsing, diffs, commits, and pull requests. Add one now or any time later from the repo picker.',
   html: `<div id="obRepoList" style="margin-bottom:10px;"></div>
       <div id="obRepoAddBtns" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
         <button class="onboarding-btn onboarding-btn-primary" onclick="repoAddBrowse('ob')" style="padding:8px 14px;flex:1;display:flex;align-items:center;justify-content:center;gap:4px;">
@@ -460,23 +460,7 @@ const OB_STEPS = [
     return ghBlock;
   }()
 }),
-// 8: Overview
-() => ({
-  title: "You're all set!",
-  subtitle: "Here's what ships with Symphonee. Install plugins from Settings > Plugins to add integrations like Backlog, PRs, or CMS.",
-  html: `<div style="display:flex;flex-direction:column;gap:10px;">
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="terminal" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>AI Terminal</strong><span>Launch Claude, Gemini, Copilot, Codex, Grok, or Qwen inline; orchestrate across them</span></div></div>
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-code" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Files & Diffs</strong><span>Browse code, view diffs, commit with AI-generated messages</span></div></div>
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="file-text" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Notes</strong><span>Markdown scratchpad; export individually or bundled</span></div></div>
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="puzzle" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Plugins</strong><span>Azure DevOps, GitHub, Jira, Wrike, Builder.io, Sanity, WordPress - opt in per project</span></div></div>
-      <div class="onboarding-overview-item"><div class="onboarding-overview-icon"><i data-lucide="search" style="width:16px;height:16px;"></i></div><div class="onboarding-overview-text"><strong>Command Palette</strong><span>Press <code style="background:var(--surface0);padding:1px 4px;border-radius:2px;font-size:10px;">Ctrl+K</code> to jump anywhere</span></div></div>
-    </div>
-    <div style="margin-top:16px;padding:10px 12px;background:var(--surface0);border-radius:var(--radius);font-size:11px;color:var(--subtext0);border-left:2px solid var(--accent);">
-      Manage everything from the <strong style="color:var(--text);">settings button</strong> at the bottom left. Plugin tabs show up automatically when you install them.
-    </div>`,
-  nextLabel: 'Next'
-}),
-// 9: Final -- everything is set up; Complete restarts into a ready Symphonee.
+// 8: Final -- everything is set up; Complete restarts into a ready Symphonee.
 () => ({
   title: "You're all set!",
   subtitle: 'Everything you chose is installed and configured. Clicking Complete restarts Symphonee so it all activates - then you can just start working.',
