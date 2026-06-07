@@ -11,6 +11,7 @@
  */
 
 const https = require('https');
+const http = require('http');
 const memory = require('./apps-memory');
 const learning = require('./apps-learning-loop');
 const planner = require('./apps-goal-planner');
@@ -269,15 +270,18 @@ function isAbortError(err) {
   return msg.includes('request aborted') || msg.includes('stream aborted') || msg.includes('aborted');
 }
 
-function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeoutMs = 90000, signal }) {
+function httpJson({ hostname, path, port, protocol = 'https', method = 'POST', headers = {}, body, timeoutMs = 90000, signal }) {
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : '';
-    const req = https.request({
+    const transport = protocol === 'http' ? http : https;
+    const reqOpts = {
       method, hostname, path,
       headers: { 'content-type': 'application/json', ...headers, 'content-length': Buffer.byteLength(payload) },
       timeout: timeoutMs,
-      agent: SHARED_HTTPS_AGENT,
-    }, (res) => {
+    };
+    if (port) reqOpts.port = port;
+    if (transport === https) reqOpts.agent = SHARED_HTTPS_AGENT;
+    const req = transport.request(reqOpts, (res) => {
       let data = '';
       res.on('data', c => { data += c; });
       res.on('end', () => {
@@ -298,15 +302,18 @@ function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeout
 }
 
 function httpStreamOnce(opts, onStreamStarted) {
-  const { hostname, path, method = 'POST', headers = {}, body, onChunk, timeoutMs = 180000, signal } = opts;
+  const { hostname, path, port, protocol = 'https', method = 'POST', headers = {}, body, onChunk, timeoutMs = 180000, signal } = opts;
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : '';
-    const req = https.request({
+    const transport = protocol === 'http' ? http : https;
+    const reqOpts = {
       method, hostname, path,
       headers: { 'content-type': 'application/json', ...headers, 'content-length': Buffer.byteLength(payload) },
       timeout: timeoutMs,
-      agent: SHARED_HTTPS_AGENT,
-    }, (res) => {
+    };
+    if (port) reqOpts.port = port;
+    if (transport === https) reqOpts.agent = SHARED_HTTPS_AGENT;
+    const req = transport.request(reqOpts, (res) => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         let err = '';
         res.on('data', c => { err += c; });
@@ -498,7 +505,7 @@ function makeAnthropicAdapter() {
   };
 }
 
-function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label, defaultModel, authHeader = 'Authorization', authPrefix = 'Bearer ' } = {}) {
+function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label, defaultModel, authHeader = 'Authorization', authPrefix = 'Bearer ', port, protocol = 'https' } = {}) {
   return {
     kind: 'openai-compat',
     label: label || 'OpenAI',
@@ -535,7 +542,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
       const trimmed = trimHistory(messages, 2);
       if (systemPrompt && trimmed.length && trimmed[0].role === 'system') trimmed[0].content = systemPrompt;
       const resp = await httpJsonWithRetry({
-        hostname: baseHost, path: basePath,
+        hostname: baseHost, path: basePath, port, protocol,
         headers: { [authHeader]: authPrefix + apiKey },
         body: { model: model || defaultModel, messages: trimmed, tools, tool_choice: 'auto', max_tokens: DEFAULT_MAX_TOKENS },
         signal,
@@ -555,7 +562,7 @@ function makeOpenAIAdapter({ baseHost, basePath = '/v1/chat/completions', label,
       let text = '';
       const tcMap = {};
       await httpStream({
-        hostname: baseHost, path: basePath,
+        hostname: baseHost, path: basePath, port, protocol,
         headers: { [authHeader]: authPrefix + apiKey },
         body: { model: model || defaultModel, messages: trimmed, tools, tool_choice: 'auto', max_tokens: DEFAULT_MAX_TOKENS, stream: true },
         signal,
@@ -703,6 +710,24 @@ function buildProviderRegistry(aiKeys) {
     registry.qwen = { adapter: makeOpenAIAdapter({ baseHost: 'dashscope-intl.aliyuncs.com', basePath: '/compatible-mode/v1/chat/completions', label: 'Qwen', defaultModel: 'qwen-plus' }), keyEnv: 'DASHSCOPE_API_KEY', apiKey: aiKeys.DASHSCOPE_API_KEY };
   }
   if (aiKeys.GEMINI_API_KEY) registry.gemini = { adapter: makeGeminiAdapter(), keyEnv: 'GEMINI_API_KEY', apiKey: aiKeys.GEMINI_API_KEY };
+  // Local Gemma via Ollama (OpenAI-compatible API on 127.0.0.1:11434). No API key
+  // and no quota -- runs fully offline. Reliability depends on the local model
+  // actually supporting tool-calling + vision; weaker/smaller models will struggle
+  // with the multi-step desktop loop. The model id follows the brain's reasoning
+  // model (SYMPHONEE_REASONING_MODEL, default gemma4:26b).
+  {
+    const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+    let host = '127.0.0.1', ollPort = 11434;
+    try { const u = new URL(ollamaUrl); host = u.hostname; ollPort = Number(u.port) || 11434; } catch (_) {}
+    const gemmaModel = process.env.SYMPHONEE_APPS_MODEL || process.env.SYMPHONEE_REASONING_MODEL || 'gemma4:26b';
+    registry.gemma = {
+      adapter: makeOpenAIAdapter({
+        baseHost: host, port: ollPort, protocol: 'http',
+        basePath: '/v1/chat/completions', label: 'Gemma (local)', defaultModel: gemmaModel,
+      }),
+      keyEnv: null, apiKey: 'ollama', local: true,
+    };
+  }
   return registry;
 }
 
