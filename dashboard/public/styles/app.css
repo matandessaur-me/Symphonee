@@ -4882,10 +4882,24 @@
     .lg-outcome.lg-error { background: color-mix(in srgb, var(--peach, #e0a458) 20%, transparent); color: var(--peach, #e0a458); }
     .lg-outcome.lg-pending { background: color-mix(in srgb, var(--yellow, #e0c558) 18%, transparent); color: var(--yellow, #e0c558); }
 
-    .lg-cp { background: var(--surface0); border: 1px solid var(--surface1); border-radius: 9px; padding: 9px 10px; margin-bottom: 8px; }
+    .lg-cp { background: var(--surface0); border: 1px solid var(--surface1); border-radius: 9px; padding: 9px 10px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.12s; }
+    .lg-cp:hover { border-color: var(--surface2); }
+    .lg-cp-open { border-color: var(--accent); }
     .lg-cp-auto { opacity: 0.72; }
     .lg-cp-head { display: flex; align-items: center; gap: 8px; }
+    .lg-cp-caret { width: 12px; height: 12px; color: var(--overlay1); flex-shrink: 0; transition: transform 0.12s; }
+    .lg-cp-open .lg-cp-caret { transform: rotate(90deg); }
     .lg-cp-label { flex: 1; font-size: 11px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lg-cp-undo { background: transparent; border: 1px solid var(--surface2); color: var(--subtext1); border-radius: 6px; font-size: 10px; font-weight: 600; padding: 3px 9px; cursor: pointer; flex-shrink: 0; transition: all 0.12s; }
     .lg-cp-undo:hover { border-color: var(--accent); color: var(--accent); }
-    .lg-cp-meta { font-size: 10px; color: var(--overlay1); margin-top: 5px; }
+    .lg-cp-meta { font-size: 10px; color: var(--overlay1); margin-top: 5px; padding-left: 20px; }
+    .lg-cp-details { margin-top: 9px; padding: 9px 0 2px 20px; border-top: 1px solid color-mix(in srgb, var(--surface2) 60%, transparent); }
+    .lg-cp-kv { display: flex; gap: 8px; font-size: 11px; color: var(--subtext1); margin-bottom: 4px; }
+    .lg-cp-kv > span { color: var(--overlay1); min-width: 52px; }
+    .lg-cp-kv code { color: var(--text); font-family: var(--font-mono, monospace); font-size: 10px; }
+    .lg-cp-files { margin: 8px 0; max-height: 180px; overflow-y: auto; border-radius: 6px; }
+    .lg-cp-file { display: flex; gap: 8px; font-size: 11px; color: var(--subtext1); font-family: var(--font-mono, monospace); padding: 2px 0; }
+    .lg-cp-fst { color: var(--peach, #e0a458); min-width: 18px; font-weight: 600; }
+    .lg-cp-more { color: var(--overlay1); }
+    .lg-cp-empty-sm { font-family: var(--font-ui); color: var(--overlay1); font-style: italic; }
+    .lg-cp-hint { font-size: 10px; color: var(--overlay1); line-height: 1.5; margin-top: 8px; }

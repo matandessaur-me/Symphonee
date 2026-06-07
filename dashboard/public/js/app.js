@@ -22526,6 +22526,7 @@ function renderTimeline() {
 state.ledgerEntries = state.ledgerEntries || [];
 state.ledgerCheckpoints = state.ledgerCheckpoints || [];
 state.ledgerFilter = state.ledgerFilter || { category: '', outcome: '', q: '' };
+state.ledgerOpenCp = state.ledgerOpenCp || null;
 
 const LEDGER_CAT_ICON = {
   api: 'plug', git: 'git-branch', file: 'file-text', terminal: 'square-terminal',
@@ -22608,15 +22609,36 @@ function ledgerRenderCheckpoints() {
     el.innerHTML = '<div class="lg-empty-sm">No checkpoints yet. Take one before risky work, then undo to it in a click.</div>';
     return;
   }
-  el.innerHTML = cps.map((c) =>
-    '<div class="lg-cp' + (c.auto ? ' lg-cp-auto' : '') + '">' +
+  el.innerHTML = cps.map((c) => {
+    const open = state.ledgerOpenCp === c.id;
+    const fileList = Array.isArray(c.files) && c.files.length
+      ? '<div class="lg-cp-files">' + c.files.slice(0, 30).map((f) => '<div class="lg-cp-file"><span class="lg-cp-fst">' + _ledgerEsc(f.status || '?') + '</span>' + _ledgerEsc(f.path || '') + '</div>').join('') +
+        (c.files.length > 30 ? '<div class="lg-cp-file lg-cp-more">+' + (c.files.length - 30) + ' more</div>' : '') + '</div>'
+      : '<div class="lg-cp-files lg-cp-empty-sm">' + (c.changed ? c.changed + ' changed file(s) (re-checkpoint to capture the list)' : 'clean working tree at snapshot time') + '</div>';
+    return '<div class="lg-cp' + (c.auto ? ' lg-cp-auto' : '') + (open ? ' lg-cp-open' : '') + '" onclick="ledgerToggleCp(\'' + _ledgerEsc(c.id) + '\')" title="Click for details">' +
       '<div class="lg-cp-head">' +
+        '<i data-lucide="chevron-right" class="lg-cp-caret"></i>' +
         '<span class="lg-cp-label">' + _ledgerEsc(c.label || c.id) + '</span>' +
-        '<button class="lg-cp-undo" onclick="ledgerUndo(\'' + _ledgerEsc(c.id) + '\')" title="Revert tracked files to this snapshot">Undo</button>' +
+        '<button class="lg-cp-undo" onclick="event.stopPropagation();ledgerUndo(\'' + _ledgerEsc(c.id) + '\')" title="Revert tracked files to this snapshot">Undo</button>' +
       '</div>' +
       '<div class="lg-cp-meta">' + _ledgerTime(c.ts) + ' &middot; ' + _ledgerEsc(c.branch || '') + ' &middot; ' + (c.changed || 0) + ' changed</div>' +
-    '</div>'
-  ).join('');
+      '<div class="lg-cp-details"' + (open ? '' : ' style="display:none"') + '>' +
+        '<div class="lg-cp-kv"><span>id</span><code>' + _ledgerEsc(c.id) + '</code></div>' +
+        '<div class="lg-cp-kv"><span>when</span>' + _ledgerEsc(new Date(c.ts).toLocaleString()) + '</div>' +
+        '<div class="lg-cp-kv"><span>branch</span>' + _ledgerEsc(c.branch || '-') + '</div>' +
+        '<div class="lg-cp-kv"><span>head</span><code>' + _ledgerEsc(String(c.head || '').slice(0, 9)) + '</code></div>' +
+        '<div class="lg-cp-kv"><span>covers</span>' + (c.changed || 0) + ' tracked change(s)</div>' +
+        fileList +
+        '<div class="lg-cp-hint">Undo reverts tracked files to this snapshot. New (untracked) files are kept, and a safety checkpoint of the current state is taken first, so undo is reversible.</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  if (typeof lucide !== 'undefined') { try { lucide.createIcons({ el }); } catch (_) {} }
+}
+
+function ledgerToggleCp(id) {
+  state.ledgerOpenCp = (state.ledgerOpenCp === id) ? null : id;
+  ledgerRenderCheckpoints();
 }
 
 async function ledgerCheckpointNow() {
