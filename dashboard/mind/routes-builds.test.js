@@ -4,7 +4,9 @@ const assert = require('node:assert');
 const { tmpRepo, collector, call } = require('./routes.testkit');
 const { register } = require('./routes-builds');
 
-const SPACE = '_global';
+// Unique per-run space so the machine-global mind graph lock (keyed by space in
+// os.tmpdir, NOT by repoRoot) never collides with a live app or other test files.
+const SPACE = 'test-builds-' + process.pid;
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let b = ''; req.on('data', c => b += c); req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch (e) { reject(e); } }); req.on('error', reject);

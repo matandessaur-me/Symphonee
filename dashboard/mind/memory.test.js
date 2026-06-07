@@ -9,6 +9,11 @@ const path = require('path');
 const { buildMemoryFragment, addMemoryCard, ALLOWED_KINDS, extractMemoriesFromText } = require('./memory');
 const store = require('./store');
 
+// Unique per-run space so addMemoryCard's graph lock (keyed by space in a shared
+// os.tmpdir lock dir, NOT by repoRoot) can't collide with a live app holding the
+// SPACE lock. Without this, these tests flake with MIND_LOCKED when the app runs.
+const SPACE = 'memtest-' + process.pid;
+
 test('buildMemoryFragment: minimal valid spec', () => {
   const { node, edges } = buildMemoryFragment({ title: 'A simple fact' });
   assert.equal(node.kind, 'memory');
@@ -90,10 +95,10 @@ test('addMemoryCard: writes to disk and survives a reload', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-mem-'));
   try {
     // Seed a tiny graph so existingNodeIds isn't empty.
-    fs.mkdirSync(path.join(root, '.symphonee', 'mind', 'spaces', '_global'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.symphonee', 'mind', 'spaces', SPACE), { recursive: true });
     const seed = {
       version: 1,
-      scope: { space: '_global', isGlobal: false },
+      scope: { space: SPACE, isGlobal: false },
       generatedAt: new Date().toISOString(),
       nodes: [
         { id: 'entity_dyob',     label: 'DYOB',        kind: 'entity',
@@ -108,10 +113,10 @@ test('addMemoryCard: writes to disk and survives a reload', async () => {
       gods: [], surprises: [],
       stats: { nodes: 2, edges: 0, communities: 0, tokenCost: 0 },
     };
-    store.saveGraph(root, '_global', seed);
+    store.saveGraph(root, SPACE, seed);
 
     const { node, edges } = await addMemoryCard({
-      repoRoot: root, space: '_global',
+      repoRoot: root, space: SPACE,
       spec: {
         title: 'DYOB brand divergence',
         body: 'DYOB does not follow the Bath Fitter design system - different colours and typography.',
@@ -129,7 +134,7 @@ test('addMemoryCard: writes to disk and survives a reload', async () => {
     assert.equal(edges.some(e => e.relation === 'in_repo'  && e.target === 'cwd_dyob3'),    true);
 
     // Reload graph and confirm the node is on disk.
-    const reloaded = store.loadGraph(root, '_global');
+    const reloaded = store.loadGraph(root, SPACE);
     assert.ok(reloaded.nodes.find(n => n.id === node.id));
     assert.equal(reloaded.nodes.length, 3);
   } finally {
@@ -141,7 +146,7 @@ test('addMemoryCard: rejects spec with empty title', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-mem-bad-'));
   try {
     await assert.rejects(
-      addMemoryCard({ repoRoot: root, space: '_global', spec: { title: '   ' } }),
+      addMemoryCard({ repoRoot: root, space: SPACE, spec: { title: '   ' } }),
       /title is required/,
     );
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -151,7 +156,7 @@ test('addMemoryCard: rejects unknown kindOfMemory', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-mem-bad-kind-'));
   try {
     await assert.rejects(
-      addMemoryCard({ repoRoot: root, space: '_global', spec: { title: 'x', kindOfMemory: 'rumour' } }),
+      addMemoryCard({ repoRoot: root, space: SPACE, spec: { title: 'x', kindOfMemory: 'rumour' } }),
       /kindOfMemory must be one of/,
     );
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
