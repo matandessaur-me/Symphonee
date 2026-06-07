@@ -1,9 +1,9 @@
 // mind-ui :: graph module. Extracted verbatim from the original single-file
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
-import { $, API, savePrefs, state } from './core.js';
+import { $, savePrefs, state } from './core.js';
 import { cacheCoversFullGraph, focusGraphNode, hideGraphLoader, persistLayout, showGraphLoader } from './data.js';
-import { build, showNodeDetail, update } from './detailActions.js';
-import { escapeHtml, nodeLabel } from './helpers.js';
+import { showNodeDetail, update } from './detailActions.js';
+import { nodeLabel } from './helpers.js';
 import { render } from './router.js';
 
   function renderGraph() {

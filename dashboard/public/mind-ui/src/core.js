@@ -1,6 +1,5 @@
 // mind-ui :: core module. Extracted verbatim from the original single-file
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
-import { render } from './router.js';
 
   const API = (path, opts = {}) => fetch(path, opts).then(r => r.json());
   const $ = (id) => document.getElementById(id);

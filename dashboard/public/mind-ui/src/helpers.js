@@ -2,7 +2,6 @@
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
 import { $ } from './core.js';
 import { cliColor } from './dashboard.js';
-import { render } from './router.js';
 
   function nodeLabel(g, id) {
     const n = g.nodes.find(x => x.id === id);

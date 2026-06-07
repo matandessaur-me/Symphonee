@@ -4,7 +4,7 @@ import { $, API, state } from './core.js';
 import { cliColor } from './dashboard.js';
 import { loadGraph, setStatus, setWatch } from './data.js';
 import { communityColor, kindColor } from './graph.js';
-import { escapeHtml, formatTimestamp, metaRow, neighborRow, renderLocation, renderSource } from './helpers.js';
+import { escapeHtml, formatTimestamp } from './helpers.js';
 import { render } from './router.js';
 
   async function showNodeDetail(id) {

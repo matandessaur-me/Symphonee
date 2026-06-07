@@ -1,6 +1,6 @@
 // mind-ui :: index module. Extracted verbatim from the original single-file
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
-import { $, API, state } from './core.js';
+import { API, state } from './core.js';
 import { refreshQuality } from './data.js';
 import { askAbout, build, closeDetail, purgeNode, refreshLock, toggleWatch, update } from './detailActions.js';
 import { fitGraph, loadMindmap, setGraphMode } from './graph.js';

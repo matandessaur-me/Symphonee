@@ -1,7 +1,7 @@
 // mind-ui :: data module. Extracted verbatim from the original single-file
 // mind-ui IIFE; wiring is generated. Build: node scripts/build-renderer.js
 import { $, API, state } from './core.js';
-import { build, refreshLock, update } from './detailActions.js';
+import { refreshLock } from './detailActions.js';
 import { formatRelativeMs } from './helpers.js';
 import { render } from './router.js';
 import { refreshSmartHealth } from './views.js';
