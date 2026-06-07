@@ -122,6 +122,35 @@ function register(addRoute, json, deps) {
           actionResult = { kind: 'archive', archivedCount: archived };
           break;
         }
+        case 'supersede-memory': {
+          // Archive the older card of each pair and link newer -> older with a
+          // derived_from edge, so recall stops returning the superseded card
+          // but history is preserved (reversible: unset status to restore).
+          const pairs = Array.isArray(target.action.payload.pairs) ? target.action.payload.pairs : [];
+          const acq = lock.acquire(space, 'graph');
+          if (!acq.ok) return json(res, { error: 'mind busy' }, 409);
+          let superseded = 0;
+          try {
+            const g = store.loadGraph(repoRoot, space);
+            if (g) {
+              if (!Array.isArray(g.edges)) g.edges = [];
+              for (const p of pairs) {
+                if (!p || !p.older) continue;
+                const idx = g.nodes.findIndex(n => n.id === p.older && n.kind === 'memory');
+                if (idx === -1) continue;
+                g.nodes[idx] = { ...g.nodes[idx], status: 'archived', archivedAt: new Date().toISOString(), supersededBy: p.newer || null };
+                if (p.newer) {
+                  const exists = g.edges.some(e => e.source === p.newer && e.target === p.older && e.relation === 'derived_from');
+                  if (!exists) g.edges.push({ source: p.newer, target: p.older, relation: 'derived_from', confidence: 'INFERRED', confidenceScore: 0.6, weight: 1, createdBy: 'mind/supersede', createdAt: new Date().toISOString() });
+                }
+                superseded++;
+              }
+              store.saveGraph(repoRoot, space, g);
+            }
+          } finally { lock.release(space, 'graph'); }
+          actionResult = { kind: 'supersede', superseded };
+          break;
+        }
         case 'extract-shared': {
           // Persist a note describing the suggestion; the user works
           // through extraction at their own pace.

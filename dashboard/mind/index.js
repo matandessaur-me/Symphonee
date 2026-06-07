@@ -30,6 +30,7 @@ const coEditAnalyser = require('./analysers/co-edit');
 const memoryDecayAnalyser = require('./analysers/memory-decay');
 const crossRepoAnalyser = require('./analysers/cross-repo');
 const memoryStalenessAnalyser = require('./analysers/memory-staleness');
+const memoryContradictionAnalyser = require('./analysers/memory-contradiction');
 const memoryModule = require('./memory');
 const ollamaSetup = require('./ollama-setup');
 const llm = require('./llm');
@@ -675,7 +676,7 @@ function mountMind(addRoute, json, ctx) {
     const space = getSpace();
     const ui = getUiContext ? getUiContext() : {};
     const enabled = !categories || categories.length === 0
-      ? ['repeated-question', 'co-edit', 'memory-decay', 'cross-repo', 'memory-staleness']
+      ? ['repeated-question', 'co-edit', 'memory-decay', 'cross-repo', 'memory-staleness', 'memory-contradiction']
       : categories;
     const candidates = [];
     if (enabled.includes('repeated-question')) {
@@ -692,6 +693,9 @@ function mountMind(addRoute, json, ctx) {
     }
     if (enabled.includes('memory-staleness')) {
       try { candidates.push(...memoryStalenessAnalyser.detect({ repoRoot, space, getUiContext, getAllRepos: ctx.getAllRepos })); } catch (e) { console.warn('[insights/E]', e.message); }
+    }
+    if (enabled.includes('memory-contradiction')) {
+      try { candidates.push(...memoryContradictionAnalyser.detect({ repoRoot, space })); } catch (e) { console.warn('[insights/F]', e.message); }
     }
     const added = [];
     for (const spec of candidates) {
@@ -805,7 +809,7 @@ function mountMind(addRoute, json, ctx) {
 
   addRoute('POST', '/api/mind/audit', async (req, res) => {
     try {
-      const r = await generateInsights({ source: 'audit', categories: ['memory-staleness', 'memory-decay'] });
+      const r = await generateInsights({ source: 'audit', categories: ['memory-staleness', 'memory-decay', 'memory-contradiction'] });
       return json(res, { ...r, health: _memoryHealth() });
     } catch (e) { return json(res, { ok: false, error: e.message }, 500); }
   });
