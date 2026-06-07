@@ -1289,8 +1289,8 @@
   <div class="modal modal-settings">
     <div class="modal-title" style="display:flex;align-items:center;justify-content:space-between;">
       <span>Settings</span>
-      <button onclick="openFactoryResetModal()" title="Reset to factory settings" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;border-radius:var(--radius);" onmouseover="this.style.color='var(--red)';this.style.background='var(--surface0)'" onmouseout="this.style.color='var(--subtext0)';this.style.background='none'">
-        <i data-lucide="rotate-ccw" style="width:15px;height:15px;"></i>
+      <button onclick="restartApp()" title="Restart Symphonee" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;border-radius:var(--radius);" onmouseover="this.style.color='var(--text)';this.style.background='var(--surface0)'" onmouseout="this.style.color='var(--subtext0)';this.style.background='none'">
+        <i data-lucide="rotate-cw" style="width:15px;height:15px;"></i>
       </button>
     </div>
     <div class="settings-layout">
@@ -1674,9 +1674,9 @@
         <!-- Other Tab -->
         <div class="settings-tab" id="settingsTab-other">
           <div class="settings-section">
-            <div class="settings-section-title">Maintenance</div>
-            <div class="settings-section-desc">Restart the Symphonee app (reloads the server and all windows).</div>
-            <button onclick="restartApp()" style="display:inline-flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font:600 12px var(--font-ui);cursor:pointer;transition:border-color 0.12s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--surface2)'"><i data-lucide="rotate-cw" style="width:14px;height:14px;"></i> Restart Symphonee</button>
+            <div class="settings-section-title">Reset</div>
+            <div class="settings-section-desc">Reset Symphonee to factory settings. This clears your configuration and cannot be undone.</div>
+            <button onclick="openFactoryResetModal()" style="display:inline-flex;align-items:center;gap:8px;padding:8px 14px;background:transparent;border:1px solid var(--red);border-radius:var(--radius);color:var(--red);font:600 12px var(--font-ui);cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='var(--red)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--red)'"><i data-lucide="alert-triangle" style="width:14px;height:14px;"></i> Reset settings</button>
           </div>
           <div class="settings-section">
             <div class="settings-section-title">AI Orchestration</div>
