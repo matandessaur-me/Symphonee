@@ -141,23 +141,8 @@ const { mountLearnings } = require('./learnings');
 let _learningsInstance = null;
 trace.mark('server:top-requires-done');
 
-// ── Helper: read JSON body ────────────────────────────────────────────────────
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
-    });
-    req.on('error', reject);
-  });
-}
-
-// ── Helper: JSON response ─────────────────────────────────────────────────────
-function json(res, data, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data));
-}
+// ── Shared HTTP helpers (extracted to lib/http-helpers.js) ──────────────────
+const { readBody, json, formatAge } = require('./lib/http-helpers');
 
 // Shared sync git helper (git routes live in routes/git.js; this stays here
 // because plugins receive it via shellDeps).
@@ -701,15 +686,6 @@ const getUiContextWithPath = _uiCtxStore.getUiContext;
 
 const writePluginHints = createPluginHints({ repoRoot, pluginsDir, getConfig, getUiContext: getUiContextWithPath, broadcast });
 
-function formatAge(date) {
-  const ms = Date.now() - new Date(date).getTime();
-  const mins = ms / 60000;
-  if (mins < 60) return `${Math.round(mins)}m ago`;
-  const hrs = mins / 60;
-  if (hrs < 24) return `${hrs.toFixed(1)}h ago`;
-  return `${(hrs / 24).toFixed(1)}d ago`;
-}
-
 function handleHealthCheck(res) {
   json(res, {
     uptime: process.uptime(),
@@ -1210,115 +1186,8 @@ writePluginHints();
   }
 })();
 
-// ── AI Instructions endpoint ────────────────────────────────────────────────
-// Serves split instruction files from dashboard/instructions/ so CLAUDE.md stays small.
-// GET /api/instructions           - merged (all files concatenated)
-// GET /api/instructions/api-reference  - just the API reference
-(() => {
-  const instrDir = path.join(__dirname, 'instructions');
-  function readInstrFile(name) {
-    const p = path.join(instrDir, name + '.md');
-    if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
-    return null;
-  }
-  // Lists AI providers Symphonee can talk to via SDK, marking which ones the
-  // user actually has keys for (saved in Settings -> AI Keys, or in env). Used
-  // by plugin settings dropdowns so users only see models they can actually run.
-  addRoute('GET', '/api/ai/providers', (req, res) => {
-    const cfg = getConfig() || {};
-    const saved = cfg.AiApiKeys || {};
-    const providers = [
-      {
-        key: 'anthropic', label: 'Anthropic', envKey: 'ANTHROPIC_API_KEY',
-        models: [
-          { id: 'anthropic/claude-opus-4-7', label: 'Claude Opus 4.7' },
-          { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-          { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-          { id: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-        ],
-      },
-      {
-        key: 'openai', label: 'OpenAI', envKey: 'OPENAI_API_KEY',
-        models: [
-          { id: 'openai/gpt-4.1', label: 'GPT-4.1' },
-          { id: 'openai/gpt-4o', label: 'GPT-4o' },
-          { id: 'openai/o3', label: 'o3' },
-          { id: 'openai/o4-mini', label: 'o4-mini' },
-        ],
-      },
-      {
-        key: 'google', label: 'Google Gemini', envKey: 'GEMINI_API_KEY',
-        models: [
-          { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-          { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-          { id: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro (preview)' },
-        ],
-      },
-      {
-        key: 'xai', label: 'xAI Grok', envKey: 'XAI_API_KEY',
-        models: [
-          { id: 'xai/grok-4', label: 'Grok 4' },
-          { id: 'xai/grok-3', label: 'Grok 3' },
-          { id: 'xai/grok-3-mini-fast', label: 'Grok 3 Mini Fast' },
-        ],
-      },
-    ].map(p => ({
-      ...p,
-      configured: !!saved[p.envKey] || !!process.env[p.envKey],
-    }));
-    json(res, { ok: true, providers });
-  });
-
-  // Core instructions are plugin-agnostic. Plugin-specific rules live in each
-  // plugin's own instructions.md (served by /api/plugins/instructions), so no
-  // runtime stripping is needed here.
-  function stripPluginMarkers(content) { return content; }
-  // Merged: returns all instruction files concatenated (config-aware)
-  addRoute('GET', '/api/instructions', (req, res) => {
-    try {
-      // Order: behavioral rules first (survive compaction better), reference tables last
-      const priorityOrder = ['workflows.md', 'orchestrator.md', 'api-reference.md'];
-      const files = fs.readdirSync(instrDir).filter(f => f.endsWith('.md')).sort((a, b) => {
-        const ai = priorityOrder.indexOf(a), bi = priorityOrder.indexOf(b);
-        if (ai !== -1 && bi !== -1) return ai - bi;
-        if (ai !== -1) return -1;
-        if (bi !== -1) return 1;
-        return a.localeCompare(b);
-      });
-      const sections = files.map(f => stripPluginMarkers(fs.readFileSync(path.join(instrDir, f), 'utf8')));
-      res.writeHead(200, { 'Content-Type': 'text/markdown' });
-      res.end(sections.join('\n\n---\n\n'));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    }
-  });
-  // Coherence audit. GET returns the cached result; POST forces a refresh.
-  // Every /api/bootstrap response also embeds the cached audit so every CLI
-  // sees the audit state at session start. This is the self-healing chain.
-  addRoute('GET', '/api/instructions/audit', (req, res) => {
-    let result = instructionAudit.getCached();
-    if (!result) { try { result = instructionAudit.run({ repoRoot }); } catch (e) { return json(res, { error: e.message }, 500); } }
-    return json(res, result);
-  });
-  addRoute('POST', '/api/instructions/audit', async (req, res) => {
-    try {
-      const result = instructionAudit.run({ repoRoot });
-      try { broadcast({ type: 'instructions-audit', audit: result }); } catch (_) {}
-      return json(res, result);
-    } catch (e) { return json(res, { error: e.message }, 500); }
-  });
-  // Individual: /api/instructions/{name} serves a single file
-  addRoute('__PREFIX__', '/api/instructions', (req, res, url, subpath) => {
-    const name = (subpath || '').replace(/^\//, '').replace(/\.md$/i, '').replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!name) { json(res, { error: 'Missing instruction name' }, 400); return; }
-    const content = readInstrFile(name);
-    if (!content) { json(res, { error: `Instruction "${name}" not found` }, 404); return; }
-    res.writeHead(200, { 'Content-Type': 'text/markdown' });
-    res.end(stripPluginMarkers(content));
-  });
-  console.log('  AI Instructions endpoint mounted (/api/instructions/*)');
-})();
+// ── AI Instructions endpoint (extracted to routes/instructions.js) ──────────
+require('./routes/instructions').mountInstructions(addRoute, json, { getConfig, repoRoot, broadcast });
 
 // ── Start ───────────────────────────────────────────────────────────────────
 trace.mark('server:module-eval:done');
