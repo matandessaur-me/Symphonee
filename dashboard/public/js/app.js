@@ -2524,10 +2524,18 @@ async function loadGitPanel() {
 }
 
 async function loadGitLogPanel() {
-  if (!filesCurrentRepo) return;
+  // Use the active repo, falling back to the Files-tab repo. On load only
+  // activeRepo is restored (from localStorage); filesCurrentRepo starts empty
+  // until a Files-tab interaction, which left this panel stuck on its
+  // "Select a repo" placeholder even with a repo selected on the left.
+  const repo = filesCurrentRepo || activeRepo;
   const container = document.getElementById('gitLogList');
+  if (!repo) {
+    if (container) container.innerHTML = '<div style="color:var(--subtext0);font-size:12px;padding:4px;">Select a repository</div>';
+    return;
+  }
   try {
-    const res = await fetch(`/api/git/log?repo=${encodeURIComponent(filesCurrentRepo)}&count=30`);
+    const res = await fetch(`/api/git/log?repo=${encodeURIComponent(repo)}&count=30`);
     const data = await res.json();
     if (data.commits && data.commits.length > 0) {
       container.innerHTML = data.commits.map(c => `
@@ -5794,6 +5802,8 @@ function switchIntelTab(tab) {
   if (tab === 'velocity') loadVelocity();
   if (tab === 'team') loadTeamMembers();
   if (tab === 'gitlog') loadGitLogPanel();
+  // Persist the selected right-panel (intel) tab so it's restored next launch.
+  try { localStorage.setItem('symphonee-intel-tab', tab); } catch (_) {}
 }
 
 // ── UI Actions from AI ──────────────────────────────────────────────────
@@ -19790,9 +19800,19 @@ function applyPluginPinnedTabs(opts) {
   }
 
   var activeIntel = document.querySelector('.intel-tab.active');
+  // Restore the user's last-selected right-panel tab if it's currently visible
+  // (persisted by switchIntelTab). Takes priority over the DOM default so the
+  // panel reopens where the user left it across restarts.
+  var savedIntel = null;
+  try { savedIntel = localStorage.getItem('symphonee-intel-tab'); } catch (_) {}
+  var savedBtn = null;
+  if (savedIntel) { try { savedBtn = document.querySelector('.intel-tab[data-itab="' + savedIntel.replace(/["\\\]]/g, '') + '"]'); } catch (_) {} }
   var needFallback = !activeIntel || _intelTabHidden(activeIntel) ||
     (opts.preferActivityDefault && activeIntel.dataset.itab === 'recipes');
-  if (needFallback) {
+  if (savedBtn && !_intelTabHidden(savedBtn) && (!activeIntel || activeIntel.dataset.itab !== savedIntel)) {
+    _intelFallbackToRecipes = savedIntel === 'recipes';
+    try { switchIntelTab(savedIntel); } catch (_) {}
+  } else if (needFallback) {
     var first = _firstVisibleIntelTab();
     if (first && first.dataset.itab) {
       _intelFallbackToRecipes = first.dataset.itab === 'recipes';
