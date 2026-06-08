@@ -54,7 +54,7 @@ const MODULES = [
   './agents/browser/browser-agent',
   './agents/browser/browser-agent-chat',
   './agents/browser/browser-router',
-  './apps-agent',
+  './agents/apps/apps-agent',
 ];
 
 function resolveId(id) {

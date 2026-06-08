@@ -1244,7 +1244,7 @@ try {
 
 // ── Mount apps agent (desktop control) ──────────────────────────────────────
 try {
-  const { mountAppsRoutes } = require('./apps-agent');
+  const { mountAppsRoutes } = require('./agents/apps/apps-agent');
   mountAppsRoutes(addRoute, json, {
     getConfig,
     broadcast,

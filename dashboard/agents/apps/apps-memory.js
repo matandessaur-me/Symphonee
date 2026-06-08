@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DIR = path.join(__dirname, 'app-memory');
+const DIR = path.join(__dirname, '..', '..', 'app-memory');
 const MAX_NOTE_BYTES = 2048;
 const SYSTEM_PROMPT_BUDGET = 4096;
 

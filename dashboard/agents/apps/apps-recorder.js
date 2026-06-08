@@ -15,7 +15,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
-const SCRIPT_PATH = path.join(__dirname, 'scripts', 'record-input.ps1');
+const SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'record-input.ps1');
 const MAX_EVENTS = 5000;
 const MAX_DURATION_MS = 30 * 60 * 1000; // 30 min guardrail
 
