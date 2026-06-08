@@ -133,6 +133,15 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'plugins.js', src: 'plugins/src/index.js', out: 'js/plugins.js',
+    exposes: ['notifyPluginIframes', 'registerPluginTab', 'applyPluginPinnedTabs', 'injectPinnedCenterTab',
+      'openPluginTab', 'ensurePluginTabOpen', 'reconcilePluginShellSurfaces', 'refreshPluginActivation',
+      'injectSidebarAction', 'injectAiAction', 'runPluginAiAction', 'injectIntelPanel',
+      '_syncPluginToggleVisual', '_populatePluginSettingOptions', 'switchPluginSettingsTab',
+      'toggleSecretField'],
+    gone: ['executePluginAction', '_pluginActionSubst', 'injectCenterTab'],
+  },
+  {
     part: 'command-palette.js', src: 'command-palette/src/index.js', out: 'js/command-palette.js',
     exposes: ['openCmdPalette', 'openAIFocusPalette', 'openShortcutHelp', 'askAIFromPalette',
       'closeCmdPalette', 'filterCmdPalette', 'openRepoMapModal', 'setRepoMapView', 'copyRepoMap',
