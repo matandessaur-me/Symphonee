@@ -1,3 +1,10 @@
+// pull-requests -- the Pull Requests tab (list, detail, files/diff, timeline,
+// comment/review). Provider-driven via window.Symphonee.contributions
+// (contributions-client.js). esbuild IIFE; the render* helpers stay private.
+// Reads the shared `state` at top level, so it loads AFTER app.js. Function deps
+// resolve via window: esc/renderHtmlBody/toast (onboarding), renderMarkdown
+// (git), renderInlineDiff (files), selectRepo (spaces-repos). See ARCHITECTURE.md.
+//
 // ── Pull Requests ───────────────────────────────────────────────────────
 state.prsData = [];
 state.prsCurrentNumber = null;
@@ -460,3 +467,19 @@ async function submitRequestChanges() {
   closeRequestChangesModal();
   await submitPRReview('REQUEST_CHANGES', body);
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Reached from tabs-panels/spaces-repos/onboarding, index.html, and the PR
+// list/detail generated onclick. The render* helpers stay private.
+window.populatePRsRepoSelect = populatePRsRepoSelect;
+window.loadPRs = loadPRs;
+window.viewPR = viewPR;
+window.selectPRFile = selectPRFile;
+window.openPRCommentModal = openPRCommentModal;
+window.closePRCommentModal = closePRCommentModal;
+window.submitPRCommentModal = submitPRCommentModal;
+window.addPRComment = addPRComment;
+window.submitPRReview = submitPRReview;
+window.openRequestChangesModal = openRequestChangesModal;
+window.closeRequestChangesModal = closeRequestChangesModal;
+window.submitRequestChanges = submitRequestChanges;

@@ -133,6 +133,7 @@ const ROUTES = {
   '/js/plugin-registry.js':   { file: path.join(publicDir, 'js', 'plugin-registry.js'),                            type: 'application/javascript' },
   '/js/themes.js':            { file: path.join(publicDir, 'js', 'themes.js'),                                     type: 'application/javascript' },
   '/js/notifications.js':     { file: path.join(publicDir, 'js', 'notifications.js'),                              type: 'application/javascript' },
+  '/js/pull-requests.js':     { file: path.join(publicDir, 'js', 'pull-requests.js'),                              type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },
