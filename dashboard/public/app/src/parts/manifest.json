@@ -5,7 +5,6 @@
   "orchestrator.js",
   "startup.js",
   "tabs-panels.js",
-  "work-items.js",
   "browser.js",
   "apps.js",
   "apps-step-builder.js",

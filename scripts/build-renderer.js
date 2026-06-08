@@ -159,6 +159,14 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'spaces-repos', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'spaces-repos.js'),
   },
+  {
+    // Work-items (backlog/board) + app-wide config plumbing (loadConfig/
+    // pushUiContext/currentNotesNs/notesFetch). Reads `state` + listeners at
+    // load -> after app.js; loaded early in the post-app.js group.
+    name: 'work-items',
+    entry: path.join(PUB, 'work-items', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'work-items.js'),
+  },
 ];
 
 const banner = {
