@@ -492,7 +492,7 @@
       const d = await r.json();
       if (d.ok) {
         toast("Imported " + d.written + " note(s)" + (d.skipped ? ", " + d.skipped + " skipped" : ""), "success");
-        loadNotes();
+        loadNotesList();
       } else toast(d.error || "Import failed", "error");
     } catch (e) {
       toast("Import failed: " + e.message, "error");
