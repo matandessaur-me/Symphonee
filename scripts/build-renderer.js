@@ -50,6 +50,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'pinned-tabs', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'pinned-tabs.js'),
   },
+  {
+    // Second ES-module slice. Source: dashboard/public/local-model-prompt/src/.
+    // Exposes only window.symphEnsureLocalModel (called by apps.js).
+    name: 'local-model-prompt',
+    entry: path.join(PUB, 'local-model-prompt', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'local-model-prompt.js'),
+  },
 ];
 
 const banner = {

@@ -42,29 +42,46 @@ test('no part is orphaned: every parts/*.js is listed in the manifest', () => {
   }
 });
 
-// ── Extraction contract: pinned-tabs is a real ES module, not a concat part ──
-test('pinned-tabs is extracted (not a part, sourced as a module, wired in index.html)', () => {
-  assert.ok(!fs.existsSync(path.join(PARTS, 'pinned-tabs.js')),
-    'parts/pinned-tabs.js should be deleted (moved to pinned-tabs/src/)');
-  assert.ok(!manifest().includes('pinned-tabs.js'),
-    'pinned-tabs.js must not be in the concat manifest');
-  assert.ok(fs.existsSync(path.join(PUB, 'pinned-tabs', 'src', 'index.js')),
-    'pinned-tabs module source missing at pinned-tabs/src/index.js');
-  const indexHtml = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
-  assert.match(indexHtml, /<script src="\/js\/pinned-tabs\.js"><\/script>/,
-    'index.html must load /js/pinned-tabs.js');
-});
+// ── Extraction contract: each leaf carved off app.js is a real ES module ─────
+// One entry per slice off the flat app.js. Adding the next slice = add a row.
+//   part:    former parts/ filename (must be gone from parts/ and the manifest)
+//   src:     module source entry (relative to dashboard/public)
+//   out:     built bundle served by index.html (relative to dashboard/public)
+//   exposes: globals it re-attaches to window for the still-flat app.js to call
+//   gone:    function names that must NO LONGER be defined inside app.js
+const EXTRACTED = [
+  {
+    part: 'pinned-tabs.js', src: 'pinned-tabs/src/index.js', out: 'js/pinned-tabs.js',
+    exposes: ['getSavedTabOrderOverrides', '_placeTabAtEnd'], gone: ['_placeTabAtEnd', '_initTabDrag'],
+  },
+  {
+    part: 'local-model-prompt.js', src: 'local-model-prompt/src/index.js', out: 'js/local-model-prompt.js',
+    exposes: ['symphEnsureLocalModel'], gone: ['symphEnsureLocalModel', '_symphModelModal'],
+  },
+];
 
-test('app.js no longer defines the extracted pinned-tabs functions', () => {
-  const app = fs.readFileSync(APP_JS, 'utf8');
-  assert.doesNotMatch(app, /function _placeTabAtEnd\b/, 'app.js still defines _placeTabAtEnd');
-  assert.doesNotMatch(app, /function _initTabDrag\b/, 'app.js still defines _initTabDrag');
-});
+for (const m of EXTRACTED) {
+  test(`${m.part} is extracted (not a part, sourced as a module, wired in index.html)`, () => {
+    assert.ok(!fs.existsSync(path.join(PARTS, m.part)), `parts/${m.part} should be deleted (moved to ${m.src})`);
+    assert.ok(!manifest().includes(m.part), `${m.part} must not be in the concat manifest`);
+    assert.ok(fs.existsSync(path.join(PUB, m.src)), `module source missing at ${m.src}`);
+    const indexHtml = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
+    assert.ok(indexHtml.includes(`<script src="/${m.out}"></script>`), `index.html must load /${m.out}`);
+  });
 
-test('built pinned-tabs.js re-exposes its public surface on window', () => {
-  const built = path.join(PUB, 'js', 'pinned-tabs.js');
-  assert.ok(fs.existsSync(built), 'js/pinned-tabs.js not built -- run `node scripts/build-renderer.js`');
-  const mod = fs.readFileSync(built, 'utf8');
-  assert.match(mod, /window\.getSavedTabOrderOverrides\s*=/, 'missing window.getSavedTabOrderOverrides');
-  assert.match(mod, /window\._placeTabAtEnd\s*=/, 'missing window._placeTabAtEnd');
-});
+  test(`app.js no longer defines functions extracted to ${m.part}`, () => {
+    const app = fs.readFileSync(APP_JS, 'utf8');
+    for (const fn of m.gone) {
+      assert.doesNotMatch(app, new RegExp(`function ${fn}\\b`), `app.js still defines ${fn}`);
+    }
+  });
+
+  test(`built ${m.out} re-exposes its public surface on window`, () => {
+    const built = path.join(PUB, m.out);
+    assert.ok(fs.existsSync(built), `${m.out} not built -- run \`node scripts/build-renderer.js\``);
+    const mod = fs.readFileSync(built, 'utf8');
+    for (const fn of m.exposes) {
+      assert.match(mod, new RegExp(`window\\.${fn}\\s*=`), `${m.out} missing window.${fn}`);
+    }
+  });
+}

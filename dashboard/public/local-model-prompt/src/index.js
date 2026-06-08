@@ -1,3 +1,12 @@
+// local-model-prompt -- point-of-need install for the local reasoning model.
+//
+// Second ES-module slice off the flat app.js (see app/src/README.md). esbuild
+// bundles this as an IIFE; everything stays module-private except the one
+// function apps.js calls by bare name (typeof-guarded), re-exposed on `window`
+// at the bottom. No top-level execution and no app.js-global dependencies --
+// `esc` is a local helper and `lucide` is a free var that resolves to
+// window.lucide inside the bundle. Edit here; rebuild via build-renderer.js.
+//
 // ── Point-of-need install for the local reasoning model ─────────────────────
 // Any feature that needs the local reasoning model (gemma4:26b) calls
 // `await symphEnsureLocalModel({ reason })` instead of failing silently or
@@ -91,3 +100,7 @@ function _symphModelModal(status, reason, resolve) {
     }
   });
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// apps.js calls this by bare name (typeof-guarded); expose it on the global.
+window.symphEnsureLocalModel = symphEnsureLocalModel;

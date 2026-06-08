@@ -24,7 +24,6 @@
   "command-palette.js",
   "activity-timeline.js",
   "activity-ledger.js",
-  "local-model-prompt.js",
   "plugins.js",
   "browser-credentials.js",
   "permissions.js",
