@@ -78,6 +78,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'notes-search', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'notes-search.js'),
   },
+  {
+    // Fifth extracted leaf. Source: dashboard/public/permissions/src/. Reads the
+    // shared `state` at top level + registers a poller, so it loads AFTER app.js.
+    name: 'permissions',
+    entry: path.join(PUB, 'permissions', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'permissions.js'),
+  },
 ];
 
 const banner = {

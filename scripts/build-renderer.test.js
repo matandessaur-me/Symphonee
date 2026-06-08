@@ -76,6 +76,11 @@ const EXTRACTED = [
       'noteFindStep', 'syncNoteHighlightScroll', 'updateNoteHighlightsLive', 'onNoteFindKeydown'],
     gone: ['runNotesSearch', 'paintNoteHighlights', 'noteFindHighlight'],
   },
+  {
+    part: 'permissions.js', src: 'permissions/src/index.js', out: 'js/permissions.js',
+    exposes: ['openPermModeMenu', 'setPermMode', 'resolveApproval', 'resolveGraphApproval'],
+    gone: ['refreshPermMode', 'pollApprovals', 'showApprovalModal'],
+  },
 ];
 
 for (const m of EXTRACTED) {

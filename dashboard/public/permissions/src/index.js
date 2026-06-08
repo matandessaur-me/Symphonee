@@ -1,3 +1,16 @@
+// permissions -- header permission-mode chip/menu + the approval modal that
+// polls the permission and graph-run approval queues.
+//
+// Fifth extracted leaf. esbuild IIFE; PERM_MODE_COLORS and the internal helpers
+// (refreshPermMode, closePermModeMenuOnce, pollApprovals, show/hideApprovalModal)
+// stay private. Four functions are reached from onclick -- openPermModeMenu and
+// setPermMode (index.html) plus resolveApproval / resolveGraphApproval (the
+// modal's runtime-generated buttons) -- and are re-exposed on `window`.
+//
+// IMPORTANT: reads/writes the shared `state` at top level and registers a
+// DOMContentLoaded poller, so its <script> loads AFTER app.js. Runtime deps
+// resolve as globals: window.escapeHtml (util module) and window.lucide.
+//
 // ═══ Permission Mode + Approval Modal ══════════════════════════════════════
 const PERM_MODE_COLORS = {
   review: '#4a9eff',
@@ -195,3 +208,12 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshPermMode();
   setInterval(pollApprovals, 3000);
 });
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// openPermModeMenu / setPermMode are bound from index.html; resolveApproval /
+// resolveGraphApproval are bound from the modal's generated onclick. Inline
+// handlers resolve against the global, so expose them on window.
+window.openPermModeMenu = openPermModeMenu;
+window.setPermMode = setPermMode;
+window.resolveApproval = resolveApproval;
+window.resolveGraphApproval = resolveGraphApproval;
