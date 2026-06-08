@@ -70,6 +70,12 @@ const EXTRACTED = [
     exposes: ['refreshMcpServers', 'addMcpServer', 'toggleMcp', 'refreshMcp', 'removeMcp'],
     gone: ['refreshMcpServers', 'addMcpServer', 'renderMcpServerCard'],
   },
+  {
+    part: 'notes-search.js', src: 'notes-search/src/index.js', out: 'js/notes-search.js',
+    exposes: ['onNotesSearchInput', 'openNoteFind', 'closeNoteFind', 'updateNoteFindMatches',
+      'noteFindStep', 'syncNoteHighlightScroll', 'updateNoteHighlightsLive', 'onNoteFindKeydown'],
+    gone: ['runNotesSearch', 'paintNoteHighlights', 'noteFindHighlight'],
+  },
 ];
 
 for (const m of EXTRACTED) {

@@ -11,7 +11,7 @@
     "dist": "electron-builder --win",
     "build:renderer": "node scripts/build-renderer.js",
     "watch:renderer": "node scripts/build-renderer.js --watch",
-    "test:renderer": "node --test scripts/build-renderer.test.js dashboard/public/util/util.test.js dashboard/public/pinned-tabs/pinned-tabs.test.js dashboard/public/local-model-prompt/local-model-prompt.test.js dashboard/public/mcp/mcp.test.js"
+    "test:renderer": "node --test scripts/build-renderer.test.js dashboard/public/util/util.test.js dashboard/public/pinned-tabs/pinned-tabs.test.js dashboard/public/local-model-prompt/local-model-prompt.test.js dashboard/public/mcp/mcp.test.js dashboard/public/notes-search/notes-search.test.js"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.2.1",

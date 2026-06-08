@@ -26,6 +26,5 @@
   "activity-ledger.js",
   "plugins.js",
   "browser-credentials.js",
-  "permissions.js",
-  "notes-search.js"
+  "permissions.js"
 ]

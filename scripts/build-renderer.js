@@ -71,6 +71,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'mcp', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'mcp.js'),
   },
+  {
+    // Fourth extracted leaf. Source: dashboard/public/notes-search/src/. Reads
+    // the shared `state` at top level, so its <script> loads AFTER app.js.
+    name: 'notes-search',
+    entry: path.join(PUB, 'notes-search', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'notes-search.js'),
+  },
 ];
 
 const banner = {
