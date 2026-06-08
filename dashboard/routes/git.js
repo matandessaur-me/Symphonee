@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { gitAsync, gitSync } = require('../utils/git-async');
+const { gitAsync, gitSync, currentBranch } = require('../utils/git-async');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -48,7 +48,7 @@ function mountGit(addRoute, json, ctx) {
     // heavy repos, and the legacy gitExec/gitSync would block the Electron main
     // process (server.js runs in it) for the duration -- the recurring freeze.
     let branch = '', status = '';
-    try { branch = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD'); } catch (_) {}
+    try { branch = await currentBranch(repoPath); } catch (_) {}
     try { status = await gitAsync(repoPath, 'status --porcelain -u'); } catch (_) {}
     const statusMap = { 'M': 'modified', 'A': 'added', 'D': 'deleted', 'R': 'renamed', '?': 'new', 'U': 'conflict' };
     const statusLabel = { 'modified': 'M', 'added': 'A', 'deleted': 'D', 'renamed': 'R', 'new': 'N', 'conflict': 'U' };
@@ -142,7 +142,7 @@ function mountGit(addRoute, json, ctx) {
 
     try {
       const data = await swrGit.get('branches:' + repoPath, async () => {
-        const current = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+        const current = await currentBranch(repoPath);
         const output = await gitAsync(repoPath, 'branch --format="%(refname:short)"');
         const branches = output ? output.split('\n').filter(Boolean) : [];
         return { current, branches };
@@ -207,7 +207,7 @@ function mountGit(addRoute, json, ctx) {
         await gitAsync(repoPath, 'fetch --prune', { timeout: 30000 });
 
         const result = await gitAsync(repoPath, `checkout ${body.branch}`);
-        const current = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+        const current = await currentBranch(repoPath);
 
         // Pull latest changes after switching (best-effort, don't fail the checkout)
         let pullMsg = '';
@@ -237,7 +237,7 @@ function mountGit(addRoute, json, ctx) {
       await guard.run(`git:${repoPath}`, 'pull', async () => {
         await gitAsync(repoPath, 'fetch --prune', { timeout: 30000 });
         const result = await gitAsync(repoPath, 'pull', { timeout: 30000 });
-        const branch = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+        const branch = await currentBranch(repoPath);
         swrGit.clear();
         broadcast({ type: 'git-changed', repo: body.repo, branch });
         json(res, { ok: true, branch, message: result });
@@ -254,7 +254,7 @@ function mountGit(addRoute, json, ctx) {
       if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
 
       await guard.run(`git:${repoPath}`, 'push', async () => {
-        const branch = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+        const branch = await currentBranch(repoPath);
         if (isUnsafeBranchName(branch)) {
           throw Object.assign(new Error('Current branch name is unsafe to use in git commands.'), { invalidBranch: true });
         }
@@ -293,7 +293,7 @@ function mountGit(addRoute, json, ctx) {
 
       await guard.run(`git:${repoPath}`, 'fetch', async () => {
         await gitAsync(repoPath, 'fetch --prune', { timeout: 30000 });
-        const current = await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD');
+        const current = await currentBranch(repoPath);
         const localOut = await gitAsync(repoPath, 'branch --format="%(refname:short)"');
         const remoteOut = await gitAsync(repoPath, 'branch -r --format="%(refname:short)"');
         const local = localOut ? localOut.split('\n').filter(Boolean) : [];

@@ -169,4 +169,27 @@ function gitSync(repoPath, cmd, timeoutMs) {
   }
 }
 
-module.exports = { gitAsync, gitSync, isBusy, getBusyOperation, setBusy, clearBusy };
+/**
+ * Get a repo's current branch name, handling the "unborn branch" case.
+ *
+ * `git rev-parse --abbrev-ref HEAD` ERRORS on a freshly `git init`'d repo that
+ * has no commits yet ("fatal: ambiguous argument 'HEAD'"), which surfaced as a
+ * raw error in the branches view when a brand-new local repo was added.
+ * `git branch --show-current` (git 2.22+) returns the branch name even with no
+ * commits. Falls back to rev-parse for detached HEAD (where --show-current is
+ * empty). Returns '' if the branch can't be determined (never throws).
+ *
+ * @param {string} repoPath
+ * @returns {Promise<string>}
+ */
+async function currentBranch(repoPath) {
+  try {
+    const b = (await gitAsync(repoPath, 'branch --show-current')).trim();
+    if (b) return b;                // normal repo OR unborn branch (no commits)
+  } catch (_) { /* fall through */ }
+  // Detached HEAD (or very old git): rev-parse gives "HEAD"; ignore failures
+  // (e.g. truly headless states) so callers get '' instead of an exception.
+  try { return (await gitAsync(repoPath, 'rev-parse --abbrev-ref HEAD')).trim(); } catch (_) { return ''; }
+}
+
+module.exports = { gitAsync, gitSync, currentBranch, isBusy, getBusyOperation, setBusy, clearBusy };
