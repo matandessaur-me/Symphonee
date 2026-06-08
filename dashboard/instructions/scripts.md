@@ -20,7 +20,7 @@ Use these before writing anything custom. They handle the common Symphonee opera
 ## Renderer build (when editing the dashboard UI)
 
 The served `dashboard/public/js/app.js` and `mind-ui.js` are GENERATED. Edit the
-source (`dashboard/public/app/src/parts/*.js` or `mind-ui/src/*.js`) and rebuild --
+source (`dashboard/public/app/src/shell/*.js` or `mind-ui/src/*.js`) and rebuild --
 never hand-edit the output. See the `verify-frontend-edit` skill.
 
 | Command | Purpose |

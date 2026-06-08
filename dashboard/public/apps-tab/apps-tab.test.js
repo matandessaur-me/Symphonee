@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('node:vm');
 
-const BUILT = path.resolve(__dirname, '..', 'js', 'apps.js');
+const BUILT = path.resolve(__dirname, '..', 'js', 'apps-tab.js');
 
 function loadModule() {
   const stub = new Proxy(function () {}, {

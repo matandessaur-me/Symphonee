@@ -1,9 +1,10 @@
 # Dashboard architecture
 
 The `dashboard/` server is the Symphonee backend (HTTP + WebSocket) plus the
-Electron shell and the renderer. It was modularized from a handful of very large
-files into cohesive, separately-testable modules. This map is the entry point for
-finding where a concern lives.
+Electron shell and the renderer. It is organized **feature-first**: each cohesive
+subsystem owns a folder; entry points and standalone one-file services sit at the
+root. The former god files were decomposed into cohesive, separately-testable
+modules. This map is the entry point for finding where a concern lives.
 
 ## Entry points
 
@@ -14,6 +15,23 @@ finding where a concern lives.
 | `public/index.html` | Renderer markup + a few small bootstrap scripts. Styles and logic are external (below). |
 
 ## Module trees (each = one concern)
+
+### `agents/` — the AI automation backends
+Two self-contained subsystems, each its own folder so the cluster's internal
+`require('./x')` paths stay relative and the whole thing reads as one feature:
+- `agents/apps/` — **desktop-app** automation. `apps-agent.js` mounts the routes;
+  `apps-agent-chat.js` runs the tool-use loop; the provider/transport/schema/prompt
+  layers are split out (`apps-chat-providers`, `apps-chat-http`, `apps-chat-tools`,
+  `apps-chat-prompt`, `apps-agent-session`); `apps-driver.js` drives the OS (UIA +
+  pixel); plus `apps-memory`, `apps-recipes`, `apps-recorder`, `apps-goal-planner`,
+  `apps-learning-loop`, `apps-self-healer`, `apps-frame-diff`, `apps-com`, `apps-sandbox`.
+- `agents/browser/` — **in-app browser** automation, same shape: `browser-agent.js`
+  (routes), `browser-agent-chat.js` (loop), `browser-chat-{providers,http,telemetry,
+  tools,prompts,util}`, `browser-router.js`, `browser-self-healer.js`.
+
+Modules that read runtime data/script dirs (`apps-memory` -> `app-memory/`,
+`apps-driver` -> `scripts/*.ps1`) reach them via `__dirname` re-depthed to the
+`dashboard/` root, where those shared dirs live.
 
 ### `orchestrator/` — cross-AI task orchestration
 `orchestrator.js` is a thin class: constructor + instance state only. All behavior
@@ -68,7 +86,7 @@ runtime build step: the app still serves static files; `index.html` is unchanged
 
 | Served file | Source | Build strategy |
 |------|--------|----------|
-| `js/app.js` | `app/src/parts/*.js` + `manifest.json` | **flat concatenation** — byte-identical to the original |
+| `js/app.js` | `app/src/shell/*.js` + `manifest.json` | **flat concatenation** — byte-identical to the original |
 | `mind-ui.js` | `mind-ui/src/*.js` | **esbuild ES-module bundle** |
 
 Two strategies because the two files have different shapes:
@@ -81,12 +99,13 @@ Two strategies because the two files have different shapes:
   by 327 inline `on*` handlers by bare name) and ~146 **mutable** globals reassigned
   across ~1,700 references. Real modules would require rewriting all of those to a
   shared state object — a large, scope-sensitive change to an untested 21k-line UI.
-  So it is split by **concern into cohesive parts** (`terminals.js`, `files.js`,
-  `git.js`, `orchestrator.js`, `work-items.js`, `browser.js`, `apps.js`, `themes.js`,
-  `command-palette.js`, …) that **concatenate back byte-identical** — navigable
-  source, zero behavioural risk. The incremental path to real modules (introduce a
-  `state.js`, move mutable globals onto it per cluster, then promote a part to a
-  module) is documented in `app/src/README.md`.
+  So the shell is split by **concern into cohesive files** under `app/src/shell/`
+  (`state.js`, `terminals.js`, `tabs-panels.js`, `startup.js`, `keyboard.js`, ...)
+  that **concatenate back byte-identical** — navigable source, zero behavioural
+  risk — while feature tabs (`git`, `files`, `work-items`, `browser`, `apps-tab`,
+  `themes`, `command-palette`, ...) are extracted as real esbuild modules. The
+  incremental path (introduce `state.js`, move mutable globals onto it per cluster,
+  then promote a shell file to a module) is documented in `app/src/README.md`.
 
 **Generated files are not hand-edited** — they carry that warning, and the
 concatenated `app.js` is provably the original bytes.
@@ -101,6 +120,9 @@ concatenated `app.js` is provably the original bytes.
 ## Validation
 
 - `node --test --test-force-exit dashboard/**/*.test.js` — co-located unit tests (run with `--test-force-exit`; orchestrator routes start a heartbeat timer).
-- Load-check: `ELECTRON=1 node -e "require('./dashboard/server.js'); console.log('LOAD_OK')"` mounts everything without binding a port.
+- Load-check: `node --check dashboard/server.js` for syntax, plus per-module
+  require-smoke `ELECTRON=1 node -e "require('./dashboard/<module>')"`. NOTE: do
+  **not** require `server.js` itself as a smoke test — it boots the full server
+  (mounts everything, starts MCP clients) and does not exit.
 - Route-closure wiring (mind): a handler harness invokes every extracted handler against an empty graph to prove each closure symbol is present in `deps` (a load-check can't catch a missing closed-over name — it only fails when the route is called).
 - Electron modules: `node` can't load real `electron`, so a mocked-`electron` harness evaluates `electron-main.js` top-to-bottom and exercises the factories; the real boot path is confirmed by a live app restart.

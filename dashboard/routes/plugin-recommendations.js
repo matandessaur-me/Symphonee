@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { gitSync } = require('../utils/git-async');
-const { checkActivation } = require('../plugin-loader');
+const { checkActivation } = require('../plugins-core/plugin-loader');
 
 function mountPluginRecommendations(addRoute, json, ctx) {
   const { getConfig, getUiContext, pluginsDir, getPlugins } = ctx;

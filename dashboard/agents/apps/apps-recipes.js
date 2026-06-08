@@ -21,7 +21,7 @@ const path = require('path');
 
 const { normalizeApp } = require('./apps-memory');
 
-const DIR = path.join(__dirname, 'app-recipes');
+const DIR = path.join(__dirname, '..', '..', 'app-recipes');
 
 function ensureDir() {
   try { fs.mkdirSync(DIR, { recursive: true }); } catch (_) {}
@@ -245,7 +245,7 @@ function exportRecipes(app, ids) {
 
 // Per-app run history. Small JSON file capped at 50 entries. Each entry is
 // the outcome summary the runner emits on completion.
-const HIST_DIR = path.join(__dirname, 'app-recipe-history');
+const HIST_DIR = path.join(__dirname, '..', '..', 'app-recipe-history');
 const HIST_CAP = 50;
 
 function _histPath(app) {
@@ -290,7 +290,7 @@ function listHistory(app) {
 // ─── Tests ─────────────────────────────────────────────────────────────
 // A test references a recipe (macro), supplies inputs, and names the
 // post-run assertions. Stored per-app in a second JSON file.
-const TEST_DIR = path.join(__dirname, 'app-recipe-tests');
+const TEST_DIR = path.join(__dirname, '..', '..', 'app-recipe-tests');
 
 function _testsPath(app) {
   return path.join(TEST_DIR, normalizeApp(app) + '.json');

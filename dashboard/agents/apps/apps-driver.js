@@ -368,7 +368,7 @@ $h = [System.IntPtr]${hwnd}
 // resolves to { x, y } (window-relative, pointing at the element's center)
 // or null when the selector doesn't match any visible element.
 async function findUIAElement(hwnd, selector) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-find.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-find.ps1');
   const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
   // Pass via -EncodedCommand-style inline base64 to dodge PS quoting hell
   // when selectors contain quotes, slashes, or unicode.
@@ -388,7 +388,7 @@ $sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')
 // throws if UIA is unavailable. Nodes are flat, each carrying a depth for
 // indent rendering.
 async function uiaTree(hwnd, { maxNodes = 400 } = {}) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-tree.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-tree.ps1');
   const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -MaxNodes ${Number(maxNodes)}`;
   const raw = await runPs(script, { timeoutMs: 20000 });
   const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
@@ -402,7 +402,7 @@ async function uiaTree(hwnd, { maxNodes = 400 } = {}) {
 // pixel-coordinate click succeeds, we resolve the element under that point
 // so the recipe step can be rewritten as a stable selector for next time.
 async function findUIAElementAt(hwnd, x, y) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-hit-test.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-hit-test.ps1');
   const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -X ${Number(x)} -Y ${Number(y)}`;
   const raw = await runPs(script, { timeoutMs: 8000 });
   const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
@@ -415,7 +415,7 @@ async function findUIAElementAt(hwnd, x, y) {
 // Read the value/text of a UIA element. Lets the agent verify state without
 // taking a screenshot (button label, input contents, status bar text).
 async function readUIAElement(hwnd, selector) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-read.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-read.ps1');
   const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
   const script = `
 $sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))
@@ -470,7 +470,7 @@ async function waitForUIAElement(hwnd, selector, { timeoutMs = 5000, pollMs = 25
 // goes directly to the hwnd. Coords are window-relative (same convention
 // as click()).
 async function postMessageClick(hwnd, x, y, { double: dbl = false } = {}) {
-  const path = require('path').join(__dirname, 'scripts', 'post-click.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'post-click.ps1');
   const script = `& '${path.replace(/'/g, "''")}' -Hwnd ${Number(hwnd)} -X ${Number(x)|0} -Y ${Number(y)|0}${dbl ? ' -Double' : ''}`;
   const raw = await runPs(script, { timeoutMs: 5000 });
   const line = String(raw || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
@@ -486,7 +486,7 @@ async function postMessageClick(hwnd, x, y, { double: dbl = false } = {}) {
 // Returns { ok, pattern, name, type, chars } on success or { ok:false,
 // reason } when the element doesn't support ValuePattern.
 async function setUIAValue(hwnd, selector, text) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-set-value.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-set-value.ps1');
   const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
   const valB64 = Buffer.from(String(text == null ? '' : text), 'utf8').toString('base64');
   const script = `
@@ -506,7 +506,7 @@ $val = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${valB64}'))
 // UIA instead of simulating a click. Returns { ok, pattern } on success or
 // { ok: false } so the caller can fall back to findUIAElement + click.
 async function invokeUIAElement(hwnd, selector) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-invoke.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-invoke.ps1');
   const payload = Buffer.from(JSON.stringify(selector || {}), 'utf8').toString('base64');
   const script = `
 $sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}'))
@@ -523,7 +523,7 @@ $sel = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')
 // Launches the interactive element picker in a child process. The caller
 // (apps-agent.js) streams the events so the UI can show hover feedback.
 function spawnUIAPicker(hwnd, { timeoutSeconds = 120 } = {}) {
-  const path = require('path').join(__dirname, 'scripts', 'uia-pick.ps1');
+  const path = require('path').join(__dirname, '..', '..', 'scripts', 'uia-pick.ps1');
   return spawn('powershell.exe', [
     '-ExecutionPolicy', 'Bypass',
     '-NoProfile',

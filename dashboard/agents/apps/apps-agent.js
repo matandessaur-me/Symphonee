@@ -342,12 +342,12 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     } catch (_) { /* file missing / parse fail — fall through to Mind */ }
 
     try {
-      const mindStore = require('./mind/store');
-      const mindQuery = require('./mind/query');
+      const mindStore = require('../../mind/store');
+      const mindQuery = require('../../mind/query');
       // No direct space accessor here; default to '_global' which is the
       // Symphonee notesNamespace fallback that mind/index.js uses too.
       const space = '_global';
-      const repoRoot = require('path').resolve(__dirname, '..');
+      const repoRoot = require('path').resolve(__dirname, '..', '..', '..');
       const graph = mindStore.loadGraph(repoRoot, space);
       if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
         const r = mindQuery.runQuery(graph, { question: `${session.app}: ${goal}`, budget: 1200 });

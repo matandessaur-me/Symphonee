@@ -15,7 +15,7 @@
  */
 
 const { isAbortError } = require('./browser-chat-http');
-const siteRecipes = require('./site-recipes');
+const siteRecipes = require('../../site-recipes');
 const { buildProviderRegistry, pickProvider } = require('./browser-chat-providers');
 const {
   describeAction, isMutatingTool, snapshotAgentState, captureActionTelemetry,

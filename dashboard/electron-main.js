@@ -245,7 +245,7 @@ if (!gotLock) {
     // Browser tab instead of launching a system Edge/Chrome window. Safe to
     // call even if browser-agent was skipped (setter is a no-op then).
     try {
-      const { setActiveBrowserDriver } = require('./browser-agent');
+      const { setActiveBrowserDriver } = require('./agents/browser/browser-agent');
       setActiveBrowserDriver(internalWebviewDriver);
       console.log('  Browser automation bound to in-app webview');
     } catch (err) {

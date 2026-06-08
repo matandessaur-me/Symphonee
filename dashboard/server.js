@@ -103,7 +103,7 @@ const ROUTES = {
   '/js/plugins.js':           { file: path.join(publicDir, 'js', 'plugins.js'),                                    type: 'application/javascript' },
   '/js/settings.js':          { file: path.join(publicDir, 'js', 'settings.js'),                                   type: 'application/javascript' },
   '/js/browser.js':           { file: path.join(publicDir, 'js', 'browser.js'),                                    type: 'application/javascript' },
-  '/js/apps.js':              { file: path.join(publicDir, 'js', 'apps.js'),                                       type: 'application/javascript' },
+  '/js/apps-tab.js':          { file: path.join(publicDir, 'js', 'apps-tab.js'),                                       type: 'application/javascript' },
   '/js/orchestrator.js':      { file: path.join(publicDir, 'js', 'orchestrator.js'),                               type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
@@ -129,7 +129,7 @@ function addRoute(method, pathname, handler) {
 }
 
 // ── Plugin system ────────────────────────────────────────────────────────────
-const { loadPlugins, checkActivation } = require('./plugin-loader');
+const { loadPlugins, checkActivation } = require('./plugins-core/plugin-loader');
 const pluginsDir = path.join(__dirname, 'plugins');
 
 // ── Config store (merge/normalize infrastructure behind getConfig) ───────────
@@ -141,10 +141,10 @@ let loadedPlugins = [];
 // ── Orchestrator (cross-AI communication bus) ────────────────────────────────
 const { mountOrchestrator, pretrustFolderForCli } = require('./orchestrator');
 const permissions = require('./permissions');
-const { MCPClientManager } = require('./mcp-client');
+const { MCPClientManager } = require('./mcp/mcp-client');
 const mcpClient = new MCPClientManager({ configPath });
 mcpClient.bootstrap().catch(e => console.warn('  [mcp-client] bootstrap error:', e.message));
-const { GraphRunsEngine } = require('./graph-runs');
+const { GraphRunsEngine } = require('./graph/graph-runs');
 const graphRuns = new GraphRunsEngine({
   repoRoot,
   injectToTerminal: (termId, text) => {
@@ -166,7 +166,7 @@ async function permGate(res, type, value, label) {
 }
 
 // ── Learnings (collective intelligence) ──────────────────────────────────────
-const { mountLearnings } = require('./learnings');
+const { mountLearnings } = require('./learnings/learnings');
 let _learningsInstance = null;
 trace.mark('server:top-requires-done');
 
@@ -1219,11 +1219,11 @@ hybridSearch.initialize({ notesDir, learnings: _learningsInstance })
 
 // ── Mount browser agent ──────────────────────────────────────────────────────
 try {
-  const { mountBrowserRoutes } = require('./browser-agent');
+  const { mountBrowserRoutes } = require('./agents/browser/browser-agent');
   const browserAgentInstance = mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast });
   console.log('  Browser agent mounted (/api/browser/*)');
   try {
-    const { mountBrowserAgentChatRoutes } = require('./browser-agent-chat');
+    const { mountBrowserAgentChatRoutes } = require('./agents/browser/browser-agent-chat');
     mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent: browserAgentInstance, broadcast });
     console.log('  Browser agent chat mounted (/api/browser/agent/*)');
   } catch (e2) {
@@ -1235,7 +1235,7 @@ try {
 
 // ── Mount browser router (auto-picks between Stagehand and browser-use) ─────
 try {
-  const { mountBrowserRouterRoutes } = require('./browser-router');
+  const { mountBrowserRouterRoutes } = require('./agents/browser/browser-router');
   mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port: PORT });
   console.log('  Browser router mounted (/api/browser/router/*)');
 } catch (e) {
@@ -1244,7 +1244,7 @@ try {
 
 // ── Mount apps agent (desktop control) ──────────────────────────────────────
 try {
-  const { mountAppsRoutes } = require('./apps-agent');
+  const { mountAppsRoutes } = require('./agents/apps/apps-agent');
   mountAppsRoutes(addRoute, json, {
     getConfig,
     broadcast,

@@ -25,8 +25,8 @@ const path = require('path');
 const PROTOCOL_VERSION = '2025-11-25';
 const API_HOST = '127.0.0.1';
 const API_PORT = 3800;
-const REPO_ROOT = path.resolve(__dirname, '..');
-const PLUGINS_DIR = path.join(__dirname, 'plugins');
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const PLUGINS_DIR = path.join(__dirname, '..', 'plugins');
 const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'config.json');
 const TEMPLATE_PATH = path.join(REPO_ROOT, 'config', 'config.template.json');
 
