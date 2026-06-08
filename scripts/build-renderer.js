@@ -38,6 +38,13 @@ const PUB = path.join(ROOT, 'dashboard', 'public');
 // --- esbuild module bundles ---------------------------------------------------
 const ESBUILD_BUNDLES = [
   {
+    // Shared renderer helpers (window.escapeHtml, ...). Loaded before app.js so
+    // the still-flat parts resolve them as globals. Source: util/src/.
+    name: 'util',
+    entry: path.join(PUB, 'util', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'util.js'),
+  },
+  {
     name: 'mind-ui',
     entry: path.join(PUB, 'mind-ui', 'src', 'index.js'),
     outfile: path.join(PUB, 'mind-ui.js'),

@@ -49,6 +49,9 @@ test('no part is orphaned: every parts/*.js is listed in the manifest', () => {
 //   out:     built bundle served by index.html (relative to dashboard/public)
 //   exposes: globals it re-attaches to window for the still-flat app.js to call
 //   gone:    function names that must NO LONGER be defined inside app.js
+// `part` set => a leaf carved out of parts/ (must be gone from parts/ + manifest).
+// `part` omitted => a new shared module (e.g. util) that merely owns globals the
+// flat parts used to define; only the `gone`/`exposes`/wiring checks apply.
 const EXTRACTED = [
   {
     part: 'pinned-tabs.js', src: 'pinned-tabs/src/index.js', out: 'js/pinned-tabs.js',
@@ -58,18 +61,25 @@ const EXTRACTED = [
     part: 'local-model-prompt.js', src: 'local-model-prompt/src/index.js', out: 'js/local-model-prompt.js',
     exposes: ['symphEnsureLocalModel'], gone: ['symphEnsureLocalModel', '_symphModelModal'],
   },
+  {
+    name: 'util', src: 'util/src/index.js', out: 'js/util.js',
+    exposes: ['escapeHtml'], gone: ['escapeHtml'],
+  },
 ];
 
 for (const m of EXTRACTED) {
-  test(`${m.part} is extracted (not a part, sourced as a module, wired in index.html)`, () => {
-    assert.ok(!fs.existsSync(path.join(PARTS, m.part)), `parts/${m.part} should be deleted (moved to ${m.src})`);
-    assert.ok(!manifest().includes(m.part), `${m.part} must not be in the concat manifest`);
+  const label = m.part || m.name;
+  test(`${label} is a real ES module (sourced as a module, wired in index.html)`, () => {
+    if (m.part) {
+      assert.ok(!fs.existsSync(path.join(PARTS, m.part)), `parts/${m.part} should be deleted (moved to ${m.src})`);
+      assert.ok(!manifest().includes(m.part), `${m.part} must not be in the concat manifest`);
+    }
     assert.ok(fs.existsSync(path.join(PUB, m.src)), `module source missing at ${m.src}`);
     const indexHtml = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
     assert.ok(indexHtml.includes(`<script src="/${m.out}"></script>`), `index.html must load /${m.out}`);
   });
 
-  test(`app.js no longer defines functions extracted to ${m.part}`, () => {
+  test(`app.js no longer defines functions owned by ${label}`, () => {
     const app = fs.readFileSync(APP_JS, 'utf8');
     for (const fn of m.gone) {
       assert.doesNotMatch(app, new RegExp(`function ${fn}\\b`), `app.js still defines ${fn}`);

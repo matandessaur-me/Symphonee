@@ -24668,15 +24668,9 @@ async function removeMcp(nameEnc) {
     toast('Remove failed: ' + e.message, 'error');
   }
 }
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  })[c]);
-}// ═══ Notes search (uses /api/search) ════════════════════════════════════
+// escapeHtml now lives in the shared util module (window.escapeHtml, loaded
+// before app.js). This part -- and the five others that used it -- call it by
+// bare name, which resolves to the global.// ═══ Notes search (uses /api/search) ════════════════════════════════════
 state._notesSearchTimer = null;
 function onNotesSearchInput() {
   clearTimeout(state._notesSearchTimer);
