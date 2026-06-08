@@ -238,16 +238,16 @@ const baseOpts = {
 const CONCAT_BUNDLES = [
   {
     name: 'app',
-    partsDir: path.join(PUB, 'app', 'src', 'parts'),
+    shellDir: path.join(PUB, 'app', 'src', 'shell'),
     outfile: path.join(PUB, 'js', 'app.js'),
   },
 ];
 
 function buildConcat(b) {
-  const manifest = JSON.parse(fs.readFileSync(path.join(b.partsDir, 'manifest.json'), 'utf8'));
-  const out = manifest.map((p) => fs.readFileSync(path.join(b.partsDir, p), 'utf8')).join('');
+  const manifest = JSON.parse(fs.readFileSync(path.join(b.shellDir, 'manifest.json'), 'utf8'));
+  const out = manifest.map((p) => fs.readFileSync(path.join(b.shellDir, p), 'utf8')).join('');
   fs.writeFileSync(b.outfile, out);
-  console.log(`[build-renderer] ${b.name} (concat ${manifest.length} parts) -> ${path.relative(ROOT, b.outfile)}`);
+  console.log(`[build-renderer] ${b.name} (concat ${manifest.length} shell modules) -> ${path.relative(ROOT, b.outfile)}`);
 }
 
 async function buildOnce() {
@@ -265,7 +265,7 @@ async function watch() {
     console.log(`[build-renderer] watching ${b.name}`);
   }
   for (const b of CONCAT_BUNDLES) {
-    fs.watch(b.partsDir, { persistent: true }, () => { try { buildConcat(b); } catch (e) { console.error(e.message); } });
+    fs.watch(b.shellDir, { persistent: true }, () => { try { buildConcat(b); } catch (e) { console.error(e.message); } });
     buildConcat(b);
     console.log(`[build-renderer] watching ${b.name} parts`);
   }

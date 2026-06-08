@@ -1,7 +1,7 @@
 'use strict';
 // Renderer build-integrity guards.
 //
-// app.js is a GENERATED file (flat concatenation of parts/ per manifest.json).
+// app.js is a GENERATED file (flat concatenation of shell/ per manifest.json).
 // Nothing enforced that the committed app.js actually matched its source, so a
 // hand-edit or a forgotten rebuild could silently ship stale renderer code --
 // exactly the failure mode that makes "edit a part, nothing changes" bugs.
@@ -16,40 +16,40 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUB = path.join(ROOT, 'dashboard', 'public');
-const PARTS = path.join(PUB, 'app', 'src', 'parts');
+const SHELL = path.join(PUB, 'app', 'src', 'shell');
 const APP_JS = path.join(PUB, 'js', 'app.js');
 
-const manifest = () => JSON.parse(fs.readFileSync(path.join(PARTS, 'manifest.json'), 'utf8'));
+const manifest = () => JSON.parse(fs.readFileSync(path.join(SHELL, 'manifest.json'), 'utf8'));
 
 test('app.js is the byte-exact concatenation of the manifest parts (no drift)', () => {
-  const out = manifest().map(p => fs.readFileSync(path.join(PARTS, p), 'utf8')).join('');
+  const out = manifest().map(p => fs.readFileSync(path.join(SHELL, p), 'utf8')).join('');
   const committed = fs.readFileSync(APP_JS, 'utf8');
   assert.equal(out, committed,
-    'dashboard/public/js/app.js is out of sync with parts/. Run `node scripts/build-renderer.js`.');
+    'dashboard/public/js/app.js is out of sync with shell/. Run `node scripts/build-renderer.js`.');
 });
 
 test('every manifest entry exists as a part file', () => {
   for (const p of manifest()) {
-    assert.ok(fs.existsSync(path.join(PARTS, p)), `manifest references missing part: ${p}`);
+    assert.ok(fs.existsSync(path.join(SHELL, p)), `manifest references missing part: ${p}`);
   }
 });
 
-test('no part is orphaned: every parts/*.js is listed in the manifest', () => {
+test('no part is orphaned: every shell/*.js is listed in the manifest', () => {
   const inManifest = new Set(manifest());
-  for (const f of fs.readdirSync(PARTS).filter(f => f.endsWith('.js'))) {
+  for (const f of fs.readdirSync(SHELL).filter(f => f.endsWith('.js'))) {
     assert.ok(inManifest.has(f),
-      `parts/${f} exists but is not in manifest.json -- it would not be built into app.js`);
+      `shell/${f} exists but is not in manifest.json -- it would not be built into app.js`);
   }
 });
 
 // ── Extraction contract: each leaf carved off app.js is a real ES module ─────
 // One entry per slice off the flat app.js. Adding the next slice = add a row.
-//   part:    former parts/ filename (must be gone from parts/ and the manifest)
+//   part:    former shell/ filename (must be gone from shell/ and the manifest)
 //   src:     module source entry (relative to dashboard/public)
 //   out:     built bundle served by index.html (relative to dashboard/public)
 //   exposes: globals it re-attaches to window for the still-flat app.js to call
 //   gone:    function names that must NO LONGER be defined inside app.js
-// `part` set => a leaf carved out of parts/ (must be gone from parts/ + manifest).
+// `part` set => a leaf carved out of shell/ (must be gone from shell/ + manifest).
 // `part` omitted => a new shared module (e.g. util) that merely owns globals the
 // flat parts used to define; only the `gone`/`exposes`/wiring checks apply.
 const EXTRACTED = [
@@ -229,7 +229,7 @@ for (const m of EXTRACTED) {
   const label = m.part || m.name;
   test(`${label} is a real ES module (sourced as a module, wired in index.html)`, () => {
     if (m.part) {
-      assert.ok(!fs.existsSync(path.join(PARTS, m.part)), `parts/${m.part} should be deleted (moved to ${m.src})`);
+      assert.ok(!fs.existsSync(path.join(SHELL, m.part)), `shell/${m.part} should be deleted (moved to ${m.src})`);
       assert.ok(!manifest().includes(m.part), `${m.part} must not be in the concat manifest`);
     }
     assert.ok(fs.existsSync(path.join(PUB, m.src)), `module source missing at ${m.src}`);
