@@ -329,12 +329,12 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
       let host = null;
       try {
         const url = body && (body.url || body.targetUrl);
-        if (url) host = require('./site-recipes').normalizeHost(url);
+        if (url) host = require('../../site-recipes').normalizeHost(url);
       } catch (_) {}
       if (goal) {
-        const mindStore = require('./mind/store');
-        const mindQuery = require('./mind/query');
-        const repoRoot = require('path').resolve(__dirname, '..');
+        const mindStore = require('../../mind/store');
+        const mindQuery = require('../../mind/query');
+        const repoRoot = require('path').resolve(__dirname, '..', '..', '..');
         const graph = mindStore.loadGraph(repoRoot, '_global');
         if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
           const r = mindQuery.runQuery(graph, { question: host ? `${host}: ${goal}` : goal, budget: 1200 });

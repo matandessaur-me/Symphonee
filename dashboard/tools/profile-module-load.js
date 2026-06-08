@@ -51,9 +51,9 @@ const MODULES = [
   './mind',
   './brain/sequences',
   './brain',
-  './browser-agent',
-  './browser-agent-chat',
-  './browser-router',
+  './agents/browser/browser-agent',
+  './agents/browser/browser-agent-chat',
+  './agents/browser/browser-router',
   './apps-agent',
 ];
 

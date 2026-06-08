@@ -1219,11 +1219,11 @@ hybridSearch.initialize({ notesDir, learnings: _learningsInstance })
 
 // ── Mount browser agent ──────────────────────────────────────────────────────
 try {
-  const { mountBrowserRoutes } = require('./browser-agent');
+  const { mountBrowserRoutes } = require('./agents/browser/browser-agent');
   const browserAgentInstance = mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast });
   console.log('  Browser agent mounted (/api/browser/*)');
   try {
-    const { mountBrowserAgentChatRoutes } = require('./browser-agent-chat');
+    const { mountBrowserAgentChatRoutes } = require('./agents/browser/browser-agent-chat');
     mountBrowserAgentChatRoutes(addRoute, json, { getConfig, agent: browserAgentInstance, broadcast });
     console.log('  Browser agent chat mounted (/api/browser/agent/*)');
   } catch (e2) {
@@ -1235,7 +1235,7 @@ try {
 
 // ── Mount browser router (auto-picks between Stagehand and browser-use) ─────
 try {
-  const { mountBrowserRouterRoutes } = require('./browser-router');
+  const { mountBrowserRouterRoutes } = require('./agents/browser/browser-router');
   mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port: PORT });
   console.log('  Browser router mounted (/api/browser/router/*)');
 } catch (e) {

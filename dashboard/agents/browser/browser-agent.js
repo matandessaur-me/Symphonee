@@ -63,10 +63,10 @@ function decrypt(data) {
   return decrypted;
 }
 
-const BROWSER_DOM_HELPERS = require('./lib/browser-dom-helpers');
+const BROWSER_DOM_HELPERS = require('../../lib/browser-dom-helpers');
 
 // ── Playwright driver (fallback when not in Electron) ──────────────────────
-const watchdogsModule = require('./lib/browser-watchdogs');
+const watchdogsModule = require('../../lib/browser-watchdogs');
 function makePlaywrightDriver() {
   let browser = null;
   let context = null;
