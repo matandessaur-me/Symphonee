@@ -12,7 +12,7 @@
     "build:renderer": "node scripts/build-renderer.js",
     "watch:renderer": "node scripts/build-renderer.js --watch",
     "test": "npm run test:renderer",
-    "test:renderer": "node --test scripts/build-renderer.test.js scripts/served-assets.test.js dashboard/public/util/util.test.js dashboard/public/pinned-tabs/pinned-tabs.test.js dashboard/public/local-model-prompt/local-model-prompt.test.js dashboard/public/mcp/mcp.test.js dashboard/public/notes-search/notes-search.test.js dashboard/public/permissions/permissions.test.js dashboard/public/activity-timeline/activity-timeline.test.js dashboard/public/activity-ledger/activity-ledger.test.js dashboard/public/browser-credentials/browser-credentials.test.js dashboard/public/plugin-registry/plugin-registry.test.js"
+    "test:renderer": "node --test scripts/build-renderer.test.js scripts/served-assets.test.js dashboard/public/util/util.test.js dashboard/public/pinned-tabs/pinned-tabs.test.js dashboard/public/local-model-prompt/local-model-prompt.test.js dashboard/public/mcp/mcp.test.js dashboard/public/notes-search/notes-search.test.js dashboard/public/permissions/permissions.test.js dashboard/public/activity-timeline/activity-timeline.test.js dashboard/public/activity-ledger/activity-ledger.test.js dashboard/public/browser-credentials/browser-credentials.test.js dashboard/public/plugin-registry/plugin-registry.test.js dashboard/public/themes/themes.test.js"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.2.1",

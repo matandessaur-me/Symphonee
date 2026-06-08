@@ -1,3 +1,15 @@
+// themes -- the theme system: built-in + custom themes, the theme editor, and
+// startup theme restore. esbuild IIFE; the helpers (_hexToHsl, generateThemeVars,
+// getSavedThemes, _loadThemesFromServer, _initEditorPickers, ...) stay private.
+//
+// Reads the shared `state` at top level AND restores the active theme at load,
+// so its <script> loads AFTER app.js. It OWNS three values other parts read at
+// runtime -- BUILTIN_THEMES (onboarding), ALL_CSS_KEYS (settings), and
+// ACTIVE_THEME_KEY (onboarding) -- which are re-exposed on `window` below.
+// Runtime deps resolve via window: state, esc (onboarding), toast, and
+// TERM_THEMES (the terminal colour schemes, owned by terminals.js which exposes
+// it on window). See ARCHITECTURE.md.
+//
 // ── Theme System ──────────────────────────────────────────────────────────
 const THEME_STORAGE_KEY = 'symphonee-themes';
 const ACTIVE_THEME_KEY = 'symphonee-active-theme';
@@ -603,3 +615,27 @@ function restoreCustomTheme() {
 }
 // Load themes from server, then restore the active theme
 _loadThemesFromServer().then(() => restoreCustomTheme()).catch(() => restoreCustomTheme());
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Functions reached from index.html, settings.js (renderThemeList /
+// restoreCustomTheme), onboarding.js (applyBuiltinTheme), and the theme-list's
+// generated onclick (applyCustomTheme / editThemeInEditor / deleteTheme).
+window.renderThemeList = renderThemeList;
+window._setThemeMode = _setThemeMode;
+window._onSimpleThemeChange = _onSimpleThemeChange;
+window._onAdvancedThemeChange = _onAdvancedThemeChange;
+window._onAdvancedHeaderChange = _onAdvancedHeaderChange;
+window._onAdvancedTermChange = _onAdvancedTermChange;
+window.toggleThemeEditor = toggleThemeEditor;
+window.saveCustomThemeFromEditor = saveCustomThemeFromEditor;
+window.exportThemes = exportThemes;
+window.importThemes = importThemes;
+window.applyBuiltinTheme = applyBuiltinTheme;
+window.applyCustomTheme = applyCustomTheme;
+window.editThemeInEditor = editThemeInEditor;
+window.deleteTheme = deleteTheme;
+window.restoreCustomTheme = restoreCustomTheme;
+// Shared constants other parts read at runtime (onboarding / settings).
+window.BUILTIN_THEMES = BUILTIN_THEMES;
+window.ALL_CSS_KEYS = ALL_CSS_KEYS;
+window.ACTIVE_THEME_KEY = ACTIVE_THEME_KEY;
