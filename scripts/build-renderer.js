@@ -38,9 +38,52 @@ const PUB = path.join(ROOT, 'dashboard', 'public');
 // --- esbuild module bundles ---------------------------------------------------
 const ESBUILD_BUNDLES = [
   {
+    // Shared renderer helpers (window.escapeHtml, ...). Loaded before app.js so
+    // the still-flat parts resolve them as globals. Source: util/src/.
+    name: 'util',
+    entry: path.join(PUB, 'util', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'util.js'),
+  },
+  {
     name: 'mind-ui',
     entry: path.join(PUB, 'mind-ui', 'src', 'index.js'),
     outfile: path.join(PUB, 'mind-ui.js'),
+  },
+  {
+    // First real ES-module slice carved off the flat app.js. Source:
+    // dashboard/public/pinned-tabs/src/. Bundled IIFE keeps everything private
+    // except the two functions it re-exposes on window (see that file's footer).
+    name: 'pinned-tabs',
+    entry: path.join(PUB, 'pinned-tabs', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'pinned-tabs.js'),
+  },
+  {
+    // Second ES-module slice. Source: dashboard/public/local-model-prompt/src/.
+    // Exposes only window.symphEnsureLocalModel (called by apps.js).
+    name: 'local-model-prompt',
+    entry: path.join(PUB, 'local-model-prompt', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'local-model-prompt.js'),
+  },
+  {
+    // Third extracted leaf. Source: dashboard/public/mcp/src/. Depends on the
+    // shared util (window.escapeHtml) so it must load after js/util.js.
+    name: 'mcp',
+    entry: path.join(PUB, 'mcp', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'mcp.js'),
+  },
+  {
+    // Fourth extracted leaf. Source: dashboard/public/notes-search/src/. Reads
+    // the shared `state` at top level, so its <script> loads AFTER app.js.
+    name: 'notes-search',
+    entry: path.join(PUB, 'notes-search', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'notes-search.js'),
+  },
+  {
+    // Fifth extracted leaf. Source: dashboard/public/permissions/src/. Reads the
+    // shared `state` at top level + registers a poller, so it loads AFTER app.js.
+    name: 'permissions',
+    entry: path.join(PUB, 'permissions', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'permissions.js'),
   },
 ];
 

@@ -118,6 +118,15 @@ const ROUTES = {
   '/':                        { file: path.join(publicDir, 'index.html'),                                          type: 'text/html' },
   '/styles/app.css':          { file: path.join(publicDir, 'styles', 'app.css'),                                   type: 'text/css' },
   '/js/app.js':               { file: path.join(publicDir, 'js', 'app.js'),                                        type: 'application/javascript' },
+  // Extracted renderer ES-module bundles (built by scripts/build-renderer.js).
+  // The server allow-lists static files, so every bundle index.html loads MUST
+  // be registered here or it 404s and its window.* exports never define.
+  '/js/util.js':              { file: path.join(publicDir, 'js', 'util.js'),                                       type: 'application/javascript' },
+  '/js/pinned-tabs.js':       { file: path.join(publicDir, 'js', 'pinned-tabs.js'),                                type: 'application/javascript' },
+  '/js/local-model-prompt.js':{ file: path.join(publicDir, 'js', 'local-model-prompt.js'),                         type: 'application/javascript' },
+  '/js/mcp.js':               { file: path.join(publicDir, 'js', 'mcp.js'),                                        type: 'application/javascript' },
+  '/js/notes-search.js':      { file: path.join(publicDir, 'js', 'notes-search.js'),                               type: 'application/javascript' },
+  '/js/permissions.js':       { file: path.join(publicDir, 'js', 'permissions.js'),                                type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },

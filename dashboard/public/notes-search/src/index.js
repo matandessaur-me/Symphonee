@@ -1,3 +1,15 @@
+// notes-search -- notes-tab search box + the in-note Ctrl+F find bar/overlay.
+//
+// Fourth extracted leaf. esbuild IIFE; the internal helpers (runNotesSearch,
+// noteFindHighlight, paintNoteHighlights) stay private. The eight functions
+// reached from outside -- seven from index.html handlers plus openNoteFind
+// (keyboard.js hotkey + notes.js) -- are re-exposed on `window` at the bottom.
+//
+// IMPORTANT: this module reads/writes the shared `state` object at top level,
+// so it must load AFTER app.js (which declares the global `var state`). Its
+// other runtime deps resolve as globals: window.escapeHtml (util module),
+// setNoteMode / currentNotesNs / openNote / toast (flat app.js).
+//
 // ═══ Notes search (uses /api/search) ════════════════════════════════════
 state._notesSearchTimer = null;
 function onNotesSearchInput() {
@@ -258,3 +270,16 @@ const RE_SNIPPETS = [{
   desc: 'Launch a multi-step durable workflow from a JSON definition',
   text: 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "./scripts/Start-GraphRun.ps1" -File ".ai-workspace/my-graph.json"'
 }];
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Seven are bound from index.html handlers; openNoteFind is called by the
+// Ctrl+F hotkey (keyboard.js) and notes.js. Inline handlers and the other flat
+// parts resolve these against the global, so expose them on window.
+window.onNotesSearchInput = onNotesSearchInput;
+window.openNoteFind = openNoteFind;
+window.closeNoteFind = closeNoteFind;
+window.updateNoteFindMatches = updateNoteFindMatches;
+window.noteFindStep = noteFindStep;
+window.syncNoteHighlightScroll = syncNoteHighlightScroll;
+window.updateNoteHighlightsLive = updateNoteHighlightsLive;
+window.onNoteFindKeydown = onNoteFindKeydown;

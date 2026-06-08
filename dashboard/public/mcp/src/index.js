@@ -1,3 +1,12 @@
+// mcp -- MCP client settings UI (server list, add/enable/refresh/remove).
+//
+// Third extracted leaf (after the util slice freed escapeHtml, which mcp used
+// to own and provide to other parts). esbuild IIFE; renderMcpServerCard stays
+// private. The five functions reached from onclick -- the static Refresh/Add
+// buttons and the per-card Enable/Refresh/Remove buttons -- are re-exposed on
+// `window` at the bottom. Runtime deps resolve as globals: window.escapeHtml
+// (util module, loaded first) and toast (a flat-app.js global).
+//
 // ═══ MCP client UI ═════════════════════════════════════════════════════════
 async function refreshMcpServers() {
   const host = document.getElementById('mcpServersList');
@@ -117,12 +126,14 @@ async function removeMcp(nameEnc) {
     toast('Remove failed: ' + e.message, 'error');
   }
 }
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  })[c]);
-}
+// escapeHtml lives in the shared util module (window.escapeHtml); called by
+// bare name above, it resolves to the global.
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Reached from onclick (static Refresh/Add + per-card Enable/Refresh/Remove);
+// inline handlers resolve against the global, so expose them on window.
+window.refreshMcpServers = refreshMcpServers;
+window.addMcpServer = addMcpServer;
+window.toggleMcp = toggleMcp;
+window.refreshMcp = refreshMcp;
+window.removeMcp = removeMcp;
