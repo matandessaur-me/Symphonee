@@ -16,4 +16,4 @@
  *
  * Requires the Symphonee app to be running (listening on 127.0.0.1:3800).
  */
-require('../dashboard/mcp-server');
+require('../dashboard/mcp/mcp-server');

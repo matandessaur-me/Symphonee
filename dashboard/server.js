@@ -141,7 +141,7 @@ let loadedPlugins = [];
 // ── Orchestrator (cross-AI communication bus) ────────────────────────────────
 const { mountOrchestrator, pretrustFolderForCli } = require('./orchestrator');
 const permissions = require('./permissions');
-const { MCPClientManager } = require('./mcp-client');
+const { MCPClientManager } = require('./mcp/mcp-client');
 const mcpClient = new MCPClientManager({ configPath });
 mcpClient.bootstrap().catch(e => console.warn('  [mcp-client] bootstrap error:', e.message));
 const { GraphRunsEngine } = require('./graph/graph-runs');
