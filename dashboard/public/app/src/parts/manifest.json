@@ -1,7 +1,6 @@
 [
   "state.js",
   "terminals.js",
-  "notifications.js",
   "app-state.js",
   "files.js",
   "git.js",

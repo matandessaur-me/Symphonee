@@ -115,6 +115,16 @@ const EXTRACTED = [
       'BUILTIN_THEMES', 'ALL_CSS_KEYS', 'ACTIVE_THEME_KEY'],
     gone: ['generateThemeVars', 'getSavedThemes', '_loadThemesFromServer'],
   },
+  {
+    part: 'notifications.js', src: 'notifications/src/index.js', out: 'js/notifications.js',
+    exposes: ['notify', 'openActivityStats', '_notifToggleSound', 'playNotifSound',
+      '_showPaletteDispatchToast', '_schedulePaletteDispatchToast', '_clearPaletteDispatchToast',
+      'notifClearAll', '_focusInlineReply', '_inlineReplySend', 'renderReplyChip', 'toggleNotifPanel',
+      '_cancelFollowup',
+      // shared task-tracking Set mutated by command-palette + orchestrator:
+      '_paletteNotifyTasks'],
+    gone: ['_loadNotifs', 'renderNotifBadge'],
+  },
 ];
 
 for (const m of EXTRACTED) {

@@ -117,6 +117,14 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'themes', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'themes.js'),
   },
+  {
+    // Owns `notify` + `_paletteNotifyTasks` (re-exposed on window); consumes
+    // CLI_CONFIG (terminals). Registers global listeners + reads state at load
+    // -> after app.js.
+    name: 'notifications',
+    entry: path.join(PUB, 'notifications', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'notifications.js'),
+  },
 ];
 
 const banner = {
