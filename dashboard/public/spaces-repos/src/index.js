@@ -1,4 +1,11 @@
-// ── Spaces (non-git workspaces) ─────────────────────────────────────────
+// spaces-repos -- spaces (non-git workspaces) + repo management: the space
+// switcher/dialogs, the repo sidebar list, selectRepo (core: many parts/modules
+// call it), per-repo git-status polling, and the manage-space dialog. esbuild
+// IIFE; the switcher/popover/polling helpers and openAddSpaceDialog's local
+// wizard handlers stay private. Registers global click/DOMContentLoaded
+// listeners + starts git-status polling at load + reads `state`, so it loads
+// AFTER app.js. OWNS CORE_SPACE_PLUGIN_IDS (used by plugins.js) -> re-exposed on
+// window. esc/toast/switchTab/loadFileTree/... resolve via window. See ARCHITECTURE.md.
 const CORE_SPACE_PLUGIN_IDS = new Set(['browser-use', 'video-use', 'stagehand']);
 function isCoreSpacePluginId(id) {
   return CORE_SPACE_PLUGIN_IDS.has(id);
@@ -1128,3 +1135,23 @@ async function selectSpace(name) {
     space: state.activeSpace || null
   });
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Reached from parts, index.html, the extracted modules (selectRepo/selectSpace/
+// openEditSpaceDialog/_repoNamesForSpace), and generated onclick. The space
+// switcher/popover/polling helpers stay private (openAddSpaceDialog's _aso*
+// wizard handlers are local to it). CORE_SPACE_PLUGIN_IDS is used by plugins.js.
+window.isCoreSpacePluginId = isCoreSpacePluginId;
+window.openAddSpaceDialog = openAddSpaceDialog;
+window.openEditSpaceDialog = openEditSpaceDialog;
+window.deleteSpace = deleteSpace;
+window.renderSettingsSpaces = renderSettingsSpaces;
+window._repoNamesForSpace = _repoNamesForSpace;
+window.loadRepoList = loadRepoList;
+window.loadGitStatusForDiffTab = loadGitStatusForDiffTab;
+window.selectRepo = selectRepo;
+window.selectSpace = selectSpace;
+window._msSwitchTab = _msSwitchTab;
+window._saveManageSpace = _saveManageSpace;
+window.applyPluginSpaceFilter = applyPluginSpaceFilter;
+window.CORE_SPACE_PLUGIN_IDS = CORE_SPACE_PLUGIN_IDS;

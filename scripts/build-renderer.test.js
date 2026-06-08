@@ -133,6 +133,15 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'spaces-repos.js', src: 'spaces-repos/src/index.js', out: 'js/spaces-repos.js',
+    exposes: ['isCoreSpacePluginId', 'openAddSpaceDialog', 'openEditSpaceDialog', 'deleteSpace',
+      'renderSettingsSpaces', '_repoNamesForSpace', 'loadRepoList', 'loadGitStatusForDiffTab',
+      'selectRepo', 'selectSpace', '_msSwitchTab', '_saveManageSpace', 'applyPluginSpaceFilter',
+      // shared Set used by plugins.js:
+      'CORE_SPACE_PLUGIN_IDS'],
+    gone: ['_refreshSpaceSwitcher', 'startGitStatusPolling', 'openManageSpaceDialog'],
+  },
+  {
     part: 'notes.js', src: 'notes/src/index.js', out: 'js/notes.js',
     exposes: ['loadNotesList', 'openNote', 'setNoteMode', 'saveCurrentNote', 'confirmCreateNote',
       'sendNoteToAi', 'exportCurrentNote', 'importNotesFromFile', 'customConfirm', 'customPrompt',

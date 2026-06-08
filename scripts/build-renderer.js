@@ -152,6 +152,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'notes', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'notes.js'),
   },
+  {
+    // Spaces + repo management (selectRepo is core). Global listeners + git-status
+    // polling + reads `state` at load -> after app.js. Owns CORE_SPACE_PLUGIN_IDS.
+    name: 'spaces-repos',
+    entry: path.join(PUB, 'spaces-repos', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'spaces-repos.js'),
+  },
 ];
 
 const banner = {
