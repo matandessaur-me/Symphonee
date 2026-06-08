@@ -4,7 +4,6 @@
   "app-state.js",
   "files.js",
   "git.js",
-  "pull-requests.js",
   "notes.js",
   "orchestrator.js",
   "startup.js",

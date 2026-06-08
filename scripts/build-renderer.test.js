@@ -125,6 +125,13 @@ const EXTRACTED = [
       '_paletteNotifyTasks'],
     gone: ['_loadNotifs', 'renderNotifBadge'],
   },
+  {
+    part: 'pull-requests.js', src: 'pull-requests/src/index.js', out: 'js/pull-requests.js',
+    exposes: ['populatePRsRepoSelect', 'loadPRs', 'viewPR', 'selectPRFile', 'openPRCommentModal',
+      'closePRCommentModal', 'submitPRCommentModal', 'addPRComment', 'submitPRReview',
+      'openRequestChangesModal', 'closeRequestChangesModal', 'submitRequestChanges'],
+    gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
+  },
 ];
 
 for (const m of EXTRACTED) {

@@ -125,6 +125,12 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'notifications', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'notifications.js'),
   },
+  {
+    // Provider-driven PR tab. Reads `state` at top level -> after app.js.
+    name: 'pull-requests',
+    entry: path.join(PUB, 'pull-requests', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'pull-requests.js'),
+  },
 ];
 
 const banner = {
