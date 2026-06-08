@@ -5,11 +5,8 @@
   "orchestrator.js",
   "startup.js",
   "tabs-panels.js",
-  "browser.js",
   "apps.js",
   "apps-step-builder.js",
-  "browser-tools.js",
-  "browser-views.js",
   "onboarding.js",
   "keyboard.js"
 ]
