@@ -138,6 +138,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'git', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'git.js'),
   },
+  {
+    // Files tab: tree/search/Monaco/diff/git-log/pickers + the shared
+    // renderInlineDiff (used by pull-requests). Reads `state` at top level -> after app.js.
+    name: 'files',
+    entry: path.join(PUB, 'files', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'files.js'),
+  },
 ];
 
 const banner = {
