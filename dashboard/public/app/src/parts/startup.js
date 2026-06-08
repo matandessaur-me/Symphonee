@@ -64,7 +64,13 @@ try {
 connect();
 // Initial orchestrator refresh so tasks show immediately on page load
 setTimeout(() => orchRefresh(), 1000);
-(async () => {
+// loadConfig + plugin reconcile (refreshPluginActivation/reconcilePluginShell-
+// Surfaces) now live in post-app.js ES modules (work-items, plugins), so this
+// boot sequence must run AFTER those <script>s execute. They all load before
+// DOMContentLoaded fires, so defer the boot to it. (Running it inline during
+// app.js -- as before extraction -- now throws "loadConfig is not defined",
+// leaving state.configData empty: no repos in the PR tab, empty backlog/areas.)
+document.addEventListener('DOMContentLoaded', async () => {
   console.info('[startup] loadConfig start');
   await loadConfig();
   console.info('[startup] loadConfig done; configData has Org?', !!state.configData.AzureDevOpsOrg, 'PAT?', !!state.configData.AzureDevOpsPAT);
@@ -161,7 +167,7 @@ setTimeout(() => orchRefresh(), 1000);
       } catch (_) {}
     }
   } catch (_) {}
-})();
+});
 
 // ── Per-Shell AI Controls ──────────────────────────────────────────────
 

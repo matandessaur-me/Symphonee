@@ -908,7 +908,7 @@ function switchFilesTab(tab) {
   document.querySelectorAll('.files-stab').forEach(el => el.classList.toggle('active', el.dataset.fstab === tab));
   document.querySelectorAll('.files-stab-panel').forEach(el => el.classList.toggle('active', el.id === `fstab-${tab}`));
   if (tab === 'git' && state.filesCurrentRepo) loadGitPanel();
-  if (tab === 'log' && state.filesCurrentRepo) loadGitLog();
+  if (tab === 'log' && state.filesCurrentRepo) loadGitLogPanel(); // was loadGitLog() -- a non-existent fn (pre-existing typo found by the cross-module audit)
 }
 async function loadGitPanel() {
   if (!state.filesCurrentRepo) return;

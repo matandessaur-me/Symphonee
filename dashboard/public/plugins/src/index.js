@@ -1,3 +1,12 @@
+// plugins -- the plugin host/shell surface: registering plugin tabs/sidebar/AI
+// actions, pinned-tab + intel-panel injection, popup tabs, plugin activation,
+// and the plugin settings UI. (Source dir is public/plugins/, distinct from the
+// dashboard/plugins/ install dir.) esbuild IIFE; internal helpers stay private.
+// Registers global listeners + a tab-bar scroll-arrow IIFE + reads `state` at
+// load, so it loads AFTER app.js. Consumes CORE_SPACE_PLUGIN_IDS (spaces-repos)
+// and getSavedTabOrderOverrides/_placeTabAtEnd (pinned-tabs), all on window.
+// Provides _syncPluginToggleVisual/_populatePluginSettingOptions (used by the
+// browser-credentials module). esc/toast/... resolve via window. See ARCHITECTURE.md.
 // ── Plugin System ──────────────────────────────────────────────────────────
 
 // Notify all plugin iframes of an event
@@ -1385,3 +1394,30 @@ function toggleSecretField(fieldId, btn) {
     btn.style.color = 'var(--subtext0)';
   }
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// The plugin shell API (tab/sidebar/AI-action registration, pinned-tab + intel
+// injection, popup tabs, activation, settings UI). Reached from parts, the
+// browser-credentials module (_syncPluginToggleVisual/_populatePluginSettingOptions),
+// index.html, and generated onclick. Internal helpers stay private.
+window.notifyPluginIframes = notifyPluginIframes;
+window.injectSidebarAction = injectSidebarAction;
+window.injectAiAction = injectAiAction;
+window.runPluginAiAction = runPluginAiAction;
+window.registerPluginTab = registerPluginTab;
+window.scrollTabs = scrollTabs;
+window.reconcilePluginShellSurfaces = reconcilePluginShellSurfaces;
+window.applyPluginPinnedTabs = applyPluginPinnedTabs;
+window.openPopupTab = openPopupTab;
+window.closePopupTab = closePopupTab;
+window.injectPinnedCenterTab = injectPinnedCenterTab;
+window.openPluginTab = openPluginTab;
+window.ensurePluginTabOpen = ensurePluginTabOpen;
+window.toggleOpenTabMenu = toggleOpenTabMenu;
+window.injectIntelPanel = injectIntelPanel;
+window.toggleIntelReopenMenu = toggleIntelReopenMenu;
+window.refreshPluginActivation = refreshPluginActivation;
+window._syncPluginToggleVisual = _syncPluginToggleVisual;
+window._populatePluginSettingOptions = _populatePluginSettingOptions;
+window.switchPluginSettingsTab = switchPluginSettingsTab;
+window.toggleSecretField = toggleSecretField;

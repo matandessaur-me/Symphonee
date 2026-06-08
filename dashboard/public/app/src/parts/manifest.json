@@ -12,6 +12,5 @@
   "browser-views.js",
   "settings.js",
   "onboarding.js",
-  "keyboard.js",
-  "plugins.js"
+  "keyboard.js"
 ]

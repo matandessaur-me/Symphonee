@@ -174,6 +174,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'command-palette', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'command-palette.js'),
   },
+  {
+    // Plugin host/shell surface. Source public/plugins/ (distinct from the
+    // dashboard/plugins/ install dir). Reads `state` + listeners at load -> after app.js.
+    name: 'plugins',
+    entry: path.join(PUB, 'plugins', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'plugins.js'),
+  },
 ];
 
 const banner = {
