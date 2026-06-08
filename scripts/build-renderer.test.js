@@ -133,6 +133,14 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'notes.js', src: 'notes/src/index.js', out: 'js/notes.js',
+    exposes: ['loadNotesList', 'openNote', 'setNoteMode', 'saveCurrentNote', 'confirmCreateNote',
+      'sendNoteToAi', 'exportCurrentNote', 'importNotesFromFile', 'customConfirm', 'customPrompt',
+      'closeConfirm', 'closePrompt', 'showNoteContextMenu', 'showFileTreeContextMenu',
+      'deleteNoteFromContext', 'renameNoteFromContext', 'duplicateNoteFromContext'],
+    gone: ['deleteNote', 'revealPath', '_insertNoteMention'],
+  },
+  {
     part: 'files.js', src: 'files/src/index.js', out: 'js/files.js',
     exposes: ['populateFilesRepoSelect', 'loadFileTree', 'viewFile', 'toggleFilesEdit', 'loadMonaco',
       'viewCommitDiff', 'selectDiffFile', 'renderInlineDiff', 'closeDiffView', 'viewChangedFile',

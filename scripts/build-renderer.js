@@ -145,6 +145,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'files', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'files.js'),
   },
+  {
+    // Notes tab + shared customConfirm/customPrompt dialogs + context menus.
+    // Global listeners + reads `state` at top level -> after app.js.
+    name: 'notes',
+    entry: path.join(PUB, 'notes', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'notes.js'),
+  },
 ];
 
 const banner = {
