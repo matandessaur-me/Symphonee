@@ -16,22 +16,8 @@ const crypto = require('crypto');
 // ── Categories ──────────────────────────────────────────────────────────────
 const CATEGORIES = ['cli-flags', 'shell', 'platform', 'orchestration', 'api-pattern', 'general'];
 
-// ── Sanitization patterns (strip before sharing) ────────────────────────────
-const SANITIZE_PATTERNS = [
-  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,                // emails
-  /\b(ghp_|bpk-|sk-|xai-|gsk_|pat-|token-)[A-Za-z0-9_-]+/g,             // API keys/tokens
-  /\b(https?:\/\/(?!127\.0\.0\.1:3800)[^\s"'`]+)/g,                       // external URLs (keep localhost API)
-  /[A-Z]:\\[^\s"'`]+/g,                                                    // Windows absolute paths
-  /\/(?:home|Users|mnt)\/[^\s"'`]+/g,                                     // Unix home paths
-  /\b(?:password|secret|credential|passwd)\s*[:=]\s*\S+/gi,               // inline secrets
-];
-
-// Words that indicate company/project-specific content
-const COMPANY_INDICATORS = [
-  /\b(bathfitter|bath fitter|ontheweb|webcity|aleoresto)\b/gi,
-  /\b(client|customer|our company|our team|our project)\b/gi,
-  /\b(internal|proprietary|confidential)\b/gi,
-];
+// Redaction rules live in their own module so they can be unit-tested directly.
+const { sanitize, isSuspicious } = require('./learnings-sanitize');
 
 class Learnings {
   /**
@@ -317,27 +303,14 @@ class Learnings {
     } catch (_) {}
   }
 
-  /** Strip sensitive data from text */
+  /** Strip sensitive data from text (delegates to learnings-sanitize) */
   _sanitize(text) {
-    let clean = text;
-    for (const pattern of SANITIZE_PATTERNS) {
-      clean = clean.replace(pattern, '[REDACTED]');
-    }
-    // Remove runs of redacted markers
-    clean = clean.replace(/(\[REDACTED\]\s*){2,}/g, '[REDACTED] ');
-    return clean.trim();
+    return sanitize(text);
   }
 
-  /** Extra paranoia check before pushing to shared */
+  /** Extra paranoia check before pushing to shared (delegates to learnings-sanitize) */
   _isSuspicious(text) {
-    const lower = text.toLowerCase();
-    // Reject if it still contains potential secrets after sanitization
-    if (/\[REDACTED\]/.test(text)) return true;
-    // Reject if it mentions specific companies/projects
-    for (const pattern of COMPANY_INDICATORS) {
-      if (pattern.test(lower)) { pattern.lastIndex = 0; return true; }
-    }
-    return false;
+    return isSuspicious(text);
   }
 
   /** Fetch learnings.json from the shared registry repo (public, no PAT needed) */
