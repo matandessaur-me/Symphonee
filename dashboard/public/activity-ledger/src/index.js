@@ -1,3 +1,9 @@
+// activity-ledger -- the History tab (action ledger + git checkpoints, undo).
+// esbuild IIFE; the _ledger* helpers and render functions stay private. Reads
+// the shared `state` at top level, so it loads AFTER app.js. Globals resolve via
+// window: state, toast, switchTab, lucide. Has its own _ledgerEsc (no escapeHtml
+// dependency). See ARCHITECTURE.md for the extraction pattern.
+//
 // ── Activity Ledger ─────────────────────────────────────────────────────────
 // First-class, cross-CLI action history (NOT the Azure DevOps "Activity
 // Timeline", which is plugin-gated). Shows every action that flowed through the
@@ -171,3 +177,14 @@ function ledgerOnActionPatch(id, fields) {
   const panel = document.getElementById('panel-ledger');
   if (panel && panel.classList.contains('active')) ledgerRender();
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// open/load/filter/checkpoint are bound from index.html; ledgerUndo from the
+// generated checkpoint-row onclick; ledgerOnAction/Patch from terminals.js.
+window.openHistory = openHistory;
+window.ledgerLoad = ledgerLoad;
+window.ledgerSetFilter = ledgerSetFilter;
+window.ledgerCheckpointNow = ledgerCheckpointNow;
+window.ledgerUndo = ledgerUndo;
+window.ledgerOnAction = ledgerOnAction;
+window.ledgerOnActionPatch = ledgerOnActionPatch;

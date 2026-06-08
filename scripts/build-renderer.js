@@ -85,6 +85,18 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'permissions', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'permissions.js'),
   },
+  {
+    // Reads the shared `state` at top level -> its <script> loads AFTER app.js.
+    name: 'activity-timeline',
+    entry: path.join(PUB, 'activity-timeline', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'activity-timeline.js'),
+  },
+  {
+    // Reads the shared `state` at top level -> its <script> loads AFTER app.js.
+    name: 'activity-ledger',
+    entry: path.join(PUB, 'activity-ledger', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'activity-ledger.js'),
+  },
 ];
 
 const banner = {
