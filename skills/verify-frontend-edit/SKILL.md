@@ -1,7 +1,7 @@
 ---
 name: Verify a frontend edit
-description: How to safely edit and validate Symphonee's dashboard renderer. The served js/app.js and mind-ui.js are GENERATED build outputs -- edit the source under dashboard/public/app/src/parts/ or mind-ui/src/, rebuild, then validate.
-when: editing the dashboard renderer (app/src/parts/*.js, mind-ui/src/*.js, dashboard/public/index.html, or styles/app.css)
+description: How to safely edit and validate Symphonee's dashboard renderer. The served js/app.js and mind-ui.js are GENERATED build outputs -- edit the source under dashboard/public/app/src/shell/ or mind-ui/src/, rebuild, then validate.
+when: editing the dashboard renderer (app/src/shell/*.js, mind-ui/src/*.js, dashboard/public/index.html, or styles/app.css)
 tags: frontend, verification, quality, build
 ---
 
@@ -15,21 +15,21 @@ generated -- never hand-edit them; your change is wiped on the next build.
   blocks (localStorage migration, theme pre-apply, panel-state, boot overlay). The
   main logic is NOT inline anymore.
 - `dashboard/public/styles/app.css` -- all styles.
-- `dashboard/public/js/app.js` -- GENERATED. Source = `app/src/parts/*.js` (cohesive
+- `dashboard/public/js/app.js` -- GENERATED. Source = `app/src/shell/*.js` (cohesive
   concern files: terminals, files, git, orchestrator, notes, work-items, browser,
-  apps, themes, command-palette, ...) concatenated per `app/src/parts/manifest.json`.
+  apps-tab, themes, command-palette, ...) concatenated per `app/src/shell/manifest.json`.
   Flat single global scope; 327 inline `on*` handlers call its functions by bare name.
 - `dashboard/public/mind-ui.js` -- GENERATED. Source = `mind-ui/src/*.js`, REAL ES
   modules (import/export) bundled by esbuild.
 - Build: `npm run build:renderer` (or `node scripts/build-renderer.js`; `--watch` for dev).
 
 ## Use when
-- Editing any renderer source (`app/src/parts/*`, `mind-ui/src/*`), the small inline
+- Editing any renderer source (`app/src/shell/*`, `mind-ui/src/*`), the small inline
   scripts in `index.html`, or `styles/app.css`.
 
 ## Steps (primary path)
 1. Edit the SOURCE, never the generated output. Renderer logic -> the right
-   `app/src/parts/<concern>.js` or `mind-ui/src/<module>.js`. If you cannot find the
+   `app/src/shell/<concern>.js` or `mind-ui/src/<module>.js`. If you cannot find the
    function, grep the parts/modules. Do NOT edit `js/app.js` or `mind-ui.js` directly.
 2. Rebuild: `npm run build:renderer`. For `mind-ui`, a clean esbuild build PROVES the
    cross-module wiring (a missing import is a build error). For `app.js`, the build

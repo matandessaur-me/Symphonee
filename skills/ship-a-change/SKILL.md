@@ -27,7 +27,7 @@ every step in order; the order is load-bearing.
    style, naming, and comment density.
 4. Verify before showing anything:
    - JS modules: `node --check <file>`.
-   - Renderer edits (`app/src/parts/*`, `mind-ui/src/*`, or `index.html` inline
+   - Renderer edits (`app/src/shell/*`, `mind-ui/src/*`, or `index.html` inline
      scripts): edit the SOURCE, run `npm run build:renderer`, and NEVER hand-edit
      the generated `dashboard/public/js/app.js` or `mind-ui.js` (see the
      `verify-frontend-edit` skill). Commit both source and rebuilt output.

@@ -28,7 +28,7 @@ npm run build:renderer       # build once
 npm run watch:renderer       # rebuild on change
 ```
 
-- Flat-script source: `dashboard/public/app/src/parts/*.js` (concatenated).
+- Flat-script source: `dashboard/public/app/src/shell/*.js` (concatenated).
 - Module source: `dashboard/public/<name>/src/` (esbuild bundles).
 
 If `build:renderer` fails with a missing `@esbuild/<platform>` package, your
