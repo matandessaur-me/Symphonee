@@ -97,6 +97,19 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'activity-ledger', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'activity-ledger.js'),
   },
+  {
+    // Split out of the old browser-credentials part (which mixed two features).
+    name: 'browser-credentials',
+    entry: path.join(PUB, 'browser-credentials', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'browser-credentials.js'),
+  },
+  {
+    // The other half of the old browser-credentials part. Reads `state` at top
+    // level -> loads AFTER app.js.
+    name: 'plugin-registry',
+    entry: path.join(PUB, 'plugin-registry', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'plugin-registry.js'),
+  },
 ];
 
 const banner = {

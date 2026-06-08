@@ -22,6 +22,5 @@
   "onboarding.js",
   "keyboard.js",
   "command-palette.js",
-  "plugins.js",
-  "browser-credentials.js"
+  "plugins.js"
 ]

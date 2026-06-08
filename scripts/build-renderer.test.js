@@ -92,6 +92,20 @@ const EXTRACTED = [
       'ledgerOnAction', 'ledgerOnActionPatch'],
     gone: ['ledgerRender', 'ledgerRenderCheckpoints', '_ledgerRowHtml'],
   },
+  // browser-credentials.js was a mixed file; split into two cohesive modules.
+  {
+    part: 'browser-credentials.js', src: 'browser-credentials/src/index.js', out: 'js/browser-credentials.js',
+    exposes: ['renderBrowserCreds', 'addBrowserCredential', 'addBrowserCredentialBrowserTab',
+      'removeBrowserCredential', 'refreshBrowserSettings', 'saveBrowserSettings'],
+    gone: ['_renderBrowserCredsInto', 'browsePlugins', 'installFromRegistry'], // registry fns moved OUT of app.js too
+  },
+  {
+    name: 'plugin-registry', src: 'plugin-registry/src/index.js', out: 'js/plugin-registry.js',
+    exposes: ['browsePlugins', 'filterRegistry', 'installFromRegistry', 'updatePlugin',
+      'uninstallPlugin', 'installPluginPrompt', 'closeRegistryModal', 'savePluginSettings',
+      'loadPluginRecommendations', 'sortPluginsWithRecommendations'],
+    gone: ['renderRegistryList', 'markRegistryNeedsRestart'],
+  },
 ];
 
 for (const m of EXTRACTED) {
