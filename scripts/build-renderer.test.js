@@ -132,6 +132,13 @@ const EXTRACTED = [
       'openRequestChangesModal', 'closeRequestChangesModal', 'submitRequestChanges'],
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
+  {
+    part: 'git.js', src: 'git/src/index.js', out: 'js/git.js',
+    exposes: ['openGitModal', 'closeGitModal', 'switchGitTab', 'loadGitBranches', 'renderGitBranches',
+      'filterGitBranches', 'doGitCheckout', 'doGitPull', 'doGitPush', 'doGitCompare', 'setCommitMode',
+      'doGitCommit', 'loadProjectScripts', 'runNpmScript', 'loadTerminalScripts'],
+    gone: ['populateCompareDropdowns', 'loadCommitFileList', 'hlExtMap'],
+  },
 ];
 
 for (const m of EXTRACTED) {
