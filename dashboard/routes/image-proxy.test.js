@@ -4,11 +4,14 @@ const assert = require('node:assert');
 const { Readable } = require('stream');
 const { mountImageProxy } = require('./image-proxy');
 
-function harness() {
+function harness(opts = {}) {
   const routes = {};
+  const calls = [];
   const addRoute = (m, p, h) => { routes[`${m} ${p}`] = h; };
   const json = (res, data, status = 200) => { res._data = data; res._status = status; };
-  mountImageProxy(addRoute, json, { getConfig: () => ({}), getPlugins: () => [], host: '127.0.0.1', port: 3800 });
+  const execFile = (cmd, args, cb) => { calls.push({ cmd, args }); cb(opts.execErr || null); };
+  mountImageProxy(addRoute, json, { getConfig: () => ({}), getPlugins: () => [], host: '127.0.0.1', port: 3800, execFile });
+  routes._calls = calls;
   return routes;
 }
 const req = (b) => Readable.from([JSON.stringify(b)]);
@@ -34,6 +37,28 @@ test('open-external rejects invalid url (no exec)', async () => {
   r['POST /api/open-external'](req({ url: 'not a url' }), res);
   await sleep(20);
   assert.equal(res._status, 400);
+});
+
+// Regression: open-external is NOT a server-side fetch, so loopback/private
+// dev-server links (e.g. http://localhost:3000 from `npm run dev`) must open,
+// not be blocked by the SSRF guard. See routes/image-proxy.js handleOpenExternal.
+test('open-external allows localhost / loopback dev links (opens, no 400)', async () => {
+  const r = harness();
+  const res = {};
+  r['POST /api/open-external'](req({ url: 'http://localhost:3000' }), res);
+  await sleep(20);
+  assert.equal(res._status, 200);
+  assert.equal(r._calls.length, 1);
+  assert.deepEqual(r._calls[0].args, ['url.dll,FileProtocolHandler', 'http://localhost:3000']);
+});
+
+test('open-external rejects non-http(s) scheme without spawning (file:)', async () => {
+  const r = harness();
+  const res = {};
+  r['POST /api/open-external'](req({ url: 'file:///etc/passwd' }), res);
+  await sleep(20);
+  assert.equal(res._status, 400);
+  assert.equal(r._calls.length, 0);
 });
 
 test('image-proxy rejects missing url param', () => {
