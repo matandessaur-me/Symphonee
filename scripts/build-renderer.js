@@ -204,6 +204,12 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'apps', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'apps.js'),
   },
+  {
+    // Orchestrator tab (cross-AI tasks/agents/dispatch). Reads `state` at load -> after app.js.
+    name: 'orchestrator',
+    entry: path.join(PUB, 'orchestrator', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'orchestrator.js'),
+  },
 ];
 
 const banner = {

@@ -1,3 +1,10 @@
+// orchestrator -- the Orchestrator tab: cross-AI task list, agents, dispatch
+// dialog, task output/share/cancel/cleanup, and the live orchestrator-event
+// handler. esbuild IIFE; CLI_COLORS, _orchTaskOutput and render helpers stay
+// private. Reads the shared `state` at top level, so it loads AFTER app.js.
+// Consumes CLI_CONFIG (terminals, on window); notify/customConfirm/esc/toast/...
+// resolve via window. See ARCHITECTURE.md.
+//
 // ── Orchestrator ────────────────────────────────────────────────────────
 state.orchTasks = [];
 state.orchAgents = [];
@@ -644,3 +651,23 @@ function setOrchestrationMode(active) {
     }
   }
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Reached from index.html, other parts, and generated onclick. The render
+// helpers, CLI_COLORS and _orchTaskOutput stay private.
+window.orchRefresh = orchRefresh;
+window.syncOrchScopeFilter = syncOrchScopeFilter;
+window.orchRefreshAgents = orchRefreshAgents;
+window.orchRefreshTasks = orchRefreshTasks;
+window.formatOrchDuration = formatOrchDuration;
+window.renderOrchTasks = renderOrchTasks;
+window.orchToggleTask = orchToggleTask;
+window.orchSelectAgent = orchSelectAgent;
+window.orchCancelTask = orchCancelTask;
+window.orchDeleteTask = orchDeleteTask;
+window.orchShareTask = orchShareTask;
+window.orchCleanup = orchCleanup;
+window.orchShowDispatchDialog = orchShowDispatchDialog;
+window.orchSelectDispatchTarget = orchSelectDispatchTarget;
+window.orchDoDispatch = orchDoDispatch;
+window.handleOrchestratorEvent = handleOrchestratorEvent;

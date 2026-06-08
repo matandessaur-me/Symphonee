@@ -2,7 +2,6 @@
   "state.js",
   "terminals.js",
   "app-state.js",
-  "orchestrator.js",
   "startup.js",
   "tabs-panels.js",
   "onboarding.js",
