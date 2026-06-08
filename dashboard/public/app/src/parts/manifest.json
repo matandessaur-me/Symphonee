@@ -3,7 +3,6 @@
   "terminals.js",
   "app-state.js",
   "files.js",
-  "git.js",
   "notes.js",
   "orchestrator.js",
   "startup.js",

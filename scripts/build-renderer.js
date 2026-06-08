@@ -131,6 +131,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'pull-requests', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'pull-requests.js'),
   },
+  {
+    // Git modal + scripts + the shared renderMarkdown. Reads `state` at top
+    // level -> after app.js. Several parts + pull-requests use window.renderMarkdown.
+    name: 'git',
+    entry: path.join(PUB, 'git', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'git.js'),
+  },
 ];
 
 const banner = {

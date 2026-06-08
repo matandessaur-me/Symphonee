@@ -1,3 +1,12 @@
+// git -- the Git modal (branches/checkout/pull/push/compare/commit) + per-repo
+// npm/terminal scripts. esbuild IIFE; populateCompareDropdowns/loadCommitFileList/
+// hlExtMap and a DEAD renderMarkdown duplicate stay private. Reads the shared
+// `state` at top level, so it loads AFTER app.js. Function deps resolve via
+// window: esc/toast (onboarding), addTerminal (terminals), loadFileTree (files),
+// switchTab/askAi (tabs-panels), sendCommand (startup), add/completeBackgroundTask
+// (app-state), hljs (CDN). NOTE: window.renderMarkdown is owned by onboarding.js
+// (this file's copy was always overridden) -- do NOT expose git's. See ARCHITECTURE.md.
+//
 // ── Git Modal ────────────────────────────────────────────────────────────
 state._gitBranches = {
   local: [],
@@ -533,7 +542,13 @@ function hlExtMap(ext) {
   return map[ext] || '';
 }
 
-// ── Simple Markdown Parser ──────────────────────────────────────────────
+// ── Simple Markdown Parser (DEAD: see note) ────────────────────────────────
+// This renderMarkdown was a DUPLICATE of the one in onboarding.js. In the old
+// flat app.js both were hoisted and onboarding's (concatenated later) WON, so
+// the app has always used onboarding's renderMarkdown -- this copy was never
+// reached. Kept private here (NOT exposed on window) to preserve that exact
+// behavior during extraction; window.renderMarkdown stays onboarding's. The two
+// should be de-duplicated into a single shared module in a follow-up.
 function renderMarkdown(md) {
   if (!md) return '';
 
@@ -586,3 +601,27 @@ function renderMarkdown(md) {
   html = html.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)]);
   return html;
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Git modal + scripts (reached from index.html, command-palette/keyboard,
+// app-state/files/spaces-repos/tabs-panels, and the modal's generated onclick:
+// doGitCheckout/runNpmScript). renderMarkdown is a shared renderer used app-wide
+// (incl. the pull-requests module).
+window.openGitModal = openGitModal;
+window.closeGitModal = closeGitModal;
+window.switchGitTab = switchGitTab;
+window.loadGitBranches = loadGitBranches;
+window.renderGitBranches = renderGitBranches;
+window.filterGitBranches = filterGitBranches;
+window.doGitCheckout = doGitCheckout;
+window.doGitPull = doGitPull;
+window.doGitPush = doGitPush;
+window.doGitCompare = doGitCompare;
+window.setCommitMode = setCommitMode;
+window.doGitCommit = doGitCommit;
+window.loadProjectScripts = loadProjectScripts;
+window.runNpmScript = runNpmScript;
+window.loadTerminalScripts = loadTerminalScripts;
+// NOTE: renderMarkdown is intentionally NOT exposed -- onboarding.js owns the
+// live window.renderMarkdown (see the DEAD note above). Exposing git's copy
+// would silently swap the app-wide markdown renderer.
