@@ -1,4 +1,18 @@
-// ── Drag-to-reorder pinned tabs ─────────────────────────────────────────
+// pinned-tabs -- drag-to-reorder for the pinned tab bar.
+//
+// FIRST real ES-module extraction off the flat app.js (see app/src/README.md
+// "decoupling runway"). esbuild bundles this as an IIFE, so every function and
+// the two top-level init blocks below are module-PRIVATE -- nothing leaks into
+// the global scope except the two functions other parts still call by bare
+// name, which are re-exposed on `window` at the bottom of this file:
+//   - getSavedTabOrderOverrides()  (plugins.js applyPluginPinnedTabs / injectPinnedCenterTab)
+//   - _placeTabAtEnd(btn)          (apps.js tab reveal)
+// Both call sites are runtime-only and `typeof`-guarded, so load order is safe.
+//
+// This module has ZERO dependencies on app.js globals (only document /
+// localStorage / MutationObserver), which is exactly why it was chosen as the
+// first slice. Edit here and rebuild with `node scripts/build-renderer.js`.
+
 // Tabs use CSS `order` (assigned by CORE_PINNED_CENTER and plugin contributions),
 // so drag-reorder must persist an order override per tab rather than mutating
 // DOM order, or applyPluginPinnedTabs will re-impose defaults on every repaint.
@@ -186,3 +200,9 @@ document.addEventListener('DOMContentLoaded', () => {
     childList: true
   });
 })();
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// The rest of the renderer (still flat-concatenated into app.js) calls these
+// two by bare name; expose them on the global so those references resolve.
+window.getSavedTabOrderOverrides = getSavedTabOrderOverrides;
+window._placeTabAtEnd = _placeTabAtEnd;

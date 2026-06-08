@@ -42,6 +42,14 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'mind-ui', 'src', 'index.js'),
     outfile: path.join(PUB, 'mind-ui.js'),
   },
+  {
+    // First real ES-module slice carved off the flat app.js. Source:
+    // dashboard/public/pinned-tabs/src/. Bundled IIFE keeps everything private
+    // except the two functions it re-exposes on window (see that file's footer).
+    name: 'pinned-tabs',
+    entry: path.join(PUB, 'pinned-tabs', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'pinned-tabs.js'),
+  },
 ];
 
 const banner = {
