@@ -110,4 +110,12 @@ for (const m of EXTRACTED) {
       assert.match(mod, new RegExp(`window\\.${fn}\\s*=`), `${m.out} missing window.${fn}`);
     }
   });
+
+  // The server allow-lists static files (no generic /js/ serving), so an
+  // unregistered bundle 404s in the real app even though every unit test passes.
+  test(`server.js ROUTES serves /${m.out}`, () => {
+    const server = fs.readFileSync(path.join(ROOT, 'dashboard', 'server.js'), 'utf8');
+    assert.ok(server.includes(`'/${m.out}':`),
+      `server.js is missing the '/${m.out}' static route -- the bundle will 404 and its window.* exports never define`);
+  });
 }
