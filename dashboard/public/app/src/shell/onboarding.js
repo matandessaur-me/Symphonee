@@ -516,14 +516,23 @@ async function startOnboarding() {
   obRender();
 }
 
-// Keyboard control: Enter advances (textareas keep their newline; modifier combos ignored).
+// Keyboard control (typeform feel): Enter advances; Left/Right arrows step
+// between cards. Arrows only navigate when focus is NOT in a field, so they
+// still move the caret while the user is typing. Textareas keep their newline
+// on Enter; modifier combos are ignored.
 document.addEventListener('keydown', e => {
   const ob = document.getElementById('onboarding');
   if (!ob || !ob.classList.contains('visible')) return;
-  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    if (e.target && e.target.tagName === 'TEXTAREA') return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  const tag = e.target && e.target.tagName;
+  if (e.key === 'Enter') {
+    if (tag === 'TEXTAREA') return;
     e.preventDefault();
     obNav(1);
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // let arrows move the caret in fields
+    e.preventDefault();
+    obNav(e.key === 'ArrowRight' ? 1 : -1);
   }
 });
 function obSkipToEnd() {
