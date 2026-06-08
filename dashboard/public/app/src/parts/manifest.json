@@ -27,6 +27,5 @@
   "plugins.js",
   "browser-credentials.js",
   "permissions.js",
-  "mcp.js",
   "notes-search.js"
 ]

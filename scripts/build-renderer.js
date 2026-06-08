@@ -64,6 +64,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'local-model-prompt', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'local-model-prompt.js'),
   },
+  {
+    // Third extracted leaf. Source: dashboard/public/mcp/src/. Depends on the
+    // shared util (window.escapeHtml) so it must load after js/util.js.
+    name: 'mcp',
+    entry: path.join(PUB, 'mcp', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'mcp.js'),
+  },
 ];
 
 const banner = {

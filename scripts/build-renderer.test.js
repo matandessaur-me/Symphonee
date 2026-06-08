@@ -65,6 +65,11 @@ const EXTRACTED = [
     name: 'util', src: 'util/src/index.js', out: 'js/util.js',
     exposes: ['escapeHtml'], gone: ['escapeHtml'],
   },
+  {
+    part: 'mcp.js', src: 'mcp/src/index.js', out: 'js/mcp.js',
+    exposes: ['refreshMcpServers', 'addMcpServer', 'toggleMcp', 'refreshMcp', 'removeMcp'],
+    gone: ['refreshMcpServers', 'addMcpServer', 'renderMcpServerCard'],
+  },
 ];
 
 for (const m of EXTRACTED) {
