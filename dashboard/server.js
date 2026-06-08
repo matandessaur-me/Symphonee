@@ -31,23 +31,10 @@ const swrGit     = new SWRCache({ staleTTL: 10000, maxAge: 60000 });
 const swrPlugins = new SWRCache({ staleTTL: 30000, maxAge: 300000 });
 const guard      = new BusyGuard();
 
-// Return plugin info when a /api/ path matches routes a known extracted plugin
-// owns but no plugin currently has a handler registered. Lets core give a
-// useful {pluginRequired} 404 instead of bare "Not found" when the plugin is
-// uninstalled or inactive. Hardcoded to the two first-party extractions; add
-// future plugin prefixes here as needed.
-const EXTRACTED_PLUGIN_ROUTES = [
-  { pluginId: 'azure-devops', pluginName: 'Azure DevOps', prefix: /^\/api\/(workitems|iterations|teams|areas|velocity|burndown|start-working|team-members)(?:\/|$|\?)/ },
-  { pluginId: 'github',       pluginName: 'GitHub',       prefix: /^\/api\/(github\/|pull-request(?:$|\?))/ },
-];
-function matchUnclaimedPluginRoute(pathname, plugins) {
-  for (const spec of EXTRACTED_PLUGIN_ROUTES) {
-    if (!spec.prefix.test(pathname)) continue;
-    const installed = Array.isArray(plugins) && plugins.some(p => p.id === spec.pluginId);
-    return { pluginId: spec.pluginId, pluginName: spec.pluginName, installed };
-  }
-  return null;
-}
+// matchUnclaimedPluginRoute returns plugin info when a /api/ path matches routes
+// a known extracted plugin owns but no plugin currently has a handler registered,
+// so core can give a useful {pluginRequired} 404. Rules live in lib/.
+const { matchUnclaimedPluginRoute } = require('./lib/unclaimed-plugin-routes');
 
 // Strip non-ASCII control chars, smart quotes, and replacement characters.
 // Generic text hygiene shared by core and plugins via ctx.shell.
