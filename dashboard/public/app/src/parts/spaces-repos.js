@@ -287,10 +287,10 @@ async function openAddSpaceDialog(opts = {}) {
               plugins: state.plugins
             })
           });
-          if (state.activeSpace === originalName) {
-            state.activeSpace = state.name;
+          if (window.state.activeSpace === originalName) {
+            window.state.activeSpace = state.name;
             try {
-              localStorage.setItem('symphonee-space', state.activeSpace);
+              localStorage.setItem('symphonee-space', window.state.activeSpace);
             } catch (_) {}
           }
         } else {

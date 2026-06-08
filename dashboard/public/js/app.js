@@ -3843,11 +3843,11 @@ async function loadPRs() {
   state.prsCurrentRepo = repo;
   // Sync active repo across tabs
   if (repo !== state.activeRepo) selectRepo(repo);
-  const state = document.getElementById('prsStateSelect').value;
+  const prState = document.getElementById('prsStateSelect').value;
   const list = document.getElementById('prsList');
   list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="spinner"></div></div>';
   try {
-    const prQs = `repo=${encodeURIComponent(repo)}&state=${state}`;
+    const prQs = `repo=${encodeURIComponent(repo)}&state=${prState}`;
     const res = await window.Symphonee?.contributions?.providerFetch?.('pr', 'listRoute', {
       query: prQs
     });
@@ -7014,8 +7014,8 @@ function renderBoard() {
     const count = document.getElementById(`boardCount${state}`);
     if (!container) continue;
     // For Closed column, show total count (from API) when available, not just loaded count
-    if (state === 'Closed' && state.totalClosedCount > items.length) {
-      count.textContent = state.totalClosedCapped ? state.totalClosedCount + '+' : state.totalClosedCount;
+    if (state === 'Closed' && window.state.totalClosedCount > items.length) {
+      count.textContent = window.state.totalClosedCapped ? window.state.totalClosedCount + '+' : window.state.totalClosedCount;
     } else {
       count.textContent = items.length;
     }
@@ -7069,10 +7069,10 @@ function renderBoard() {
     }
     // Add "Show more" button to Closed column when there are more items
     // AND the user's state filter actually includes Closed/Done.
-    if (state === 'Closed' && state.hasMoreClosed) {
+    if (state === 'Closed' && window.state.hasMoreClosed) {
       const stateFiltersNow = getMultiSelectValues('backlogState');
       if (stateFiltersNow.includes('Closed') || stateFiltersNow.includes('Done')) {
-        const closedLabel = state.totalClosedCapped ? state.totalClosedCount + '+' : state.totalClosedCount;
+        const closedLabel = window.state.totalClosedCapped ? window.state.totalClosedCount + '+' : window.state.totalClosedCount;
         html += `<button class="show-more-closed-btn" onclick="event.stopPropagation(); loadMoreClosed();">Showing ${items.length} of ${closedLabel} - load more...</button>`;
       }
     }
@@ -16727,10 +16727,10 @@ async function openAddSpaceDialog(opts = {}) {
               plugins: state.plugins
             })
           });
-          if (state.activeSpace === originalName) {
-            state.activeSpace = state.name;
+          if (window.state.activeSpace === originalName) {
+            window.state.activeSpace = state.name;
             try {
-              localStorage.setItem('symphonee-space', state.activeSpace);
+              localStorage.setItem('symphonee-space', window.state.activeSpace);
             } catch (_) {}
           }
         } else {
