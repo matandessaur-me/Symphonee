@@ -145,13 +145,9 @@ function getCmdActions() {
     action: () => openSettings(),
     category: 'Settings',
     hint: 'Repos, plugins, and AI keys'
-  }, {
-    label: 'Run Setup (Onboarding)',
-    icon: 'sparkles',
-    action: () => startOnboarding(),
-    category: 'Settings',
-    hint: 'Re-run the welcome / setup wizard'
   },
+  // Onboarding is intentionally first-run only (startup.js). It is NOT exposed as a
+  // command-palette action: re-running the wizard mid-session is not a supported flow.
   // Scheduled jobs (recurring prompts to any CLI)
   {
     label: 'Scheduled Jobs',
