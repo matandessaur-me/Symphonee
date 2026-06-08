@@ -129,7 +129,7 @@ function addRoute(method, pathname, handler) {
 }
 
 // ── Plugin system ────────────────────────────────────────────────────────────
-const { loadPlugins, checkActivation } = require('./plugin-loader');
+const { loadPlugins, checkActivation } = require('./plugins-core/plugin-loader');
 const pluginsDir = path.join(__dirname, 'plugins');
 
 // ── Config store (merge/normalize infrastructure behind getConfig) ───────────
@@ -144,7 +144,7 @@ const permissions = require('./permissions');
 const { MCPClientManager } = require('./mcp-client');
 const mcpClient = new MCPClientManager({ configPath });
 mcpClient.bootstrap().catch(e => console.warn('  [mcp-client] bootstrap error:', e.message));
-const { GraphRunsEngine } = require('./graph-runs');
+const { GraphRunsEngine } = require('./graph/graph-runs');
 const graphRuns = new GraphRunsEngine({
   repoRoot,
   injectToTerminal: (termId, text) => {
@@ -166,7 +166,7 @@ async function permGate(res, type, value, label) {
 }
 
 // ── Learnings (collective intelligence) ──────────────────────────────────────
-const { mountLearnings } = require('./learnings');
+const { mountLearnings } = require('./learnings/learnings');
 let _learningsInstance = null;
 trace.mark('server:top-requires-done');
 
