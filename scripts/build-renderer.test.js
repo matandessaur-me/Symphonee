@@ -133,6 +133,14 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'work-items.js', src: 'work-items/src/index.js', out: 'js/work-items.js',
+    exposes: ['loadConfig', 'loadIterations', 'pushUiContext', 'currentNotesNs', 'notesFetch',
+      'loadWorkItems', 'renderBoard', 'renderBacklog', 'viewWorkItem', 'onCardDragStart',
+      'onCardDragEnd', 'highlightFamily', 'applyBacklogFilters', 'addWIComment', 'startWorking',
+      'loadVelocity', 'loadTeams', 'loadAreas'],
+    gone: ['boardCardHtml', 'childRollupHtml', 'updateActivityFeed'],
+  },
+  {
     part: 'spaces-repos.js', src: 'spaces-repos/src/index.js', out: 'js/spaces-repos.js',
     exposes: ['isCoreSpacePluginId', 'openAddSpaceDialog', 'openEditSpaceDialog', 'deleteSpace',
       'renderSettingsSpaces', '_repoNamesForSpace', 'loadRepoList', 'loadGitStatusForDiffTab',

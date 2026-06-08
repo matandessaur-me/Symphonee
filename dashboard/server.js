@@ -138,6 +138,7 @@ const ROUTES = {
   '/js/files.js':             { file: path.join(publicDir, 'js', 'files.js'),                                      type: 'application/javascript' },
   '/js/notes.js':             { file: path.join(publicDir, 'js', 'notes.js'),                                      type: 'application/javascript' },
   '/js/spaces-repos.js':      { file: path.join(publicDir, 'js', 'spaces-repos.js'),                               type: 'application/javascript' },
+  '/js/work-items.js':        { file: path.join(publicDir, 'js', 'work-items.js'),                                 type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },

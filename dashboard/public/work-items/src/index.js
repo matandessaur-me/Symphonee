@@ -1,3 +1,11 @@
+// work-items -- config/iterations bootstrap, the work-item Backlog + Board
+// (kanban drag-and-drop), filters, detail view + comments, and velocity/teams/
+// areas. Also owns config plumbing used app-wide: loadConfig, pushUiContext,
+// currentNotesNs, notesFetch. esbuild IIFE; ~26 render/helper functions stay
+// private. Registers global click/DOMContentLoaded listeners + reads `state` at
+// load, so it loads AFTER app.js (placed early in the post-app.js group since it
+// provides widely-used functions). Consumes CLI_CONFIG (terminals, on window);
+// esc/toast/selectRepo/attachMentions/... resolve via window. See ARCHITECTURE.md.
 // ── Config ──────────────────────────────────────────────────────────────
 state._configLoaded = false;
 async function loadConfig(autoSelectSprint) {
@@ -1837,3 +1845,43 @@ function attachMentions(inputEl) {
 document.addEventListener('DOMContentLoaded', () => {
   attachMentions(document.getElementById('cmdPaletteInput'));
 });
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Config plumbing (loadConfig/pushUiContext/currentNotesNs/notesFetch) used
+// app-wide; the Backlog/Board UI reached from index.html, other parts/modules,
+// and generated onclick + drag handlers (onCardDragStart/onCardDragEnd/
+// highlightFamily). The ~26 render/helper functions stay private.
+window.loadConfig = loadConfig;
+window.loadIterations = loadIterations;
+window.onSprintChange = onSprintChange;
+window.pushUiContext = pushUiContext;
+window.currentNotesNs = currentNotesNs;
+window.notesFetch = notesFetch;
+window.loadWorkItems = loadWorkItems;
+window.loadMoreClosed = loadMoreClosed;
+window.filterByUser = filterByUser;
+window.toggleMultiSelect = toggleMultiSelect;
+window.toggleMultiItem = toggleMultiItem;
+window.toggleAllMultiItems = toggleAllMultiItems;
+window.toggleParentCollapse = toggleParentCollapse;
+window.renderBoard = renderBoard;
+window.toggleBacklogParent = toggleBacklogParent;
+window.renderBacklog = renderBacklog;
+window.onCardDragStart = onCardDragStart;
+window.onCardDragEnd = onCardDragEnd;
+window.highlightFamily = highlightFamily;
+window.switchBacklogView = switchBacklogView;
+window.applyBacklogFilters = applyBacklogFilters;
+window.viewWorkItem = viewWorkItem;
+window.closeWorkItemView = closeWorkItemView;
+window.openWICommentModal = openWICommentModal;
+window.closeWICommentModal = closeWICommentModal;
+window.addWIComment = addWIComment;
+window.startWorking = startWorking;
+window.loadVelocity = loadVelocity;
+window.loadTeams = loadTeams;
+window.switchTeam = switchTeam;
+window.loadAreas = loadAreas;
+window.onAreaChange = onAreaChange;
+window.loadTeamMembers = loadTeamMembers;
+window.filterTeamMembers = filterTeamMembers;

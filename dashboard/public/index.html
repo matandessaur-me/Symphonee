@@ -2085,6 +2085,8 @@
 <script src="/js/mcp.js"></script>
 <script src="/js/app.js"></script>
 <!-- These read the global `state` at load, so they must come AFTER app.js -->
+<!-- work-items provides app-wide config plumbing (loadConfig/pushUiContext/...); load it first -->
+<script src="/js/work-items.js"></script>
 <script src="/js/notes-search.js"></script>
 <script src="/js/permissions.js"></script>
 <script src="/js/activity-timeline.js"></script>
