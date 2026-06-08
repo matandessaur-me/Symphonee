@@ -1,3 +1,11 @@
+// files -- the Files tab: file tree + search, the Monaco viewer/editor, the diff
+// viewer (incl. the shared renderInlineDiff used by the pull-requests module),
+// the git-log panel, and the repo/space/branch picker modals. esbuild IIFE; the
+// ~19 helpers (Monaco glue, renderers, context menus) stay private. Reads the
+// shared `state` at top level (no other load-time work), so it loads AFTER
+// app.js. Function deps resolve via window (esc/toast/switchTab/selectRepo/...)
+// and browser/CDN globals (monaco, hljs). See ARCHITECTURE.md.
+//
 // ── File Browser ────────────────────────────────────────────────────────
 state.filesCurrentRepo = '';
 state.filesCurrentPath = '';
@@ -1314,3 +1322,34 @@ function filterBranchPicker() {
   const el = document.getElementById('branchPickSearch');
   renderBranchPicker(el ? el.value : '');
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Reached from other parts, index.html, the extracted git/pull-requests modules
+// (loadFileTree / renderInlineDiff), and this file's generated onclick
+// (viewFile / viewChangedFile / viewCommitDiff / selectDiffFile /
+// doGitCheckoutFromModal). The ~19 helpers stay private.
+window.populateFilesRepoSelect = populateFilesRepoSelect;
+window.loadFileTree = loadFileTree;
+window.setFilesSearchMode = setFilesSearchMode;
+window.onFilesSearchInput = onFilesSearchInput;
+window.viewFile = viewFile;
+window.toggleFilesEdit = toggleFilesEdit;
+window._defineMonacoTheme = _defineMonacoTheme;
+window.loadMonaco = loadMonaco;
+window.viewCommitDiff = viewCommitDiff;
+window.selectDiffFile = selectDiffFile;
+window.renderInlineDiff = renderInlineDiff;
+window.populateDiffTabWithChanges = populateDiffTabWithChanges;
+window.closeDiffView = closeDiffView;
+window.discardFileFromContext = discardFileFromContext;
+window.viewChangedFile = viewChangedFile;
+window.cancelFilesEdit = cancelFilesEdit;
+window.saveFilesEdit = saveFilesEdit;
+window.loadGitLogPanel = loadGitLogPanel;
+window.closeModal = closeModal;
+window.openSpaceModal = openSpaceModal;
+window.openRepoModal = openRepoModal;
+window.filterRepoPicker = filterRepoPicker;
+window.setBranchFilter = setBranchFilter;
+window.filterBranchPicker = filterBranchPicker;
+window.doGitCheckoutFromModal = doGitCheckoutFromModal;

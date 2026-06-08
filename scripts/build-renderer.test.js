@@ -133,6 +133,14 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'files.js', src: 'files/src/index.js', out: 'js/files.js',
+    exposes: ['populateFilesRepoSelect', 'loadFileTree', 'viewFile', 'toggleFilesEdit', 'loadMonaco',
+      'viewCommitDiff', 'selectDiffFile', 'renderInlineDiff', 'closeDiffView', 'viewChangedFile',
+      'saveFilesEdit', 'loadGitLogPanel', 'closeModal', 'openSpaceModal', 'openRepoModal',
+      'doGitCheckoutFromModal'],
+    gone: ['renderFilesBreadcrumb', 'createOrUpdateMonaco', 'renderDiffForFile'],
+  },
+  {
     part: 'git.js', src: 'git/src/index.js', out: 'js/git.js',
     exposes: ['openGitModal', 'closeGitModal', 'switchGitTab', 'loadGitBranches', 'renderGitBranches',
       'filterGitBranches', 'doGitCheckout', 'doGitPull', 'doGitPush', 'doGitCompare', 'setCommitMode',
