@@ -18,11 +18,11 @@ async function loadPRs() {
   state.prsCurrentRepo = repo;
   // Sync active repo across tabs
   if (repo !== state.activeRepo) selectRepo(repo);
-  const state = document.getElementById('prsStateSelect').value;
+  const prState = document.getElementById('prsStateSelect').value;
   const list = document.getElementById('prsList');
   list.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="spinner"></div></div>';
   try {
-    const prQs = `repo=${encodeURIComponent(repo)}&state=${state}`;
+    const prQs = `repo=${encodeURIComponent(repo)}&state=${prState}`;
     const res = await window.Symphonee?.contributions?.providerFetch?.('pr', 'listRoute', {
       query: prQs
     });
