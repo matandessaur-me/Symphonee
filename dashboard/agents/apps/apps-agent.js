@@ -20,6 +20,17 @@ const com = require('./apps-com');
 
 const { PROVIDER_ORDER, CLI_PROVIDER_MAP, runSessionForEntry, readBody, normalizeProviderKey, mapCliToProvider, extractRecipeInputs, isProviderExhaustionError, buildContinuationPrompt, headerValue, resolveCallerContext, buildProviderAttempts, runSessionWithFallback } = require('./apps-agent-session');
 
+// ── Single-action driving for terminal/CLI callers (POST /api/apps/act) ──────
+// The /api/apps/do + /session/start paths run an API-keyed LLM provider as the
+// brain. When a *terminal AI* (Claude Code, Codex, ...) initiates automation it
+// is already the brain and has all the instructions, so it should drive the
+// driver itself -- no API credits. /api/apps/act runs ONE driver action via the
+// same executeTool dispatch the agent loop uses, statelessly. Per-hwnd UIA
+// fingerprints are kept here so consecutive calls can report a _postUiaDelta.
+const _actState = new Map(); // hwnd -> { hwnd, _lastUiaUids, lastShotRect }
+const ACT_READ = new Set(['screenshot', 'describe_window', 'read_element', 'list_windows', 'wait_for_element', 'wait_ms']);
+const ACT_MUTATING = new Set(['click_element', 'type_into_element', 'click', 'mouse_move', 'drag', 'scroll', 'type_text', 'key', 'focus_window']);
+
 function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resolveTermCli } = {}) {
   const buildRegistry = () => {
     const aiKeys = Object.assign({}, (getConfig && getConfig().AiApiKeys) || {});
@@ -183,6 +194,66 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
       json(res, { ok: true, base64: shot.base64, mimeType: shot.mimeType || 'image/jpeg', width: shot.width, height: shot.height });
     } catch (e) {
       json(res, { error: e.message }, 500);
+    }
+  });
+
+  // Drive one apps-driver action without an API-keyed agent loop. The caller
+  // (a terminal AI) supplies the reasoning: perceive (describe_window /
+  // screenshot / read_element), then act (click_element / type_into_element /
+  // key / scroll / ...), one call at a time. Reuses the agent's executeTool so
+  // there is a single source of truth for action behavior. Mutating actions go
+  // through permGate exactly like the agent's; read actions are ungated.
+  addRoute('POST', '/api/apps/act', async (req, res) => {
+    let body;
+    try { body = await readBody(req); } catch (e) { return json(res, { error: 'Bad JSON: ' + e.message }, 400); }
+    const action = String(body.action || '');
+    const args = body.args || {};
+    const hwnd = body.hwnd != null ? Number(body.hwnd) : null;
+    if (!ACT_READ.has(action) && !ACT_MUTATING.has(action)) {
+      return json(res, { error: `unsupported action '${action}'`, allowed: [...ACT_READ, ...ACT_MUTATING] }, 400);
+    }
+    const needsHwnd = action !== 'list_windows' && action !== 'wait_ms';
+    if (needsHwnd && (!Number.isFinite(hwnd) || hwnd <= 0)) {
+      return json(res, { error: 'hwnd required for action ' + action }, 400);
+    }
+    if (ACT_MUTATING.has(action) && typeof permGate === 'function') {
+      const ok = await permGate(res, 'api', 'POST /api/apps/act', `${action} on window ${hwnd}`);
+      if (!ok) return;
+    }
+    const session = _actState.get(hwnd) || { hwnd };
+    session.hwnd = hwnd;
+    _actState.set(hwnd, session);
+    try {
+      let result = await chat.executeTool(driver, session, action, args);
+      if (ACT_MUTATING.has(action) && Number.isFinite(hwnd) && hwnd > 0 && result && !result.error) {
+        try {
+          await new Promise(r => setTimeout(r, 350)); // let the UI settle
+          const fresh = await driver.uiaTree(hwnd, { maxNodes: 300 });
+          const freshNodes = (fresh && fresh.nodes) || [];
+          const crypto = require('crypto');
+          const tag = (n) => 'uia_' + crypto.createHash('md5').update(`${n.type || ''}|${n.name || ''}|${n.automationId || ''}|${n.depth || 0}`).digest('hex').slice(0, 10);
+          const freshUids = new Set(freshNodes.map(tag));
+          const prevUids = session._lastUiaUids instanceof Set ? session._lastUiaUids : new Set();
+          const interactables = freshNodes
+            .filter(n => n.invokable || /Button|MenuItem|TabItem|Hyperlink|ListItem|TreeItem|RadioButton|CheckBox|ComboBox|Edit/i.test(n.type || ''))
+            .filter(n => n.name && n.name.length)
+            .slice(0, 60)
+            .map(n => ({ uid: tag(n), name: n.name, type: n.type, automationId: n.automationId || undefined }));
+          session._lastUiaUids = freshUids;
+          result = Object.assign({}, result, {
+            _postUiaDelta: {
+              addedCount: [...freshUids].filter(u => !prevUids.has(u)).length,
+              removedCount: [...prevUids].filter(u => !freshUids.has(u)).length,
+              totalElements: freshNodes.length,
+              truncated: !!(fresh && fresh.truncated),
+              interactables,
+            },
+          });
+        } catch (_) { /* uia unavailable -- leave result unchanged */ }
+      }
+      json(res, { ok: true, action, result });
+    } catch (e) {
+      json(res, { ok: false, action, error: e.message }, 500);
     }
   });
 

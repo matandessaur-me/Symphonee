@@ -345,6 +345,8 @@ Accumulated technical mistakes. Fetched at bootstrap via `/api/learnings`. Recor
 - `browser-use` (default for typed actions / selectors / handles / recipes) -- deterministic, no LLM tokens.
 - `stagehand` -- sandboxed headless Chromium with screencast view. Pick with `prefer:"stagehand"`, `sandboxed:true`, `mode:"extract"`, or a `schema`.
 
+**When YOU (a terminal CLI) are asked to automate the browser, you are the brain -- drive the deterministic `browser-use` primitives yourself; do NOT route to the `in-app-agent`.** The `in-app-agent` runs an API-keyed LLM loop (consumes Anthropic/OpenAI/Gemini credits and fails when they run out). You already have your own model and all the instructions, so reason between steps and call the typed `browser-use` actions (navigate, clickable-element registry, typed click/type) directly -- no API key. Reserve the `in-app-agent` for when the in-app UI (not a CLI) kicks off a hands-off run.
+
 **Full reference (router decision criteria, direct driver routes for `/api/browser/*` / `/api/browser/agent/*` / `/api/plugins/stagehand/*`, saved accounts):**
 ```bash
 curl -s http://127.0.0.1:3800/api/instructions/browser-router
@@ -363,6 +365,10 @@ Behavioural rules - MUST ask the user before launching, filling credentials, sub
 > - Don't drive Office via UIA. Don't synthesize SendInput against sandboxed windows. Don't ask "should I use stealth?" - default is yes for background work.
 
 **Default entry point: `POST /api/apps/do {app, goal, waitMs?}`.** Use this for ANY "open X and do Y" request. Internally: resolve installed app -> launch -> focus window -> AI session driving toward the goal -> blocks until the agent emits `done`/`error`/`stopped` (default 600000 ms; pass `waitMs:0` to fire-and-forget). Stream `apps-agent-step` over the WebSocket for live progress. If the user says "just open Spotify" with no follow-up, use `/api/apps/launch` alone.
+
+**When YOU (a terminal CLI) are asked to automate a desktop app, you are the brain -- drive it yourself; do NOT use `/api/apps/do` or `/session/start`.** Those spin up an API-keyed LLM provider as the brain (consume Anthropic/OpenAI/Gemini credits and fail when they run out). You already have your own model and all the instructions, so BE the brain and drive one action at a time:
+
+`POST /api/apps/act { hwnd, action, args }` runs a single apps-driver action via the same dispatch the agent uses, and returns `{ ok, action, result }` (mutating actions also return a `_postUiaDelta` of what changed on screen). Actions -- **perceive:** `describe_window`, `screenshot`, `read_element`, `list_windows`, `wait_for_element`; **act:** `click_element` / `type_into_element` (UIA selector, deterministic), `key`, `scroll`, `click` (pixel). The loop: `POST /api/apps/launch` to get an `hwnd` -> `act describe_window` -> reason over the elements -> `act click_element` / `type_into_element` -> read the returned `_postUiaDelta` -> repeat until done. Mutating actions go through permGate; reads are ungated. This needs **no API key**. Reserve `/api/apps/do` for when the in-app UI (not a CLI) initiates a hands-off run.
 
 **Full reference (decision tree, COM endpoint catalog, stealth limitations, parallel runs, scheduling, recipes DSL, tests harness, anti-patterns, self-check):**
 ```bash
