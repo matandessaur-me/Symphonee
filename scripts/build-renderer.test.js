@@ -143,6 +143,14 @@ const EXTRACTED = [
     gone: ['_ensureInappBrowser', '_renderInappToolsMenu', '_runInappEmulatePanel'],
   },
   {
+    name: 'apps', src: 'apps/src/index.js', out: 'js/apps.js',
+    exposes: ['appsOpenLauncher', 'appsOpenAutomations', 'appsRefreshAll', 'appsRefreshWindows',
+      'appsChatSend', 'appsAutomationsNew', 'appsAutomationsSave', 'appsAutomationsRunNow',
+      'appsAutomationsGenerate', 'appsPanic', 'handleAppsAgentStep', 'appsSubmitAdd',
+      '_appsBuilderDragStart', '_appsComSubmit'],
+    gone: ['_appsRenderBuilderRows', '_appsAutomationsShowForm'], // internal cross-cluster helpers (private in the bundle)
+  },
+  {
     part: 'settings.js', src: 'settings/src/index.js', out: 'js/settings.js',
     exposes: ['openSettings', 'closeSettings', 'switchSettingsTab', 'saveSettings', 'openCreateModal',
       'submitCreateWorkItem', 'addProjectFromSettings', 'setActiveProject', 'deleteRepoFromSettings',
