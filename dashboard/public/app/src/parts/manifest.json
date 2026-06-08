@@ -10,7 +10,6 @@
   "apps-step-builder.js",
   "browser-tools.js",
   "browser-views.js",
-  "settings.js",
   "onboarding.js",
   "keyboard.js"
 ]

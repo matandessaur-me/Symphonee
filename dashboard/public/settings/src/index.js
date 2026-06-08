@@ -1,3 +1,11 @@
+// settings -- the Settings panel (tabs, AI-tools/PowerShell status + install,
+// projects, repos, clone sources, factory reset, export/import) and the Create
+// Work Item modal. esbuild IIFE; AI_TOOLS_META, _repoSrcCache and the render/
+// helper functions stay private. Registers a DOMContentLoaded listener + reads
+// `state` at top level, so it loads AFTER app.js. OWNS the _aiInstalling Set
+// (mutated by onboarding.js during AI-tool install) -> re-exposed on window.
+// esc/toast/loadConfig/... resolve via window. See ARCHITECTURE.md.
+//
 // ── Create Work Item Modal ──────────────────────────────────────────────
 function openCreateModal(type) {
   document.getElementById('createType').value = type || 'User Story';
@@ -966,3 +974,32 @@ function importSettings() {
   };
   input.click();
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Settings panel + create-work-item modal, reached from index.html, other parts,
+// and generated onclick. AI_TOOLS_META/_repoSrcCache + render helpers stay private.
+window.openCreateModal = openCreateModal;
+window.closeCreateModal = closeCreateModal;
+window.submitCreateWorkItem = submitCreateWorkItem;
+window.switchSettingsTab = switchSettingsTab;
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.addProjectFromSettings = addProjectFromSettings;
+window.deleteProjectFromSettings = deleteProjectFromSettings;
+window.setActiveProject = setActiveProject;
+window.deleteRepoFromSettings = deleteRepoFromSettings;
+window._repoHidePanel = _repoHidePanel;
+window.repoAddBrowse = repoAddBrowse;
+window._pluginRepoSearch = _pluginRepoSearch;
+window._pluginRepoSelected = _pluginRepoSelected;
+window.renderCloneSourceButtons = renderCloneSourceButtons;
+window.openFactoryResetModal = openFactoryResetModal;
+window.closeFactoryResetModal = closeFactoryResetModal;
+window.factoryResetExportFirst = factoryResetExportFirst;
+window.factoryResetConfirm = factoryResetConfirm;
+window.saveSettings = saveSettings;
+window.openExportImportMenu = openExportImportMenu;
+window.exportSettings = exportSettings;
+window.importSettings = importSettings;
+// Shared install-in-progress Set, mutated by onboarding.js.
+window._aiInstalling = _aiInstalling;
