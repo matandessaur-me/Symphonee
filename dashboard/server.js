@@ -129,6 +129,8 @@ const ROUTES = {
   '/js/permissions.js':       { file: path.join(publicDir, 'js', 'permissions.js'),                                type: 'application/javascript' },
   '/js/activity-timeline.js': { file: path.join(publicDir, 'js', 'activity-timeline.js'),                          type: 'application/javascript' },
   '/js/activity-ledger.js':   { file: path.join(publicDir, 'js', 'activity-ledger.js'),                            type: 'application/javascript' },
+  '/js/browser-credentials.js':{ file: path.join(publicDir, 'js', 'browser-credentials.js'),                       type: 'application/javascript' },
+  '/js/plugin-registry.js':   { file: path.join(publicDir, 'js', 'plugin-registry.js'),                            type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },
