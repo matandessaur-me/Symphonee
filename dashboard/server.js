@@ -131,6 +131,7 @@ const ROUTES = {
   '/js/activity-ledger.js':   { file: path.join(publicDir, 'js', 'activity-ledger.js'),                            type: 'application/javascript' },
   '/js/browser-credentials.js':{ file: path.join(publicDir, 'js', 'browser-credentials.js'),                       type: 'application/javascript' },
   '/js/plugin-registry.js':   { file: path.join(publicDir, 'js', 'plugin-registry.js'),                            type: 'application/javascript' },
+  '/js/themes.js':            { file: path.join(publicDir, 'js', 'themes.js'),                                     type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },

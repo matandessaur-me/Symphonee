@@ -110,6 +110,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'plugin-registry', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'plugin-registry.js'),
   },
+  {
+    // Owns BUILTIN_THEMES/ALL_CSS_KEYS/ACTIVE_THEME_KEY (re-exposed on window for
+    // onboarding/settings). Reads `state` + restores the theme at load -> after app.js.
+    name: 'themes',
+    entry: path.join(PUB, 'themes', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'themes.js'),
+  },
 ];
 
 const banner = {

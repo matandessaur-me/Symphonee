@@ -106,6 +106,15 @@ const EXTRACTED = [
       'loadPluginRecommendations', 'sortPluginsWithRecommendations'],
     gone: ['renderRegistryList', 'markRegistryNeedsRestart'],
   },
+  {
+    part: 'themes.js', src: 'themes/src/index.js', out: 'js/themes.js',
+    exposes: ['renderThemeList', 'applyBuiltinTheme', 'applyCustomTheme', 'editThemeInEditor',
+      'deleteTheme', 'toggleThemeEditor', 'saveCustomThemeFromEditor', 'exportThemes', 'importThemes',
+      'restoreCustomTheme', '_setThemeMode',
+      // shared constants other parts read at runtime:
+      'BUILTIN_THEMES', 'ALL_CSS_KEYS', 'ACTIVE_THEME_KEY'],
+    gone: ['generateThemeVars', 'getSavedThemes', '_loadThemesFromServer'],
+  },
 ];
 
 for (const m of EXTRACTED) {

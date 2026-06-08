@@ -62,6 +62,9 @@ const TERM_THEMES = {
     selectionBackground: '#d0c5b580'
   }
 };
+// Exposed on window so the extracted themes module (loaded after app.js) can read
+// the terminal colour schemes by bare name. terminals.js stays the owner.
+window.TERM_THEMES = TERM_THEMES;
 state.activeThemeId = 'industrial-blue';
 function getActiveTermTheme() {
   const base = TERM_THEMES['_active'] || TERM_THEMES[state.activeThemeId] || TERM_THEMES['industrial-blue'];
