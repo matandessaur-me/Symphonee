@@ -20,6 +20,7 @@ const { detectPwsh } = require('./lib/detect-cli');
 const { readProcessTree: _readProcessTree, detectAiUnder: _detectAiUnder } = require('./lib/ai-tree-detect');
 const { createPluginHints } = require('./lib/plugin-hints');
 const { BusyGuard } = require('./utils/busy-guard');
+const { createFirewall } = require('./request-firewall');
 const instructionAudit = require('./instruction-audit');
 const trace = require('./startup-trace');
 trace.mark('server:module-eval:start');
@@ -75,37 +76,9 @@ const repoRoot = path.resolve(__dirname, '..');
 // defined above the init site can close over it without a TDZ hazard.
 let _ledger = null;
 
-// ── Origin / Host firewall (anti-CSRF, anti-DNS-rebinding) ──────────────────
-// The local API runs high-privilege actions (terminals, git, file I/O,
-// automation, plugins) and has no auth token yet, so it MUST reject any request
-// that didn't come from the app's own renderer or a local CLI. Rules:
-//   - A browser cross-site request ALWAYS carries an Origin header; CLIs / curl
-//     / server-to-server send NONE. So "no Origin" = trusted local caller.
-//   - The renderer is same-origin (http://127.0.0.1:PORT) -> allowed.
-//   - Any foreign Origin (a malicious page the user merely opens) -> 403.
-//   - The Host header must be loopback; a DNS-rebinding page rebinds its domain
-//     to 127.0.0.1 but still sends Host: attacker.com -> 403.
-const ALLOWED_ORIGINS = new Set([
-  `http://${HOST}:${PORT}`, `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
-]);
-const ALLOWED_HOSTS = new Set([
-  `${HOST}:${PORT}`, `localhost:${PORT}`, `127.0.0.1:${PORT}`,
-  HOST, 'localhost', '127.0.0.1', `[::1]:${PORT}`, '[::1]',
-]);
-function _hostIsLoopback(host) {
-  if (!host) return true; // HTTP/1.0 / some local clients omit Host
-  return ALLOWED_HOSTS.has(String(host).toLowerCase());
-}
-function _originAllowed(origin) {
-  if (!origin) return true;            // not a browser cross-site request
-  const o = String(origin).toLowerCase();
-  if (o === 'null') return false;      // opaque/sandboxed origin -> reject
-  return ALLOWED_ORIGINS.has(o);
-}
-// True if the request may proceed. Used for both HTTP (below) and WS upgrades.
-function isRequestAllowed(req) {
-  return _hostIsLoopback(req.headers && req.headers.host) && _originAllowed(req.headers && req.headers.origin);
-}
+// Origin / Host firewall (anti-CSRF, anti-DNS-rebinding). Rules + rationale live
+// in request-firewall.js; isRequestAllowed gates both HTTP requests and WS upgrades.
+const { isRequestAllowed } = createFirewall(HOST, PORT);
 
 const publicDir = path.join(__dirname, 'public');
 const notesDir = path.join(repoRoot, 'notes'); // shared: hybrid-search index + note path-guards (note ROUTES live in routes/notes.js)
