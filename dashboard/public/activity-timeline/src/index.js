@@ -1,3 +1,9 @@
+// activity-timeline -- the work-item Activity Timeline modal (range filter,
+// charts, entry list). esbuild IIFE; getTimelineItems/entryMeta/renderTimelineCharts
+// stay private. Reads the shared `state` at top level, so it loads AFTER app.js.
+// Globals resolve via window: state, esc (onboarding part), lucide; its generated
+// onclick calls viewWorkItem (app.js global). See ARCHITECTURE.md for the pattern.
+//
 // ── Activity Timeline ───────────────────────────────────────────────────
 state._tlRangeDays = 5;
 function openActivityTimeline() {
@@ -194,3 +200,11 @@ function renderTimeline() {
   container.innerHTML = html;
   lucide.createIcons();
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// open/close/setRange are bound from index.html; openActivityTimeline is also
+// called by plugins.js + tabs-panels.js, and renderTimeline by work-items.js.
+window.openActivityTimeline = openActivityTimeline;
+window.closeActivityTimeline = closeActivityTimeline;
+window.setTimelineRange = setTimelineRange;
+window.renderTimeline = renderTimeline;

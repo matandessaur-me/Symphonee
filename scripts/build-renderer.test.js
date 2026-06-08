@@ -81,6 +81,17 @@ const EXTRACTED = [
     exposes: ['openPermModeMenu', 'setPermMode', 'resolveApproval', 'resolveGraphApproval'],
     gone: ['refreshPermMode', 'pollApprovals', 'showApprovalModal'],
   },
+  {
+    part: 'activity-timeline.js', src: 'activity-timeline/src/index.js', out: 'js/activity-timeline.js',
+    exposes: ['openActivityTimeline', 'closeActivityTimeline', 'setTimelineRange', 'renderTimeline'],
+    gone: ['getTimelineItems', 'entryMeta', 'renderTimelineCharts'],
+  },
+  {
+    part: 'activity-ledger.js', src: 'activity-ledger/src/index.js', out: 'js/activity-ledger.js',
+    exposes: ['openHistory', 'ledgerLoad', 'ledgerSetFilter', 'ledgerCheckpointNow', 'ledgerUndo',
+      'ledgerOnAction', 'ledgerOnActionPatch'],
+    gone: ['ledgerRender', 'ledgerRenderCheckpoints', '_ledgerRowHtml'],
+  },
 ];
 
 for (const m of EXTRACTED) {
