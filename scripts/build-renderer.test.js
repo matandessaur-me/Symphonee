@@ -143,6 +143,13 @@ const EXTRACTED = [
     gone: ['_ensureInappBrowser', '_renderInappToolsMenu', '_runInappEmulatePanel'],
   },
   {
+    part: 'orchestrator.js', src: 'orchestrator/src/index.js', out: 'js/orchestrator.js',
+    exposes: ['orchRefresh', 'orchRefreshAgents', 'orchRefreshTasks', 'orchToggleTask', 'orchSelectAgent',
+      'orchCancelTask', 'orchDeleteTask', 'orchShareTask', 'orchCleanup', 'orchShowDispatchDialog',
+      'orchDoDispatch', 'handleOrchestratorEvent', 'formatOrchDuration'],
+    gone: ['renderOrchAgents', 'updateOrchTimers', '_saveTaskAsNote'],
+  },
+  {
     name: 'apps', src: 'apps/src/index.js', out: 'js/apps.js',
     exposes: ['appsOpenLauncher', 'appsOpenAutomations', 'appsRefreshAll', 'appsRefreshWindows',
       'appsChatSend', 'appsAutomationsNew', 'appsAutomationsSave', 'appsAutomationsRunNow',
