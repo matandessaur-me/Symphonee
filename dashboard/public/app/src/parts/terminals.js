@@ -28,6 +28,9 @@ const CLI_CONFIG = {
     label: 'Qwen Code'
   }
 };
+// Exposed on window so the extracted notifications module (loaded after app.js)
+// can read the CLI label/colour config by bare name. terminals.js owns it.
+window.CLI_CONFIG = CLI_CONFIG;
 
 // Terminal themes keyed by visual theme id (decoupled from AI selection)
 const TERM_THEMES = {

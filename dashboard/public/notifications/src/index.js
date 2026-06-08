@@ -1,3 +1,16 @@
+// notifications -- the notification center/badge, sound, palette/quick-ask task
+// tracking, inline replies, and follow-up prompts. esbuild IIFE; most helpers
+// stay private. Registers global click/keydown/DOMContentLoaded listeners and
+// loads saved notifications at load, and reads the shared `state`, so it loads
+// AFTER app.js.
+//
+// Coupling (see ARCHITECTURE.md):
+//  - OWNS `notify` (used by 6 parts) + the `_paletteNotifyTasks` Set (mutated by
+//    command-palette + orchestrator) -> re-exposed on window.
+//  - CONSUMES `CLI_CONFIG` (const owned by terminals.js, which exposes it on
+//    window). Other deps (state, esc, toast, openCmdPalette, ...) are window-
+//    resolved app globals.
+//
 // ── Activity stats: weekly roll-up of orchestrator runs ─────────────────
 // Inspired by agent-native's usage store. Symphonee doesn't own the LLM
 // billing, so we aggregate task volume + runtime - the data we actually
@@ -468,3 +481,23 @@ document.addEventListener('keydown', e => {
     return;
   }
 }, true);
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// notify is the core entry point (app-state/apps-step-builder/browser-tools/
+// command-palette/orchestrator/terminals all call it). The rest are reached from
+// index.html, those parts, or this module's generated onclick (_cancelFollowup).
+window.notify = notify;
+window.openActivityStats = openActivityStats;
+window._notifToggleSound = _notifToggleSound;
+window.playNotifSound = playNotifSound;
+window._showPaletteDispatchToast = _showPaletteDispatchToast;
+window._schedulePaletteDispatchToast = _schedulePaletteDispatchToast;
+window._clearPaletteDispatchToast = _clearPaletteDispatchToast;
+window.notifClearAll = notifClearAll;
+window._focusInlineReply = _focusInlineReply;
+window._inlineReplySend = _inlineReplySend;
+window.renderReplyChip = renderReplyChip;
+window.toggleNotifPanel = toggleNotifPanel;
+window._cancelFollowup = _cancelFollowup;
+// Shared task-tracking Set, mutated by command-palette + orchestrator at runtime.
+window._paletteNotifyTasks = _paletteNotifyTasks;
