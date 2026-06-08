@@ -133,6 +133,16 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'settings.js', src: 'settings/src/index.js', out: 'js/settings.js',
+    exposes: ['openSettings', 'closeSettings', 'switchSettingsTab', 'saveSettings', 'openCreateModal',
+      'submitCreateWorkItem', 'addProjectFromSettings', 'setActiveProject', 'deleteRepoFromSettings',
+      'repoAddBrowse', 'renderCloneSourceButtons', 'openFactoryResetModal', 'factoryResetConfirm',
+      'exportSettings', 'importSettings',
+      // shared install-in-progress Set used by onboarding.js:
+      '_aiInstalling'],
+    gone: ['detectAiTools', 'renderAiTools', 'installCli'],
+  },
+  {
     part: 'plugins.js', src: 'plugins/src/index.js', out: 'js/plugins.js',
     exposes: ['notifyPluginIframes', 'registerPluginTab', 'applyPluginPinnedTabs', 'injectPinnedCenterTab',
       'openPluginTab', 'ensurePluginTabOpen', 'reconcilePluginShellSurfaces', 'refreshPluginActivation',

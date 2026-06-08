@@ -141,6 +141,7 @@ const ROUTES = {
   '/js/work-items.js':        { file: path.join(publicDir, 'js', 'work-items.js'),                                 type: 'application/javascript' },
   '/js/command-palette.js':   { file: path.join(publicDir, 'js', 'command-palette.js'),                            type: 'application/javascript' },
   '/js/plugins.js':           { file: path.join(publicDir, 'js', 'plugins.js'),                                    type: 'application/javascript' },
+  '/js/settings.js':          { file: path.join(publicDir, 'js', 'settings.js'),                                   type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
   '/xterm-addon-fit.js':      { file: path.join(nodeModules, '@xterm/addon-fit/lib/addon-fit.js'),                   type: 'application/javascript' },

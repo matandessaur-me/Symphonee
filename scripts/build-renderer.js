@@ -181,6 +181,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'plugins', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'plugins.js'),
   },
+  {
+    // Settings panel + create-work-item modal. Reads `state` + DOMContentLoaded
+    // at load -> after app.js. Owns the _aiInstalling Set (onboarding mutates it).
+    name: 'settings',
+    entry: path.join(PUB, 'settings', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'settings.js'),
+  },
 ];
 
 const banner = {
