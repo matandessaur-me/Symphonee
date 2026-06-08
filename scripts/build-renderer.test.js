@@ -133,6 +133,13 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    part: 'command-palette.js', src: 'command-palette/src/index.js', out: 'js/command-palette.js',
+    exposes: ['openCmdPalette', 'openAIFocusPalette', 'openShortcutHelp', 'askAIFromPalette',
+      'closeCmdPalette', 'filterCmdPalette', 'openRepoMapModal', 'setRepoMapView', 'copyRepoMap',
+      'saveRepoMapAsNote', 'analyzeActiveRepo', 'cmdPaletteKeydown', 'loadPluginCmdItems'],
+    gone: ['renderMarkdownToHtml'], // private markdown helper (distinct from the app-wide renderMarkdown)
+  },
+  {
     part: 'work-items.js', src: 'work-items/src/index.js', out: 'js/work-items.js',
     exposes: ['loadConfig', 'loadIterations', 'pushUiContext', 'currentNotesNs', 'notesFetch',
       'loadWorkItems', 'renderBoard', 'renderBacklog', 'viewWorkItem', 'onCardDragStart',

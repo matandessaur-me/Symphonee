@@ -216,6 +216,9 @@ const HOTKEY_ACTIONS = [{
   },
   run: () => openNoteFind()
 }];
+// Exposed on window so the extracted command-palette module (loaded after app.js)
+// can read the hotkey action list for its shortcut-help view. keyboard.js owns it.
+window.HOTKEY_ACTIONS = HOTKEY_ACTIONS;
 const RESERVED_COMBOS = new Set(['Ctrl+Alt+Shift+X']); // OS panic hotkey (electron-main globalShortcut)
 
 // Canonical combo string from a keydown event, e.g. "Ctrl+Shift+K". Modifier

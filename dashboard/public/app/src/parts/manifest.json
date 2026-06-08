@@ -13,6 +13,5 @@
   "settings.js",
   "onboarding.js",
   "keyboard.js",
-  "command-palette.js",
   "plugins.js"
 ]

@@ -1,3 +1,11 @@
+// command-palette -- the Ctrl+K/J command palette + AI-focus palette + quick-ask,
+// the shortcut-help view, and the repo-map modal (generate/view/copy/save/send).
+// esbuild IIFE; the search/render/dispatch helpers (incl. renderMarkdownToHtml)
+// stay private. Reads the shared `state` at top level, so it loads AFTER app.js.
+// Consumes HOTKEY_ACTIONS (keyboard.js) + CLI_CONFIG (terminals), both exposed on
+// window by their owners; esc/toast/notify/openNote/... resolve via window.
+// See ARCHITECTURE.md.
+//
 // ── Command Palette ─────────────────────────────────────────────────────
 state._cmdSelectedIdx = 0;
 state._cmdFiltered = []; // ── Knowledge Specs (KIT): open the Mind tab Specs view ─────────────────────
@@ -1473,3 +1481,27 @@ function _getRecentPaletteActions() {
     return [];
   }
 }
+
+// ── Public surface ──────────────────────────────────────────────────────────
+// Palette open/close/filter/keydown reached from index.html + keyboard hotkeys;
+// the repo-map modal + quick-ask reached from index.html and generated onclick.
+// The search/render/dispatch helpers stay private.
+window.loadPluginCmdItems = loadPluginCmdItems;
+window.openCmdPalette = openCmdPalette;
+window.openAIFocusPalette = openAIFocusPalette;
+window.openShortcutHelp = openShortcutHelp;
+window._readAiHistory = _readAiHistory;
+window._dispatchFromLocalAnswer = _dispatchFromLocalAnswer;
+window.askAIFromPalette = askAIFromPalette;
+window.closeCmdPalette = closeCmdPalette;
+window.filterCmdPalette = filterCmdPalette;
+window.openRepoMapModal = openRepoMapModal;
+window.closeRepoMapModal = closeRepoMapModal;
+window.setRepoMapView = setRepoMapView;
+window.loadRepoMapInto = loadRepoMapInto;
+window.copyRepoMap = copyRepoMap;
+window.saveRepoMapAsNote = saveRepoMapAsNote;
+window.sendRepoMapToAi = sendRepoMapToAi;
+window.analyzeActiveRepo = analyzeActiveRepo;
+window._cmdPaletteEnterMode = _cmdPaletteEnterMode;
+window.cmdPaletteKeydown = cmdPaletteKeydown;

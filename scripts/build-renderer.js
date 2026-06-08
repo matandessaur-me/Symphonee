@@ -167,6 +167,13 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'work-items', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'work-items.js'),
   },
+  {
+    // Command palette + quick-ask + repo-map modal. Reads `state` at load ->
+    // after app.js. Consumes HOTKEY_ACTIONS (keyboard) + CLI_CONFIG (terminals).
+    name: 'command-palette',
+    entry: path.join(PUB, 'command-palette', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'command-palette.js'),
+  },
 ];
 
 const banner = {
