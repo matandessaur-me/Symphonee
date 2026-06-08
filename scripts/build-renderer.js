@@ -200,9 +200,9 @@ const ESBUILD_BUNDLES = [
     // Desktop-app automation subsystem -- bundled from former parts/apps.js +
     // apps-step-builder.js (one tightly-coupled unit). Reads `state` + listeners
     // at load -> after app.js.
-    name: 'apps',
-    entry: path.join(PUB, 'apps', 'src', 'index.js'),
-    outfile: path.join(PUB, 'js', 'apps.js'),
+    name: 'apps-tab',
+    entry: path.join(PUB, 'apps-tab', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'apps-tab.js'),
   },
   {
     // Orchestrator tab (cross-AI tasks/agents/dispatch). Reads `state` at load -> after app.js.

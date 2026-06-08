@@ -150,7 +150,7 @@ const EXTRACTED = [
     gone: ['renderOrchAgents', 'updateOrchTimers', '_saveTaskAsNote'],
   },
   {
-    name: 'apps', src: 'apps/src/index.js', out: 'js/apps.js',
+    name: 'apps-tab', src: 'apps-tab/src/index.js', out: 'js/apps-tab.js',
     exposes: ['appsOpenLauncher', 'appsOpenAutomations', 'appsRefreshAll', 'appsRefreshWindows',
       'appsChatSend', 'appsAutomationsNew', 'appsAutomationsSave', 'appsAutomationsRunNow',
       'appsAutomationsGenerate', 'appsPanic', 'handleAppsAgentStep', 'appsSubmitAdd',

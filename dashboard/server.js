@@ -103,7 +103,7 @@ const ROUTES = {
   '/js/plugins.js':           { file: path.join(publicDir, 'js', 'plugins.js'),                                    type: 'application/javascript' },
   '/js/settings.js':          { file: path.join(publicDir, 'js', 'settings.js'),                                   type: 'application/javascript' },
   '/js/browser.js':           { file: path.join(publicDir, 'js', 'browser.js'),                                    type: 'application/javascript' },
-  '/js/apps.js':              { file: path.join(publicDir, 'js', 'apps.js'),                                       type: 'application/javascript' },
+  '/js/apps-tab.js':          { file: path.join(publicDir, 'js', 'apps-tab.js'),                                       type: 'application/javascript' },
   '/js/orchestrator.js':      { file: path.join(publicDir, 'js', 'orchestrator.js'),                               type: 'application/javascript' },
   '/xterm.css':               { file: path.join(nodeModules, '@xterm/xterm/css/xterm.css'),                          type: 'text/css' },
   '/xterm.js':                { file: path.join(nodeModules, '@xterm/xterm/lib/xterm.js'),                           type: 'application/javascript' },
