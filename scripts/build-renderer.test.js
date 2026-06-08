@@ -133,6 +133,16 @@ const EXTRACTED = [
     gone: ['renderPRList', 'renderPRDetail', 'renderPRTimeline'],
   },
   {
+    // Bundled from 3 former parts; no single `part` file. Checks the bundle is
+    // built, exposes its surface, served, and the 3 parts are gone from the manifest.
+    name: 'browser', src: 'browser/src/index.js', out: 'js/browser.js',
+    exposes: ['sendBrowserAgent', 'stopBrowserAgent', 'toggleBrowserAgentPanel', 'inappBrowserGo',
+      'inappBrowserReload', 'closeInappToolsPanel', 'handleBrowserAgentStep', 'handleBrowserRouterDispatch',
+      'handleStagehandScreencast', '_resetAllEmulation', '_runInappSiteAudit', '_runInappReaderView',
+      'applyInappBrowserAppearance'],
+    gone: ['_ensureInappBrowser', '_renderInappToolsMenu', '_runInappEmulatePanel'],
+  },
+  {
     part: 'settings.js', src: 'settings/src/index.js', out: 'js/settings.js',
     exposes: ['openSettings', 'closeSettings', 'switchSettingsTab', 'saveSettings', 'openCreateModal',
       'submitCreateWorkItem', 'addProjectFromSettings', 'setActiveProject', 'deleteRepoFromSettings',

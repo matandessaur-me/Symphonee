@@ -156,6 +156,7 @@ Bootstrapping Mind only READS graph state (`mind.enabled`, stats, wakeup cards).
 5. You are launched in the Symphonee directory, but the user is working in a DIFFERENT repo. Call `/api/ui/context` first: `activeRepo` (name) and `activeRepoPath` (disk path). Work ONLY in that directory for code-related tasks. NEVER ask "which repo?" -- the user already selected it.
 6. ALWAYS run scripts from the Symphonee directory (your starting CWD). `./scripts/*.ps1` live there. For code work in another repo, use `activeRepoPath` for git/file ops.
 7. Repo names are CONFIGURED names, not folder names. Use the name from `/api/repos` or `/api/ui/context` (e.g. `"My Website"`, not `"my-company-website"`).
+8. When YOU create or clone a repo from the terminal (`git init`, `git clone`, scaffolding a new project), REGISTER it with Symphonee so it appears in the repo list -- do not leave the user to add it by hand. Prefer `./scripts/Add-Repo.ps1 -Name '<Display Name>' -Path '<absolute path>'` (add `-Space '<space>'` to also attach it), or `POST /api/repos {name, path}` directly. Create a new workspace the same way with `POST /api/spaces {name, icon?, description?, repos?, plugins?}`. The UI updates live (the server broadcasts `config-changed`) -- no restart. Do this automatically as part of "create a project" and tell the user in one line that you registered it; don't ask first.
 <!-- REPO_CONTEXT_END -->
 
 ## Shell / Path / Speed / Punctuation

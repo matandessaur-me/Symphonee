@@ -188,6 +188,14 @@ const ESBUILD_BUNDLES = [
     entry: path.join(PUB, 'settings', 'src', 'index.js'),
     outfile: path.join(PUB, 'js', 'settings.js'),
   },
+  {
+    // In-app browser automation subsystem -- bundled from former parts/browser.js
+    // + browser-tools.js + browser-views.js (one tightly-coupled unit). Reads
+    // `state` + listeners at load -> after app.js.
+    name: 'browser',
+    entry: path.join(PUB, 'browser', 'src', 'index.js'),
+    outfile: path.join(PUB, 'js', 'browser.js'),
+  },
 ];
 
 const banner = {

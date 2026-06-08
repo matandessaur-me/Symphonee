@@ -57,7 +57,10 @@ function registerIpcRoutes(addRoute, { getWin, app, dialog, screen, repoRoot, we
         if (behindCount > 0) {
           summary = execSync('git log --oneline master..origin/master', { cwd: repoRoot, encoding: 'utf8' }).trim();
         }
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot, encoding: 'utf8' }).trim();
+        // `branch --show-current` works even on a no-commits repo, where
+        // `rev-parse --abbrev-ref HEAD` errors ("ambiguous argument 'HEAD'").
+        let branch = '';
+        try { branch = execSync('git branch --show-current', { cwd: repoRoot, encoding: 'utf8' }).trim(); } catch (_) {}
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ updateAvailable: behindCount > 0, behind: behindCount, branch, summary }));
       } catch (err) {
