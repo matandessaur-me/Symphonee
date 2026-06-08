@@ -20,13 +20,24 @@ function readBody(req) {
 
 function mountImageProxy(addRoute, json, ctx) {
   const { getConfig, getPlugins, host, port } = ctx;
+  // execFile is injectable so open-external can be unit-tested without spawning.
+  const _execFile = ctx.execFile || execFile;
 
   async function handleOpenExternal(req, res) {
     const { url: extUrl } = await readBody(req);
     if (!extUrl) return json(res, { error: 'url required' }, 400);
-    try { validateUrl(extUrl); } catch (_) { return json(res, { error: 'Invalid URL' }, 400); }
+    // open-external hands the URL to the OS default browser (rundll32); it does
+    // NOT fetch server-side, so the SSRF private/loopback block in validateUrl
+    // must NOT apply here -- localhost / 127.0.0.1 dev-server links (e.g. from
+    // `npm run dev`) are the primary use case. Restrict to http/https only,
+    // which still blocks file:/javascript:/other FileProtocolHandler schemes.
+    let parsed;
+    try { parsed = new URL(extUrl); } catch (_) { return json(res, { error: 'Invalid URL' }, 400); }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return json(res, { error: 'only http/https allowed' }, 400);
+    }
     // rundll32 reliably opens URLs in the default browser on Windows
-    execFile('rundll32', ['url.dll,FileProtocolHandler', extUrl], (err) => {
+    _execFile('rundll32', ['url.dll,FileProtocolHandler', extUrl], (err) => {
       if (err) return json(res, { error: err.message }, 500);
       json(res, { ok: true });
     });
