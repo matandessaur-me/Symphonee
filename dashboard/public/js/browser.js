@@ -188,12 +188,17 @@
         target.textContent = _friendlySelectionLabel(sel);
       }
     }
-    if (_inappToolsState.open && _inappToolsState.current === "inspect") {
+    if (_inspectHostActive()) {
       try {
         _renderInappCodeInspect();
       } catch (_) {
       }
     }
+  }
+  function _inspectHostActive() {
+    if (_inappToolsState.open && _inappToolsState.current === "inspect") return true;
+    if (typeof _dt !== "undefined" && _dt.open && _dt.tab === "elements") return true;
+    return false;
   }
   function _syncInappInspectButton() {
     const btn = document.getElementById("inappInspectBtn");
@@ -369,7 +374,7 @@
     try {
       _browserInspectState.selected = JSON.parse(text.slice(prefix.length));
       _renderBrowserSelection();
-      const inspectToolActive = _inappToolsState.open && _inappToolsState.current === "inspect";
+      const inspectToolActive = _inspectHostActive();
       if (!inspectToolActive) {
         _ensureBrowserAgentPanelOpen();
         const input = _getBrowserAgentInput();
@@ -465,7 +470,7 @@
       return;
     }
     if (low === "t") {
-      toggleInappToolsPanelMenu();
+      browserDevtoolsOpenMenu();
       return;
     }
     if (low === "e") {
@@ -3205,7 +3210,7 @@
       return;
     }
     if (k === "t") {
-      toggleInappToolsPanelMenu();
+      browserDevtoolsOpenMenu();
       ev.preventDefault();
       return;
     }
@@ -4125,7 +4130,30 @@
       browserDevtoolsSwitch(_dt.tab);
     }
   }
-  var _DT_TOOL_TABS = ["elements", "issues", "audit", "emulate"];
+  var _DT_PANELS = [
+    { id: "console", label: "Console", group: "Inspect", kind: "log" },
+    { id: "network", label: "Network", group: "Inspect", kind: "log" },
+    { id: "performance", label: "Performance", group: "Inspect", kind: "log" },
+    { id: "server", label: "Server", group: "Inspect", kind: "log" },
+    { id: "storage", label: "Storage", group: "Inspect", kind: "log" },
+    { id: "elements", label: "Elements", group: "Inspect", kind: "tool" },
+    { id: "issues", label: "Issues", group: "Inspect", kind: "tool" },
+    { id: "audit", label: "Audit", group: "Inspect", kind: "tool" },
+    { id: "emulate", label: "Emulate device", group: "Page tools", kind: "tool" },
+    { id: "reader", label: "Reader view", group: "Page tools", kind: "tool" },
+    { id: "brand", label: "Detect brand", group: "Page tools", kind: "tool" },
+    { id: "patches", label: "Saved patches", group: "Page tools", kind: "tool" }
+  ];
+  var _DT_ACTIONS = [
+    { id: "select", label: "Select element (AI)", icon: "crosshair", active: () => !!(window._browserInspectState && _browserInspectState.enabled), run: () => toggleInappInspectMode() },
+    { id: "grayscale", label: "Grayscale", icon: "contrast", active: () => !!_inappToolsState.grayscale, run: () => toggleInappGrayscale() },
+    { id: "focus", label: "Focus mode", icon: "focus", active: () => !!_inappToolsState.focus, run: () => toggleInappFocusMode() },
+    { id: "shortcuts", label: "Keyboard shortcuts", icon: "keyboard", run: () => showInappShortcutsHelp() }
+  ];
+  var _DT_TOOL_TABS = _DT_PANELS.filter((p) => p.kind === "tool").map((p) => p.id);
+  function _dtPanel(id) {
+    return _DT_PANELS.find((p) => p.id === id);
+  }
   function _dtTeardownTool(prev, next) {
     if (prev === "elements" && next !== "elements") {
       try {
@@ -4148,6 +4176,9 @@
       else if (tab === "issues") await _runInappIssuesPanel();
       else if (tab === "audit") await _runInappSiteAudit();
       else if (tab === "emulate") await _runInappEmulatePanel();
+      else if (tab === "reader") await _runInappReaderView();
+      else if (tab === "brand") await _runInappBrandDetect();
+      else if (tab === "patches") await _runInappPatchesPanel();
     } catch (e) {
       if (body) body.innerHTML = '<div class="inapp-devtools-empty">' + _escapeHtml(String(e && e.message || e)) + "</div>";
     }
@@ -4157,23 +4188,18 @@
     }
   }
   function browserDevtoolsSwitch(tab) {
+    if (!_dtPanel(tab)) tab = "console";
     const prev = _dt.tab;
     _dt.tab = tab;
     if (prev !== tab) _dtTeardownTool(prev, tab);
-    document.querySelectorAll("#inappDevtools .inapp-devtools-tab").forEach((b) => {
-      b.classList.toggle("active", b.getAttribute("data-dt-tab") === tab);
-    });
-    const isTool = _DT_TOOL_TABS.includes(tab);
+    browserDevtoolsCloseMenu();
+    const panel = _dtPanel(tab);
+    const lbl = document.getElementById("inappDevtoolsPickerLabel");
+    if (lbl) lbl.textContent = panel ? panel.label : tab;
+    const isTool = panel && panel.kind === "tool";
     const dtBody = document.getElementById("inappDevtoolsBody");
     if (dtBody) dtBody.classList.toggle("dt-tool-host", isTool);
-    const level = document.getElementById("inappDevtoolsLevel");
-    const srv = document.getElementById("inappDevtoolsServerTerm");
-    const filter = document.getElementById("inappDevtoolsFilter");
-    const repl = document.getElementById("inappDevtoolsRepl");
-    if (level) level.style.display = tab === "console" ? "" : "none";
-    if (srv) srv.style.display = tab === "server" ? "" : "none";
-    if (filter) filter.style.display = tab === "performance" || isTool ? "none" : "";
-    if (repl) repl.style.display = tab === "console" ? "flex" : "none";
+    _dtUpdateControls(tab);
     if (isTool) {
       _inappToolsTargetId = "inappDevtoolsBody";
       _dtRunTool(tab);
@@ -4184,6 +4210,88 @@
     if (tab === "server") _dtAutoSelectServerTerm();
     if (tab === "storage") _dtFetchStorage();
     browserDevtoolsRender();
+  }
+  function _dtUpdateControls(panel) {
+    const show = (id, on) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = on ? "" : "none";
+    };
+    const isLog = ["console", "network", "server", "performance", "storage"].includes(panel);
+    show("inappDevtoolsLevel", panel === "console");
+    show("inappDevtoolsServerTerm", panel === "server");
+    show("inappDevtoolsFilter", ["console", "network", "server", "storage"].includes(panel));
+    show("inappDevtoolsPreserveWrap", ["console", "network"].includes(panel));
+    show("inappDevtoolsCopyBtn", isLog);
+    show("inappDevtoolsExportBtn", isLog);
+    show("inappDevtoolsClearBtn", ["console", "network", "server"].includes(panel));
+    const repl = document.getElementById("inappDevtoolsRepl");
+    if (repl) repl.style.display = panel === "console" ? "flex" : "none";
+  }
+  function browserDevtoolsToggleMenu() {
+    const menu = document.getElementById("inappDevtoolsMenu");
+    if (!menu) return;
+    if (menu.classList.contains("open")) {
+      menu.classList.remove("open");
+      return;
+    }
+    browserDevtoolsRenderMenu();
+    menu.classList.add("open");
+  }
+  function browserDevtoolsCloseMenu() {
+    const menu = document.getElementById("inappDevtoolsMenu");
+    if (menu) menu.classList.remove("open");
+  }
+  function _dtPanelCount(id) {
+    if (id === "console") return _dt.console.length;
+    if (id === "network") return _dt.network.length;
+    return null;
+  }
+  function browserDevtoolsRenderMenu() {
+    const menu = document.getElementById("inappDevtoolsMenu");
+    if (!menu) return;
+    const esc = _escapeHtml;
+    const groups = {};
+    _DT_PANELS.forEach((p) => {
+      (groups[p.group] = groups[p.group] || []).push(p);
+    });
+    let html = "";
+    Object.keys(groups).forEach((g) => {
+      html += `<div class="dt-menu-group">${esc(g)}</div>`;
+      groups[g].forEach((p) => {
+        const c = _dtPanelCount(p.id);
+        const badge = c != null && c > 0 ? `<span class="dt-menu-count">${c}</span>` : "";
+        html += `<button class="dt-menu-item${p.id === _dt.tab ? " active" : ""}" type="button" onclick="browserDevtoolsMenuPick('${p.id}')"><span class="dt-menu-name">${esc(p.label)}</span>${badge}</button>`;
+      });
+    });
+    html += `<div class="dt-menu-group">Page actions</div>`;
+    _DT_ACTIONS.forEach((a) => {
+      let on = false;
+      try {
+        on = a.active ? !!a.active() : false;
+      } catch (_) {
+      }
+      const pill = on ? '<span class="dt-menu-pill">On</span>' : "";
+      html += `<button class="dt-menu-item" type="button" onclick="browserDevtoolsMenuAction('${a.id}')"><span class="dt-menu-name">${esc(a.label)}</span>${pill}</button>`;
+    });
+    menu.innerHTML = html;
+  }
+  function browserDevtoolsOpenMenu() {
+    toggleBrowserDevtools(true);
+    const menu = document.getElementById("inappDevtoolsMenu");
+    if (menu && !menu.classList.contains("open")) browserDevtoolsToggleMenu();
+  }
+  function browserDevtoolsMenuPick(id) {
+    browserDevtoolsSwitch(id);
+  }
+  function browserDevtoolsMenuAction(id) {
+    browserDevtoolsCloseMenu();
+    const a = _DT_ACTIONS.find((x) => x.id === id);
+    if (a && a.run) {
+      try {
+        a.run();
+      } catch (_) {
+      }
+    }
   }
   async function _dtBackfill() {
     try {
@@ -4340,18 +4448,10 @@
       browserDevtoolsRender();
     });
   }
-  function _dtSetCount(id, n) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = n ? " " + n : "";
-  }
   function browserDevtoolsRender() {
     const body = document.getElementById("inappDevtoolsBody");
     if (!body || !_dt.open) return;
     if (_DT_TOOL_TABS.includes(_dt.tab)) return;
-    _dtSetCount("dtCountConsole", _dt.console.length);
-    _dtSetCount("dtCountNetwork", _dt.network.length);
-    const st = _dt.terms.get(_dt.serverTermId);
-    _dtSetCount("dtCountServer", st ? st.lines.length : 0);
     const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
     if (_dt.tab === "console") _dtRenderConsole(body);
     else if (_dt.tab === "network") _dtRenderNetwork(body);
@@ -4778,6 +4878,18 @@
     const input = document.getElementById("inappDevtoolsReplInput");
     if (input) input.addEventListener("keydown", _dtReplKeydown);
   })();
+  (function wireDevtoolsMenuDismiss() {
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+    document.addEventListener("click", (e) => {
+      const picker = document.getElementById("inappDevtoolsMenu");
+      if (!picker || !picker.classList.contains("open")) return;
+      const wrap = picker.closest(".inapp-devtools-picker");
+      if (wrap && !wrap.contains(e.target)) browserDevtoolsCloseMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") browserDevtoolsCloseMenu();
+    });
+  })();
   (function wireDevtoolsResize() {
     const handle = document.getElementById("inappDevtoolsResize");
     const el = document.getElementById("inappDevtools");
@@ -4849,6 +4961,9 @@
   window.applyInappBrowserAppearance = applyInappBrowserAppearance;
   window.toggleBrowserDevtools = toggleBrowserDevtools;
   window.browserDevtoolsSwitch = browserDevtoolsSwitch;
+  window.browserDevtoolsToggleMenu = browserDevtoolsToggleMenu;
+  window.browserDevtoolsMenuPick = browserDevtoolsMenuPick;
+  window.browserDevtoolsMenuAction = browserDevtoolsMenuAction;
   window.browserDevtoolsRender = browserDevtoolsRender;
   window.browserDevtoolsClear = browserDevtoolsClear;
   window.browserDevtoolsCopy = browserDevtoolsCopy;

@@ -871,8 +871,7 @@
           <button class="tab-bar-btn" onclick="inappBrowserReload()" title="Reload"><i data-lucide="rotate-cw" style="width:13px;height:13px;"></i></button>
           <input id="inappBrowserUrl" type="text" placeholder="Enter a URL or search" onkeydown="if(event.key==='Enter')inappBrowserGo()" />
           <button class="tab-bar-btn" onclick="inappBrowserGo()"><i data-lucide="arrow-right-circle" style="width:13px;height:13px;"></i> Go</button>
-          <button class="tab-bar-btn" id="inappToolsBtn" type="button" onclick="toggleInappToolsPanelMenu()" title="Web tools (T)"><i data-lucide="wrench" style="width:13px;height:13px;"></i> Tools</button>
-          <button class="tab-bar-btn" id="inappDevtoolsBtn" type="button" onclick="toggleBrowserDevtools()" title="Console, Network, Performance & Server logs (D)"><i data-lucide="terminal-square" style="width:13px;height:13px;"></i> DevTools<span class="inapp-devtools-badge" id="inappDevtoolsBadge" style="display:none;">0</span></button>
+          <button class="tab-bar-btn" id="inappDevtoolsBtn" type="button" onclick="toggleBrowserDevtools()" title="DevTools: Console, Network, Elements, and all page tools (D)"><i data-lucide="terminal-square" style="width:13px;height:13px;"></i> DevTools<span class="inapp-devtools-badge" id="inappDevtoolsBadge" style="display:none;">0</span></button>
           <button class="tab-bar-btn" id="inappMoreBtn" type="button" onclick="toggleInappMorePanel()" title="More"><i data-lucide="more-horizontal" style="width:13px;height:13px;"></i></button>
           <button class="inapp-agent-chip" id="inappAgentChip" onclick="toggleBrowserAgentPanel()" title="Ask AI to drive this browser">
             <span class="inapp-agent-chip-dot"></span>
@@ -937,32 +936,34 @@
         <div class="inapp-devtools" id="inappDevtools" style="display:none;">
           <div class="inapp-devtools-resize" id="inappDevtoolsResize" title="Drag to resize"></div>
           <div class="inapp-devtools-head">
-            <div class="inapp-devtools-tabs" role="tablist">
-              <button class="inapp-devtools-tab active" data-dt-tab="console" onclick="browserDevtoolsSwitch('console')">Console<span class="inapp-devtools-tabcount" id="dtCountConsole"></span></button>
-              <button class="inapp-devtools-tab" data-dt-tab="network" onclick="browserDevtoolsSwitch('network')">Network<span class="inapp-devtools-tabcount" id="dtCountNetwork"></span></button>
-              <button class="inapp-devtools-tab" data-dt-tab="performance" onclick="browserDevtoolsSwitch('performance')">Performance</button>
-              <button class="inapp-devtools-tab" data-dt-tab="server" onclick="browserDevtoolsSwitch('server')">Server<span class="inapp-devtools-tabcount" id="dtCountServer"></span></button>
-              <button class="inapp-devtools-tab" data-dt-tab="storage" onclick="browserDevtoolsSwitch('storage')">Storage</button>
-              <button class="inapp-devtools-tab" data-dt-tab="elements" onclick="browserDevtoolsSwitch('elements')">Elements</button>
-              <button class="inapp-devtools-tab" data-dt-tab="issues" onclick="browserDevtoolsSwitch('issues')">Issues</button>
-              <button class="inapp-devtools-tab" data-dt-tab="audit" onclick="browserDevtoolsSwitch('audit')">Audit</button>
-              <button class="inapp-devtools-tab" data-dt-tab="emulate" onclick="browserDevtoolsSwitch('emulate')">Emulate</button>
+            <div class="inapp-devtools-picker">
+              <button class="inapp-devtools-picker-btn" id="inappDevtoolsPickerBtn" type="button" onclick="browserDevtoolsToggleMenu()" title="Choose what to show">
+                <span class="inapp-devtools-picker-label" id="inappDevtoolsPickerLabel">Console</span>
+                <i data-lucide="chevrons-up-down" style="width:13px;height:13px;"></i>
+              </button>
+              <div class="inapp-devtools-menu" id="inappDevtoolsMenu"></div>
             </div>
-            <div class="inapp-devtools-controls">
-              <input type="text" class="inapp-devtools-filter" id="inappDevtoolsFilter" placeholder="Filter" oninput="browserDevtoolsRender()" />
-              <select class="inapp-devtools-level" id="inappDevtoolsLevel" onchange="browserDevtoolsRender()" title="Console level">
+            <div class="inapp-devtools-ctl-left">
+              <select class="dt-ctl-select" id="inappDevtoolsServerTerm" onchange="browserDevtoolsSelectServerTerm(this.value)" title="Dev server terminal" style="display:none;"></select>
+              <select class="dt-ctl-select" id="inappDevtoolsLevel" onchange="browserDevtoolsRender()" title="Console level" style="display:none;">
                 <option value="all">All levels</option>
                 <option value="error">Errors</option>
                 <option value="warning">Warnings</option>
                 <option value="info">Info</option>
                 <option value="log">Logs</option>
               </select>
-              <select class="inapp-devtools-level" id="inappDevtoolsServerTerm" onchange="browserDevtoolsSelectServerTerm(this.value)" title="Dev server terminal" style="display:none;"></select>
-              <label class="inapp-devtools-preserve" title="Keep logs across page navigations"><input type="checkbox" id="inappDevtoolsPreserve" /> Preserve</label>
-              <button class="tab-bar-btn" onclick="browserDevtoolsCopy()" title="Copy this panel to clipboard"><i data-lucide="copy" style="width:12px;height:12px;"></i></button>
-              <button class="tab-bar-btn" onclick="browserDevtoolsExport()" title="Download this panel as a file"><i data-lucide="download" style="width:12px;height:12px;"></i></button>
-              <button class="tab-bar-btn" onclick="browserDevtoolsClear()" title="Clear">Clear</button>
-              <button class="inapp-agent-head-close" onclick="toggleBrowserDevtools(false)" title="Close (D)">&times;</button>
+              <input type="text" class="dt-ctl-filter" id="inappDevtoolsFilter" placeholder="Filter" oninput="browserDevtoolsRender()" style="display:none;" />
+              <label class="dt-switch" id="inappDevtoolsPreserveWrap" title="Keep logs across page navigations" style="display:none;">
+                <input type="checkbox" id="inappDevtoolsPreserve" />
+                <span class="dt-switch-track"><span class="dt-switch-thumb"></span></span>
+                <span class="dt-switch-label">Preserve</span>
+              </label>
+            </div>
+            <div class="inapp-devtools-ctl-right">
+              <button class="dt-ctl-btn" id="inappDevtoolsCopyBtn" onclick="browserDevtoolsCopy()" title="Copy to clipboard" style="display:none;"><i data-lucide="copy" style="width:13px;height:13px;"></i></button>
+              <button class="dt-ctl-btn" id="inappDevtoolsExportBtn" onclick="browserDevtoolsExport()" title="Download" style="display:none;"><i data-lucide="download" style="width:13px;height:13px;"></i></button>
+              <button class="dt-ctl-btn" id="inappDevtoolsClearBtn" onclick="browserDevtoolsClear()" title="Clear" style="display:none;"><i data-lucide="ban" style="width:13px;height:13px;"></i></button>
+              <button class="dt-ctl-btn dt-ctl-close" onclick="toggleBrowserDevtools(false)" title="Close (D)"><i data-lucide="x" style="width:14px;height:14px;"></i></button>
             </div>
           </div>
           <div class="inapp-devtools-body" id="inappDevtoolsBody"></div>

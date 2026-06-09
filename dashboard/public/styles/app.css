@@ -1335,34 +1335,72 @@
     .inapp-devtools-resize:hover { background: var(--accent); opacity: 0.4; }
     .inapp-devtools-head {
       display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
-      padding: 0 8px; background: var(--crust);
+      padding: 5px 8px; background: var(--crust);
       border-bottom: 1px solid var(--surface0); flex-shrink: 0; min-width: 0;
     }
-    .inapp-devtools-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; }
-    .inapp-devtools-tab {
-      background: transparent; border: 0; border-bottom: 2px solid transparent;
-      color: var(--subtext0); font: 11px var(--font-ui); cursor: pointer;
-      padding: 8px 10px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
-    }
-    .inapp-devtools-tab:hover { color: var(--text); }
-    .inapp-devtools-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-    .inapp-devtools-tabcount {
-      font: 10px var(--font-mono); color: var(--subtext0);
-      background: var(--surface0); border-radius: 999px; padding: 0 5px; min-width: 14px; text-align: center;
-    }
-    .inapp-devtools-tab.active .inapp-devtools-tabcount { color: var(--text); }
-    .inapp-devtools-controls { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-    .inapp-devtools-filter, .inapp-devtools-level {
+    /* Panel picker (replaces the tab strip) */
+    .inapp-devtools-picker { position: relative; flex-shrink: 0; }
+    .inapp-devtools-picker-btn {
+      display: inline-flex; align-items: center; gap: 6px;
       background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
-      color: var(--text); font: 11px var(--font-mono); padding: 3px 7px; outline: none; height: 24px;
+      color: var(--text); font: 600 11px var(--font-ui); cursor: pointer; padding: 0 9px; height: 26px; white-space: nowrap;
     }
-    .inapp-devtools-filter { width: 130px; }
-    .inapp-devtools-filter:focus, .inapp-devtools-level:focus { border-color: var(--accent); }
-    .inapp-devtools-preserve {
-      display: inline-flex; align-items: center; gap: 4px;
-      font: 11px var(--font-ui); color: var(--subtext0); cursor: pointer; user-select: none;
+    .inapp-devtools-picker-btn:hover { border-color: var(--accent); }
+    .inapp-devtools-picker-btn i { color: var(--subtext0); }
+    .inapp-devtools-picker-label { min-width: 60px; }
+    .inapp-devtools-menu {
+      display: none; position: absolute; top: 32px; left: 0; z-index: 20;
+      min-width: 224px; max-height: 240px; overflow: auto; padding: 4px;
+      background: var(--mantle); border: 1px solid var(--surface1); border-radius: var(--radius-lg);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     }
-    .inapp-devtools-preserve input { accent-color: var(--accent); }
+    .inapp-devtools-menu.open { display: block; }
+    .dt-menu-group {
+      font: 10px var(--font-ui); text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--overlay0); padding: 8px 8px 4px;
+    }
+    .dt-menu-item {
+      display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+      background: transparent; border: 0; border-radius: var(--radius); cursor: pointer;
+      color: var(--subtext1); font: 12px var(--font-ui); padding: 6px 8px;
+    }
+    .dt-menu-item .dt-menu-name { flex: 1; }
+    .dt-menu-item:hover { background: var(--surface0); color: var(--text); }
+    .dt-menu-item.active { background: var(--surface0); color: var(--accent); }
+    .dt-menu-count {
+      font: 10px var(--font-mono); color: var(--subtext0);
+      background: var(--surface1); border-radius: 999px; padding: 0 6px; min-width: 16px; text-align: center;
+    }
+    .dt-menu-pill {
+      font: 9px var(--font-ui); text-transform: uppercase; letter-spacing: 0.04em;
+      background: var(--accent); color: var(--crust); border-radius: 999px; padding: 1px 6px;
+    }
+    /* Contextual controls: left = panel-specific, right = copy/export/clear/close */
+    .inapp-devtools-ctl-left { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+    .inapp-devtools-ctl-right { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .dt-ctl-select, .dt-ctl-filter {
+      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
+      color: var(--text); font: 11px var(--font-mono); padding: 0 7px; outline: none; height: 24px;
+    }
+    .dt-ctl-select { max-width: 260px; }
+    .dt-ctl-filter { width: 150px; }
+    .dt-ctl-select:focus, .dt-ctl-filter:focus { border-color: var(--accent); }
+    .dt-ctl-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 24px; background: transparent; border: 1px solid transparent;
+      border-radius: var(--radius); color: var(--subtext0); cursor: pointer;
+    }
+    .dt-ctl-btn:hover { background: var(--surface0); color: var(--text); border-color: var(--surface1); }
+    .dt-ctl-btn i { width: 13px; height: 13px; }
+    .dt-ctl-close:hover { color: var(--red); border-color: var(--red); }
+    /* Themed toggle switch (Preserve) */
+    .dt-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font: 11px var(--font-ui); color: var(--subtext0); }
+    .dt-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .dt-switch-track { position: relative; width: 28px; height: 16px; border-radius: 999px; background: var(--surface2); transition: background 0.15s; flex-shrink: 0; }
+    .dt-switch-thumb { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--overlay1); transition: transform 0.15s, background 0.15s; }
+    .dt-switch input:checked + .dt-switch-track { background: var(--accent); }
+    .dt-switch input:checked + .dt-switch-track .dt-switch-thumb { transform: translateX(12px); background: var(--crust); }
+    .dt-switch:hover .dt-switch-label { color: var(--text); }
     .inapp-devtools-body {
       flex: 1; min-height: 0; overflow: auto;
       font: 11px/1.55 var(--font-mono); color: var(--text);
