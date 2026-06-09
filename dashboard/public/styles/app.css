@@ -1439,6 +1439,30 @@
        flush monospace log layout. */
     .inapp-devtools-body.dt-tool-host { padding: 10px 12px; font: 12px var(--font-ui); }
 
+    /* Reader panel controls */
+    .rv-panel { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+    .rv-status { display: flex; align-items: center; gap: 10px; }
+    .rv-status-icon { width: 22px; height: 22px; color: var(--accent); flex-shrink: 0; }
+    .rv-status-copy { flex: 1; min-width: 0; }
+    .rv-status-title { font: 600 13px var(--font-ui); color: var(--text); }
+    .rv-status-sub { font: 11px var(--font-ui); color: var(--subtext0); margin-top: 1px; }
+    .rv-toggle { background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius); color: var(--text); font: 12px var(--font-ui); padding: 5px 12px; cursor: pointer; flex-shrink: 0; }
+    .rv-toggle:hover { border-color: var(--accent); }
+    .rv-toggle.on { background: var(--accent); color: var(--crust); border-color: var(--accent); }
+    .rv-row { display: flex; align-items: center; gap: 10px; }
+    .rv-row-label { width: 54px; flex-shrink: 0; font: 10px var(--font-ui); color: var(--subtext0); text-transform: uppercase; letter-spacing: 0.04em; }
+    .rv-seg { display: inline-flex; background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius); overflow: hidden; }
+    .rv-seg-btn { background: transparent; border: 0; border-right: 1px solid var(--surface1); color: var(--subtext1); font: 12px var(--font-ui); padding: 5px 12px; cursor: pointer; }
+    .rv-seg-btn:last-child { border-right: 0; }
+    .rv-seg-btn:hover { color: var(--text); background: var(--surface1); }
+    .rv-seg-btn.active { background: var(--accent); color: var(--crust); }
+    .rv-actions { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+    .rv-act-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius); color: var(--text); font: 12px var(--font-ui); padding: 5px 11px; cursor: pointer; }
+    .rv-act-btn:hover { border-color: var(--accent); }
+    .rv-act-btn i { width: 14px; height: 14px; }
+    .rv-act-primary { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); }
+    .rv-act-primary:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+
     /* Console + log rows */
     .dt-row {
       display: flex; gap: 8px; align-items: baseline;

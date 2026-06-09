@@ -3226,6 +3226,7 @@
   var _inappReaderState = {
     active: false,
     sizeIdx: 2,
+    theme: "light",
     words: 0,
     minutes: 0,
     rootTag: ""
@@ -3397,6 +3398,28 @@
     window.__symphoneeReaderSetFontSize = function(px){
       try { wrap.style.fontSize = px; } catch (_) {}
     };
+    // Reading mode (light / sepia / dark) -- injected as a high-specificity
+    // theme stylesheet so it overrides the scoped reader CSS.
+    window.__symphoneeReaderSetTheme = function(theme){
+      try {
+        var themes = {
+          light: { bg:'#ffffff', fg:'#1a1a1a', muted:'#6b6b6b', link:'#1a6dd6', border:'#e6e6e6' },
+          sepia: { bg:'#f4ecd8', fg:'#5b4636', muted:'#8a7a5c', link:'#9a5b2f', border:'#e2d6bd' },
+          dark:  { bg:'#181818', fg:'#e8e8e8', muted:'#9a9a9a', link:'#7db4ff', border:'#333333' }
+        };
+        var c = themes[theme] || themes.light;
+        var id = '__symphoneeReaderThemeStyle';
+        var st = document.getElementById(id);
+        if (!st) { st = document.createElement('style'); st.id = id; document.head.appendChild(st); }
+        st.textContent = [
+          '#__symphoneeReaderOverlay{background:'+c.bg+' !important;color:'+c.fg+' !important;}',
+          '#__symphoneeReaderOverlay *{color:'+c.fg+';border-color:'+c.border+';}',
+          '#__symphoneeReaderOverlay a{color:'+c.link+' !important;}',
+          '#__symphoneeReaderOverlay .rv-eyebrow,#__symphoneeReaderOverlay .rv-meta,#__symphoneeReaderOverlay time{color:'+c.muted+' !important;}',
+          '#__symphoneeReaderOverlay pre,#__symphoneeReaderOverlay code,#__symphoneeReaderOverlay blockquote{background:'+(theme==='dark'?'#222':theme==='sepia'?'#ece2c8':'#f5f5f5')+' !important;}'
+        ].join('');
+      } catch (_) {}
+    };
     document.body.appendChild(overlay);
     overlay.scrollTop = 0;
     // Lock the underlying page scroll so only the overlay scrolls (no double scrollbars).
@@ -3422,35 +3445,143 @@
       _inappReaderState.rootTag = result.rootTag || "body";
       if (_inappReaderState.sizeIdx == null) _inappReaderState.sizeIdx = 2;
       _inappReaderSetFontSize(_READER_FONT_SIZES[_inappReaderState.sizeIdx]);
+      _inappReaderApplyTheme(_inappReaderState.theme || "light");
     }
     _renderInappReaderSidebar();
   }
   function _renderInappReaderSidebar() {
     const on = _inappReaderState.active;
+    const theme = _inappReaderState.theme || "light";
+    const seg = (id, label) => `<button class="rv-seg-btn${theme === id ? " active" : ""}" data-theme="${id}" type="button">${label}</button>`;
     _setInappToolsBodyHtml(`
-    <div style="text-align:center;padding:10px 4px 4px;">
-      <i data-lucide="${on ? "book-open-check" : "book-open"}" style="width:22px;height:22px;display:block;margin:0 auto 6px;color:var(--accent);"></i>
-      <div style="font:600 12px var(--font-ui);color:var(--text);">${on ? "Reader view on" : "Reader view off"}</div>
-      <div style="font:11px/1.35 var(--font-ui);margin-top:3px;color:var(--subtext0);">${on ? "Parsed " + (_inappReaderState.words || 0).toLocaleString() + " words from &lt;" + _escapeHtml(_inappReaderState.rootTag) + "&gt; &mdash; about " + (_inappReaderState.minutes || 1) + " min read." : "Click Turn on to parse the current page."}</div>
-    </div>
-    <div class="inapp-tools-actions" style="margin:8px -12px -12px;gap:4px;">
-      <button class="tab-bar-btn" type="button" onclick="_runInappReaderView()"><i data-lucide="repeat" style="width:13px;height:13px;"></i> ${on ? "Turn off" : "Turn on"}</button>
+    <div class="rv-panel">
+      <div class="rv-status">
+        <i data-lucide="${on ? "book-open-check" : "book-open"}" class="rv-status-icon"></i>
+        <div class="rv-status-copy">
+          <div class="rv-status-title">${on ? "Reader on" : "Reader off"}</div>
+          <div class="rv-status-sub">${on ? (_inappReaderState.words || 0).toLocaleString() + " words &middot; ~" + (_inappReaderState.minutes || 1) + " min read" : "Strip this page to its article."}</div>
+        </div>
+        <button class="rv-toggle${on ? " on" : ""}" type="button" id="readerToggle">${on ? "Turn off" : "Turn on"}</button>
+      </div>
       ${on ? `
-        <button class="tab-bar-btn" type="button" id="readerSizeMinus" title="Smaller font"><i data-lucide="minus" style="width:13px;height:13px;"></i></button>
-        <button class="tab-bar-btn" type="button" id="readerSizePlus" title="Larger font"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>
+      <div class="rv-row"><span class="rv-row-label">Mode</span><div class="rv-seg" id="readerThemeSeg">${seg("light", "Light")}${seg("sepia", "Sepia")}${seg("dark", "Dark")}</div></div>
+      <div class="rv-row"><span class="rv-row-label">Font</span><div class="rv-seg"><button class="rv-seg-btn" id="readerSizeMinus" type="button" title="Smaller">A&minus;</button><button class="rv-seg-btn" id="readerSizePlus" type="button" title="Larger">A+</button></div></div>
+      <div class="rv-row"><span class="rv-row-label">Export</span><div class="rv-actions"><button class="rv-act-btn" id="readerCopy" type="button"><i data-lucide="copy"></i> Copy text</button><button class="rv-act-btn" id="readerSaveNote" type="button"><i data-lucide="file-plus-2"></i> Save as note</button></div></div>
+      <div class="rv-row"><span class="rv-row-label">AI</span><div class="rv-actions"><button class="rv-act-btn rv-act-primary" id="readerAnalyze" type="button"><i data-lucide="sparkles"></i> Analyze with AI</button></div></div>
       ` : ""}
     </div>
   `);
+    const toggle = document.getElementById("readerToggle");
+    if (toggle) toggle.onclick = () => _runInappReaderView();
     if (on) {
+      const segWrap = document.getElementById("readerThemeSeg");
+      if (segWrap) segWrap.querySelectorAll("[data-theme]").forEach((b) => {
+        b.onclick = () => _inappReaderSetTheme(b.getAttribute("data-theme"));
+      });
       const minus = document.getElementById("readerSizeMinus");
       const plus = document.getElementById("readerSizePlus");
       if (minus) minus.onclick = () => _inappReaderBumpFontSize(-1);
       if (plus) plus.onclick = () => _inappReaderBumpFontSize(1);
+      const copy = document.getElementById("readerCopy");
+      if (copy) copy.onclick = _inappReaderCopy;
+      const saveNote = document.getElementById("readerSaveNote");
+      if (saveNote) saveNote.onclick = _inappReaderSaveNote;
+      const analyze = document.getElementById("readerAnalyze");
+      if (analyze) analyze.onclick = _inappReaderAnalyze;
     }
     try {
       if (window.lucide && lucide.createIcons) lucide.createIcons();
     } catch (_) {
     }
+  }
+  function _inappReaderApplyTheme(theme) {
+    const view = _ensureInappBrowser();
+    if (!view || view.tagName.toLowerCase() !== "webview") return;
+    try {
+      view.executeJavaScript("try{window.__symphoneeReaderSetTheme&&window.__symphoneeReaderSetTheme(" + JSON.stringify(theme) + ");}catch(_){}", true);
+    } catch (_) {
+    }
+  }
+  function _inappReaderSetTheme(theme) {
+    _inappReaderState.theme = theme;
+    _inappReaderApplyTheme(theme);
+    _renderInappReaderSidebar();
+  }
+  async function _inappReaderGetArticle() {
+    const view = _ensureInappBrowser();
+    if (!view || view.tagName.toLowerCase() !== "webview") return null;
+    try {
+      const out = await view.executeJavaScript(`(function(){var o=document.getElementById('__symphoneeReaderOverlay');if(!o)return null;var h=o.querySelector('h1');var b=o.querySelector('.rv-body');return JSON.stringify({title:((h&&h.innerText)||document.title||'').trim(),text:((b&&b.innerText)||'').trim(),url:location.href});})()`, true);
+      return out ? JSON.parse(out) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  async function _inappReaderCopy() {
+    const a = await _inappReaderGetArticle();
+    if (!a || !a.text) {
+      toast("No article text to copy.", "error");
+      return;
+    }
+    const text = (a.title ? a.title + "\n\n" : "") + a.text;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Article copied (" + a.text.length.toLocaleString() + " chars)", "success");
+    } catch (_) {
+      toast("Copy failed", "error");
+    }
+  }
+  async function _inappReaderSaveNote() {
+    const a = await _inappReaderGetArticle();
+    if (!a || !a.text) {
+      toast("No article text to save.", "error");
+      return;
+    }
+    const safeName = "Article \u2014 " + ((a.title || "Untitled").replace(/[^\w\s-]/g, "").trim().slice(0, 80) || "Untitled");
+    const md = ["# " + (a.title || "Untitled"), "", a.url ? "> Source: " + a.url : null, "", a.text, "", "_Saved from Reader " + (/* @__PURE__ */ new Date()).toISOString() + "_"].filter((l) => l !== null).join("\n");
+    try {
+      await notesFetch("/api/notes/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: safeName }) });
+      await notesFetch("/api/notes/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: safeName, content: md }) });
+      toast("Saved to note: " + safeName, "success");
+    } catch (e) {
+      toast("Failed to save note", "error");
+    }
+  }
+  async function _inappReaderAnalyze() {
+    const a = await _inappReaderGetArticle();
+    if (!a || !a.text) {
+      toast("No article to analyze.", "error");
+      return;
+    }
+    try {
+      toggleBrowserDevtools(true);
+    } catch (_) {
+    }
+    try {
+      browserDevtoolsSwitch("ai");
+    } catch (_) {
+    }
+    const snippet = a.text.slice(0, 6e3);
+    const prompt = `Analyze this article and give me a tight summary, the key takeaways, and anything notable or questionable.
+
+Title: ${a.title || "(untitled)"}
+Source: ${a.url || ""}
+
+${snippet}${a.text.length > 6e3 ? "\n\n[truncated]" : ""}`;
+    setTimeout(() => {
+      const input = document.getElementById("inappAgentInput");
+      if (input) {
+        input.value = prompt;
+        try {
+          _autosizeAgentInput(input);
+        } catch (_) {
+        }
+      }
+      try {
+        sendBrowserAgent();
+      } catch (_) {
+      }
+    }, 120);
   }
   function _inappReaderBumpFontSize(delta) {
     const max = _READER_FONT_SIZES.length - 1;
