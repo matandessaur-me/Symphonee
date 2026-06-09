@@ -351,10 +351,14 @@
     }
   }
   function _ensureBrowserAgentPanelOpen() {
+    if (typeof toggleBrowserDevtools === "function") toggleBrowserDevtools(true);
+    if (_dt.tab !== "ai") {
+      browserDevtoolsSwitch("ai");
+      return;
+    }
     const panel = document.getElementById("inappAgentPanel");
     const chip = document.getElementById("inappAgentChip");
-    if (!panel || panel.classList.contains("open")) return;
-    panel.classList.add("open");
+    if (!panel) return;
     _browserAgentState.open = true;
     if (chip) chip.classList.add("active");
     _loadBrowserAgentStatus();
@@ -690,19 +694,12 @@
     if (sel && sel.value) _browserAgentState.provider = sel.value;
   }
   function toggleBrowserAgentPanel() {
-    const panel = document.getElementById("inappAgentPanel");
-    const chip = document.getElementById("inappAgentChip");
-    if (!panel) return;
-    _browserAgentState.open = !panel.classList.contains("open");
-    panel.classList.toggle("open", _browserAgentState.open);
-    if (chip) chip.classList.toggle("active", _browserAgentState.open);
-    if (_browserAgentState.open) {
-      _loadBrowserAgentStatus();
-      setTimeout(() => {
-        const i = document.getElementById("inappAgentInput");
-        if (i) i.focus();
-      }, 50);
+    if (_dt.open && _dt.tab === "ai") {
+      toggleBrowserDevtools(false);
+      return;
     }
+    toggleBrowserDevtools(true);
+    browserDevtoolsSwitch("ai");
   }
   function _setBrowserAgentRunning(running) {
     _browserAgentState.running = !!running;
@@ -4059,6 +4056,7 @@
   var MAX_DT_SERVER_LINES = 2500;
   var _dt = {
     open: false,
+    dock: "bottom",
     tab: "console",
     console: [],
     network: [],
@@ -4118,6 +4116,9 @@
     if (!next) {
       _dtTeardownTool(_dt.tab, "");
       _inappToolsTargetId = "inappToolsBody";
+      _browserAgentState.open = false;
+      const chip = document.getElementById("inappAgentChip");
+      if (chip) chip.classList.remove("active");
     }
     if (next) {
       _dt.errorCount = 0;
@@ -4131,6 +4132,7 @@
     }
   }
   var _DT_PANELS = [
+    { id: "ai", label: "AI", group: "Assistant", kind: "ai" },
     { id: "console", label: "Console", group: "Inspect", kind: "log" },
     { id: "network", label: "Network", group: "Inspect", kind: "log" },
     { id: "performance", label: "Performance", group: "Inspect", kind: "log" },
@@ -4197,9 +4199,29 @@
     const lbl = document.getElementById("inappDevtoolsPickerLabel");
     if (lbl) lbl.textContent = panel ? panel.label : tab;
     const isTool = panel && panel.kind === "tool";
+    const isAi = panel && panel.kind === "ai";
     const dtBody = document.getElementById("inappDevtoolsBody");
-    if (dtBody) dtBody.classList.toggle("dt-tool-host", isTool);
+    if (dtBody) {
+      dtBody.classList.toggle("dt-tool-host", isTool);
+      dtBody.style.display = isAi ? "none" : "";
+    }
+    const agentPanel = document.getElementById("inappAgentPanel");
+    if (agentPanel) agentPanel.classList.toggle("dt-ai-active", isAi);
+    const chip = document.getElementById("inappAgentChip");
+    if (chip) chip.classList.toggle("active", isAi);
+    _browserAgentState.open = isAi;
     _dtUpdateControls(tab);
+    if (isAi) {
+      try {
+        _loadBrowserAgentStatus();
+      } catch (_) {
+      }
+      setTimeout(() => {
+        const i = document.getElementById("inappAgentInput");
+        if (i) i.focus();
+      }, 50);
+      return;
+    }
     if (isTool) {
       _inappToolsTargetId = "inappDevtoolsBody";
       _dtRunTool(tab);
@@ -4273,6 +4295,10 @@
       const pill = on ? '<span class="dt-menu-pill">On</span>' : "";
       html += `<button class="dt-menu-item" type="button" onclick="browserDevtoolsMenuAction('${a.id}')"><span class="dt-menu-name">${esc(a.label)}</span>${pill}</button>`;
     });
+    html += `<div class="dt-menu-group">View</div>`;
+    const zoom = _formatInappBrowserZoom(state._inappBrowserZoomFactor);
+    html += `<div class="dt-zoom-row"><span class="dt-zoom-label">Zoom</span><button class="dt-zoom-btn" type="button" onclick="browserDevtoolsZoom('out')" title="Zoom out">&minus;</button><span class="dt-zoom-value" id="dtZoomValue">${esc(zoom)}</span><button class="dt-zoom-btn" type="button" onclick="browserDevtoolsZoom('in')" title="Zoom in">+</button><button class="dt-zoom-btn dt-zoom-reset" type="button" onclick="browserDevtoolsZoom('reset')" title="Reset zoom">Reset</button></div>`;
+    html += `<button class="dt-menu-item" type="button" onclick="browserDevtoolsResetView()"><span class="dt-menu-name">Reset view</span></button>`;
     menu.innerHTML = html;
   }
   function browserDevtoolsOpenMenu() {
@@ -4291,6 +4317,39 @@
         a.run();
       } catch (_) {
       }
+    }
+  }
+  function browserDevtoolsZoom(dir) {
+    try {
+      if (dir === "in") inappBrowserZoomIn();
+      else if (dir === "out") inappBrowserZoomOut();
+      else inappBrowserZoomReset();
+    } catch (_) {
+    }
+    const v = document.getElementById("dtZoomValue");
+    if (v) v.textContent = _formatInappBrowserZoom(state._inappBrowserZoomFactor);
+  }
+  function browserDevtoolsResetView() {
+    browserDevtoolsCloseMenu();
+    try {
+      inappBrowserZoomReset();
+    } catch (_) {
+    }
+    try {
+      if (typeof _resetAllEmulation === "function") _resetAllEmulation();
+    } catch (_) {
+    }
+    try {
+      if (_inappToolsState.grayscale) toggleInappGrayscale();
+    } catch (_) {
+    }
+    try {
+      if (_inappToolsState.focus) toggleInappFocusMode();
+    } catch (_) {
+    }
+    try {
+      inappBrowserReload();
+    } catch (_) {
     }
   }
   async function _dtBackfill() {
@@ -4890,23 +4949,50 @@
       if (e.key === "Escape") browserDevtoolsCloseMenu();
     });
   })();
+  function browserDevtoolsSetDock(pos) {
+    if (pos !== "bottom" && pos !== "left" && pos !== "right") pos = "bottom";
+    _dt.dock = pos;
+    try {
+      localStorage.setItem("symphonee-tools-dock", pos);
+    } catch (_) {
+    }
+    const content = document.getElementById("inappBrowserContent");
+    if (content) {
+      content.classList.remove("dock-bottom", "dock-left", "dock-right");
+      content.classList.add("dock-" + pos);
+    }
+    const el = document.getElementById("inappDevtools");
+    if (el) {
+      el.classList.remove("dock-bottom", "dock-left", "dock-right");
+      el.classList.add("dock-" + pos);
+      el.style.height = "";
+      el.style.width = "";
+    }
+    document.querySelectorAll(".dt-dock-btn").forEach((b) => b.classList.toggle("active", b.getAttribute("data-dock") === pos));
+  }
   (function wireDevtoolsResize() {
     const handle = document.getElementById("inappDevtoolsResize");
     const el = document.getElementById("inappDevtools");
     if (!handle || !el) return;
-    let startY = 0, startH = 0, dragging = false;
+    let start = 0, startSize = 0, dragging = false, vertical = false;
     handle.addEventListener("mousedown", (e) => {
       dragging = true;
-      startY = e.clientY;
-      startH = el.offsetHeight;
+      vertical = _dt.dock === "bottom";
+      start = vertical ? e.clientY : e.clientX;
+      startSize = vertical ? el.offsetHeight : el.offsetWidth;
       document.body.style.userSelect = "none";
       e.preventDefault();
     });
     window.addEventListener("mousemove", (e) => {
       if (!dragging) return;
-      const parent = el.parentElement ? el.parentElement.offsetHeight : window.innerHeight;
-      const next = Math.max(120, Math.min(parent * 0.85, startH + (startY - e.clientY)));
-      el.style.height = next + "px";
+      if (vertical) {
+        const parentH = el.parentElement ? el.parentElement.offsetHeight : window.innerHeight;
+        el.style.height = Math.max(120, Math.min(parentH * 0.85, startSize + (start - e.clientY))) + "px";
+      } else {
+        const parentW = el.parentElement ? el.parentElement.offsetWidth : window.innerWidth;
+        const delta = _dt.dock === "right" ? start - e.clientX : e.clientX - start;
+        el.style.width = Math.max(280, Math.min(parentW * 0.85, startSize + delta)) + "px";
+      }
     });
     window.addEventListener("mouseup", () => {
       if (dragging) {
@@ -4914,6 +5000,11 @@
         document.body.style.userSelect = "";
       }
     });
+    try {
+      const saved = localStorage.getItem("symphonee-tools-dock");
+      if (saved) browserDevtoolsSetDock(saved);
+    } catch (_) {
+    }
   })();
   document.addEventListener("keydown", (e) => {
     if (e.key !== "d" && e.key !== "D") return;
@@ -4964,6 +5055,9 @@
   window.browserDevtoolsToggleMenu = browserDevtoolsToggleMenu;
   window.browserDevtoolsMenuPick = browserDevtoolsMenuPick;
   window.browserDevtoolsMenuAction = browserDevtoolsMenuAction;
+  window.browserDevtoolsSetDock = browserDevtoolsSetDock;
+  window.browserDevtoolsZoom = browserDevtoolsZoom;
+  window.browserDevtoolsResetView = browserDevtoolsResetView;
   window.browserDevtoolsRender = browserDevtoolsRender;
   window.browserDevtoolsClear = browserDevtoolsClear;
   window.browserDevtoolsCopy = browserDevtoolsCopy;

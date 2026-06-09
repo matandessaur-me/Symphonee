@@ -167,9 +167,11 @@ curl -s -X POST http://127.0.0.1:3800/api/ui/view-note -H "Content-Type: applica
 | POST | `/api/browser/close` | Close browser (auto-saves session) |
 | POST | `/api/browser/check-email` | Check webmail for verification. Body: `{ provider, email, password, subjectPattern }` |
 
-### In-app DevTools (read + drive the visited page)
+### In-app Tools drawer (read + drive the visited page)
 
-The in-app browser tab has a DevTools drawer (Console, Network, Performance, Server, Storage). Everything the user sees there is also a REST surface, so YOU can debug the page they are building without leaving Symphonee or burning an LLM browser-agent loop:
+The in-app browser tab has a dockable **Tools** drawer (bottom / left / right) whose panels are: **AI**, Console, Network, Performance, Server, Storage, Elements, Issues, Audit, plus page tools (Emulate, Reader, Brand, Saved patches) and view actions (zoom, reset). Everything the user sees there is also a REST surface, so YOU can debug the page they are building without leaving Symphonee or burning an LLM browser-agent loop.
+
+**When the user is vague ("what's going on?", "why isn't this working?", "check the logs") about the site they're building, follow the `diagnose-running-app` skill** (`GET /api/skills/item?id=diagnose-running-app`): confirm the dev server (start it if down), open the page, read console + server-log + network, inspect/eval, then report the specific failing request/line. Core endpoints:
 
 - **See console logs / errors:** `GET /api/browser/console?limit=` (includes uncaught exceptions). Network: `GET /api/browser/network` + `GET /api/browser/network-body?requestId=`.
 - **See the dev server's logs:** `GET /api/browser/server-log` -- the visited app's dev server output, auto-detected from the active repo's terminal. (Not Symphonee's own backend.)
