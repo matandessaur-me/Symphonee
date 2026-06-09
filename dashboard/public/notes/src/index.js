@@ -22,10 +22,10 @@ async function loadNotesList() {
     window._notesListCache = Array.isArray(notes) ? notes : [];
     const container = document.getElementById("notesList");
     container.innerHTML = notes.map((n) => `
-    <div class="note-item ${state.currentNote === n.name ? "active" : ""}" onclick="openNote('${esc(n.name)}')" oncontextmenu="event.preventDefault();showNoteContextMenu(event,'${esc(n.name)}')">
-      <span>${esc(n.name)}</span>
-    </div>
-  `).join("") || '<div style="padding:12px;font-size:11px;color:var(--subtext0);text-align:center;">No notes yet</div>';
+      <div class="note-item ${state.currentNote === n.name ? "active" : ""}" onclick="openNote('${esc(n.name)}')" oncontextmenu="event.preventDefault();showNoteContextMenu(event,'${esc(n.name)}')">
+        <span>${esc(n.name)}</span>
+      </div>
+    `).join("") || '<div style="padding:12px;font-size:11px;color:var(--subtext0);text-align:center;">No notes yet</div>';
   } catch (_) {
   }
 }

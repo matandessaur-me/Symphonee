@@ -1,0 +1,48 @@
+# CI — runs the full test suite on every push to master and every PR.
+#
+# Why this exists: the renderer ships as committed, generated bundles built from
+# sources under dashboard/public/<name>/src/. The repo already has byte-exact
+# build-integrity tests, but nothing *enforced* them — so a missing source or a
+# stale bundle could land undetected (exactly how the Notes tab source went
+# missing for a release). This workflow makes `npm run test:all` a required gate
+# and adds a drift check that the committed bundles still match their sources.
+#
+# Validated to pass on ubuntu-latest + Node 22 with a plain `npm ci`
+# (no native/electron runtime needed): renderer 162/162, server 365/365.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Cancel superseded runs on the same ref so pushes don't pile up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer bundles
+        run: npm run build:renderer
+
+      # The generated bundles are committed. If a source changed without a
+      # rebuild (or vice versa), the tree is now dirty — fail loudly so the
+      # committed output can never drift from its source.
+      - name: Check renderer bundles are in sync with their sources
+        run: git diff --exit-code -- dashboard/public
+
+      - name: Run tests
+        run: npm run test:all
