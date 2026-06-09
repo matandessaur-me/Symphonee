@@ -1368,6 +1368,10 @@
       font: 11px/1.55 var(--font-mono); color: var(--text);
     }
     .inapp-devtools-empty { padding: 24px; text-align: center; color: var(--overlay0); font: 11px var(--font-ui); }
+    /* When the drawer body hosts a relocated tool (Elements/Issues/Audit/Emulate),
+       give it the tool panel's comfortable padding + UI font instead of the
+       flush monospace log layout. */
+    .inapp-devtools-body.dt-tool-host { padding: 10px 12px; font: 12px var(--font-ui); }
 
     /* Console + log rows */
     .dt-row {

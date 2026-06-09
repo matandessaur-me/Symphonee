@@ -1738,30 +1738,10 @@ const _INAPP_TOOLS_ITEMS = [{
   title: 'Detect brand',
   sub: 'Extract colors, fonts, logo, and meta from the current page.'
 }, {
-  kind: 'inspect',
-  icon: 'code-2',
-  title: 'Inspect code',
-  sub: 'Human-readable view of tag, attributes, and computed styles.'
-}, {
   kind: 'reader',
   icon: 'book-open',
   title: 'Reader view',
   sub: 'Strip the page down to its main article.'
-}, {
-  kind: 'audit',
-  icon: 'gauge',
-  title: 'Site audit',
-  sub: 'SEO checks, performance timing, accessibility hints.'
-}, {
-  kind: 'emulate',
-  icon: 'smartphone',
-  title: 'Emulate device',
-  sub: 'Viewport presets, color-scheme, reduced-motion.'
-}, {
-  kind: 'issues',
-  icon: 'alert-octagon',
-  title: 'Browser issues',
-  sub: 'Live problems Chrome reports (CSP, mixed content, cookies).'
 }, {
   kind: 'sep'
 }, {
@@ -1976,8 +1956,13 @@ function _setInappToolsTitle(text) {
   const t = document.getElementById('inappToolsTitle');
   if (t) t.textContent = text;
 }
+// Tools normally render into the right-side panel (#inappToolsBody), but the
+// consolidated tools (Elements/Issues/Audit/Emulate) render into the DevTools
+// drawer body instead. _inappToolsTargetId points the render sink at whichever
+// surface is currently hosting the tool, so interactive re-renders land there.
+let _inappToolsTargetId = 'inappToolsBody';
 function _setInappToolsBodyHtml(html) {
-  const body = document.getElementById('inappToolsBody');
+  const body = document.getElementById(_inappToolsTargetId);
   if (body) body.innerHTML = html;
 }
 function _setInappToolsBodyLoading(text) {
@@ -2002,6 +1987,7 @@ function _escapeHtml(s) {
   })[c]);
 }
 async function openInappTool(kind) {
+  _inappToolsTargetId = 'inappToolsBody';
   _openInappToolsPanel();
   _inappToolsState.current = kind;
   // Show a back arrow in the header so users can return to the tools menu.
@@ -4234,6 +4220,7 @@ function toggleBrowserDevtools(force) {
   el.style.display = next ? 'flex' : 'none';
   const btn = document.getElementById('inappDevtoolsBtn');
   if (btn) btn.classList.toggle('active', next);
+  if (!next) { _dtTeardownTool(_dt.tab, ''); _inappToolsTargetId = 'inappToolsBody'; }
   if (next) {
     _dt.errorCount = 0;
     _dtUpdateBadge();
@@ -4243,11 +4230,44 @@ function toggleBrowserDevtools(force) {
   }
 }
 
+// Tabs whose content is a relocated right-panel tool, rendered into the drawer
+// body by the existing _runInapp* functions via the _inappToolsTargetId sink.
+const _DT_TOOL_TABS = ['elements', 'issues', 'audit', 'emulate'];
+function _dtTeardownTool(prev, next) {
+  // Leaving Elements: turn inspect mode off so the page isn't stuck in hover.
+  if (prev === 'elements' && next !== 'elements') {
+    try { if (window._browserInspectState && _browserInspectState.enabled) toggleInappInspectMode(false); } catch (_) {}
+  }
+  // Leaving Emulate: reset overrides so the user can't get stuck on a glitched page.
+  if (prev === 'emulate' && next !== 'emulate') {
+    try {
+      if (typeof _emulateState !== 'undefined' && (_emulateState.device !== 'off' || _emulateState.colorScheme || _emulateState.reducedMotion || _emulateState.contrast || _emulateState.network !== 'no-throttle' || _emulateState.cpuRate !== 1)) _resetAllEmulation();
+    } catch (_) {}
+  }
+}
+async function _dtRunTool(tab) {
+  const body = document.getElementById('inappDevtoolsBody');
+  if (body) body.innerHTML = '';
+  try {
+    if (tab === 'elements') await _runInappCodeInspect();
+    else if (tab === 'issues') await _runInappIssuesPanel();
+    else if (tab === 'audit') await _runInappSiteAudit();
+    else if (tab === 'emulate') await _runInappEmulatePanel();
+  } catch (e) {
+    if (body) body.innerHTML = '<div class="inapp-devtools-empty">' + _escapeHtml(String(e && e.message || e)) + '</div>';
+  }
+  try { if (window.lucide && lucide.createIcons) lucide.createIcons(); } catch (_) {}
+}
 function browserDevtoolsSwitch(tab) {
+  const prev = _dt.tab;
   _dt.tab = tab;
+  if (prev !== tab) _dtTeardownTool(prev, tab);
   document.querySelectorAll('#inappDevtools .inapp-devtools-tab').forEach(b => {
     b.classList.toggle('active', b.getAttribute('data-dt-tab') === tab);
   });
+  const isTool = _DT_TOOL_TABS.includes(tab);
+  const dtBody = document.getElementById('inappDevtoolsBody');
+  if (dtBody) dtBody.classList.toggle('dt-tool-host', isTool);
   // Control visibility per tab.
   const level = document.getElementById('inappDevtoolsLevel');
   const srv = document.getElementById('inappDevtoolsServerTerm');
@@ -4255,8 +4275,14 @@ function browserDevtoolsSwitch(tab) {
   const repl = document.getElementById('inappDevtoolsRepl');
   if (level) level.style.display = tab === 'console' ? '' : 'none';
   if (srv) srv.style.display = tab === 'server' ? '' : 'none';
-  if (filter) filter.style.display = tab === 'performance' ? 'none' : '';
+  if (filter) filter.style.display = (tab === 'performance' || isTool) ? 'none' : '';
   if (repl) repl.style.display = tab === 'console' ? 'flex' : 'none';
+  if (isTool) {
+    _inappToolsTargetId = 'inappDevtoolsBody';
+    _dtRunTool(tab);
+    return;
+  }
+  _inappToolsTargetId = 'inappToolsBody';
   if (tab === 'performance') _dtFetchPerformance();
   if (tab === 'server') _dtAutoSelectServerTerm();
   if (tab === 'storage') _dtFetchStorage();
@@ -4376,6 +4402,7 @@ function _dtSetCount(id, n) { const el = document.getElementById(id); if (el) el
 function browserDevtoolsRender() {
   const body = document.getElementById('inappDevtoolsBody');
   if (!body || !_dt.open) return;
+  if (_DT_TOOL_TABS.includes(_dt.tab)) return; // tool tabs render their own body
   _dtSetCount('dtCountConsole', _dt.console.length);
   _dtSetCount('dtCountNetwork', _dt.network.length);
   const st = _dt.terms.get(_dt.serverTermId);
