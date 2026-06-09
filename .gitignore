@@ -20,7 +20,7 @@ dashboard/app-recipe-history/*
 !dashboard/app-recipe-history/README.md
 dashboard/app-recipe-tests/*
 !dashboard/app-recipe-tests/README.md
-notes/
+/notes/
 .ai-workspace/
 .claude/
 *.ps1.tmp
