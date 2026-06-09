@@ -500,11 +500,19 @@
         applyInappBrowserAppearance();
         if (_browserInspectState.enabled) _applyInappInspectMode(view);
         _applyInappBrowserZoom(view);
+        try {
+          browserDevtoolsEnsureCapture();
+        } catch (_) {
+        }
       });
       view.addEventListener("did-navigate", (e) => {
         _syncInappUrl(e.url);
         _clearBrowserSelection();
         _resetOverlayStateForNewPage();
+        try {
+          browserDevtoolsOnNavigate(e.url);
+        } catch (_) {
+        }
         try {
           _pageMapCache.url = "";
           _pageMapCache.map = null;
@@ -4059,6 +4067,723 @@
       attributeFilter: ["class"]
     });
   })();
+  var MAX_DT_CONSOLE = 1500;
+  var MAX_DT_NETWORK = 1500;
+  var MAX_DT_SERVER_LINES = 2500;
+  var _dt = {
+    open: false,
+    tab: "console",
+    console: [],
+    network: [],
+    netById: /* @__PURE__ */ new Map(),
+    expanded: /* @__PURE__ */ new Set(),
+    bodies: /* @__PURE__ */ new Map(),
+    terms: /* @__PURE__ */ new Map(),
+    // termId -> { cwd, repo, lines, _partial, devUrl, isDev }
+    serverTermId: null,
+    errorCount: 0,
+    perf: null,
+    netTypeFilter: "all",
+    storage: { cookies: [], local: {}, session: {} },
+    replHistory: [],
+    replIdx: 0,
+    _renderQueued: false,
+    _backfilled: false
+  };
+  function _dtStripAnsi(s) {
+    return String(s == null ? "" : s).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").replace(/\x1b[=>]/g, "");
+  }
+  function _dtApplyCr(line) {
+    const i = line.lastIndexOf("\r");
+    return (i >= 0 ? line.slice(i + 1) : line).replace(/\r$/, "");
+  }
+  function _dtFmtTime(ms) {
+    if (!ms) return "";
+    const d = new Date(ms);
+    const p = (n, w) => String(n).padStart(w || 2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+  }
+  function _dtFmtBytes(n) {
+    if (!n && n !== 0) return "";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+  function _dtConsoleLevel(type) {
+    const t = String(type || "").toLowerCase();
+    if (t === "error" || t === "exception" || t === "assert") return "error";
+    if (t === "warning" || t === "warn") return "warning";
+    if (t === "info") return "info";
+    return "log";
+  }
+  function browserDevtoolsEnsureCapture() {
+    fetch("/api/browser/console?limit=1").catch(() => {
+    });
+  }
+  function toggleBrowserDevtools(force) {
+    const el = document.getElementById("inappDevtools");
+    if (!el) return;
+    const next = typeof force === "boolean" ? force : !_dt.open;
+    _dt.open = next;
+    el.style.display = next ? "flex" : "none";
+    const btn = document.getElementById("inappDevtoolsBtn");
+    if (btn) btn.classList.toggle("active", next);
+    if (next) {
+      _dt.errorCount = 0;
+      _dtUpdateBadge();
+      browserDevtoolsEnsureCapture();
+      if (!_dt._backfilled) {
+        _dt._backfilled = true;
+        _dtBackfill();
+      }
+      browserDevtoolsSwitch(_dt.tab);
+    }
+  }
+  function browserDevtoolsSwitch(tab) {
+    _dt.tab = tab;
+    document.querySelectorAll("#inappDevtools .inapp-devtools-tab").forEach((b) => {
+      b.classList.toggle("active", b.getAttribute("data-dt-tab") === tab);
+    });
+    const level = document.getElementById("inappDevtoolsLevel");
+    const srv = document.getElementById("inappDevtoolsServerTerm");
+    const filter = document.getElementById("inappDevtoolsFilter");
+    const repl = document.getElementById("inappDevtoolsRepl");
+    if (level) level.style.display = tab === "console" ? "" : "none";
+    if (srv) srv.style.display = tab === "server" ? "" : "none";
+    if (filter) filter.style.display = tab === "performance" ? "none" : "";
+    if (repl) repl.style.display = tab === "console" ? "flex" : "none";
+    if (tab === "performance") _dtFetchPerformance();
+    if (tab === "server") _dtAutoSelectServerTerm();
+    if (tab === "storage") _dtFetchStorage();
+    browserDevtoolsRender();
+  }
+  async function _dtBackfill() {
+    try {
+      const [c, n] = await Promise.all([
+        fetch("/api/browser/console?limit=" + MAX_DT_CONSOLE).then((r) => r.json()).catch(() => null),
+        fetch("/api/browser/network?limit=" + MAX_DT_NETWORK).then((r) => r.json()).catch(() => null)
+      ]);
+      if (c && Array.isArray(c.events)) _dt.console = c.events.slice(-MAX_DT_CONSOLE);
+      if (n && Array.isArray(n.events)) {
+        _dt.network = [];
+        _dt.netById.clear();
+        n.events.forEach(_dtMergeNetwork);
+      }
+      browserDevtoolsRender();
+    } catch (_) {
+    }
+  }
+  function _dtMergeNetwork(ev) {
+    if (!ev || !ev.requestId) return;
+    let row = _dt.netById.get(ev.requestId);
+    if (!row) {
+      row = { requestId: ev.requestId, url: ev.url || "", method: ev.method || "GET", resourceType: ev.resourceType || null, state: "pending", startedAt: ev.startedAt || ev.at || null };
+      _dt.netById.set(ev.requestId, row);
+      _dt.network.push(row);
+      if (_dt.network.length > MAX_DT_NETWORK) {
+        const drop = _dt.network.splice(0, _dt.network.length - MAX_DT_NETWORK);
+        drop.forEach((d) => _dt.netById.delete(d.requestId));
+      }
+    }
+    if (ev.url) row.url = ev.url;
+    if (ev.method) row.method = ev.method;
+    if (ev.resourceType) row.resourceType = ev.resourceType;
+    if (ev.requestHeaders) row.requestHeaders = ev.requestHeaders;
+    if (ev.postData) row.postData = ev.postData;
+    if (ev.kind === "response") {
+      row.status = ev.status;
+      row.statusText = ev.statusText || null;
+      row.mimeType = ev.mimeType || null;
+      if (ev.responseHeaders) row.responseHeaders = ev.responseHeaders;
+      if (ev.remoteAddress) row.remoteAddress = ev.remoteAddress;
+      if (row.state === "pending") row.state = "response";
+    }
+    if (ev.kind === "failed") {
+      row.state = "failed";
+      row.errorText = ev.errorText || "Failed";
+      row.failedAt = ev.failedAt || null;
+    }
+    if (ev.kind === "finished") {
+      row.state = "done";
+      row.encodedDataLength = ev.encodedDataLength || 0;
+      row.finishedAt = ev.finishedAt || null;
+      if (row.startedAt && row.finishedAt) row.duration = row.finishedAt - row.startedAt;
+      if (ev.status) row.status = ev.status;
+    }
+  }
+  function browserDevtoolsOnEvent(msg) {
+    if (!msg || !msg.event) return;
+    if (msg.channel === "console") {
+      _dt.console.push(msg.event);
+      if (_dt.console.length > MAX_DT_CONSOLE) _dt.console.splice(0, _dt.console.length - MAX_DT_CONSOLE);
+      if (_dtConsoleLevel(msg.event.type) === "error" && !_dt.open) {
+        _dt.errorCount++;
+        _dtUpdateBadge();
+      }
+      if (_dt.open && _dt.tab === "console") _dtScheduleRender();
+    } else if (msg.channel === "network") {
+      _dtMergeNetwork(msg.event);
+      if (_dt.open && _dt.tab === "network") _dtScheduleRender();
+    }
+  }
+  function browserDevtoolsOnNavigate(url) {
+    _dt.curUrl = url || _dt.curUrl;
+    if (!_dtPreserveOn()) {
+      _dt.console = [];
+      _dt.network = [];
+      _dt.netById.clear();
+      _dt.expanded.clear();
+      _dt.bodies.clear();
+      if (_dt.open) browserDevtoolsRender();
+    }
+  }
+  function browserDevtoolsOnTermCwd(termId, cwd, repo) {
+    if (!termId) return;
+    const t = _dtTerm(termId);
+    if (cwd) t.cwd = cwd;
+    if (repo) t.repo = repo;
+  }
+  function browserDevtoolsOnTerminalOutput(termId, data) {
+    if (!termId || data == null) return;
+    const t = _dtTerm(termId);
+    const clean = _dtStripAnsi(data);
+    let buf = (t._partial || "") + clean;
+    const parts = buf.split("\n");
+    t._partial = parts.pop();
+    for (const p of parts) t.lines.push(_dtApplyCr(p));
+    if (t.lines.length > MAX_DT_SERVER_LINES) t.lines.splice(0, t.lines.length - MAX_DT_SERVER_LINES);
+    const probe = clean;
+    const m = probe.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?[^\s'"]*/i);
+    if (m) {
+      t.devUrl = m[0];
+      t.isDev = true;
+    }
+    if (!t.isDev && /\b(VITE v|ready in|Local:\s+https?|webpack compiled|compiled successfully|next dev|Nuxt|nodemon|listening on|dev server|server (?:running|started|listening))/i.test(probe)) t.isDev = true;
+    if (_dt.open && _dt.tab === "server" && termId === _dt.serverTermId) _dtScheduleRender();
+  }
+  function _dtTerm(termId) {
+    let t = _dt.terms.get(termId);
+    if (!t) {
+      t = { cwd: "", repo: "", lines: [], _partial: "", devUrl: null, isDev: false };
+      _dt.terms.set(termId, t);
+    }
+    return t;
+  }
+  function browserDevtoolsClear() {
+    if (_dt.tab === "console") _dt.console = [];
+    else if (_dt.tab === "network") {
+      _dt.network = [];
+      _dt.netById.clear();
+      _dt.expanded.clear();
+      _dt.bodies.clear();
+    } else if (_dt.tab === "server") {
+      const t = _dt.terms.get(_dt.serverTermId);
+      if (t) {
+        t.lines = [];
+        t._partial = "";
+      }
+    } else if (_dt.tab === "performance") {
+      _dt.perf = null;
+      _dtFetchPerformance();
+    }
+    browserDevtoolsRender();
+  }
+  function _dtPreserveOn() {
+    const cb = document.getElementById("inappDevtoolsPreserve");
+    return !!(cb && cb.checked);
+  }
+  function _dtFilterText() {
+    const f = document.getElementById("inappDevtoolsFilter");
+    return f && f.value ? f.value.toLowerCase() : "";
+  }
+  function _dtUpdateBadge() {
+    const b = document.getElementById("inappDevtoolsBadge");
+    if (!b) return;
+    if (_dt.errorCount > 0) {
+      b.textContent = _dt.errorCount > 99 ? "99+" : String(_dt.errorCount);
+      b.style.display = "";
+    } else b.style.display = "none";
+  }
+  function _dtScheduleRender() {
+    if (_dt._renderQueued) return;
+    _dt._renderQueued = true;
+    requestAnimationFrame(() => {
+      _dt._renderQueued = false;
+      browserDevtoolsRender();
+    });
+  }
+  function _dtSetCount(id, n) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = n ? " " + n : "";
+  }
+  function browserDevtoolsRender() {
+    const body = document.getElementById("inappDevtoolsBody");
+    if (!body || !_dt.open) return;
+    _dtSetCount("dtCountConsole", _dt.console.length);
+    _dtSetCount("dtCountNetwork", _dt.network.length);
+    const st = _dt.terms.get(_dt.serverTermId);
+    _dtSetCount("dtCountServer", st ? st.lines.length : 0);
+    const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+    if (_dt.tab === "console") _dtRenderConsole(body);
+    else if (_dt.tab === "network") _dtRenderNetwork(body);
+    else if (_dt.tab === "performance") _dtRenderPerformance(body);
+    else if (_dt.tab === "server") _dtRenderServer(body);
+    else if (_dt.tab === "storage") _dtRenderStorage(body);
+    if ((_dt.tab === "console" || _dt.tab === "server") && nearBottom) body.scrollTop = body.scrollHeight;
+  }
+  function _dtRenderConsole(body) {
+    const lvl = (document.getElementById("inappDevtoolsLevel") || {}).value || "all";
+    const q = _dtFilterText();
+    const rows = _dt.console.filter((e) => {
+      const level = _dtConsoleLevel(e.type);
+      if (lvl !== "all" && level !== lvl) return false;
+      if (q && !((e.text || "").toLowerCase().includes(q) || (e.url || "").toLowerCase().includes(q))) return false;
+      return true;
+    });
+    if (!rows.length) {
+      body.innerHTML = '<div class="inapp-devtools-empty">No console messages.' + (q || lvl !== "all" ? " (filtered)" : "") + "</div>";
+      return;
+    }
+    body.innerHTML = rows.map((e) => {
+      const level = _dtConsoleLevel(e.type);
+      const extra = e.type === "input" ? " dt-input" : e.type === "result" ? " dt-result" : "";
+      const src = e.url ? `<span class="dt-src">${_escapeHtml((e.url || "").split("/").slice(-1)[0])}${e.lineNumber != null ? ":" + e.lineNumber : ""}</span>` : "";
+      return `<div class="dt-row dt-${level}${extra}"><span class="dt-time">${_dtFmtTime(e.at)}</span><span class="dt-text">${_escapeHtml(e.text || "")}</span>${src}</div>`;
+    }).join("");
+  }
+  var _DT_NET_TYPES = [["all", "All"], ["fetch", "Fetch/XHR"], ["script", "JS"], ["stylesheet", "CSS"], ["image", "Img"], ["document", "Doc"], ["font", "Font"], ["other", "Other"]];
+  function _dtNetTypeOf(r) {
+    const t = (r.resourceType || "").toLowerCase();
+    if (t === "xhr" || t === "fetch") return "fetch";
+    if (t === "script") return "script";
+    if (t === "stylesheet") return "stylesheet";
+    if (t === "image") return "image";
+    if (t === "document") return "document";
+    if (t === "font") return "font";
+    return "other";
+  }
+  function browserDevtoolsNetType(t) {
+    _dt.netTypeFilter = t;
+    browserDevtoolsRender();
+  }
+  function _dtNetToCurl(r) {
+    let c = "curl '" + (r.url || "") + "'";
+    if (r.method && r.method !== "GET") c += " \\\n  -X " + r.method;
+    const h = r.requestHeaders || {};
+    Object.keys(h).forEach((k) => {
+      if (!/^:/.test(k)) c += " \\\n  -H '" + k + ": " + String(h[k]).replace(/'/g, "'\\''") + "'";
+    });
+    if (r.postData) c += " \\\n  --data-raw '" + String(r.postData).replace(/'/g, "'\\''") + "'";
+    return c;
+  }
+  function browserDevtoolsCopyCurl(requestId) {
+    const r = _dt.netById.get(requestId);
+    if (!r) return;
+    const c = _dtNetToCurl(r);
+    if (navigator.clipboard) navigator.clipboard.writeText(c).then(() => {
+      if (window.toast) window.toast("Copied as cURL");
+    }).catch(() => {
+    });
+  }
+  function _dtHeadersBlock(title, h) {
+    if (!h || !Object.keys(h).length) return "";
+    const rows = Object.keys(h).map((k) => `<div class="dt-kv"><b>${_escapeHtml(k)}:</b> ${_escapeHtml(String(h[k]))}</div>`).join("");
+    return `<div class="dt-kv" style="margin-top:6px;"><b>${title}</b></div>${rows}`;
+  }
+  function _dtRenderNetwork(body) {
+    const q = _dtFilterText();
+    const tf = _dt.netTypeFilter || "all";
+    const rows = _dt.network.filter((r) => (!q || (r.url || "").toLowerCase().includes(q)) && (tf === "all" || _dtNetTypeOf(r) === tf));
+    const chips = `<div class="dt-net-types">` + _DT_NET_TYPES.map(([k, lbl]) => `<button class="dt-net-type${tf === k ? " active" : ""}" onclick="browserDevtoolsNetType('${k}')">${lbl}</button>`).join("") + `</div>`;
+    if (!rows.length) {
+      body.innerHTML = chips + '<div class="inapp-devtools-empty">No network activity.' + (q || tf !== "all" ? " (filtered)" : "") + "</div>";
+      return;
+    }
+    const head = `<div class="dt-net-head"><span>Name</span><span>Method</span><span>Status</span><span>Type</span><span>Size</span></div>`;
+    const list = rows.map((r) => {
+      const name = (r.url || "").split("?")[0].split("/").slice(-1)[0] || r.url || "(index)";
+      const statusCls = r.state === "failed" ? "sx" : r.status ? "s" + String(r.status)[0] : "";
+      const statusTxt = r.state === "failed" ? "failed" : r.status != null ? r.status : r.state === "pending" ? "(pending)" : "";
+      const size = r.state === "failed" ? "" : _dtFmtBytes(r.encodedDataLength);
+      let out = `<div class="dt-net-row${r.state === "failed" ? " dt-failed" : ""}" onclick="browserDevtoolsToggleNetRow('${r.requestId}')" title="${_escapeHtml(r.url || "")}"><span class="dt-net-name">${_escapeHtml(name)}</span><span class="dt-net-col">${_escapeHtml(r.method || "")}</span><span class="dt-net-status ${statusCls}">${_escapeHtml(String(statusTxt))}</span><span class="dt-net-col">${_escapeHtml(r.resourceType || "")}</span><span class="dt-net-col">${size}</span></div>`;
+      if (_dt.expanded.has(r.requestId)) {
+        const b = _dt.bodies.get(r.requestId);
+        const dur = r.duration != null ? r.duration + " ms" : "";
+        out += `<div class="dt-net-detail" onclick="event.stopPropagation()"><div style="margin-bottom:6px;"><button class="dt-net-curl" onclick="browserDevtoolsCopyCurl('${r.requestId}')">Copy as cURL</button></div><div class="dt-kv"><b>URL:</b> ${_escapeHtml(r.url || "")}</div><div class="dt-kv"><b>Status:</b> ${_escapeHtml(String(r.status != null ? r.status : r.errorText || r.state))}${r.statusText ? " " + _escapeHtml(r.statusText) : ""}</div>` + (r.mimeType ? `<div class="dt-kv"><b>Type:</b> ${_escapeHtml(r.mimeType)}</div>` : "") + (r.remoteAddress ? `<div class="dt-kv"><b>Remote:</b> ${_escapeHtml(r.remoteAddress)}</div>` : "") + (dur ? `<div class="dt-kv"><b>Duration:</b> ${dur}</div>` : "") + _dtHeadersBlock("Request headers", r.requestHeaders) + (r.postData ? `<div class="dt-kv" style="margin-top:6px;"><b>Request payload:</b></div><div>${_escapeHtml(r.postData)}</div>` : "") + _dtHeadersBlock("Response headers", r.responseHeaders) + `<div class="dt-kv" style="margin-top:6px;"><b>Response body:</b></div><div>${b === void 0 ? "<em>loading...</em>" : b === null ? "<em>(no body / not available)</em>" : _escapeHtml(b)}</div></div>`;
+      }
+      return out;
+    }).join("");
+    body.innerHTML = chips + head + list;
+  }
+  function browserDevtoolsToggleNetRow(requestId) {
+    if (_dt.expanded.has(requestId)) {
+      _dt.expanded.delete(requestId);
+      browserDevtoolsRender();
+      return;
+    }
+    _dt.expanded.add(requestId);
+    if (!_dt.bodies.has(requestId)) {
+      _dt.bodies.set(requestId, void 0);
+      fetch("/api/browser/network-body?requestId=" + encodeURIComponent(requestId)).then((r) => r.json()).then((d) => {
+        _dt.bodies.set(requestId, d && d.body ? d.body : null);
+        browserDevtoolsRender();
+      }).catch(() => {
+        _dt.bodies.set(requestId, null);
+        browserDevtoolsRender();
+      });
+    }
+    browserDevtoolsRender();
+  }
+  async function _dtFetchPerformance() {
+    const view = _getInappWebview();
+    if (!view || typeof view.executeJavaScript !== "function") {
+      _dt.perf = { error: "Performance metrics require the Electron webview." };
+      if (_dt.open && _dt.tab === "performance") browserDevtoolsRender();
+      return;
+    }
+    const js = `(function(){try{
+    var nav=performance.getEntriesByType('navigation')[0]||{};
+    var res=performance.getEntriesByType('resource')||[];
+    var byType={},total=0,slow=[];
+    res.forEach(function(r){byType[r.initiatorType]=(byType[r.initiatorType]||0)+1;total+=(r.transferSize||0);slow.push({name:r.name,dur:Math.round(r.duration),type:r.initiatorType});});
+    slow.sort(function(a,b){return b.dur-a.dur;});
+    var s=nav.startTime||0;
+    return JSON.stringify({ts:{ttfb:nav.responseStart?Math.round(nav.responseStart-nav.requestStart):null,domInteractive:nav.domInteractive?Math.round(nav.domInteractive-s):null,domContentLoaded:nav.domContentLoadedEventEnd?Math.round(nav.domContentLoadedEventEnd-s):null,load:nav.loadEventEnd?Math.round(nav.loadEventEnd-s):null,transfer:nav.transferSize||null},count:res.length,total:total,byType:byType,slow:slow.slice(0,8),mem:(performance.memory?{used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize}:null)});
+  }catch(e){return JSON.stringify({error:String(e)});}})()`;
+    try {
+      const out = await view.executeJavaScript(js);
+      _dt.perf = JSON.parse(out);
+    } catch (e) {
+      _dt.perf = { error: String(e && e.message || e) };
+    }
+    if (_dt.open && _dt.tab === "performance") browserDevtoolsRender();
+  }
+  function _dtRenderPerformance(body) {
+    const p = _dt.perf;
+    if (!p) {
+      body.innerHTML = '<div class="inapp-devtools-empty">Reading page timing...</div>';
+      return;
+    }
+    if (p.error) {
+      body.innerHTML = '<div class="inapp-devtools-empty">' + _escapeHtml(p.error) + "</div>";
+      return;
+    }
+    const card = (val, lbl) => `<div class="dt-perf-card"><div class="dt-perf-val">${val == null ? "\u2014" : val}</div><div class="dt-perf-lbl">${lbl}</div></div>`;
+    const ms = (v) => v == null ? null : v + " ms";
+    const ts = p.ts || {};
+    let html = '<div class="dt-perf">';
+    html += '<div class="dt-perf-section-title">Page load timing</div><div class="dt-perf-grid">' + card(ms(ts.ttfb), "TTFB") + card(ms(ts.domInteractive), "DOM Interactive") + card(ms(ts.domContentLoaded), "DOMContentLoaded") + card(ms(ts.load), "Load") + card(ts.transfer != null ? _dtFmtBytes(ts.transfer) : null, "Document size") + "</div>";
+    html += '<div class="dt-perf-section-title">Resources</div><div class="dt-perf-grid">' + card(p.count, "Requests") + card(_dtFmtBytes(p.total || 0), "Transferred") + (p.mem ? card(_dtFmtBytes(p.mem.used), "JS heap used") : "") + "</div>";
+    const types = Object.keys(p.byType || {});
+    if (types.length) html += '<div class="dt-perf-section-title">By type</div><div class="dt-perf-grid">' + types.map((t) => card(p.byType[t], t)).join("") + "</div>";
+    if (p.slow && p.slow.length) {
+      html += '<div class="dt-perf-section-title">Slowest requests</div>';
+      html += p.slow.map((s) => `<div class="dt-row"><span class="dt-text">${_escapeHtml((s.name || "").split("/").slice(-1)[0] || s.name)}</span><span class="dt-src">${s.dur} ms</span></div>`).join("");
+    }
+    html += "</div>";
+    body.innerHTML = html;
+  }
+  function _dtCandidateServerTerms() {
+    const active = typeof state !== "undefined" && state && state.activeRepo ? state.activeRepo : null;
+    const all = Array.from(_dt.terms.entries()).map(([id, t]) => ({ id, ...t }));
+    let cands = active ? all.filter((t) => t.repo === active) : all;
+    if (!cands.length) cands = all.filter((t) => t.lines.length || t.isDev);
+    if (!cands.length) cands = all;
+    cands.sort((a, b) => (b.isDev ? 1 : 0) - (a.isDev ? 1 : 0));
+    return cands;
+  }
+  function _dtAutoSelectServerTerm() {
+    const cands = _dtCandidateServerTerms();
+    if (!cands.length) {
+      _dt.serverTermId = null;
+      return;
+    }
+    if (_dt.serverTermId && cands.some((c) => c.id === _dt.serverTermId)) {
+      _dtFillServerTermSelect(cands);
+      return;
+    }
+    let originPort = null;
+    try {
+      const u = new URL(_dt.curUrl || (_getInappWebview() && _getInappWebview().getURL ? _getInappWebview().getURL() : ""));
+      originPort = u.port || (u.protocol === "https:" ? "443" : "80");
+    } catch (_) {
+    }
+    let pick = null;
+    if (originPort) pick = cands.find((c) => {
+      try {
+        return c.devUrl && (new URL(c.devUrl).port || "") === originPort;
+      } catch (_) {
+        return false;
+      }
+    });
+    pick = pick || cands.find((c) => c.isDev) || cands[0];
+    _dt.serverTermId = pick.id;
+    _dtFillServerTermSelect(cands);
+  }
+  function _dtFillServerTermSelect(cands) {
+    const sel = document.getElementById("inappDevtoolsServerTerm");
+    if (!sel) return;
+    cands = cands || _dtCandidateServerTerms();
+    sel.innerHTML = cands.map((c) => {
+      const label = (c.isDev && c.devUrl ? "\u25CF " : "") + (c.id === "main" ? "Main shell" : c.id) + (c.devUrl ? " \u2014 " + c.devUrl.replace(/^https?:\/\//, "") : "");
+      return `<option value="${c.id}"${c.id === _dt.serverTermId ? " selected" : ""}>${_escapeHtml(label)}</option>`;
+    }).join("");
+  }
+  function browserDevtoolsSelectServerTerm(termId) {
+    _dt.serverTermId = termId;
+    browserDevtoolsRender();
+  }
+  function _dtRenderServer(body) {
+    const cands = _dtCandidateServerTerms();
+    if (!cands.length) {
+      body.innerHTML = '<div class="inapp-devtools-empty">No project terminal output yet. Start your dev server in a Symphonee terminal and it will appear here.</div>';
+      return;
+    }
+    if (!_dt.serverTermId || !cands.some((c) => c.id === _dt.serverTermId)) _dtAutoSelectServerTerm();
+    _dtFillServerTermSelect(cands);
+    const t = _dt.terms.get(_dt.serverTermId);
+    if (!t) {
+      body.innerHTML = '<div class="inapp-devtools-empty">No output for the selected terminal.</div>';
+      return;
+    }
+    const q = _dtFilterText();
+    const all = t._partial ? t.lines.concat([t._partial]) : t.lines;
+    const lines = q ? all.filter((l) => l.toLowerCase().includes(q)) : all;
+    const hint = `<div class="dt-server-hint">${t.devUrl ? "Dev server: " + _escapeHtml(t.devUrl) : "Terminal output"}${t.repo ? " \xB7 repo: " + _escapeHtml(t.repo) : ""}</div>`;
+    if (!lines.length) {
+      body.innerHTML = hint + '<div class="inapp-devtools-empty">No output' + (q ? " (filtered)" : "") + ".</div>";
+      return;
+    }
+    const rows = lines.map((l) => {
+      const cls = /error|exception|✖|failed|cannot|EADDRINUSE/i.test(l) ? " dt-err" : /warn/i.test(l) ? " dt-warn" : "";
+      return `<div class="dt-srv-line${cls}">${_escapeHtml(l) || "&nbsp;"}</div>`;
+    }).join("");
+    body.innerHTML = hint + '<div class="dt-server">' + rows + "</div>";
+  }
+  function _dtPrompt(msg, def) {
+    if (typeof window.customPrompt === "function") {
+      try {
+        return Promise.resolve(window.customPrompt(msg, def || ""));
+      } catch (_) {
+      }
+    }
+    return Promise.resolve(window.prompt(msg, def || ""));
+  }
+  async function _dtFetchStorage() {
+    try {
+      const c = await fetch("/api/browser/cookies").then((r) => r.json()).catch(() => null);
+      _dt.storage.cookies = c && (c.cookies || c) || [];
+    } catch (_) {
+      _dt.storage.cookies = [];
+    }
+    const view = _getInappWebview();
+    if (view && typeof view.executeJavaScript === "function") {
+      try {
+        const out = await view.executeJavaScript(`(function(){function d(s){var o={};try{for(var i=0;i<s.length;i++){var k=s.key(i);o[k]=s.getItem(k);}}catch(e){}return o;}return JSON.stringify({local:d(localStorage),session:d(sessionStorage)});})()`);
+        const s = JSON.parse(out);
+        _dt.storage.local = s.local || {};
+        _dt.storage.session = s.session || {};
+      } catch (_) {
+      }
+    }
+    if (_dt.open && _dt.tab === "storage") browserDevtoolsRender();
+  }
+  function _dtStorageArea(kind) {
+    return kind === "session" ? "sessionStorage" : "localStorage";
+  }
+  async function browserDevtoolsStorageSet(kind, key) {
+    const cur = (_dt.storage[kind] || {})[key];
+    const val = await _dtPrompt("Set " + kind + 'Storage["' + key + '"]', cur != null ? String(cur) : "");
+    if (val == null) return;
+    const view = _getInappWebview();
+    if (!view || !view.executeJavaScript) return;
+    await view.executeJavaScript(`(function(){try{${_dtStorageArea(kind)}.setItem(${JSON.stringify(key)},${JSON.stringify(String(val))});return 1}catch(e){return String(e)}})()`).catch(() => {
+    });
+    _dtFetchStorage();
+  }
+  async function browserDevtoolsStorageAdd(kind) {
+    const key = await _dtPrompt("New " + kind + "Storage key", "");
+    if (!key) return;
+    const val = await _dtPrompt('Value for "' + key + '"', "");
+    if (val == null) return;
+    const view = _getInappWebview();
+    if (!view || !view.executeJavaScript) return;
+    await view.executeJavaScript(`(function(){try{${_dtStorageArea(kind)}.setItem(${JSON.stringify(key)},${JSON.stringify(String(val))});return 1}catch(e){return String(e)}})()`).catch(() => {
+    });
+    _dtFetchStorage();
+  }
+  async function browserDevtoolsStorageDel(kind, key) {
+    const view = _getInappWebview();
+    if (!view || !view.executeJavaScript) return;
+    if (kind === "cookie") {
+      await view.executeJavaScript(`(function(){try{document.cookie=${JSON.stringify(key)}+'=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';return 1}catch(e){return String(e)}})()`).catch(() => {
+      });
+    } else {
+      await view.executeJavaScript(`(function(){try{${_dtStorageArea(kind)}.removeItem(${JSON.stringify(key)});return 1}catch(e){return String(e)}})()`).catch(() => {
+      });
+    }
+    _dtFetchStorage();
+  }
+  function _dtStorageSection(title, kind, obj, q) {
+    const keys = Object.keys(obj || {}).filter((k) => !q || k.toLowerCase().includes(q) || String(obj[k]).toLowerCase().includes(q)).sort();
+    const add = `<button class="dt-net-curl" onclick="browserDevtoolsStorageAdd('${kind}')">+ Add</button>`;
+    let rows = keys.map((k) => `<div class="dt-store-row"><span class="dt-store-key" title="${_escapeHtml(k)}">${_escapeHtml(k)}</span><span class="dt-store-val" title="${_escapeHtml(String(obj[k]))}">${_escapeHtml(String(obj[k]))}</span><span class="dt-store-act"><button onclick="browserDevtoolsStorageSet('${kind}',${JSON.stringify(k).replace(/"/g, "&quot;")})" title="Edit">\u270E</button><button onclick="browserDevtoolsStorageDel('${kind}',${JSON.stringify(k).replace(/"/g, "&quot;")})" title="Delete">\xD7</button></span></div>`).join("");
+    if (!keys.length) rows = '<div class="dt-store-empty">empty</div>';
+    return `<div class="dt-store-section"><div class="dt-store-title">${title} <span>${keys.length}</span>${add}</div>${rows}</div>`;
+  }
+  function _dtRenderStorage(body) {
+    const q = _dtFilterText();
+    const s = _dt.storage;
+    let html = "";
+    html += _dtStorageSection("Local Storage", "local", s.local, q);
+    html += _dtStorageSection("Session Storage", "session", s.session, q);
+    const cks = (s.cookies || []).filter((c) => !q || (c.name || "").toLowerCase().includes(q) || (c.value || "").toLowerCase().includes(q));
+    let crows = cks.map((c) => `<div class="dt-store-row"><span class="dt-store-key" title="${_escapeHtml(c.name || "")}">${_escapeHtml(c.name || "")}</span><span class="dt-store-val" title="${_escapeHtml(c.value || "")}">${_escapeHtml(c.value || "")}<span class="dt-src"> ${_escapeHtml(c.domain || "")}${c.httpOnly ? " httpOnly" : ""}</span></span><span class="dt-store-act"><button onclick="browserDevtoolsStorageDel('cookie',${JSON.stringify(c.name || "").replace(/"/g, "&quot;")})" title="Delete (non-httpOnly)">\xD7</button></span></div>`).join("");
+    if (!cks.length) crows = '<div class="dt-store-empty">no cookies</div>';
+    html += `<div class="dt-store-section"><div class="dt-store-title">Cookies <span>${cks.length}</span></div>${crows}</div>`;
+    body.innerHTML = html;
+  }
+  function _dtPushConsole(entry) {
+    _dt.console.push(entry);
+    if (_dt.console.length > MAX_DT_CONSOLE) _dt.console.splice(0, _dt.console.length - MAX_DT_CONSOLE);
+    if (_dt.open && _dt.tab === "console") browserDevtoolsRender();
+  }
+  async function browserDevtoolsRunRepl(code) {
+    code = String(code || "").trim();
+    if (!code) return;
+    _dt.replHistory.push(code);
+    _dt.replIdx = _dt.replHistory.length;
+    _dtPushConsole({ type: "input", text: "> " + code, at: Date.now() });
+    const view = _getInappWebview();
+    if (!view || typeof view.executeJavaScript !== "function") {
+      _dtPushConsole({ type: "error", text: "Console REPL requires the Electron webview.", at: Date.now() });
+      return;
+    }
+    const wrapped = `(function(){try{var __v=eval(${JSON.stringify(code)});return JSON.stringify({ok:true,val:(function(v){try{if(v===undefined)return 'undefined';if(v===null)return 'null';if(typeof v==='function')return String(v);if(typeof v==='object')return JSON.stringify(v,null,2);return String(v);}catch(e){return String(v);}})(__v)});}catch(e){return JSON.stringify({ok:false,val:(e&&e.stack)||String(e)});}})()`;
+    try {
+      const out = await view.executeJavaScript(wrapped, true);
+      const r = JSON.parse(out);
+      _dtPushConsole({ type: r.ok ? "result" : "error", text: (r.ok ? "< " : "") + r.val, at: Date.now() });
+    } catch (e) {
+      _dtPushConsole({ type: "error", text: String(e && e.message || e), at: Date.now() });
+    }
+  }
+  async function _dtReplAutocomplete(input) {
+    const code = input.value;
+    const m = code.match(/([\w$]+(?:\.[\w$]+)*\.)?([\w$]*)$/);
+    if (!m) return;
+    const base = m[1] ? m[1].slice(0, -1) : "";
+    const frag = m[2] || "";
+    const view = _getInappWebview();
+    if (!view || typeof view.executeJavaScript !== "function") return;
+    const probe = base ? `Object.getOwnPropertyNames(${base}||{})` : "Object.getOwnPropertyNames(window)";
+    let names = [];
+    try {
+      names = JSON.parse(await view.executeJavaScript(`(function(){try{return JSON.stringify(${probe});}catch(e){return '[]';}})()`)) || [];
+    } catch (_) {
+      return;
+    }
+    const matches = names.filter((n) => n.indexOf(frag) === 0 && n !== frag);
+    if (!matches.length) return;
+    const head = code.slice(0, code.length - frag.length);
+    if (matches.length === 1) {
+      input.value = head + matches[0];
+      return;
+    }
+    let cp = matches[0];
+    for (const n of matches) {
+      while (n.indexOf(cp) !== 0) cp = cp.slice(0, -1);
+    }
+    if (cp.length > frag.length) input.value = head + cp;
+    _dtPushConsole({ type: "log", text: matches.slice(0, 50).join("   "), at: Date.now() });
+  }
+  function _dtReplKeydown(e) {
+    const input = e.target;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const c = input.value;
+      input.value = "";
+      browserDevtoolsRunRepl(c);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!_dt.replHistory.length) return;
+      _dt.replIdx = Math.max(0, _dt.replIdx - 1);
+      input.value = _dt.replHistory[_dt.replIdx] || "";
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!_dt.replHistory.length) return;
+      _dt.replIdx = Math.min(_dt.replHistory.length, _dt.replIdx + 1);
+      input.value = _dt.replHistory[_dt.replIdx] || "";
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      _dtReplAutocomplete(input);
+    }
+  }
+  function _dtCurrentPanelText() {
+    if (_dt.tab === "console") return _dt.console.map((e) => `[${_dtFmtTime(e.at)}] ${e.text || ""}`).join("\n");
+    if (_dt.tab === "network") return _dt.network.map((r) => `${r.method || ""} ${r.state === "failed" ? "FAILED" : r.status || ""} ${r.url || ""} ${r.encodedDataLength ? _dtFmtBytes(r.encodedDataLength) : ""}`.trim()).join("\n");
+    if (_dt.tab === "server") {
+      const t = _dt.terms.get(_dt.serverTermId);
+      return t ? (t._partial ? t.lines.concat([t._partial]) : t.lines).join("\n") : "";
+    }
+    if (_dt.tab === "performance") return JSON.stringify(_dt.perf || {}, null, 2);
+    return "";
+  }
+  function browserDevtoolsCopy() {
+    const t = _dtCurrentPanelText();
+    if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => {
+      if (window.toast) window.toast("Copied " + _dt.tab + " log");
+    }).catch(() => {
+    });
+  }
+  function browserDevtoolsExport() {
+    const t = _dtCurrentPanelText();
+    const blob = new Blob([t], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "symphonee-" + _dt.tab + "-log.txt";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1e3);
+  }
+  (function wireDevtoolsRepl() {
+    const input = document.getElementById("inappDevtoolsReplInput");
+    if (input) input.addEventListener("keydown", _dtReplKeydown);
+  })();
+  (function wireDevtoolsResize() {
+    const handle = document.getElementById("inappDevtoolsResize");
+    const el = document.getElementById("inappDevtools");
+    if (!handle || !el) return;
+    let startY = 0, startH = 0, dragging = false;
+    handle.addEventListener("mousedown", (e) => {
+      dragging = true;
+      startY = e.clientY;
+      startH = el.offsetHeight;
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const parent = el.parentElement ? el.parentElement.offsetHeight : window.innerHeight;
+      const next = Math.max(120, Math.min(parent * 0.85, startH + (startY - e.clientY)));
+      el.style.height = next + "px";
+    });
+    window.addEventListener("mouseup", () => {
+      if (dragging) {
+        dragging = false;
+        document.body.style.userSelect = "";
+      }
+    });
+  })();
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "d" && e.key !== "D") return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const panel = document.getElementById("panel-browser");
+    if (!panel || !panel.classList.contains("active")) return;
+    const tag = (e.target && e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || e.target && e.target.isContentEditable) return;
+    e.preventDefault();
+    toggleBrowserDevtools();
+  });
   window._applyAllPatches = _applyAllPatches;
   window._applyEmulateDevice = _applyEmulateDevice;
   window._applyEmulateMedia = _applyEmulateMedia;
@@ -4093,6 +4818,24 @@
   window._scrubStart = _scrubStart;
   window._symKitCall = _symKitCall;
   window.applyInappBrowserAppearance = applyInappBrowserAppearance;
+  window.toggleBrowserDevtools = toggleBrowserDevtools;
+  window.browserDevtoolsSwitch = browserDevtoolsSwitch;
+  window.browserDevtoolsRender = browserDevtoolsRender;
+  window.browserDevtoolsClear = browserDevtoolsClear;
+  window.browserDevtoolsCopy = browserDevtoolsCopy;
+  window.browserDevtoolsExport = browserDevtoolsExport;
+  window.browserDevtoolsToggleNetRow = browserDevtoolsToggleNetRow;
+  window.browserDevtoolsNetType = browserDevtoolsNetType;
+  window.browserDevtoolsCopyCurl = browserDevtoolsCopyCurl;
+  window.browserDevtoolsStorageSet = browserDevtoolsStorageSet;
+  window.browserDevtoolsStorageAdd = browserDevtoolsStorageAdd;
+  window.browserDevtoolsStorageDel = browserDevtoolsStorageDel;
+  window.browserDevtoolsSelectServerTerm = browserDevtoolsSelectServerTerm;
+  window.browserDevtoolsEnsureCapture = browserDevtoolsEnsureCapture;
+  window.browserDevtoolsOnEvent = browserDevtoolsOnEvent;
+  window.browserDevtoolsOnNavigate = browserDevtoolsOnNavigate;
+  window.browserDevtoolsOnTermCwd = browserDevtoolsOnTermCwd;
+  window.browserDevtoolsOnTerminalOutput = browserDevtoolsOnTerminalOutput;
   window.closeBrowserAgentDetailModal = closeBrowserAgentDetailModal;
   window.closeInappToolsPanel = closeInappToolsPanel;
   window.closeStagehandScreencast = closeStagehandScreencast;

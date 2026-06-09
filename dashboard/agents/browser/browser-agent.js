@@ -872,6 +872,30 @@ class BrowserAgent {
     return { ok: true, count: cookies.length, cookies };
   }
 
+  async evaluate(expression) {
+    const d = this._driver();
+    if (typeof d.evaluate !== 'function') throw new Error('Active browser driver does not support evaluate');
+    return await d.evaluate(expression);
+  }
+
+  async applyCss(css) {
+    const d = this._driver();
+    if (typeof d.applyCss !== 'function') throw new Error('Active browser driver does not support applyCss');
+    return await d.applyCss(css);
+  }
+
+  async setStyle(selector, styles) {
+    const d = this._driver();
+    if (typeof d.setStyle !== 'function') throw new Error('Active browser driver does not support setStyle');
+    return await d.setStyle(selector, styles);
+  }
+
+  async inspectElement(selector) {
+    const d = this._driver();
+    if (typeof d.inspectElement !== 'function') throw new Error('Active browser driver does not support inspectElement');
+    return await d.inspectElement(selector);
+  }
+
   async saveSession(name) {
     const r = await this._driver().getCookies();
     const cookies = (r && r.cookies) || [];
@@ -1020,6 +1044,12 @@ function mountBrowserRoutes(addRoute, json, { getConfig, repoRoot, broadcast, dr
   browserRoute('GET', '/api/browser/console', (_, url) => agent.getConsoleLog({ limit: Number(url.searchParams.get('limit') || 50) }));
   browserRoute('GET', '/api/browser/cookies', () => agent.getCookies());
   browserRoute('GET', '/api/browser/sessions', () => agent.listSessions());
+
+  // AI DevTools surface: read/drive the visited page the same way the drawer
+  // UI does. eval is the universal primitive; style/inspect are conveniences.
+  browserRoute('POST', '/api/browser/eval', (body) => agent.evaluate(body.expression != null ? body.expression : body.code));
+  browserRoute('POST', '/api/browser/style', (body) => (body.selector ? agent.setStyle(body.selector, body.styles || {}) : agent.applyCss(body.css || '')));
+  browserRoute('POST', '/api/browser/inspect', (body) => agent.inspectElement(body.selector || '*'));
 
   browserRoute('GET', '/api/browser/accounts', () => {
     const cfg = getConfig();

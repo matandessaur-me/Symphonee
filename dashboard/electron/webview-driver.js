@@ -134,14 +134,33 @@ function _trimValue(value, maxLen = 240) {
   return text.length <= maxLen ? text : (text.slice(0, maxLen) + '...');
 }
 
+// Live fan-out of CDP capture to the DevTools drawer in the renderer. The
+// server (same process as the Electron main) owns the WebSocket broadcast, so
+// we lazy-require it -- avoids a load-time circular dependency and is a no-op
+// if the server has not finished mounting yet. The drawer also backfills via
+// the /api/browser/console + /api/browser/network REST endpoints on open, so a
+// dropped early event is never fatal.
+let _broadcastFn = null;
+function _emitDevtools(channel, event) {
+  try {
+    if (!_broadcastFn) {
+      const srv = require('../server');
+      _broadcastFn = srv && typeof srv.broadcast === 'function' ? srv.broadcast : null;
+    }
+    if (_broadcastFn) _broadcastFn({ type: 'browser-devtools', channel, event });
+  } catch (_) {}
+}
+
 function _pushNetworkEvent(state, event) {
   state.events.push(event);
   if (state.events.length > MAX_BROWSER_NETWORK_EVENTS) state.events.splice(0, state.events.length - MAX_BROWSER_NETWORK_EVENTS);
+  _emitDevtools('network', event);
 }
 
 function _pushConsoleEvent(state, event) {
   state.consoleEvents.push(event);
   if (state.consoleEvents.length > MAX_BROWSER_NETWORK_EVENTS) state.consoleEvents.splice(0, state.consoleEvents.length - MAX_BROWSER_NETWORK_EVENTS);
+  _emitDevtools('console', event);
 }
 
 async function _ensureDebugger(wc) {
@@ -159,6 +178,8 @@ async function _ensureDebugger(wc) {
             method: req.method || 'GET',
             resourceType: params.type || null,
             initiator: params.initiator && params.initiator.type ? params.initiator.type : null,
+            requestHeaders: req.headers || null,
+            postData: typeof req.postData === 'string' ? _trimValue(req.postData, 4000) : null,
             startedAt: Date.now(),
           });
           _pushNetworkEvent(state, {
@@ -168,6 +189,8 @@ async function _ensureDebugger(wc) {
             url: req.url || '',
             resourceType: params.type || null,
             initiator: params.initiator && params.initiator.type ? params.initiator.type : null,
+            requestHeaders: req.headers || null,
+            postData: typeof req.postData === 'string' ? _trimValue(req.postData, 4000) : null,
             startedAt: Date.now(),
           });
           return;
@@ -184,6 +207,8 @@ async function _ensureDebugger(wc) {
             statusText: res.statusText || null,
             mimeType: res.mimeType || null,
             resourceType: params.type || prev.resourceType || null,
+            responseHeaders: res.headers || null,
+            remoteAddress: res.remoteIPAddress ? (res.remoteIPAddress + (res.remotePort ? ':' + res.remotePort : '')) : null,
             fromDiskCache: !!res.fromDiskCache,
             fromServiceWorker: !!res.fromServiceWorker,
             hasBodyPreview: false,
@@ -885,6 +910,52 @@ const internalWebviewDriver = {
       aboutBlank: (state.aboutBlank || []).slice(),
       downloads: (state.downloads || []).slice(),
     };
+  },
+
+  // Run arbitrary JS in the visited page and return a JSON-safe result. This is
+  // the universal AI primitive: the console REPL, "change styles", "read the
+  // DOM", "get the branding" all reduce to evaluate(). DOM nodes / functions are
+  // serialized to a short preview so the IPC bridge never chokes on them.
+  async evaluate(expression) {
+    const wc = await _ensureBrowserTab();
+    const code = String(expression == null ? '' : expression);
+    const wrapped = `(function(){
+      function ser(v){try{
+        if(v===undefined)return 'undefined';
+        if(v===null)return 'null';
+        var t=typeof v;
+        if(t==='function')return String(v);
+        if(t==='object'){ if(v.nodeType){return '<'+(v.tagName?v.tagName.toLowerCase():v.nodeName)+'>'+(v.id?(' #'+v.id):'');} try{return JSON.stringify(v);}catch(e){try{return String(v);}catch(_){return '[object]';}} }
+        return String(v);
+      }catch(e){return String(e);}}
+      try{var __v=eval(${JSON.stringify(code)});return JSON.stringify({ok:true,type:(__v===null?'null':typeof __v),value:ser(__v)});}
+      catch(e){return JSON.stringify({ok:false,error:(e&&e.stack)?String(e.stack):String(e)});}
+    })()`;
+    let out;
+    try { out = await wc.executeJavaScript(wrapped, true); } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
+    try { return JSON.parse(out); } catch (_) { return { ok: true, type: 'string', value: String(out) }; }
+  },
+
+  // Inject a stylesheet into the page (accumulates under one managed <style>).
+  async applyCss(css) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){try{var id='__symphonee_ai_css';var el=document.getElementById(id);if(!el){el=document.createElement('style');el.id=id;(document.head||document.documentElement).appendChild(el);}el.appendChild(document.createTextNode(${JSON.stringify('\n' + String(css || ''))}));return JSON.stringify({ok:true});}catch(e){return JSON.stringify({ok:false,error:String(e)});}})()`;
+    try { return JSON.parse(await wc.executeJavaScript(js, true)); } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
+  },
+
+  // Set inline style properties on every element matching a selector.
+  async setStyle(selector, styles) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){try{var els=document.querySelectorAll(${JSON.stringify(String(selector || ''))});var s=${JSON.stringify(styles || {})};var n=0;els.forEach(function(el){for(var k in s){el.style.setProperty(k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase();}),s[k]);}n++;});return JSON.stringify({ok:true,matched:n});}catch(e){return JSON.stringify({ok:false,error:String(e)});}})()`;
+    try { return JSON.parse(await wc.executeJavaScript(js, true)); } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
+  },
+
+  // Inspect the first element matching a selector: tag, attributes, key
+  // computed styles, box, and a truncated outerHTML.
+  async inspectElement(selector) {
+    const wc = await _ensureBrowserTab();
+    const js = `(function(){try{var el=document.querySelector(${JSON.stringify(String(selector || ''))});if(!el)return JSON.stringify({ok:false,error:'No element matches selector'});var cs=getComputedStyle(el);var r=el.getBoundingClientRect();var a={};for(var i=0;i<el.attributes.length;i++){a[el.attributes[i].name]=el.attributes[i].value;}var ks=['display','position','color','background-color','font-family','font-size','font-weight','line-height','margin','padding','border','width','height','flex','gap','grid-template-columns','z-index','opacity','box-shadow'];var st={};ks.forEach(function(k){st[k]=cs.getPropertyValue(k);});return JSON.stringify({ok:true,tag:el.tagName.toLowerCase(),id:el.id||null,classes:(el.getAttribute('class')||''),attributes:a,text:(el.textContent||'').trim().slice(0,200),rect:{x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)},styles:st,html:el.outerHTML.slice(0,1200)});}catch(e){return JSON.stringify({ok:false,error:String(e)});}})()`;
+    try { return JSON.parse(await wc.executeJavaScript(js, true)); } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
   },
 
   async close() {

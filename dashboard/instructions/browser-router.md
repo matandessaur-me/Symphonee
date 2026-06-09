@@ -123,6 +123,13 @@ Single source of truth for every Browser URL.
 - `/api/browser/agent/*` — in-app agent (LLM tool-use loop on the live in-app webview; user watches live).
 - `/api/plugins/stagehand/*` — sandboxed headless Chromium with screencast view.
 
+**DevTools (read + drive the visited page, no LLM loop)**
+- `GET /api/browser/console` / `GET /api/browser/network` / `GET /api/browser/network-body?requestId=` — console + network capture.
+- `GET /api/browser/server-log?repo=&termId=&lines=` — the visited app's dev-server terminal output (project terminals only; not Symphonee's backend).
+- `POST /api/browser/eval { expression }` — run JS in the page, returns the value. Universal primitive.
+- `POST /api/browser/inspect { selector }` — element tag/attributes/computed styles/box/outerHTML.
+- `POST /api/browser/style { css }` or `{ selector, styles }` — inject a stylesheet or set inline styles.
+
 **Saved accounts**
 - `GET /api/browser/accounts` — list saved login accounts the agent can attach to a session. Example:
   ```bash

@@ -555,8 +555,13 @@ function connect() {
             inst.term.write(msg.data);
             if (wasNearBottom) inst.term.scrollToBottom();
           }
+          // Mirror into the browser DevTools drawer's Server panel.
+          if (window.browserDevtoolsOnTerminalOutput) window.browserDevtoolsOnTerminalOutput(tid, msg.data);
           break;
         }
+      case 'browser-devtools':
+        if (window.browserDevtoolsOnEvent) window.browserDevtoolsOnEvent(msg);
+        break;
       case 'term-started':
         if (msg.termId && msg.cwd && termInstances.has(msg.termId)) {
           termInstances.get(msg.termId).cwd = msg.cwd;
@@ -601,6 +606,7 @@ function connect() {
           const tid = msg.termId || 'main';
           const inst = termInstances.get(tid);
           if (inst) inst.cwd = msg.cwd || inst.cwd || '';
+          if (window.browserDevtoolsOnTermCwd) window.browserDevtoolsOnTermCwd(tid, msg.cwd, msg.repo);
           // INTENTIONALLY do NOT auto-switch activeRepo when the terminal
           // cwd lands in a known repo. The user picks the repo from the
           // sidebar; cd-ing inside the terminal must not hijack that

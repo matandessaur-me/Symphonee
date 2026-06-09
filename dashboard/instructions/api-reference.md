@@ -155,12 +155,29 @@ curl -s -X POST http://127.0.0.1:3800/api/ui/view-note -H "Content-Type: applica
 | GET | `/api/browser/network` | Return recent network requests and responses. Query: `?limit=` |
 | GET | `/api/browser/network-body` | Return a captured response body. Query: `?requestId=` |
 | GET | `/api/browser/console` | Return recent console messages and runtime exceptions. Query: `?limit=` |
+| GET | `/api/browser/server-log` | Recent output of the visited app's dev server (auto-detects the active repo's dev-server terminal). Query: `?repo=&termId=&lines=`. Project terminals only -- never Symphonee's own backend. |
+| POST | `/api/browser/eval` | Run JS in the visited page; returns `{ ok, type, value }`. The universal DevTools primitive -- read the DOM, change behaviour, get anything. Body: `{ expression }` |
+| POST | `/api/browser/inspect` | Inspect the first element matching a selector: tag, attributes, computed styles, box, outerHTML. Body: `{ selector }` |
+| POST | `/api/browser/style` | Change page styling. Body: `{ css }` to inject a stylesheet, or `{ selector, styles }` to set inline props on matching elements. |
 | GET | `/api/browser/cookies` | Get current cookies |
 | GET | `/api/browser/sessions` | List saved sessions |
 | GET | `/api/browser/accounts` | List your saved accounts (name, email) |
 | POST | `/api/browser/save-session` | Save cookies to disk. Body: `{ name }` |
 | POST | `/api/browser/close` | Close browser (auto-saves session) |
 | POST | `/api/browser/check-email` | Check webmail for verification. Body: `{ provider, email, password, subjectPattern }` |
+
+### In-app DevTools (read + drive the visited page)
+
+The in-app browser tab has a DevTools drawer (Console, Network, Performance, Server, Storage). Everything the user sees there is also a REST surface, so YOU can debug the page they are building without leaving Symphonee or burning an LLM browser-agent loop:
+
+- **See console logs / errors:** `GET /api/browser/console?limit=` (includes uncaught exceptions). Network: `GET /api/browser/network` + `GET /api/browser/network-body?requestId=`.
+- **See the dev server's logs:** `GET /api/browser/server-log` -- the visited app's dev server output, auto-detected from the active repo's terminal. (Not Symphonee's own backend.)
+- **Inspect:** `POST /api/browser/inspect { selector }` for one element, or `GET /api/browser/dom` for structure.
+- **Run anything / read anything:** `POST /api/browser/eval { expression }` runs JS in the page and returns the value -- use it to read state, query the DOM, reproduce a bug, or trigger behaviour.
+- **Change styles:** `POST /api/browser/style { css }` (inject a stylesheet) or `{ selector, styles }` (set inline props).
+- **Get the branding / audit:** detect colors, fonts, logo via `POST /api/browser/eval` or the brand/audit tools in the browser tab.
+
+This is manual (the user clicks in the drawer) AND fully automatable (you call these endpoints). Reading is ungated; mutating endpoints (`eval`, `style`) go through the permission gate like other browser actions.
 
 ### Browser Account Access
 

@@ -121,9 +121,16 @@ function createTerminalHub({ httpServer, repoRoot, getConfig, verifyUpgrade }) {
       },
     });
 
-    terminals.set(termId, { pty: ptyProcess, cols, rows, cwd, label: label || null });
+    terminals.set(termId, { pty: ptyProcess, cols, rows, cwd, label: label || null, outputBuffer: '' });
 
     ptyProcess.onData(data => {
+      // Retain a bounded scrollback so the AI / DevTools Server panel can read
+      // a dev server's recent output server-side without a live socket.
+      const t = terminals.get(termId);
+      if (t) {
+        t.outputBuffer = (t.outputBuffer || '') + data;
+        if (t.outputBuffer.length > 200000) t.outputBuffer = t.outputBuffer.slice(-120000);
+      }
       broadcast({ type: 'output', termId, data });
     });
     ptyProcess.onExit(() => {

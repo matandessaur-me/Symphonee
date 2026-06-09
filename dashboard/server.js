@@ -1229,6 +1229,50 @@ try {
   } catch (e2) {
     console.log('  Browser agent chat skipped:', e2.message);
   }
+  // /api/browser/server-log -- recent output of the visited app's dev server.
+  // Auto-detects the active repo's dev-server terminal (by cwd + localhost
+  // signature). Deliberately scoped to project terminals; Symphonee's own
+  // backend logs are never surfaced here.
+  addRoute('GET', '/api/browser/server-log', (req, res) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const lines = Math.max(1, Math.min(3000, parseInt(url.searchParams.get('lines')) || 200));
+      const wantRepo = url.searchParams.get('repo');
+      const wantTerm = url.searchParams.get('termId');
+      let ctx = {};
+      try { ctx = (typeof getUiContextWithPath === 'function') ? getUiContextWithPath() : {}; } catch (_) {}
+      const cfg = getConfig() || {};
+      const repos = cfg.Repos || {};
+      const repoName = wantRepo || ctx.activeRepo || null;
+      const repoPath = (repoName && repos[repoName]) ? repos[repoName] : ctx.activeRepoPath;
+      const norm = p => String(p || '').replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase();
+      const nRepo = norm(repoPath);
+      const strip = s => String(s || '').replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
+      const devUrlRe = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?[^\s'"]*/i;
+      const devSigRe = /(VITE v|ready in|Local:\s+https?|webpack compiled|compiled successfully|next dev|nodemon|listening on|dev server|server (?:running|started|listening))/i;
+      const cands = [];
+      for (const [id, t] of terminals) {
+        const buf = strip(t.outputBuffer || '');
+        const inRepo = !!(nRepo && t.cwd && (norm(t.cwd) === nRepo || norm(t.cwd).startsWith(nRepo + '\\')));
+        const m = buf.match(devUrlRe);
+        cands.push({ id, cwd: t.cwd, inRepo, devUrl: m ? m[0] : null, isDev: !!(m || devSigRe.test(buf)), buf });
+      }
+      let pick = wantTerm ? cands.find(c => c.id === wantTerm) : null;
+      if (!pick) {
+        let pool = cands.filter(c => c.inRepo);
+        if (!pool.length) pool = cands.filter(c => c.isDev);
+        if (!pool.length) pool = cands;
+        pool.sort((a, b) => (b.isDev ? 1 : 0) - (a.isDev ? 1 : 0));
+        pick = pool[0];
+      }
+      if (!pick) return json(res, { ok: true, termId: null, output: '', note: 'No terminals with output yet.' });
+      const all = pick.buf.split('\n');
+      json(res, { ok: true, termId: pick.id, repo: repoName, cwd: pick.cwd, devUrl: pick.devUrl, isDevServer: pick.isDev, totalLines: all.length, output: all.slice(-lines).join('\n') });
+    } catch (e) {
+      json(res, { ok: false, error: e.message }, 500);
+    }
+  });
+  console.log('  Browser server-log mounted (/api/browser/server-log)');
 } catch (e) {
   console.log('  Browser agent skipped:', e.message);
 }
