@@ -61,6 +61,7 @@ async function loadFileTree(subPath) {
           <div class="changed-file" onclick="viewChangedFile('${esc(f.file)}')" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" title="${esc(f.file)}">
             <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.file)}</span>
+            <button class="cf-discard" title="Discard changes to this file" onclick="event.stopPropagation();discardFile('${esc(f.file).replace(/'/g, "\\'")}')">&#8617;</button>
           </div>
         `).join('');
         // Auto-show the Diff tab and populate it with changed files
@@ -765,6 +766,7 @@ function populateDiffTabWithChanges(files, repo) {
     <div class="diffview-file" onclick="selectDiffFile(${i})" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" data-idx="${i}">
       <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
       <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
+      <button class="cf-discard" title="Discard changes to this file" onclick="event.stopPropagation();discardFile('${esc(f.file).replace(/'/g, "\\'")}')">&#8617;</button>
     </div>
   `).join('');
 
@@ -796,12 +798,16 @@ function showDiffFileContextMenu(e, filePath) {
     });
   } catch (_) {}
 }
-async function discardFileFromContext() {
-  document.getElementById('diffFileContextMenu').classList.remove('open');
-  if (!state.contextDiffFile) return;
+// Discard all working-tree changes to a single file. Used by both the
+// right-click context menu and the inline discard button on file rows.
+async function discardFile(filePath) {
+  if (!filePath) return;
   const repo = state.diffViewCommit && state.diffViewCommit.repo || state.activeRepo || state.filesCurrentRepo;
-  if (!repo) return;
-  const ok = await customConfirm('Discard Changes', `Discard all changes to "${state.contextDiffFile}"? This cannot be undone.`, 'Discard');
+  if (!repo) {
+    toast('No repository selected', 'error');
+    return;
+  }
+  const ok = await customConfirm('Discard Changes', `Discard all changes to "${filePath}"? This cannot be undone.`, 'Discard');
   if (!ok) return;
   try {
     const r = await fetch('/api/git/discard', {
@@ -811,7 +817,7 @@ async function discardFileFromContext() {
       },
       body: JSON.stringify({
         repo,
-        path: state.contextDiffFile
+        path: filePath
       })
     });
     const data = await r.json();
@@ -819,10 +825,10 @@ async function discardFileFromContext() {
       toast(data.error, 'error');
       return;
     }
-    toast(`Discarded changes to ${state.contextDiffFile}`);
-    // Refresh the current view
+    toast(`Discarded changes to ${filePath}`);
+    // Refresh the diff viewer: drop the discarded file, show the next one, or close.
     if (state.diffViewCommit && state.diffViewCommit.hash === 'working') {
-      const remaining = state.diffViewCommit.files.filter(f => f.file !== state.contextDiffFile);
+      const remaining = state.diffViewCommit.files.filter(f => f.file !== filePath);
       if (remaining.length > 0) {
         viewChangedFile(remaining[0].file);
       } else {
@@ -835,6 +841,20 @@ async function discardFileFromContext() {
     toast('Failed to discard changes', 'error');
   }
 }
+async function discardFileFromContext() {
+  document.getElementById('diffFileContextMenu').classList.remove('open');
+  return discardFile(state.contextDiffFile);
+}
+// Dismiss any open context menu on an outside click or Escape.
+(function wireContextMenuDismiss() {
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  document.addEventListener('click', e => {
+    document.querySelectorAll('.context-menu.open').forEach(m => { if (!m.contains(e.target)) m.classList.remove('open'); });
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.context-menu.open').forEach(m => m.classList.remove('open'));
+  });
+})();
 async function viewChangedFile(filePath) {
   const repo = state.activeRepo || state.filesCurrentRepo;
   if (!repo) return;
@@ -864,6 +884,7 @@ async function viewChangedFile(filePath) {
       <div class="diffview-file ${i === (targetIdx >= 0 ? targetIdx : 0) ? 'active' : ''}" onclick="selectDiffFile(${i})" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" data-idx="${i}">
         <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
         <span class="diffview-file-name" title="${esc(f.file)}">${esc(f.file.split('/').pop())}</span>
+        <button class="cf-discard" title="Discard changes to this file" onclick="event.stopPropagation();discardFile('${esc(f.file).replace(/'/g, "\\'")}')">&#8617;</button>
       </div>
     `).join('');
     switchTab('diffview');
@@ -933,6 +954,7 @@ async function loadGitPanel() {
         <div class="changed-file" onclick="viewFile('${esc(f.file)}')" oncontextmenu="event.preventDefault();showDiffFileContextMenu(event,'${esc(f.file).replace(/'/g, "\\'")}')" title="${esc(f.file)}">
           <span class="changed-file-status ${f.statusClass || f.status}">${f.status}</span>
           <span>${esc(f.file.split('/').pop())}</span>
+          <button class="cf-discard" title="Discard changes to this file" onclick="event.stopPropagation();discardFile('${esc(f.file).replace(/'/g, "\\'")}')">&#8617;</button>
         </div>
       `).join('');
     } else {
@@ -1342,6 +1364,8 @@ window.renderInlineDiff = renderInlineDiff;
 window.populateDiffTabWithChanges = populateDiffTabWithChanges;
 window.closeDiffView = closeDiffView;
 window.discardFileFromContext = discardFileFromContext;
+window.discardFile = discardFile;
+window.showDiffFileContextMenu = showDiffFileContextMenu;
 window.viewChangedFile = viewChangedFile;
 window.cancelFilesEdit = cancelFilesEdit;
 window.saveFilesEdit = saveFilesEdit;

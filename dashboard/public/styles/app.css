@@ -3686,6 +3686,14 @@
     .diffview-file:hover { background: var(--surface0); }
     .diffview-file.active { background: var(--surface0); color: var(--accent); }
     .diffview-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    /* Inline discard button on changed-file / diffview-file rows (reveals on hover). */
+    .cf-discard {
+      margin-left: auto; flex-shrink: 0; background: transparent; border: 0; cursor: pointer;
+      color: var(--overlay0); font-size: 13px; line-height: 1; padding: 0 5px; border-radius: var(--radius);
+      opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
+    }
+    .changed-file:hover .cf-discard, .diffview-file:hover .cf-discard { opacity: 1; }
+    .cf-discard:hover { color: var(--red); background: rgba(242,139,130,0.14); }
     .tab-panel#panel-diffview.active { display: flex; }
 
     /* ── Pull Requests panel ─────────────────────────────────────────────── */
