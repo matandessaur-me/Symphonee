@@ -20,6 +20,7 @@ This reference covers ONLY the core shell. Every provider integration -- issue t
 | GET | `/api/files/tree?repo={name}` | Browse directory tree (respects .gitignore) |
 | GET | `/api/files/read?repo={name}&path={file}` | Read file contents (with syntax highlight language detection) |
 | POST | `/api/files/save` | Save file (atomic write). Body: `{ repo, path, content }` |
+| POST | `/api/files/reveal` | Reveal a file in the OS file explorer. Body: `{ repo, path }` |
 | GET | `/api/files/search?repo={name}&query={text}` | Full-text search across files (regex, glob patterns) |
 | GET | `/api/files/grep?repo={name}&pattern={regex}` | Search file contents with ripgrep |
 | GET | `/api/files/serve?repo={name}&path={file}` | Serve binary files (images, etc.) with caching |

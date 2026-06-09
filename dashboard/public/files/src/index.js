@@ -845,6 +845,40 @@ async function discardFileFromContext() {
   document.getElementById('diffFileContextMenu').classList.remove('open');
   return discardFile(state.contextDiffFile);
 }
+// File-tree right-click menu (Open in Explorer).
+state.contextTreeFile = null;
+function showFileTreeContextMenu(e, filePath) {
+  e.preventDefault();
+  state.contextTreeFile = filePath;
+  const menu = document.getElementById('fileTreeContextMenu');
+  if (!menu) return;
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('open');
+  try { lucide.createIcons({ nodes: [menu] }); } catch (_) {}
+}
+async function revealFileFromContext() {
+  const menu = document.getElementById('fileTreeContextMenu');
+  if (menu) menu.classList.remove('open');
+  const filePath = state.contextTreeFile;
+  if (!filePath) return;
+  const repo = state.filesCurrentRepo || state.activeRepo;
+  if (!repo) {
+    toast('No repository selected', 'error');
+    return;
+  }
+  try {
+    const r = await fetch('/api/files/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo, path: filePath })
+    });
+    const data = await r.json();
+    if (data.error) toast(data.error, 'error');
+  } catch (e) {
+    toast('Failed to reveal file', 'error');
+  }
+}
 // Dismiss any open context menu on an outside click or Escape.
 (function wireContextMenuDismiss() {
   if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
@@ -1366,6 +1400,8 @@ window.closeDiffView = closeDiffView;
 window.discardFileFromContext = discardFileFromContext;
 window.discardFile = discardFile;
 window.showDiffFileContextMenu = showDiffFileContextMenu;
+window.showFileTreeContextMenu = showFileTreeContextMenu;
+window.revealFileFromContext = revealFileFromContext;
 window.viewChangedFile = viewChangedFile;
 window.cancelFilesEdit = cancelFilesEdit;
 window.saveFilesEdit = saveFilesEdit;

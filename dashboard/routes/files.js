@@ -283,10 +283,28 @@ function mountFiles(addRoute, json, ctx) {
     fs.createReadStream(resolved).pipe(res);
   }
 
+  // ── Reveal a file in the OS file explorer (Windows: explorer /select) ─────
+  async function handleFileReveal(req, res) {
+    try {
+      const body = await readBody(req);
+      const repoPath = getRepoPath(body.repo);
+      if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+      const resolved = resolveRepoSubPath(repoPath, body.path || '');
+      if (!resolved) return json(res, { error: 'Invalid path' }, 403);
+      if (!fs.existsSync(resolved)) return json(res, { error: 'Path not found' }, 404);
+      // explorer.exe exits non-zero even on success, so ignore the callback error.
+      require('child_process').execFile('explorer.exe', ['/select,', resolved], () => {});
+      json(res, { ok: true, path: resolved });
+    } catch (e) {
+      json(res, { error: e.message }, 500);
+    }
+  }
+
   // ── Route registrations ─────────────────────────────────────────────────
   addRoute('GET',  '/api/files/tree',     (req, res, url) => handleFileTree(url, res));
   addRoute('GET',  '/api/files/read',     (req, res, url) => handleFileRead(url, res));
   addRoute('POST', '/api/files/save',     (req, res) => handleFileSave(req, res));
+  addRoute('POST', '/api/files/reveal',   (req, res) => handleFileReveal(req, res));
   addRoute('GET',  '/api/files/search',   (req, res, url) => handleFileSearch(url, res));
   addRoute('GET',  '/api/files/grep',     (req, res, url) => handleFileGrep(url, res));
   addRoute('GET',  '/api/files/serve',    (req, res, url) => handleServeFile(url, res));
