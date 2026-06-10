@@ -155,6 +155,46 @@ async function measureDense({ repoRoot = REPO_ROOT, write = true } = {}) {
   return record;
 }
 
+/**
+ * Run a named challenger through the gate and persist the verdict. Today the
+ * only challenger is the Stage-2 activation kernel (augmenting/fused form).
+ * Returns { verdict, challengerAggregate, baselineAggregate, perQuery }.
+ */
+function judgeNamed(name, { repoRoot = REPO_ROOT, write = true, stamp = null } = {}) {
+  let challenger;
+  if (name === 'activation' || name === 'activation-fused') {
+    const { activationFusedRetriever } = require('../mind/dynamics/activation');
+    challenger = (g, q, k) => activationFusedRetriever(g, q, k);
+  } else if (name === 'activation-pure') {
+    const { activationRetriever } = require('../mind/dynamics/activation');
+    challenger = (g, q, k) => activationRetriever(g, q, k);
+  } else {
+    throw new Error(`unknown challenger "${name}" (try: activation | activation-pure)`);
+  }
+  const base = _latestBaseline(repoRoot) || runBaseline({ repoRoot, write: false });
+  const { result } = runRetriever(challenger, { repoRoot });
+  const criterion = loadJson(CRITERION_PATH);
+  const verdict = harness.compareToBaseline(base.aggregate, result.aggregate, result.latency, criterion);
+  const record = {
+    kind: 'challenger-result',
+    challenger: name,
+    recordedAt: stamp || new Date().toISOString(),
+    verdict: verdict.verdict,
+    pass: verdict.pass,
+    baselineAggregate: base.aggregate,
+    challengerAggregate: result.aggregate,
+    challengerLatency: result.latency,
+    failures: verdict.failures,
+    perQuery: result.perQuery.map(q => ({ id: q.id, mrr: q.scores.mrr, 'recall@5': q.scores['recall@5'] })),
+  };
+  if (write) {
+    const dir = path.join(repoRoot, '.symphonee', 'eval', 'challengers');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${name}-${record.recordedAt.replace(/[:.]/g, '-')}.json`), JSON.stringify(record, null, 2), 'utf8');
+  }
+  return { verdict, record };
+}
+
 function _printSummary(record) {
   const a = record.aggregate;
   console.log('\n=== THE EVAL - RRF baseline ===');
@@ -198,6 +238,23 @@ if (require.main === module) {
     }).catch(err => { console.error('[eval] dense FAILED:', err.message); process.exit(1); });
   } else {
     try {
+      const judgeIdx = process.argv.indexOf('--judge');
+      if (judgeIdx !== -1) {
+        const name = process.argv[judgeIdx + 1] || 'activation';
+        const { verdict, record } = judgeNamed(name);
+        console.log(`\n=== THE EVAL - challenger "${name}" vs RRF baseline ===`);
+        console.log('metric        baseline  challenger  delta');
+        for (const key of ['mrr', 'hit@1', 'hit@3', 'recall@5', 'ndcg@5', 'recall@10']) {
+          const b = record.baselineAggregate[key], c = record.challengerAggregate[key];
+          if (b == null) continue;
+          const d = Math.round((c - b) * 10000) / 10000;
+          console.log(`${key.padEnd(13)} ${String(b).padEnd(8)}  ${String(c).padEnd(10)}  ${d >= 0 ? '+' : ''}${d}`);
+        }
+        console.log(`latency p50: challenger ${record.challengerLatency.p50}ms (budget ${verdict.criterion.maxP50LatencyMs}ms)`);
+        console.log(`\n>>> ${verdict.verdict} <<<  pass=${verdict.pass}`);
+        if (verdict.failures.length) console.log('failures: ' + verdict.failures.join('; '));
+        process.exit(0);
+      }
       const rec = runBaseline({});
       _printSummary(rec);
     } catch (err) {
@@ -207,4 +264,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { runRetriever, runBaseline, judgeChallenger, measureDense, baselinesDir };
+module.exports = { runRetriever, runBaseline, judgeChallenger, judgeNamed, measureDense, baselinesDir };
