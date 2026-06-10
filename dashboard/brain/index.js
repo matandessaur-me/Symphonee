@@ -36,6 +36,7 @@ const voiceModule = require('./voice');
 const personasModule = require('./personas');
 const ambientModule = require('./ambient');
 const localAnswerModule = require('./local-answer');
+const nudgeRules = require('./nudge-rules');
 const llm = require('../lib/llm');
 const { createMindClient } = require('../lib/mind-client');
 const promptStoreModule = require('./prompt-store');
@@ -311,15 +312,23 @@ function mountBrain(addRoute, json, ctx) {
   // the model.
   let _nudgeCache = { at: 0, nudge: null };
   const _NUDGE_TTL_MS = 60_000;
-  async function _synthesizeNudge() {
-    if (Date.now() - _nudgeCache.at < _NUDGE_TTL_MS) return _nudgeCache.nudge;
+  // Shared context for the nudge engine: what the user is actually doing.
+  async function _gatherNudgeContext() {
     const ui = getUiContext ? getUiContext() : {};
     const space = (ui && ui.activeSpace) || '_global';
     let ctx;
-    try {
-      ctx = await localAnswerModule.gatherContext({ repoRoot, space, activeRepoPath: ui.activeRepoPath, activeRepo: ui.activeRepo });
-    } catch (_) { ctx = { git: [], checkpoints: [], conversation: [] }; }
-    const cur = intent.get();
+    try { ctx = await localAnswerModule.gatherContext({ repoRoot, space, activeRepoPath: ui.activeRepoPath, activeRepo: ui.activeRepo }); }
+    catch (_) { ctx = { git: [], checkpoints: [], conversation: [], uncommitted: { count: 0, files: [] } }; }
+    ctx.activeRepo = ui.activeRepo || null;
+    ctx.activeRepoPath = ui.activeRepoPath || null;
+    ctx.intent = intent.get();
+    return ctx;
+  }
+
+  // Fuzzy FALLBACK only (used when no rule fires). Cached 60s.
+  async function _synthesizeNudge(ctx) {
+    if (Date.now() - _nudgeCache.at < _NUDGE_TTL_MS) return _nudgeCache.nudge;
+    const cur = ctx.intent;
     const lines = [];
     if (cur && cur.summary) lines.push('Their current focus: ' + cur.summary);
     if (ctx.conversation.length) lines.push('Recent conversation:\n' + ctx.conversation.map(t => `- ${t.role}: ${t.text}`).join('\n'));
@@ -363,20 +372,24 @@ function mountBrain(addRoute, json, ctx) {
     return nudge;
   }
 
-  // GET /api/symphonee/ambient/nudge - the whisper's brain. A synthesized,
-  // contextual, HUMAN nudge (or null) after the dial + trust gate. On real
-  // signals only (boot, focus); dismissing decays its kind.
+  // GET /api/symphonee/ambient/nudge - the whisper's brain. RULES first
+  // (deterministic, reliable, well-phrased); the fuzzy model only when no rule
+  // fires. Then the dial + trust gate. On real signals only (boot, focus);
+  // dismissing decays the kind.
   addRoute('GET', '/api/symphonee/ambient/nudge', async (req, res) => {
     const state = ambientModule.loadState(repoRoot);
     if (state.enabled === false) return json(res, { nudge: null, dial: state.dial, enabled: false });
-    let best = null;
+    let candidates = [];
     try {
-      const c = await _synthesizeNudge();
-      if (c) {
-        const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
-        if (v.surface) best = { ...c, score: v.score };
-      }
+      const ctx = await _gatherNudgeContext();
+      candidates = nudgeRules.runRules(ctx);
+      if (!candidates.length) { const s = await _synthesizeNudge(ctx); if (s) candidates.push(s); }
     } catch (_) { /* stay quiet on error */ }
+    let best = null;
+    for (const c of candidates) {
+      const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
+      if (v.surface && (!best || v.score > best.score)) best = { ...c, score: v.score };
+    }
     return json(res, { nudge: best, dial: state.dial, enabled: true });
   });
 

@@ -149,6 +149,17 @@ function _gitLog(repoPath, n = 6) {
   });
 }
 
+function _gitStatus(repoPath) {
+  return new Promise((resolve) => {
+    if (!repoPath) return resolve({ count: 0, files: [] });
+    execFile('git', ['-C', repoPath, 'status', '--porcelain'], { timeout: 4000, windowsHide: true }, (err, stdout) => {
+      if (err || !stdout) return resolve({ count: 0, files: [] });
+      const files = stdout.trim().split('\n').filter(Boolean).map(l => l.slice(3).trim()).filter(Boolean);
+      resolve({ count: files.length, files });
+    });
+  });
+}
+
 function _recentCheckpoints(repo, n = 3) {
   try {
     return (require('../lib/checkpoint').list({ repo, limit: n }) || [])
@@ -242,8 +253,11 @@ async function localAnswer({ repoRoot, space = '_global', question, activeRepoPa
 // by the ambient whisper to synthesize a contextual nudge.
 async function gatherContext({ repoRoot, space = '_global', activeRepoPath, activeRepo, graph = null } = {}) {
   const g = graph || store.loadGraph(repoRoot, space);
+  const repoPath = activeRepoPath || repoRoot;
+  const [git, uncommitted] = await Promise.all([_gitLog(repoPath, 6), _gitStatus(repoPath)]);
   return {
-    git: await _gitLog(activeRepoPath || repoRoot, 6),
+    git,
+    uncommitted,
     checkpoints: _recentCheckpoints(activeRepo, 3),
     conversation: g ? _recentConversation(g, 4) : [],
   };
