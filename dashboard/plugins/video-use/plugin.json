@@ -27,13 +27,6 @@
   "activationConditions": {},
   "settings": [
     {
-      "key": "ElevenLabsApiKey",
-      "label": "ElevenLabs API Key",
-      "type": "string",
-      "sensitive": true,
-      "description": "Optional. If set, transcription uses ElevenLabs Scribe (paid). Otherwise the plugin tries local Whisper (whisper-cli or whisper on PATH)."
-    },
-    {
       "key": "FfmpegPath",
       "label": "ffmpeg executable",
       "type": "string",
@@ -50,7 +43,7 @@
   ],
   "contributions": {
     "routes": "routes.js",
-    "configKeys": ["ElevenLabsApiKey", "FfmpegPath", "FfprobePath"],
-    "sensitiveKeys": ["ElevenLabsApiKey"]
+    "configKeys": ["FfmpegPath", "FfprobePath"],
+    "sensitiveKeys": []
   }
 }

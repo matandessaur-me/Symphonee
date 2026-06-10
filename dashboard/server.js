@@ -116,6 +116,7 @@ const ROUTES = {
   '/js/work-items.js':        { file: path.join(publicDir, 'js', 'work-items.js'),                                 type: 'application/javascript' },
   '/js/command-palette.js':   { file: path.join(publicDir, 'js', 'command-palette.js'),                            type: 'application/javascript' },
   '/js/ambient-whisper.js':   { file: path.join(publicDir, 'js', 'ambient-whisper.js'),                            type: 'application/javascript' },
+  '/js/symphonee-voice.js':   { file: path.join(publicDir, 'js', 'symphonee-voice.js'),                            type: 'application/javascript' },
   '/js/plugins.js':           { file: path.join(publicDir, 'js', 'plugins.js'),                                    type: 'application/javascript' },
   '/js/settings.js':          { file: path.join(publicDir, 'js', 'settings.js'),                                   type: 'application/javascript' },
   '/js/browser.js':           { file: path.join(publicDir, 'js', 'browser.js'),                                    type: 'application/javascript' },

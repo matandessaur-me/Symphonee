@@ -57,6 +57,7 @@ function readBody(req) {
 
 function mountBrain(addRoute, json, ctx) {
   const { repoRoot, broadcast, getUiContext } = ctx;
+  const getConfig = ctx.getConfig || (() => ({}));
 
   // Singleton intent manager bound to onRecompute -> planner.recomputeIntent
   const intent = intentModule.createIntentManager({
@@ -168,6 +169,32 @@ function mountBrain(addRoute, json, ctx) {
       total: decisionLog.length,
       decisions: decisionLog.slice(-safeLimit).reverse(),
     });
+  });
+
+  // ── Symphonee Voice (TTS) ───────────────────────────────────────────────
+  // GET status: does this install have a working premium voice (ElevenLabs)?
+  addRoute('GET', '/api/symphonee/voice/status', (req, res) => {
+    const cfg = getConfig() || {};
+    return json(res, { elevenlabs: !!cfg.ElevenLabsApiKey });
+  });
+  // POST speak: synthesize text with ElevenLabs and stream MP3. Returns
+  // { ok:false, reason:'no-key' } (200) when no key is set so the client falls
+  // back to the browser's own speechSynthesis - voice works for everyone, and
+  // just sounds better with a Symphonee Voice key.
+  addRoute('POST', '/api/symphonee/voice/speak', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const text = (body.text || '').toString().trim();
+    if (!text) return json(res, { error: 'text required' }, 400);
+    const cfg = getConfig() || {};
+    const apiKey = cfg.ElevenLabsApiKey;
+    if (!apiKey) return json(res, { ok: false, reason: 'no-key' }, 200);
+    try {
+      const audio = await require('../lib/tts').elevenLabsTTS(text, { apiKey, voiceId: cfg.SymphoneeVoiceId });
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': audio.length, 'Cache-Control': 'no-store' });
+      res.end(audio);
+    } catch (e) {
+      return json(res, { ok: false, reason: 'tts-error', error: e.message }, 200);
+    }
   });
 
   // ── POST /api/symphonee/conduct ─────────────────────────────────────────

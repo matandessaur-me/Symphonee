@@ -140,6 +140,7 @@
       <span class="notif-badge" id="notifBadge">0</span>
     </div>
     <button onclick="openHistory()" title="History -- everything Symphonee did, with undo" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;" onmouseenter="this.style.color='var(--text)'" onmouseleave="this.style.color='var(--subtext0)'"><i data-lucide="history" style="width:15px;height:15px;"></i></button>
+    <button id="voiceToggleBtn" onclick="window.symphoneeVoiceToggle && window.symphoneeVoiceToggle()" title="Symphonee Voice -- hear nudges and answers spoken aloud" style="background:none;border:none;color:var(--subtext0);cursor:pointer;padding:4px;display:flex;align-items:center;transition:color 0.15s;margin-left:4px;"><i data-lucide="volume-x" style="width:15px;height:15px;"></i></button>
     <div class="window-controls">
       <button onclick="fetch('/api/window/minimize',{method:'POST'})" title="Minimize"><i data-lucide="minus" style="width:16px;height:16px;"></i></button>
       <button class="win-close" onclick="fetch('/api/window/close',{method:'POST'})" title="Close"><i data-lucide="x" style="width:16px;height:16px;"></i></button>
@@ -1437,6 +1438,11 @@
             <div class="settings-section-title">API Keys</div>
             <div class="settings-section-desc">Optional API keys unlock additional models. Without these, CLIs use your subscription login. With a key, the CLI uses API billing instead and all models become available.</div>
             <div class="modal-field" style="margin-bottom:6px;">
+              <label>Symphonee Voice <span style="font-size:10px;color:var(--subtext0);">(ElevenLabs key -- lets Symphonee speak)</span></label>
+              <div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">Optional. With an ElevenLabs key, Symphonee gets a premium spoken voice for nudges and answers; without it, it uses your browser's built-in voice. This same key also powers Video Use transcription, generation, and edits.</div>
+              <div style="display:flex;gap:0;"><input id="settingsElevenLabsKey" type="password" placeholder="Optional ElevenLabs key" style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsElevenLabsKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+            </div>
+            <div class="modal-field" style="margin-bottom:6px;">
               <label>OpenAI API Key <span style="font-size:10px;color:var(--subtext0);">(unlocks o3, o4-mini, gpt-4.1 in Codex)</span></label>
               <div style="display:flex;gap:0;"><input id="settingsOpenaiKey" type="password" placeholder="sk-..." style="border-radius:var(--radius) 0 0 var(--radius);flex:1;"><button type="button" onclick="toggleSecretField('settingsOpenaiKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             </div>
@@ -1775,11 +1781,7 @@
             <div class="settings-section-desc">Video tooling and transcription settings live here because they are local machine/runtime preferences rather than plugin navigation.</div>
             <div class="modal-field">
               <label>ElevenLabs API Key</label>
-              <div style="font-size:11px;color:var(--subtext0);margin-bottom:4px;">Optional. If set, transcription uses ElevenLabs Scribe. Otherwise Video Use falls back to local Whisper when available.</div>
-              <div style="display:flex;gap:0;">
-                <input id="pluginSetting_video-use_ElevenLabsApiKey" type="password" placeholder="Optional ElevenLabs key" data-plugin="video-use" data-key="ElevenLabsApiKey" class="plugin-setting-input" style="border-radius:var(--radius) 0 0 var(--radius);flex:1;">
-                <button type="button" onclick="toggleSecretField('pluginSetting_video-use_ElevenLabsApiKey',this)" style="background:var(--surface0);border:1px solid var(--surface1);border-left:none;border-radius:0 var(--radius) var(--radius) 0;padding:0 10px;cursor:pointer;color:var(--subtext0);display:flex;align-items:center;" title="Show/hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-              </div>
+              <div style="font-size:11px;color:var(--subtext0);">Moved to <strong>Settings &gt; API Keys &gt; Symphonee Voice</strong>. The one key powers both Symphonee's spoken voice and Video Use transcription.</div>
             </div>
             <div class="modal-field">
               <label>ffmpeg executable</label>
@@ -2152,6 +2154,7 @@
 <script src="/js/spaces-repos.js"></script>
 <script src="/js/command-palette.js"></script>
 <script src="/js/ambient-whisper.js"></script>
+<script src="/js/symphonee-voice.js"></script>
 <script src="/js/plugins.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/3d-force-graph.min.js"></script>
