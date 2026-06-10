@@ -5,12 +5,49 @@
   (() => {
     "use strict";
     const LS_KEY = "symphonee_voice_on";
-    let _on = false;
+    let _on = true;
     try {
-      _on = localStorage.getItem(LS_KEY) === "1";
+      if (localStorage.getItem(LS_KEY) === "0") _on = false;
     } catch (_) {
     }
     let _audio = null;
+    let _voice = null;
+    const PREF = [
+      /aria/i,
+      /jenny/i,
+      /jane/i,
+      /sonia/i,
+      /libby/i,
+      /natasha/i,
+      /clara/i,
+      /google uk english female/i,
+      /google us english/i,
+      /samantha/i,
+      /zira/i,
+      /female/i
+    ];
+    function _pickVoice() {
+      let vs = [];
+      try {
+        vs = window.speechSynthesis.getVoices() || [];
+      } catch (_) {
+      }
+      if (!vs.length) return null;
+      const en = vs.filter((v) => /^en/i.test(v.lang || ""));
+      const pool = en.length ? en : vs;
+      for (const re of PREF) {
+        const v = pool.find((v2) => re.test(v2.name || ""));
+        if (v) return v;
+      }
+      return pool[0];
+    }
+    try {
+      _voice = _pickVoice();
+      if ("speechSynthesis" in window) window.speechSynthesis.onvoiceschanged = () => {
+        _voice = _pickVoice() || _voice;
+      };
+    } catch (_) {
+    }
     function _btn() {
       return document.getElementById("voiceToggleBtn");
     }
@@ -25,8 +62,9 @@
         } catch (_) {
         }
       }
-      b.style.color = _on ? "var(--accent)" : "var(--subtext0)";
-      b.title = _on ? "Symphonee Voice on - click to mute" : "Symphonee Voice off - click to hear nudges + answers";
+      b.style.color = _on ? "var(--accent)" : "var(--overlay1,#7f849c)";
+      b.style.filter = _on ? "drop-shadow(0 0 5px var(--accent,#89b4fa))" : "none";
+      b.title = _on ? "Symphonee Voice on - click to mute" : "Symphonee Voice muted - click to unmute";
     }
     function _stop() {
       try {
@@ -55,8 +93,11 @@
         if (!("speechSynthesis" in window)) return;
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.rate = 1.03;
-        u.pitch = 1;
+        if (!_voice) _voice = _pickVoice();
+        if (_voice) u.voice = _voice;
+        u.lang = _voice && _voice.lang || "en-US";
+        u.rate = 1;
+        u.pitch = 1.06;
         u.volume = 1;
         window.speechSynthesis.speak(u);
       } catch (_) {
@@ -64,7 +105,8 @@
     }
     async function speak(text) {
       if (!_on || !text) return;
-      const t = String(text).slice(0, 600);
+      const t = String(text).replace(/\s+/g, " ").trim().slice(0, 600);
+      if (!t) return;
       try {
         const r = await fetch("/api/symphonee/voice/speak", {
           method: "POST",
@@ -73,8 +115,7 @@
         });
         const ct = (r.headers.get("content-type") || "").toLowerCase();
         if (r.ok && ct.includes("audio")) {
-          const blob = await r.blob();
-          _playAudio(URL.createObjectURL(blob));
+          _playAudio(URL.createObjectURL(await r.blob()));
           return;
         }
         _browserSpeak(t);
@@ -83,6 +124,7 @@
       }
     }
     function setOn(on) {
+      const was = _on;
       _on = !!on;
       try {
         localStorage.setItem(LS_KEY, _on ? "1" : "0");
@@ -90,13 +132,11 @@
       }
       if (!_on) _stop();
       _renderBtn();
-      if (_on) {
-        try {
-          if (window.toast) window.toast("Symphonee Voice on", "info");
-        } catch (_) {
-        }
-        speak("Voice on.");
+      try {
+        if (window.toast) window.toast(_on ? "Symphonee Voice on" : "Symphonee Voice muted", "info");
+      } catch (_) {
       }
+      if (_on && !was) speak("Voice on.");
     }
     window.symphoneeSpeak = speak;
     window.symphoneeVoiceOn = () => _on;
