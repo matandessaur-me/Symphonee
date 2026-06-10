@@ -217,6 +217,29 @@ function mountBrain(addRoute, json, ctx) {
     const ui = getUiContext ? getUiContext() : {};
     const space = (ui && ui.activeSpace) || '_global';
     const surface = personasModule.resolveSurface(body.persona || {});
+
+    // Fast path (palette quick-answer): the caller already knows this is a
+    // recall-shaped question, so skip the ~2s triage and answer INSTANTLY from
+    // memory with a deterministic template (no local prose). Returns a
+    // templated answer when grounded, else an escalate signal the caller turns
+    // into "send to Claude Code".
+    if (body.fast === true) {
+      let recall = null;
+      try {
+        const mind = createMindClient({ transport: 'inproc', repoRoot, space });
+        // Curated knowledge only (memory cards + saved Q&A) - NOT raw CLI drawer
+        // transcripts, which BM25 over-ranks and which make a "quick answer"
+        // noisy. If curated memory can't ground it, we escalate to the agent.
+        recall = await mind.recall({ question: input, limit: 6, space, kinds: ['memory', 'conversation'] });
+      } catch (_) { recall = null; }
+      const fastResult = voiceModule.frontDoor({
+        recommendation: { rung: 1, intent: 'recall', reason: 'fast recall' },
+        recall, question: input, surface,
+      });
+      if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: fastResult.source, rung: 1, persona: surface.userType, fast: true } });
+      return json(res, { ...fastResult, persona: surface, fast: true });
+    }
+
     const plan = await planner.planRoute(input, { ui, intent: intent.get(), outcomeHints: getOutcomeHints(), repoRoot });
     const recommendation = conductorModule.recommendRung(plan, {});
 
