@@ -545,7 +545,7 @@ const server = http.createServer(async (req, res) => {
         let brainField = null;
         try {
           if (brain && typeof brain.getIntent === 'function') {
-            const brainSetup = await require('./mind/ollama-setup').detectBrainSetup();
+            const brainSetup = await require('./lib/ollama-setup').detectBrainSetup();
             brainField = {
               intent: brain.getIntent(),
               triageModel: require('./brain/planner').TRIAGE_MODEL,
@@ -1117,7 +1117,7 @@ _brainForKnowledgeEvents = brain;
 // work AFTER the dashboard has rendered (see runDeferredBootWork) so it does not
 // starve the renderer's event loop during first paint.
 function runBrainSetup() {
-  const setupMod = require('./mind/ollama-setup');
+  const setupMod = require('./lib/ollama-setup');
   return setupMod.detectBrainSetup().then(async (status) => {
     if (!status.ollamaInstalled) {
       console.log('[brain/setup] Ollama not installed - brain features disabled until you install it from https://ollama.com/download');

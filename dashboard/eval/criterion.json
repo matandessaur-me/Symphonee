@@ -1,0 +1,12 @@
+{
+  "name": "stage-2-cognition-gate-v1",
+  "preCommittedAt": "2026-06-10",
+  "appliesTo": "Stage 2 - activation kernel in shadow (the cognition GO/NO-GO)",
+  "primaryMetric": "mrr",
+  "minMargin": 0.05,
+  "secondaryMetric": "recall@5",
+  "secondaryMinMargin": 0.0,
+  "maxP50LatencyMs": 50,
+  "rule": "The Stage-2 activation kernel may be promoted over the RRF baseline ONLY IF, on the frozen gold set symphonee-mind-retrieval-v1, it improves mean MRR by at least 0.05 absolute, does NOT regress mean recall@5, and converges with a p50 per-query latency at or under 50ms. If any condition fails, cognition STOPS at Stage 2 per the development plan - Stages 0-1 still leave the product strictly ahead. This criterion is PRE-COMMITTED and FROZEN: moving these numbers after seeing the kernel's results is exactly the 'gate is theater' failure the plan warns against. Change it only by adding a new versioned criterion, never by editing these values in place.",
+  "notes": "MRR is primary because the activation thesis is fundamentally about ranking the right memory HIGHER, not just somewhere in the top-k. recall@5 as a non-regression guard stops a kernel from trading precision for a flashy MRR. The 50ms p50 is the convergence budget 'Z' from the plan's kill-criterion template; RRF over the in-memory graph is sub-millisecond, so this is a generous ceiling that still forbids a kernel that only wins by thinking for seconds."
+}

@@ -22,7 +22,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const llm = require('../mind/llm');
+const llm = require('../lib/llm');
 const sequences = require('./sequences');
 
 const MIN_CLUSTER_SIZE = 3;       // cluster must have N sessions before drafting

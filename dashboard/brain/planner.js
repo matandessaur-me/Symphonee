@@ -25,7 +25,7 @@
 
 'use strict';
 
-const llm = require('../mind/llm');
+const llm = require('../lib/llm');
 const promptStore = require('./prompt-store');
 const perf = require('./perf');
 
@@ -160,6 +160,52 @@ function _sanityCheckDecision(decision) {
     }
   }
   return { decision, patches };
+}
+
+/**
+ * Distill a planRoute() result into the single fact Stage-0 instrumentation
+ * cares about: did triage STAY (small model was confident enough to stand on
+ * its own) or did it ESCALATE to the reasoning model, and why. This is the
+ * recall-vs-escalate signal the conductor (Stage 4) will be trained to predict
+ * from the activation-convergence signal instead of from small-model guessing.
+ *
+ * Pure and side-effect free so it is trivially unit-testable; durability lives
+ * in route-log.js, wiring in brain/index.js.
+ *
+ * routeClass:
+ *   stay          - triage confident (>= ESCALATION_THRESHOLD), no escalation
+ *   escalate      - escalated to the reasoning model
+ *   stay-fallback - escalation was attempted but the reasoning model errored,
+ *                   so the triage decision had to stand anyway
+ *   error         - triage itself failed; no usable decision
+ *
+ * escalateReason (null unless an escalation was wanted):
+ *   low-confidence    - triage confidence fell below the threshold
+ *   force-patch       - the sanity check patched a contradiction (e.g.
+ *                       code-action + primary_cli=none), forcing escalation
+ *                       regardless of the reported confidence
+ *   escalation-failed - escalation was attempted but the big model errored
+ *   triage-error      - triage failed outright
+ */
+function classifyRoute(plan) {
+  if (!plan || typeof plan !== 'object') {
+    return { routeClass: 'error', escalateReason: 'triage-error' };
+  }
+  if (plan.ok === false) {
+    return { routeClass: 'error', escalateReason: 'triage-error' };
+  }
+  if (plan.escalated) {
+    return {
+      routeClass: 'escalate',
+      escalateReason: plan.forceEscalated ? 'force-patch' : 'low-confidence',
+    };
+  }
+  // Not escalated. Two sub-cases: a clean confident stay, or a fallback where
+  // we WANTED the reasoning model but it errored (stage === 'triage-only').
+  if (plan.stage === 'triage-only') {
+    return { routeClass: 'stay-fallback', escalateReason: 'escalation-failed' };
+  }
+  return { routeClass: 'stay', escalateReason: null };
 }
 
 /**
@@ -309,6 +355,7 @@ async function recomputeIntent({ ui, current, evidence }) {
 module.exports = {
   planRoute,
   recomputeIntent,
+  classifyRoute,
   TRIAGE_MODEL,
   REASONING_MODEL,
   ESCALATION_THRESHOLD,

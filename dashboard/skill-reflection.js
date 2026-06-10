@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const store = require('./mind/store');
-const llm = require('./mind/llm');
+const llm = require('./lib/llm');
 const corpus = require('./skill-corpus');
 
 // Procedural memory kinds -- corrections about HOW to work. 'decision'/'fact' are
