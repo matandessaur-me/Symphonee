@@ -103,6 +103,10 @@
       el.querySelector(".aw-text").textContent = _plain(nudge.title);
       el.classList.remove("aw-collapsed");
       el.style.display = "flex";
+      try {
+        if (window.symphoneeVoiceOn && window.symphoneeVoiceOn() && window.symphoneeSpeak) window.symphoneeSpeak(_plain(nudge.title));
+      } catch (_) {
+      }
       requestAnimationFrame(() => {
         el.style.opacity = "1";
         el.style.transform = "translateX(-50%) translateY(0)";

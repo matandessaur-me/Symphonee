@@ -114,6 +114,8 @@
     el.querySelector('.aw-text').textContent = _plain(nudge.title);
     el.classList.remove('aw-collapsed');
     el.style.display = 'flex';
+    // If Symphonee Voice is on, say it aloud.
+    try { if (window.symphoneeVoiceOn && window.symphoneeVoiceOn() && window.symphoneeSpeak) window.symphoneeSpeak(_plain(nudge.title)); } catch (_) {}
     requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)'; });
     // After a few seconds, tuck into the thin glowing pill (unless hovered).
     clearTimeout(_collapseTimer);
