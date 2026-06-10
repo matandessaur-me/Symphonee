@@ -299,6 +299,60 @@ function mountBrain(addRoute, json, ctx) {
     return json(res, { ok: true, dial: state.dial });
   });
 
+  // Generate nudge candidates from the INTELLIGENCE LAYER: Stage-3
+  // contradictions (memory the graph has overturned) + Mind's own pending
+  // insights (stale references, decayed cards, etc). Each is a {type, value,
+  // title, action} the dial+trust then judges.
+  function _ambientCandidates() {
+    const space = (getUiContext && getUiContext().activeSpace) || '_global';
+    const out = [];
+    let graph = null;
+    try { graph = require('../mind/store').loadGraph(repoRoot, space); } catch (_) { graph = null; }
+    if (!graph) return out;
+    // Stage 3: stale / conflicting memory.
+    try {
+      const a = require('../mind/contradict').analyze(graph);
+      if (a.dormantIds.length) out.push({
+        type: 'stale-memory', value: Math.min(0.55 + 0.08 * a.dormantIds.length, 0.9),
+        title: a.dormantIds.length === 1 ? '1 memory card has been superseded' : a.dormantIds.length + ' memory cards have been superseded',
+        action: { kind: 'contradictions' },
+      });
+      if (a.conflicts.length >= 3) out.push({
+        type: 'memory-conflict', value: 0.58,
+        title: a.conflicts.length + ' memories may conflict', action: { kind: 'contradictions' },
+      });
+    } catch (_) { /* contradict optional */ }
+    // Mind: pending insights are already phrased as nudges.
+    try {
+      for (const n of graph.nodes) {
+        if (n.kind !== 'insight') continue;
+        if (n.status && /dismiss|resolv|done|archiv/i.test(n.status)) continue;
+        out.push({
+          type: 'insight:' + (n.category || 'general'),
+          value: 0.62,
+          title: String(n.label || 'A suggestion from your notes').slice(0, 100),
+          action: { kind: 'insight', id: n.id },
+        });
+      }
+    } catch (_) { /* insights optional */ }
+    return out;
+  }
+
+  // GET /api/symphonee/ambient/nudge - the proactive whisper's brain. Returns
+  // the single best SURFACING nudge (or null) after the dial + trust gate.
+  // Called by the UI on real signals (boot, window focus, activity), never on a
+  // timer. Dismissing a nudge (POST /ambient/feedback) decays its type so the
+  // whisper learns to stay quiet.
+  addRoute('GET', '/api/symphonee/ambient/nudge', (req, res) => {
+    const state = ambientModule.loadState(repoRoot);
+    let best = null;
+    for (const c of _ambientCandidates()) {
+      const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
+      if (v.surface && (!best || v.score > best.score)) best = { ...c, score: v.score };
+    }
+    return json(res, { nudge: best, dial: state.dial });
+  });
+
   // ── GET /api/symphonee/route-log ────────────────────────────────────────
   // Durable Stage-0 instrumentation: the raw recall-vs-escalate decision
   // stream, newest first. Unlike /decisions (in-memory, 200-cap, lost on
