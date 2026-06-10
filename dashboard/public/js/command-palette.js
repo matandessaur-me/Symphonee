@@ -93,6 +93,13 @@
         category: "Mind",
         hint: "Procedures every CLI follows; browse, author, review proposed skills"
       },
+      {
+        label: "Repair Terminal",
+        icon: "wrench",
+        action: () => window.repairActiveTerminal && window.repairActiveTerminal(),
+        category: "Action",
+        hint: "Resync the terminal renderer + PTY (fixes ghosting / misplaced text)"
+      },
       // Git (local ops always work; remote pull/push still listed but fail gracefully without auth)
       {
         label: "Switch Branch",

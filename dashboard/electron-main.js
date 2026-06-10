@@ -102,6 +102,12 @@ const repoRoot = path.resolve(__dirname, '..');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// Stale-sliver mitigation for the terminal scroll "ghosting" seen on some
+// GPU/driver combos at fractional display scaling (150%): with partial raster,
+// Chromium re-rasterizes only damaged tile regions, and a buggy driver can
+// leave slivers of old content behind on scroll. Forcing full re-raster of
+// damaged layers trades a little raster work for correctness.
+app.commandLine.appendSwitch('disable-partial-raster');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

@@ -110,7 +110,12 @@ state.termCounter = 0;
 function createTermOpts() {
   return {
     allowTransparency: false,
-    convertEol: true,
+    // MUST stay false for a ConPTY-backed terminal: ConPTY already emits proper
+    // \r\n, and TUIs use bare \n as pure cursor-down PRESERVING the column.
+    // convertEol:true forced those to column 0, displacing the leading
+    // characters of lines (the "ghost first letters" corruption). VS Code also
+    // leaves this off for its PTY terminal.
+    convertEol: false,
     cursorBlink: true,
     fontFamily: 'Cascadia Code, Cascadia Mono, Consolas, "Courier New", monospace',
     fontSize: 14,
@@ -565,6 +570,34 @@ function fitTerminalNow() {
     }
   } catch (_) {}
 }
+// Full terminal resync -- the one-keystroke equivalent of the user's manual
+// "collapse/expand the side panel" fix. A client-side repaint alone is not
+// enough when the corruption involves the PTY layer: bounce the PTY one row
+// and back so ConPTY re-lays out its buffer and the running TUI receives a
+// real resize (SIGWINCH-equivalent) and fully redraws, then refit + repaint.
+// Exposed on window for the command palette ("Repair Terminal").
+window.repairActiveTerminal = function () {
+  const inst = termInstances.get(state.activeTermId);
+  if (!inst) return;
+  try { inst.fitAddon.fit(); } catch (_) {}
+  const cols = inst.term.cols, rows = inst.term.rows;
+  const send = (c, r) => {
+    if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({
+      type: 'resize', termId: state.activeTermId, cols: c, rows: r
+    }));
+  };
+  try { inst.term.resize(cols, rows - 1); } catch (_) {}
+  send(cols, rows - 1);
+  setTimeout(() => {
+    try { inst.term.resize(cols, rows); } catch (_) {}
+    send(cols, rows);
+    state.lastCols = cols;
+    state.lastRows = rows;
+    try { inst.term.refresh(0, inst.term.rows - 1); } catch (_) {}
+    if (typeof toast === 'function') toast('Terminal repaired (renderer + PTY resynced)', 'success', { duration: 2000 });
+  }, 60);
+};
+
 const resizeObs = new ResizeObserver(() => {
   if (state.fitDebounce) clearTimeout(state.fitDebounce);
   const inst = termInstances.get(state.activeTermId);

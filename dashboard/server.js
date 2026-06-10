@@ -747,6 +747,24 @@ const { createUiContextStore } = require('./lib/ui-context');
 const { createTerminalHub } = require('./lib/terminal-hub');
 const _termHub = createTerminalHub({ httpServer: server, repoRoot, getConfig, verifyUpgrade: isRequestAllowed });
 const { broadcast, terminals, termAiMeta, createTerminal, killTerminal } = _termHub;
+
+// Terminal-size ground truth for debugging renderer/PTY desync (the scroll
+// "ghosting" / misplaced-TUI investigation). Compare against `mode con` run
+// INSIDE a terminal: if ConPTY's size differs from what is here, the resize
+// pipeline broke; if they match but rendering is wrong, the bug is client-side.
+addRoute('GET', '/api/terminals/diag', (req, res) => {
+  const out = [];
+  for (const [id, t] of terminals) {
+    out.push({
+      id,
+      label: t.label || null,
+      hubCols: t.cols, hubRows: t.rows,
+      ptyCols: t.pty && t.pty.cols, ptyRows: t.pty && t.pty.rows,
+      pid: t.pty && t.pty.pid,
+    });
+  }
+  json(res, { terminals: out });
+});
 const _uiCtxStore = createUiContextStore({ repoRoot, getConfig, broadcast, onActiveRepoChange: () => { try { writePluginHints(); } catch (_) {} } });
 const getUiContextWithPath = _uiCtxStore.getUiContext;
 
