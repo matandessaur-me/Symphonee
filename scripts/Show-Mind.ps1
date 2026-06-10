@@ -6,6 +6,7 @@
 [CmdletBinding()]
 param([string]$NodeId)
 
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/ui/tab' `
     -ContentType 'application/json' `
     -Body (@{ tab = 'mind' } | ConvertTo-Json -Compress) | Out-Null

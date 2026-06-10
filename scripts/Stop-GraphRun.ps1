@@ -12,6 +12,7 @@ param(
 #   ./scripts/Stop-GraphRun.ps1 -Id gr_abc -Action cancel
 
 try {
+  . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
   $res = Invoke-RestMethod -Uri "http://127.0.0.1:3800/api/graph-runs/$Id/$Action" -Method Post
   Write-Host "Run $Id -> $($res.status)" -ForegroundColor Green
 } catch {

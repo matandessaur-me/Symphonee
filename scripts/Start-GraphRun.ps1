@@ -48,6 +48,7 @@ if ($env:SYMPHONEE_TERM_ID) {
 $body = $def | ConvertTo-Json -Depth 12
 
 try {
+  . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
   $res = Invoke-RestMethod -Uri 'http://127.0.0.1:3800/api/graph-runs' -Method Post -Body $body -ContentType 'application/json'
   Write-Host "Graph run started." -ForegroundColor Green
   Write-Host "  id:     $($res.id)"

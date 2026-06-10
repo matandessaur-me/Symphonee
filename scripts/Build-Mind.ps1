@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $endpoint = if ($Incremental) { 'update' } else { 'build' }
 $body = @{ sources = $Sources } | ConvertTo-Json -Compress
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 $resp = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3800/api/mind/$endpoint" `
     -ContentType 'application/json' -Body $body
 Write-Host "Job: $($resp.jobId)  space: $($resp.space)  sources: $($resp.sources -join ', ')"

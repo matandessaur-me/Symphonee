@@ -30,7 +30,7 @@ Symphonee itself is the hall, the baton, and the tempo.
 
 Most AI tools stop at the suggestion. They write a plan and hand you a chat window. Symphonee assumes you already know what you want done, and focuses on the thing that is actually hard: making many tools, agents, and side effects cooperate without drifting.
 
-- **Local-first.** Your repos, your machine, your permissions. The engine runs on `127.0.0.1:3800`.
+- **Local-first.** Your repos, your machine, your permissions. The engine runs on `127.0.0.1:3800`, behind an Origin/Host firewall plus a per-boot token that gates state-mutating API calls (so another local process can't push, install, or spawn on your behalf — see [SECURITY.md](SECURITY.md)).
 - **Plugin-driven.** Core ships with terminal, notes, diffs, git, skills, and repo management. Everything else is a plugin you install per project.
 - **Multi-CLI.** One conductor, many players. Same score, different instruments.
 - **Durable.** Graph runs survive restarts, branch on approval gates, and keep state across multi-hour sessions.

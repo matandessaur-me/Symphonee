@@ -17,6 +17,7 @@ $body = @{
 } | ConvertTo-Json
 
 try {
+  . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
   $res = Invoke-RestMethod -Uri "http://127.0.0.1:3800/api/graph-runs/$RunId/approve/$NodeId" -Method Post -Body $body -ContentType 'application/json'
   Write-Host "Resolved. approved=$(-not $Reject)" -ForegroundColor Green
   Write-Host ($res | ConvertTo-Json -Depth 4)

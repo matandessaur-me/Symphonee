@@ -24,6 +24,7 @@ $body = @{
     createdBy = $CreatedBy
 } | ConvertTo-Json -Compress
 
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 $resp = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/mind/add' `
     -ContentType 'application/json' -Body $body
 $resp | ConvertTo-Json -Depth 3

@@ -42,6 +42,7 @@ $ErrorActionPreference = 'Stop'
 
 try {
   if ($Revert) {
+    . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
     $r = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/symphonee/self-iterate/revert' -ContentType 'application/json' -Body '{}'
     $r | ConvertTo-Json -Depth 5
     return

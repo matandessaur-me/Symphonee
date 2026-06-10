@@ -26,6 +26,7 @@ $body = @{
 } | ConvertTo-Json
 
 try {
+  . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
   $r = Invoke-RestMethod -Uri 'http://127.0.0.1:3800/api/models/recommend' -Method Post -Body $body -ContentType 'application/json'
 } catch {
   $msg = $_.ErrorDetails.Message

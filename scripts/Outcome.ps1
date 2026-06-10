@@ -40,6 +40,7 @@ $payload = @{
 if ($Detail) { $payload.detail = $Detail }
 $body = $payload | ConvertTo-Json -Compress
 try {
+  . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
   $response = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/symphonee/outcome' -ContentType 'application/json' -Body $body
   $response | ConvertTo-Json -Depth 5
 } catch {

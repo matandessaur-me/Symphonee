@@ -36,6 +36,7 @@ $payload = @{
 } | ConvertTo-Json -Compress
 
 try {
+  . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
   $response = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/symphonee/synthesize' -ContentType 'application/json' -Body $payload
   $response | ConvertTo-Json -Depth 10
 } catch {

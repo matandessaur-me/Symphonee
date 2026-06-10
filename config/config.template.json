@@ -13,5 +13,8 @@
     "allow": [],
     "ask": [],
     "deny": []
+  },
+  "Security": {
+    "RequireApiToken": true
   }
 }

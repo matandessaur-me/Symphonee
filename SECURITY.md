@@ -12,10 +12,12 @@ and how to run it safely.
 
 ## What the server trusts
 
-The API has **no authentication token** between the renderer and the server (a
-boot-time token is planned). Access is gated only by the **request firewall**
-(`dashboard/request-firewall.js`), which enforces two rules on every HTTP request
-and WebSocket upgrade:
+Access is gated by two layers: the **request firewall** and a **per-boot auth
+token** for state-mutating requests.
+
+### Layer 1 — the request firewall (`dashboard/request-firewall.js`)
+
+Enforced on every HTTP request and WebSocket upgrade:
 
 - **Origin** — a browser cross-site request always carries an `Origin` header, so
   any *foreign* Origin (a malicious web page you merely open) is rejected. The
@@ -25,21 +27,41 @@ and WebSocket upgrade:
   that resolve their domain to `127.0.0.1` but still send `Host: attacker.com`.
   A request with **no** `Host` header is rejected.
 
+### Layer 2 — the per-boot auth token (`dashboard/lib/auth-token.js`)
+
+The firewall trusts any local caller that omits `Origin` (so your CLIs work),
+which on its own would let **any other local process drive privileged actions**.
+The token closes that: every **state-mutating** request (`POST`/`PUT`/`DELETE`/
+`PATCH`) must carry an `X-Symphonee-Token` header matching a random token minted
+at server start. It reaches legitimate callers automatically:
+
+- the **renderer** — injected into served HTML; a `fetch`/XHR wrapper attaches it,
+- **spawned CLIs** — via the `SYMPHONEE_TOKEN` environment variable they inherit,
+- **PowerShell helpers** — `scripts/_ApiInit.ps1` reads the env var or the runtime
+  file and attaches it,
+- the **MCP bridge** — reads it from `config/runtime.json` (mode 0600).
+
+`GET`/`HEAD` reads stay firewall-only **by design**: a local process running as
+you can already read your files and config straight off disk, so token-gating
+reads would add cost without real confidentiality. The token protects the things
+a process *can't* otherwise do — `git push` with your PAT, plugin install (which
+is code execution inside the server), agent spawn, file writes.
+
+Enforcement is on by default; set `Security.RequireApiToken: false` in
+`config/config.json` to disable it (e.g. to debug a custom integration).
+
 ### What this does and does not stop
 
 | Threat | Stopped? |
 | --- | --- |
 | A malicious **web page** you open in a normal browser (CSRF) | ✅ Yes — foreign Origin rejected |
 | A **DNS-rebinding** page targeting `127.0.0.1:3800` | ✅ Yes — non-loopback `Host` rejected |
-| Another **local process** on your machine (no `Origin`) hitting the API | ❌ **No** — see below |
+| Another **local process** performing a privileged **action** (push/install/spawn/write) | ✅ Yes — mutation needs the token |
+| Another **local process** **reading** via the API (GET) | ❌ No — by design (it can read your disk anyway) |
 
-Because the firewall trusts any caller that omits `Origin` (so your local CLIs
-keep working), **any other process running as your user can call the full API** —
-git push, file writes, plugin install, agent spawn. This is the same trust level
-as any local dev server, but worth stating plainly: **Symphonee assumes every
-local process running as you is trusted.** Do not run it on a shared/multi-user
-machine where you would not also trust an arbitrary local process. A boot-time
-bearer token (handed to the renderer and to spawned CLIs) is the planned fix.
+**Symphonee still assumes the machine itself is trusted** — a process running as
+you can read your files directly. Don't run it on a shared/multi-user box where
+you wouldn't trust an arbitrary local process.
 
 ## Permission modes — what they gate
 

@@ -73,6 +73,21 @@ const nodeModules = path.join(repoRoot, 'node_modules');
 const configPath = path.join(repoRoot, 'config', 'config.json');
 const templatePath = path.join(repoRoot, 'config', 'config.template.json');
 
+// Per-boot API auth token. Gates STATE-MUTATING requests so a local process that
+// the firewall trusts (no Origin) still can't drive privileged actions without
+// it. Persist to config/runtime.json (0600) so out-of-process callers (MCP
+// bridge, PowerShell helpers run outside a spawned shell) can read it, and put
+// it on process.env so every spawned child (terminals, orchestrator CLIs)
+// inherits it automatically -- those env blocks already spread ...process.env.
+const { createAuthToken } = require('./lib/auth-token');
+const authToken = createAuthToken({ runtimePath: path.join(repoRoot, 'config', 'runtime.json'), port: PORT });
+authToken.persist();
+process.env.SYMPHONEE_TOKEN = authToken.value;
+// Kill switch: enforcement is on unless config explicitly sets it false.
+function authTokenRequired() {
+  try { const s = getConfig().Security; return !s || s.RequireApiToken !== false; } catch (_) { return true; }
+}
+
 // ── Static file routes ─────────────────────────────────────────────────────
 const ROUTES = {
   '/':                        { file: path.join(publicDir, 'index.html'),                                          type: 'text/html' },
@@ -185,6 +200,12 @@ const server = http.createServer(async (req, res) => {
   // route runs. Local CLIs (no Origin) and the same-origin renderer pass.
   if (!isRequestAllowed(req)) {
     try { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Cross-origin request blocked' })); } catch (_) {}
+    return;
+  }
+  // Auth-token gate: state-mutating requests must carry the per-boot token.
+  // Reads (GET/HEAD) pass on the firewall alone. See lib/auth-token.js.
+  if (authTokenRequired() && !authToken.isAllowed(req)) {
+    try { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Missing or invalid API token', code: 'TOKEN_REQUIRED' })); } catch (_) {}
     return;
   }
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
@@ -597,13 +618,23 @@ const server = http.createServer(async (req, res) => {
     // concern - so always-fresh is the right default.
     const route = ROUTES[url.pathname];
     if (route && fs.existsSync(route.file)) {
-      res.writeHead(200, {
+      const headers = {
         'Content-Type': route.type,
         'Cache-Control': 'no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-      });
-      fs.createReadStream(route.file).pipe(res);
+      };
+      // Inject the token + fetch/XHR wrapper into served HTML so the renderer
+      // (and any same-origin document) carries the token on mutating calls.
+      if (route.type === 'text/html') {
+        let html = fs.readFileSync(route.file, 'utf8');
+        html = authToken.injectHtml(html);
+        res.writeHead(200, headers);
+        res.end(html);
+      } else {
+        res.writeHead(200, headers);
+        fs.createReadStream(route.file).pipe(res);
+      }
     } else {
       // Plugin-aware 404 for /api/ paths owned by extracted plugins. Keeps the
       // UI and AI seeing a structured 'this feature lives in a plugin - install
@@ -1306,6 +1337,7 @@ try {
 // ── Load plugins ─────────────────────────────────────────────────────────────
 loadedPlugins = loadPlugins(pluginsDir, {
   addRoute, getConfig, broadcast, json, writePluginHints,
+  injectHtml: (html) => authToken.injectHtml(html),
   swrCache: swrPlugins,
   shellDeps: {
     gitExec, sanitizeText, permGate,

@@ -12,6 +12,7 @@ param(
 )
 
 $body = @{ question = $Question; budget = $Budget; mode = $Mode } | ConvertTo-Json -Compress
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 $resp = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/mind/query' `
     -ContentType 'application/json' -Body $body
 

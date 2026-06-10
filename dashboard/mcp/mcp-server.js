@@ -27,6 +27,16 @@ const API_HOST = '127.0.0.1';
 const API_PORT = 3800;
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const PLUGINS_DIR = path.join(__dirname, '..', 'plugins');
+const RUNTIME_PATH = path.join(REPO_ROOT, 'config', 'runtime.json');
+
+// The Symphonee server gates mutating requests behind a per-boot token. We run
+// as a separate process (spawned by Claude Desktop / Cursor / ...), so read the
+// token from the runtime file fresh each call (cheap, survives a server restart
+// that rotates the token). Env var wins when present (spawned by Symphonee).
+function apiToken() {
+  if (process.env.SYMPHONEE_TOKEN) return process.env.SYMPHONEE_TOKEN;
+  try { return JSON.parse(fs.readFileSync(RUNTIME_PATH, 'utf8')).token || ''; } catch (_) { return ''; }
+}
 const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'config.json');
 const TEMPLATE_PATH = path.join(REPO_ROOT, 'config', 'config.template.json');
 
@@ -65,6 +75,7 @@ function apiRequest(method, pathname, body) {
       method,
       headers: Object.assign(
         { 'Accept': 'application/json' },
+        (function () { const t = apiToken(); return t ? { 'X-Symphonee-Token': t } : {}; })(),
         data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}
       ),
     }, (res) => {

@@ -45,6 +45,7 @@ $resolved = $Path
 try { $resolved = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path } catch { }
 
 $body = @{ name = $Name; path = $resolved } | ConvertTo-Json -Compress
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 $r = Invoke-RestMethod -Uri "$BaseUrl/api/repos" -Method Post -ContentType 'application/json' -Body $body
 if (-not $r.ok) { Write-Error "Failed to add repo: $($r | ConvertTo-Json -Compress)"; exit 1 }
 Write-Host "Registered repo '$Name' -> $resolved"

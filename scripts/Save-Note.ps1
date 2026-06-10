@@ -23,6 +23,7 @@ if (!$Content) { Write-Host "`n  Error: Provide either -Content or -FilePath`n" 
 # from save's, which produces duplicate files when titles contain dots,
 # apostrophes, parens, etc.
 $body = @{ name = $Name; content = $Content } | ConvertTo-Json -Compress
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 $result = Invoke-RestMethod "$ApiBase/api/notes/save" -Method POST -ContentType 'application/json' -Body $body
 
 if ($result.ok) {

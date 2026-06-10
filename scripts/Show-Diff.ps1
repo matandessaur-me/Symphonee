@@ -28,6 +28,7 @@ if ($Repo) { $body.repo = $Repo }
 if ($Path) { $body.path = $Path }
 
 $json = $body | ConvertTo-Json -Compress
+. "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
 $result = Invoke-RestMethod -Uri "http://127.0.0.1:3800/api/ui/view-diff" -Method POST -ContentType 'application/json' -Body $json
 
 if ($result.ok) {

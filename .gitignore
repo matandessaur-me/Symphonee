@@ -1,6 +1,7 @@
 node_modules/
 dist/
 config/config.json
+config/runtime.json
 config/display-pref.json
 config/themes.json
 config/browser-sessions/

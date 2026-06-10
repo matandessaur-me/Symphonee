@@ -17,7 +17,7 @@ const {
   normalizeLegacyShapes, validateContributions, checkActivation,
 } = require('./plugin-manifest');
 
-function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints, swrCache, shellDeps }) {
+function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePluginHints, injectHtml, swrCache, shellDeps }) {
   const plugins = [];
   if (!fs.existsSync(pluginsDir)) {
     fs.mkdirSync(pluginsDir, { recursive: true });
@@ -159,7 +159,17 @@ function loadPlugins(pluginsDir, { addRoute, getConfig, broadcast, json, writePl
     if (!fs.existsSync(resolved)) { res.writeHead(404); res.end('Not found'); return; }
 
     const ext = path.extname(resolved).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const contentType = MIME[ext] || 'application/octet-stream';
+    // Inject the auth-token + fetch wrapper into plugin iframe HTML so the SDK's
+    // direct fetch() calls carry the token on mutating requests, same as the host.
+    if (ext === '.html' && typeof injectHtml === 'function') {
+      let html = '';
+      try { html = injectHtml(fs.readFileSync(resolved, 'utf8')); } catch (_) { html = ''; }
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(html);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentType });
     fs.createReadStream(resolved).pipe(res);
   });
 

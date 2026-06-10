@@ -22,6 +22,7 @@ param(
 $ErrorActionPreference = 'Stop'
 try {
   if ($Recompute) {
+    . "$PSScriptRoot\_ApiInit.ps1"  # attach API auth token
     Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3800/api/symphonee/intent/recompute' -ContentType 'application/json' -Body '{}' | Out-Null
   }
   $response = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:3800/api/symphonee/intent'
