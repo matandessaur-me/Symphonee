@@ -7,7 +7,7 @@
 const http = require('http');
 const https = require('https');
 const { execFile } = require('child_process');
-const { validateUrl } = require('../mind/security');
+const { validateUrl } = require('../lib/security');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {

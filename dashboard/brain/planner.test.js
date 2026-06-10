@@ -96,8 +96,47 @@ test('INTENT_DEFAULT_CLI defaults all required intents to claude-code', () => {
 test('exported constants are present', () => {
   assert.equal(typeof planner.planRoute, 'function');
   assert.equal(typeof planner.recomputeIntent, 'function');
+  assert.equal(typeof planner.classifyRoute, 'function');
   assert.equal(typeof planner.TRIAGE_MODEL, 'string');
   assert.equal(typeof planner.REASONING_MODEL, 'string');
   assert.equal(typeof planner.ESCALATION_THRESHOLD, 'number');
   assert.ok(Array.isArray(planner.KNOWN_INTENTS));
+});
+
+// ── classifyRoute: the recall-vs-escalate signal Stage 0 logs ─────────────
+
+test('classifyRoute: confident triage stay (no escalation)', () => {
+  const r = planner.classifyRoute({ ok: true, stage: 'triage', escalated: false });
+  assert.equal(r.routeClass, 'stay');
+  assert.equal(r.escalateReason, null);
+});
+
+test('classifyRoute: low-confidence escalation', () => {
+  const r = planner.classifyRoute({ ok: true, stage: 'escalated', escalated: true, forceEscalated: false });
+  assert.equal(r.routeClass, 'escalate');
+  assert.equal(r.escalateReason, 'low-confidence');
+});
+
+test('classifyRoute: forced escalation from a sanity-check patch', () => {
+  const r = planner.classifyRoute({ ok: true, stage: 'escalated', escalated: true, forceEscalated: true });
+  assert.equal(r.routeClass, 'escalate');
+  assert.equal(r.escalateReason, 'force-patch');
+});
+
+test('classifyRoute: escalation attempted but reasoning model errored (fallback to triage)', () => {
+  const r = planner.classifyRoute({ ok: true, stage: 'triage-only', escalated: false });
+  assert.equal(r.routeClass, 'stay-fallback');
+  assert.equal(r.escalateReason, 'escalation-failed');
+});
+
+test('classifyRoute: triage itself failed', () => {
+  const r = planner.classifyRoute({ ok: false, stage: 'triage', escalated: false });
+  assert.equal(r.routeClass, 'error');
+  assert.equal(r.escalateReason, 'triage-error');
+});
+
+test('classifyRoute: null / non-object input is treated as an error, not a throw', () => {
+  assert.equal(planner.classifyRoute(null).routeClass, 'error');
+  assert.equal(planner.classifyRoute(undefined).routeClass, 'error');
+  assert.equal(planner.classifyRoute('nope').routeClass, 'error');
 });

@@ -33,7 +33,7 @@
 'use strict';
 
 const planner = require('./planner');
-const llm = require('../mind/llm');
+const llm = require('../lib/llm');
 const store = require('../mind/store');
 const recallMod = require('../mind/recall');
 const perf = require('./perf');

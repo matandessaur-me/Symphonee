@@ -384,8 +384,12 @@ function pickEmbedCandidates(graph, max) {
 
   // Priority 1: gods.
   for (const n of graph.nodes) if (godIds.has(n.id)) pushNode(n);
-  // Priority 2: code/symbol/doc/note/conversation/artifact in that order.
-  for (const order of ['code', 'doc', 'note', 'concept', 'recipe', 'plugin', 'workitem', 'conversation']) {
+  // Priority 2: prose/recall kinds FIRST (note, doc, memory, conversation,
+  // recipe, skill, insight). These carry the long-form body that semantic
+  // search needs and are the recall targets; embedding them by title alone -
+  // or never reaching them under EMBED_MAX because 6k code nodes came first -
+  // was why dense search underperformed. Code/concept follow.
+  for (const order of ['note', 'doc', 'memory', 'conversation', 'recipe', 'skill', 'insight', 'code', 'concept', 'plugin', 'workitem']) {
     if (out.length >= max) break;
     for (const n of graph.nodes) {
       if (out.length >= max) break;
@@ -400,16 +404,45 @@ function pickEmbedCandidates(graph, max) {
   return out;
 }
 
+// Long-form prose kinds whose full `body` should be embedded, not just their
+// title. Notes and memory cards carry their entire content in `node.body`;
+// embedding the title alone made semantic search unable to find a note by what
+// it SAYS (validated: title-only dense retrieval MRR ~0.14 vs full-body ~0.79
+// on the eval gold set). Code is deliberately excluded - embedding ~6k source
+// bodies is a separate cost/quality decision, not this fix.
+const BODY_EMBED_KINDS = new Set(['note', 'doc', 'memory', 'conversation', 'recipe', 'skill', 'insight']);
+// Cap kept conservative so a body never exceeds the embed model's context
+// window (nomic-embed-text 500s on overflow). ~4000 chars is well under it and
+// captures a note's title + intro + first sections - highly discriminative.
+const EMBED_TEXT_CAP = 4000;
+
+// Note/doc nodes do NOT persist their body on the graph node (only the title,
+// tags, and a source.file path). Their content lives in a .md/.txt file on
+// disk. Load it at embed time so semantic search can find a note by what it
+// SAYS, not just its title. Safe: gated to text extensions, size-capped,
+// swallow-throws. Build-time only, never the hot path.
+function _bodyFromSourceFile(node) {
+  try {
+    const f = node.source && node.source.file;
+    if (!f || !/\.(md|markdown|txt|mdx)$/i.test(f)) return '';
+    return fs.readFileSync(f, 'utf8').slice(0, EMBED_TEXT_CAP);
+  } catch (_) { return ''; }
+}
+
 function embedText(node) {
   const parts = [node.label || ''];
   if (Array.isArray(node.tags) && node.tags.length) parts.push(node.tags.join(' '));
   if (node.description) parts.push(node.description);
   if (node.summary) parts.push(node.summary);
   if (node.answer) parts.push(node.answer);
+  if (BODY_EMBED_KINDS.has(node.kind)) {
+    const body = node.body || _bodyFromSourceFile(node);
+    if (body) parts.push(body);
+  }
   if (node.source && node.source.ref) parts.push(node.source.ref);
   const t = parts.join(' \n ').trim();
   if (!t) return null;
-  return t.slice(0, 4000);
+  return t.slice(0, EMBED_TEXT_CAP);
 }
 
 function renderReport(graph) {
@@ -432,4 +465,4 @@ function renderReport(graph) {
   return lines.join('\n');
 }
 
-module.exports = { runBuild, refreshEmbeddings };
+module.exports = { runBuild, refreshEmbeddings, embedText, BODY_EMBED_KINDS };

@@ -30,10 +30,11 @@ const sequencesModule = require('./sequences');
 const synthesizeModule = require('./synthesize');
 const answerModule = require('./answer');
 const outcomesModule = require('./outcomes');
+const routeLogModule = require('./route-log');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
 const perfModule = require('./perf');
-const ollamaSetup = require('../mind/ollama-setup');
+const ollamaSetup = require('../lib/ollama-setup');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -74,6 +75,25 @@ function mountBrain(addRoute, json, ctx) {
     const record = { id, at: new Date().toISOString(), ...entry };
     decisionLog.push(record);
     if (decisionLog.length > DECISION_LOG_MAX) decisionLog.shift();
+    // Stage-0 instrumentation: durably persist the recall-vs-escalate signal
+    // so it survives restart and Stage 4 can measure routing on real traffic.
+    // Both call sites (/think and the orchestrator plan()) funnel through
+    // here, so this single hook captures all real traffic. Wrapped in a guard
+    // because instrumentation must never be able to break a routing request -
+    // routeLog.record() already swallows IO errors, this catches everything
+    // else (e.g. a malformed entry).
+    try {
+      const classification = planner.classifyRoute(record);
+      routeLogModule.record(repoRoot, {
+        decisionId: id,
+        input: record.input,
+        source: record.source,
+        plan: record,
+        classification,
+        tookMs: record.tookMs,
+        escalationThreshold: planner.ESCALATION_THRESHOLD,
+      });
+    } catch (_) { /* instrumentation must never break routing */ }
     return record;
   }
   function findDecision(id) {
@@ -140,6 +160,30 @@ function mountBrain(addRoute, json, ctx) {
       total: decisionLog.length,
       decisions: decisionLog.slice(-safeLimit).reverse(),
     });
+  });
+
+  // ── GET /api/symphonee/route-log ────────────────────────────────────────
+  // Durable Stage-0 instrumentation: the raw recall-vs-escalate decision
+  // stream, newest first. Unlike /decisions (in-memory, 200-cap, lost on
+  // restart) this survives restart and is the substrate Stage 4 measures
+  // routing accuracy against.
+  addRoute('GET', '/api/symphonee/route-log', (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const limit = parseInt(url.searchParams.get('limit') || '100', 10);
+    const safeLimit = Math.max(1, Math.min(2000, limit));
+    const all = routeLogModule.readRouteLog(repoRoot);
+    return json(res, {
+      total: all.length,
+      decisions: all.slice(-safeLimit).reverse(),
+    });
+  });
+
+  // ── GET /api/symphonee/route-log/stats ──────────────────────────────────
+  // Aggregate recall-vs-escalate picture: escalation rate, escalation reasons,
+  // per-intent split, plus confidence + latency means per branch. The honest
+  // "what is the conductor actually choosing?" view before we deepen routing.
+  addRoute('GET', '/api/symphonee/route-log/stats', (req, res) => {
+    return json(res, routeLogModule.getStats(repoRoot));
   });
 
   // ── GET /api/symphonee/intent ───────────────────────────────────────────
