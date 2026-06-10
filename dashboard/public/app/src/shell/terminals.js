@@ -146,21 +146,34 @@ function createTermInstance(termId, label) {
   term.loadAddon(u11);
   term.unicode.activeVersion = '11';
   term.open(container);
+  // Keep a handle on the WebGL addon so the scroll handler below can force a
+  // full re-rasterization (clearTextureAtlas) when needed -- WebGL stays the
+  // renderer the whole time, we never fall back.
+  let webglAddon = null;
   try {
-    const webgl = new WebglAddon.WebglAddon();
-    webgl.onContextLoss(() => {
-      webgl.dispose();
-    });
-    term.loadAddon(webgl);
-  } catch (_) {}
+    webglAddon = new WebglAddon.WebglAddon();
+    webglAddon.onContextLoss(() => { try { webglAddon.dispose(); } catch (_) {} webglAddon = null; });
+    term.loadAddon(webglAddon);
+  } catch (_) { webglAddon = null; }
 
-  // The WebGL renderer can leave stale/garbled glyphs in the viewport after a
-  // scrollback scroll on some GPUs/drivers -- the text only corrects itself
-  // after a full re-render (e.g. switching tabs, which fits + repaints). Force
-  // the visible rows to repaint on every scroll so the viewport stays clean.
-  // refresh() just marks rows dirty; xterm coalesces the actual render via rAF.
+  // The WebGL renderer can leave glyphs "stuck" in the viewport when scrolling
+  // on some GPUs/drivers -- old characters stay put instead of moving, and the
+  // text only corrects itself after a full re-render (e.g. switching tabs, which
+  // fits + repaints). Two-step repaint, WebGL stays on throughout:
+  //   1. On every scroll, repaint the visible rows -- cheap, keeps fast wheeling
+  //      smooth, and fixes the common case.
+  //   2. Once scrolling settles, clear the GPU glyph atlas and repaint -- the
+  //      same from-scratch redraw a tab-switch forces -- so anything still stuck
+  //      is guaranteed to redraw. Debounced so continuous scrolling never pays
+  //      for it.
+  let _scrollSettle = null;
   term.onScroll(() => {
     try { term.refresh(0, term.rows - 1); } catch (_) {}
+    if (_scrollSettle) clearTimeout(_scrollSettle);
+    _scrollSettle = setTimeout(() => {
+      try { if (webglAddon) webglAddon.clearTextureAtlas(); } catch (_) {}
+      try { term.refresh(0, term.rows - 1); } catch (_) {}
+    }, 60);
   });
 
   // Let modifier-only keys pass through to document handlers (voice recording uses Ctrl+Shift).
