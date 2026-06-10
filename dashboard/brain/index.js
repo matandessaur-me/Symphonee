@@ -36,6 +36,7 @@ const voiceModule = require('./voice');
 const personasModule = require('./personas');
 const ambientModule = require('./ambient');
 const localAnswerModule = require('./local-answer');
+const llm = require('../lib/llm');
 const { createMindClient } = require('../lib/mind-client');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
@@ -302,62 +303,80 @@ function mountBrain(addRoute, json, ctx) {
     return json(res, { ok: true, dial: state.dial });
   });
 
-  // Generate nudge candidates from the INTELLIGENCE LAYER: Stage-3
-  // contradictions (memory the graph has overturned) + Mind's own pending
-  // insights (stale references, decayed cards, etc). Each is a {type, value,
-  // title, action} the dial+trust then judges.
-  function _ambientCandidates() {
-    const space = (getUiContext && getUiContext().activeSpace) || '_global';
-    const out = [];
-    let graph = null;
-    try { graph = require('../mind/store').loadGraph(repoRoot, space); } catch (_) { graph = null; }
-    if (!graph) return out;
-    // Stage 3: stale / conflicting memory.
+  // The whisper's brain: SYNTHESIZE one short, genuinely helpful nudge from what
+  // the user is ACTUALLY doing (current focus + recent conversation + git +
+  // checkpoints), phrased like a thoughtful colleague - NOT raw system
+  // housekeeping ("memory cards superseded" helps nobody). Returns a {type,
+  // value, title} candidate or null. Cached briefly so focus-checks don't hammer
+  // the model.
+  let _nudgeCache = { at: 0, nudge: null };
+  const _NUDGE_TTL_MS = 60_000;
+  async function _synthesizeNudge() {
+    if (Date.now() - _nudgeCache.at < _NUDGE_TTL_MS) return _nudgeCache.nudge;
+    const ui = getUiContext ? getUiContext() : {};
+    const space = (ui && ui.activeSpace) || '_global';
+    let ctx;
     try {
-      const a = require('../mind/contradict').analyze(graph);
-      if (a.dormantIds.length) out.push({
-        type: 'stale-memory', value: Math.min(0.55 + 0.08 * a.dormantIds.length, 0.9),
-        title: a.dormantIds.length === 1 ? '1 memory card has been superseded' : a.dormantIds.length + ' memory cards have been superseded',
-        detail: 'Newer notes have overturned them. A quick review keeps what I remember accurate.',
-        action: { kind: 'contradictions' },
-      });
-      if (a.conflicts.length >= 3) out.push({
-        type: 'memory-conflict', value: 0.58,
-        title: a.conflicts.length + ' memories may conflict',
-        detail: 'Some of your memory cards point in different directions on the same topic.',
-        action: { kind: 'contradictions' },
-      });
-    } catch (_) { /* contradict optional */ }
-    // Mind: pending insights are already phrased as nudges.
+      ctx = await localAnswerModule.gatherContext({ repoRoot, space, activeRepoPath: ui.activeRepoPath, activeRepo: ui.activeRepo });
+    } catch (_) { ctx = { git: [], checkpoints: [], conversation: [] }; }
+    const cur = intent.get();
+    const lines = [];
+    if (cur && cur.summary) lines.push('Their current focus: ' + cur.summary);
+    if (ctx.conversation.length) lines.push('Recent conversation:\n' + ctx.conversation.map(t => `- ${t.role}: ${t.text}`).join('\n'));
+    if (ctx.git.length) lines.push('Recent commits:\n' + ctx.git.map(l => '- ' + l).join('\n'));
+    if (ctx.checkpoints.length) lines.push('Recently did:\n' + ctx.checkpoints.map(l => '- ' + l).join('\n'));
+    if (!lines.length) { _nudgeCache = { at: Date.now(), nudge: null }; return null; }
+
+    const sys = [
+      'You are Symphonee, the user\'s AI workspace, quietly noticing what they are doing.',
+      'Decide if there is ONE short, genuinely helpful thing to gently say right now - a reminder, a suggestion, or a heads-up - grounded in what they have ACTUALLY been doing.',
+      '',
+      'Good nudges (specific, warm, useful):',
+      '  - "You\'ve made several changes - probably worth restarting Symphonee to test them."',
+      '  - "You\'ve been deep in the booking flow a while - want me to summarize where things stand?"',
+      '  - "You mentioned moving the ElevenLabs key earlier - still want to do that?"',
+      '',
+      'RULES:',
+      '  - Speak ONLY if it is genuinely useful AND specific to what they are doing. When in doubt, say nothing (nudge=null).',
+      '  - The user DIRECTS the work and may not be a coder. Help THEM decide what to do NEXT (test it, restart to see changes, review something, continue, summarize where things stand). NEVER suggest writing code or implementation tasks, and never just paraphrase a commit.',
+      '  - NEVER report system internals (memory cards, node ids, kinds, scores). NEVER generic filler ("remember to take breaks").',
+      '  - One sentence. Warm, plain, human. Talk TO them ("you"), like a sharp colleague.',
+      '  - Plain ASCII only. No emojis, em dashes, or smart quotes.',
+      '',
+      'Output strict JSON: { "nudge": string|null, "kind": "short-slug", "value": 0..1 }.',
+      'value = how worth-saying it is; use 0.7+ only when clearly helpful. nudge=null and value 0 when nothing is worth saying.',
+    ].join('\n');
+    const user = 'What the user has been doing:\n\n' + lines.join('\n\n') + '\n\nIs there one genuinely helpful thing to gently say? Respond with the JSON.';
+
+    let nudge = null;
     try {
-      for (const n of graph.nodes) {
-        if (n.kind !== 'insight') continue;
-        if (n.status && /dismiss|resolv|done|archiv/i.test(n.status)) continue;
-        out.push({
-          type: 'insight:' + (n.category || 'general'),
-          value: 0.62,
-          title: String(n.label || 'A suggestion from your notes').slice(0, 100),
-          detail: String(n.body || '').slice(0, 300) || null,
-          action: { kind: 'insight', id: n.id },
-        });
+      const r = await llm.chatOllama([{ role: 'system', content: sys }, { role: 'user', content: user }], { model: planner.TRIAGE_MODEL, format: 'json', timeoutMs: 20000 });
+      const j = r && r.json;
+      const text = j && typeof j.nudge === 'string' ? j.nudge.trim() : '';
+      if (text && text.toLowerCase() !== 'null' && text.length > 6) {
+        const value = typeof j.value === 'number' ? Math.max(0, Math.min(1, j.value)) : 0.6;
+        const kind = String(j.kind || 'general').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'general';
+        nudge = { type: 'suggestion:' + kind, value, title: text.slice(0, 180), action: { kind: 'suggestion' } };
       }
-    } catch (_) { /* insights optional */ }
-    return out;
+    } catch (_) { /* model busy / offline - stay quiet */ }
+    _nudgeCache = { at: Date.now(), nudge };
+    return nudge;
   }
 
-  // GET /api/symphonee/ambient/nudge - the proactive whisper's brain. Returns
-  // the single best SURFACING nudge (or null) after the dial + trust gate.
-  // Called by the UI on real signals (boot, window focus, activity), never on a
-  // timer. Dismissing a nudge (POST /ambient/feedback) decays its type so the
-  // whisper learns to stay quiet.
-  addRoute('GET', '/api/symphonee/ambient/nudge', (req, res) => {
+  // GET /api/symphonee/ambient/nudge - the whisper's brain. A synthesized,
+  // contextual, HUMAN nudge (or null) after the dial + trust gate. On real
+  // signals only (boot, focus); dismissing decays its kind.
+  addRoute('GET', '/api/symphonee/ambient/nudge', async (req, res) => {
     const state = ambientModule.loadState(repoRoot);
     if (state.enabled === false) return json(res, { nudge: null, dial: state.dial, enabled: false });
     let best = null;
-    for (const c of _ambientCandidates()) {
-      const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
-      if (v.surface && (!best || v.score > best.score)) best = { ...c, score: v.score };
-    }
+    try {
+      const c = await _synthesizeNudge();
+      if (c) {
+        const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
+        if (v.surface) best = { ...c, score: v.score };
+      }
+    } catch (_) { /* stay quiet on error */ }
     return json(res, { nudge: best, dial: state.dial, enabled: true });
   });
 
