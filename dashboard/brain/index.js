@@ -225,7 +225,10 @@ function mountBrain(addRoute, json, ctx) {
     // reasoning model. Symphonee's own voice; the active CLI stays one button
     // away. Escalates only when memory genuinely has nothing.
     if (body.fast === true) {
-      const local = await localAnswerModule.localAnswer({ repoRoot, space, question: input });
+      const local = await localAnswerModule.localAnswer({
+        repoRoot, space, question: input,
+        activeRepoPath: ui && ui.activeRepoPath, activeRepo: ui && ui.activeRepo,
+      });
       if (local.grounded) {
         if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'local', persona: surface.userType, fast: true } });
         return json(res, {
