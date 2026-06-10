@@ -124,8 +124,13 @@ function activate(graph, question, options = {}) {
   if (!graph || !graph.nodes || !graph.nodes.length) {
     return { ranking: [], trace: { iters: 0, deltas: [], settled: true, subgraphSize: 0, seeds: 0, reason: 'empty-graph' }, settled: true };
   }
-  // Encode: BM25 seeds form the restart (teleport) vector.
-  const seeded = bestSeedsRanked(graph, question, params.seedCount); // [{id,score}]
+  // Encode: seeds form the restart (teleport) vector. Default is the BM25
+  // lexical ranking; callers may inject a stronger seed distribution (e.g. a
+  // dense/hybrid ranking) via options.seeds to test whether activation adds
+  // value on top of better seeds.
+  const seeded = (options.seeds && options.seeds.length)
+    ? options.seeds.slice(0, params.seedCount)
+    : bestSeedsRanked(graph, question, params.seedCount); // [{id,score}]
   if (!seeded.length) {
     return { ranking: [], trace: { iters: 0, deltas: [], settled: true, subgraphSize: 0, seeds: 0, reason: 'no-seeds' }, settled: true };
   }
