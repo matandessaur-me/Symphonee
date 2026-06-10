@@ -238,4 +238,15 @@ async function localAnswer({ repoRoot, space = '_global', question, activeRepoPa
   };
 }
 
-module.exports = { localAnswer, retrieveSources, nodeContent, KNOWLEDGE_KINDS, _keyTerms, _humanize };
+// Assemble the live context (git + checkpoints + recent conversation) - reused
+// by the ambient whisper to synthesize a contextual nudge.
+async function gatherContext({ repoRoot, space = '_global', activeRepoPath, activeRepo, graph = null } = {}) {
+  const g = graph || store.loadGraph(repoRoot, space);
+  return {
+    git: await _gitLog(activeRepoPath || repoRoot, 6),
+    checkpoints: _recentCheckpoints(activeRepo, 3),
+    conversation: g ? _recentConversation(g, 4) : [],
+  };
+}
+
+module.exports = { localAnswer, retrieveSources, gatherContext, nodeContent, KNOWLEDGE_KINDS, _keyTerms, _humanize };
