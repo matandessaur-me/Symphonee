@@ -4,27 +4,7 @@
 // from browser-agent-chat.js. NOTE: intentionally separate from the apps-side
 // transport -- the two have diverged (different default timeouts / stream shape).
 const https = require('https');
-
-function bindAbort(req, signal, reject, label) {
-  if (!signal) return () => {};
-  const onAbort = () => {
-    try { req.destroy(new Error(label || 'Request aborted')); } catch (_) {}
-    try { reject(new Error(label || 'Request aborted')); } catch (_) {}
-  };
-  if (signal.aborted) {
-    onAbort();
-    return () => {};
-  }
-  signal.addEventListener('abort', onAbort, { once: true });
-  return () => {
-    try { signal.removeEventListener('abort', onAbort); } catch (_) {}
-  };
-}
-
-function isAbortError(err) {
-  const msg = String((err && err.message) || err || '');
-  return msg.includes('request aborted') || msg.includes('stream aborted') || msg.includes('aborted');
-}
+const { bindAbort, isAbortError, isTransientError } = require('../chat-http-shared');
 
 function httpJson({ hostname, path, method = 'POST', headers = {}, body, timeoutMs = 60000, signal }) {
   return new Promise((resolve, reject) => {
@@ -89,20 +69,6 @@ function httpStream({ hostname, path, method = 'POST', headers = {}, body, onChu
     req.end();
     req.on('close', cleanupAbort);
   });
-}
-
-function isTransientError(e) {
-  const msg = e.message || '';
-  return (
-    msg.includes('429') ||
-    msg.includes('SSL') ||
-    msg.includes('BAD_RECORD_MAC') ||
-    msg.includes('ECONNRESET') ||
-    msg.includes('ECONNREFUSED') ||
-    msg.includes('ETIMEDOUT') ||
-    msg.includes('socket hang up') ||
-    msg.includes('timed out')
-  );
 }
 
 async function httpJsonWithRetry(opts, maxRetries = 3) {

@@ -11,7 +11,11 @@ const reqWith = (headers) => ({ headers });
 
 test('no Origin = trusted local caller (CLI/curl) -> allowed', () => {
   assert.equal(fw.isRequestAllowed(reqWith({ host: '127.0.0.1:3800' })), true);
-  assert.equal(fw.isRequestAllowed(reqWith({})), true); // no host either
+});
+
+test('missing Host header is rejected (proxy header-stripping)', () => {
+  assert.equal(fw.isRequestAllowed(reqWith({})), false);
+  assert.equal(fw.isRequestAllowed(reqWith({ origin: 'http://127.0.0.1:3800' })), false);
 });
 
 test('same-origin renderer is allowed (all loopback spellings)', () => {
@@ -34,6 +38,7 @@ test('predicate helpers behave', () => {
   assert.equal(fw.hostIsLoopback('localhost:3800'), true);
   assert.equal(fw.hostIsLoopback('[::1]'), true);
   assert.equal(fw.hostIsLoopback('1.2.3.4:3800'), false);
+  assert.equal(fw.hostIsLoopback(''), false);          // absent -> reject
   assert.equal(fw.originAllowed(''), true);            // absent
   assert.equal(fw.originAllowed('http://localhost:3800'), true);
   assert.equal(fw.originAllowed('http://localhost:9999'), false); // wrong port

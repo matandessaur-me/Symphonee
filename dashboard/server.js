@@ -134,7 +134,7 @@ const pluginsDir = path.join(__dirname, 'plugins');
 
 // ── Config store (merge/normalize infrastructure behind getConfig) ───────────
 const { createConfigStore } = require('./lib/config-store');
-const { getConfig, readAllPluginConfigs, getPluginConfigKeyMap, persistPluginConfigKeys, normalizeRootConfig } =
+const { getConfig, invalidate: invalidateConfig, readAllPluginConfigs, getPluginConfigKeyMap, persistPluginConfigKeys, normalizeRootConfig } =
   createConfigStore({ templatePath, configPath, pluginsDir });
 let loadedPlugins = [];
 
@@ -834,11 +834,11 @@ const { mountCliInstall } = require('./routes/cli-install');
 mountCliInstall(addRoute, json, { configPath });
 const { mountConfig } = require('./routes/config');
 mountConfig(addRoute, json, {
-  getConfig, normalizeRootConfig, configPath, templatePath, repoRoot, pluginsDir,
+  getConfig, invalidateConfig, normalizeRootConfig, configPath, templatePath, repoRoot, pluginsDir,
   swrGit, swrPlugins, broadcast, writePluginHints, getPlugins: () => loadedPlugins,
 });
 const { mountSpaces } = require('./routes/spaces');
-mountSpaces(addRoute, json, { getConfig, normalizeRootConfig, configPath, broadcast });
+mountSpaces(addRoute, json, { getConfig, invalidateConfig, normalizeRootConfig, configPath, broadcast });
 const { mountImageProxy } = require('./routes/image-proxy');
 mountImageProxy(addRoute, json, { getConfig, getPlugins: () => loadedPlugins, host: HOST, port: PORT });
 const { mountPluginRecommendations } = require('./routes/plugin-recommendations');
@@ -1167,15 +1167,15 @@ function runDeferredBootWork(trigger) {
     .then(() => (typeof mind.awaitStartupSettle === 'function'
       ? mind.awaitStartupSettle()
       : (typeof mind.kickoffStartupRefresh === 'function' ? mind.kickoffStartupRefresh() : null)))
-    .catch(() => {})
+    .catch(e => console.warn('[boot] Mind startup refresh failed:', e && e.message))
     .then(() => (typeof mind.regenerateSplashQuotes === 'function' ? mind.regenerateSplashQuotes() : null))
-    .catch(() => {})
+    .catch(e => console.warn('[boot] splash-quote regen failed:', e && e.message))
     // After Mind has settled, reflect on accumulated corrections and propose
     // skills (propose-only -- the user accepts). Cheap, deduped, never auto-edits.
     .then(() => (skillReflection && typeof skillReflection.runDigest === 'function'
       ? skillReflection.runDigest({ max: 6 }).then(r => { if (r && r.proposals && r.proposals.length) console.log(`  [reflect] proposed ${r.proposals.length} skill(s) from Mind corrections`); })
       : null))
-    .catch(() => {});
+    .catch(e => console.warn('[boot] skill reflection failed:', e && e.message));
   // Stagger the brain setup slightly so the graph refresh gets the loop first.
   setTimeout(() => { try { runBrainSetup(); } catch (e) { console.warn('[brain/setup] start error:', e.message); } }, 1200);
   // Daily reflection so corrections accumulated during long-running sessions

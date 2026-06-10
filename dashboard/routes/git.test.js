@@ -62,3 +62,33 @@ test('missing repo -> 400', async () => {
   await r['GET /api/git/status']({}, res, new URL('http://x/?repo=nope'));
   assert.equal(res._status, 400);
 });
+
+test('git diff blocks path traversal (untracked-file read stays in repo)', async () => {
+  const r = harness();
+  const res = {};
+  await r['GET /api/git/diff']({}, res, new URL('http://x/?repo=test&path=../../../../etc/passwd'));
+  // Must never leak file content from outside the repo
+  const diff = (res._data && res._data.diff) || '';
+  assert.ok(!diff.includes('root:'), 'no /etc/passwd content in diff');
+});
+
+test('split-diff blocks path traversal -> no disk content from outside repo', async () => {
+  const r = harness();
+  const res = {};
+  await r['GET /api/git/split-diff']({}, res, new URL('http://x/?repo=test&path=../../../../etc/passwd'));
+  assert.equal((res._data && res._data.modified) || '', '', 'modified must be empty for escaped path');
+});
+
+test('split-diff rejects flag-injection base ref -> 400', async () => {
+  const r = harness();
+  const res = {};
+  await r['GET /api/git/split-diff']({}, res, new URL('http://x/?repo=test&path=package.json&base=--output%3Dpwn'));
+  assert.equal(res._status, 400);
+});
+
+test('commit-diff rejects flag-injection hash -> 400', async () => {
+  const r = harness();
+  const res = {};
+  await r['GET /api/git/commit-diff']({}, res, new URL('http://x/?repo=test&hash=--output%3Dpwn'));
+  assert.equal(res._status, 400);
+});

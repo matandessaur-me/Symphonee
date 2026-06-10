@@ -30,6 +30,34 @@ test('getConfig merges template <- root <- plugin configs', () => {
   assert.equal(cfg.FooKey, 'x', 'plugin key merged');
 });
 
+test('getConfig caches but stays fresh when a source file changes', () => {
+  const paths = scaffold();
+  const s = createConfigStore(paths);
+  assert.equal(s.getConfig().B, 2, 'initial root value');
+  // Rewrite root config with a newer mtime; cache must notice via mtime sig.
+  const future = Date.now() / 1000 + 5;
+  fs.writeFileSync(paths.configPath, JSON.stringify({ B: 99, Shared: 'root' }));
+  fs.utimesSync(paths.configPath, future, future);
+  assert.equal(s.getConfig().B, 99, 'picks up the edit without restart');
+});
+
+test('getConfig result is a copy (mutating it does not poison the cache)', () => {
+  const s = createConfigStore(scaffold());
+  const first = s.getConfig();
+  first.A = 'tampered';
+  assert.equal(s.getConfig().A, 1, 'cache unaffected by caller mutation');
+});
+
+test('invalidate() forces a rebuild', () => {
+  const paths = scaffold();
+  const s = createConfigStore(paths);
+  assert.equal(s.getConfig().B, 2);
+  // Same mtime (no utimes bump): without invalidate the cache could serve stale.
+  fs.writeFileSync(paths.configPath, JSON.stringify({ B: 7, Shared: 'root' }));
+  s.invalidate();
+  assert.equal(s.getConfig().B, 7, 'rebuilt after invalidate');
+});
+
 test('getPluginConfigKeyMap maps declared keys to owning plugin', () => {
   const s = createConfigStore(scaffold());
   const map = s.getPluginConfigKeyMap();

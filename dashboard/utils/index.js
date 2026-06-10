@@ -6,4 +6,5 @@ module.exports = {
   ...require('./swr-cache'),
   ...require('./atomic-write'),
   ...require('./busy-guard'),
+  ...require('./safe-path'),
 };

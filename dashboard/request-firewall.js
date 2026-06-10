@@ -20,7 +20,10 @@ function createFirewall(host, port) {
     host, 'localhost', '127.0.0.1', `[::1]:${port}`, '[::1]',
   ]);
   function hostIsLoopback(h) {
-    if (!h) return true; // HTTP/1.0 / some local clients omit Host
+    // Reject requests without a Host header: every HTTP/1.1 client (browsers,
+    // Node http, curl, PowerShell) sends one, and a proxy that strips it could
+    // otherwise smuggle a DNS-rebound request past the loopback check.
+    if (!h) return false;
     return ALLOWED_HOSTS.has(String(h).toLowerCase());
   }
   function originAllowed(origin) {

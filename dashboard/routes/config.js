@@ -24,7 +24,7 @@ const CORE_SENSITIVE_KEYS = ['AiApiKeys', 'BrowserCredentials'];
 
 function mountConfig(addRoute, json, ctx) {
   const {
-    getConfig, normalizeRootConfig, configPath, templatePath, repoRoot, pluginsDir,
+    getConfig, invalidateConfig, normalizeRootConfig, configPath, templatePath, repoRoot, pluginsDir,
     swrGit, swrPlugins, broadcast, writePluginHints, getPlugins,
   } = ctx;
   const themesPath = path.join(repoRoot, 'config', 'themes.json');
@@ -76,6 +76,7 @@ function mountConfig(addRoute, json, ctx) {
     atomicWriteSync(configPath, JSON.stringify(config, null, 2));
     // Immediately clear all caches so the next request uses the new config.
     swrGit.clear(); swrPlugins.clear();
+    if (typeof invalidateConfig === 'function') invalidateConfig();
     // Regenerate AI instructions (plugin set, orchestration, etc. may have changed)
     try { writePluginHints(); } catch (_) {}
     json(res, { ok: true });
@@ -296,6 +297,7 @@ function mountConfig(addRoute, json, ctx) {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     atomicWriteSync(configPath, JSON.stringify(config, null, 2));
     swrGit.clear(); swrPlugins.clear();
+    if (typeof invalidateConfig === 'function') invalidateConfig();
     broadcast({ type: 'config-changed' });
     const result = { ok: true };
     if (installedPlugins.length > 0) {

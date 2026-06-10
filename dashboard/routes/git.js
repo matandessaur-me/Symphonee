@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { gitAsync, gitSync, currentBranch } = require('../utils/git-async');
+const { resolveInRepo, isUnsafeGitRef } = require('../utils/safe-path');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -98,8 +99,8 @@ function mountGit(addRoute, json, ctx) {
       if (!diff) diff = await g(`diff --ignore-cr-at-eol --cached -- "${filePath}"`);
       // For untracked/new files, show entire content as additions
       if (!diff) {
-        const fullPath = path.join(repoPath, filePath);
-        if (fs.existsSync(fullPath)) {
+        const fullPath = resolveInRepo(repoPath, filePath);
+        if (fullPath && fs.existsSync(fullPath)) {
           try {
             const content = fs.readFileSync(fullPath, 'utf8');
             const lines = content.split('\n');
@@ -118,8 +119,8 @@ function mountGit(addRoute, json, ctx) {
           .filter(l => l.startsWith('??'))
           .map(l => l.substring(3).replace(/\r$/, '').trim());
         for (const uf of untrackedFiles) {
-          const fullPath = path.join(repoPath, uf);
-          if (fs.existsSync(fullPath)) {
+          const fullPath = resolveInRepo(repoPath, uf);
+          if (fullPath && fs.existsSync(fullPath)) {
             try {
               const content = fs.readFileSync(fullPath, 'utf8');
               const lines = content.split('\n');
@@ -177,6 +178,7 @@ function mountGit(addRoute, json, ctx) {
     const repoPath = getRepoPath(repoName);
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
     if (!hash) return json(res, { error: 'hash required' }, 400);
+    if (isUnsafeGitRef(hash)) return json(res, { error: 'Invalid hash' }, 400);
 
     const pathArg = filePath ? ` -- "${filePath}"` : '';
     const g = async (cmd) => { try { return await gitAsync(repoPath, cmd); } catch (_) { return ''; } };
@@ -345,6 +347,7 @@ function mountGit(addRoute, json, ctx) {
     const base = url.searchParams.get('base') || 'HEAD';
     const repoPath = getRepoPath(repoName);
     if (!repoPath) return json(res, { error: 'Repo not found' }, 400);
+    if (isUnsafeGitRef(base)) return json(res, { error: 'Invalid base ref' }, 400);
 
     try {
       // Get the original version from git
@@ -361,9 +364,9 @@ function mountGit(addRoute, json, ctx) {
       } catch (_) { original = ''; }
 
       // Get the current version from disk
-      const fullPath = path.join(repoPath, filePath);
+      const fullPath = resolveInRepo(repoPath, filePath);
       let modified = '';
-      try { modified = fs.readFileSync(fullPath, 'utf8'); } catch (_) {}
+      try { if (fullPath) modified = fs.readFileSync(fullPath, 'utf8'); } catch (_) {}
 
       // Normalize line endings to LF so diff doesn't flag every line
       original = original.replace(/\r\n/g, '\n').replace(/\r/g, '\n');

@@ -34,7 +34,7 @@ Most AI tools stop at the suggestion. They write a plan and hand you a chat wind
 - **Plugin-driven.** Core ships with terminal, notes, diffs, git, skills, and repo management. Everything else is a plugin you install per project.
 - **Multi-CLI.** One conductor, many players. Same score, different instruments.
 - **Durable.** Graph runs survive restarts, branch on approval gates, and keep state across multi-hour sessions.
-- **Permission-aware.** Four runtime modes (`review`, `edit`, `trusted`, `bypass`) enforced by the server, not by agent etiquette.
+- **Permission-aware.** Four runtime modes (`review`, `edit`, `trusted`, `bypass`) enforced at the server level for in-app actions, not by agent etiquette. (A CLI you launch in a terminal runs with your OS permissions and is not sandboxed by the mode — see [SECURITY.md](SECURITY.md).)
 
 ---
 
@@ -63,6 +63,8 @@ Most AI tools stop at the suggestion. They write a plan and hand you a chat wind
 Every integration (issue tracker, code host, CMS, analytics, etc.) ships as a plugin installed from a GitHub-backed registry. A plugin can contribute tabs, sidebar actions, scripts, MCP tools, AI actions and keywords, work-item and PR providers, repo sources, commit linkers, and its own config keys. Uninstall a plugin and its surfaces disappear cleanly. Core ships provider-agnostic; AI instructions for a plugin are fetched on demand only when that plugin is active.
 
 Official instruments live in a separate repo: [`Symphonee-plugins`](https://github.com/matandessaur-me/Symphonee-plugins). Current roster: Azure DevOps, GitHub, Builder.io, Sanity, WordPress.
+
+> **Plugin trust:** a plugin's server-side code is loaded into the host Node process with full privileges (no sandbox). Install only plugins you trust, and review a third-party plugin's `routes.js` before installing — see [SECURITY.md](SECURITY.md).
 
 ---
 

@@ -31,13 +31,14 @@ function normalizeSpacePluginList(list) {
 }
 
 function mountSpaces(addRoute, json, ctx) {
-  const { getConfig, normalizeRootConfig, configPath, broadcast } = ctx;
+  const { getConfig, invalidateConfig, normalizeRootConfig, configPath, broadcast } = ctx;
 
   const readCfg = () => {
     try { return fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {}; } catch (_) { return {}; }
   };
   const writeCfg = (cfg) => {
     atomicWriteSync(configPath, JSON.stringify(normalizeRootConfig(cfg), null, 2));
+    if (typeof invalidateConfig === 'function') invalidateConfig();
     broadcast({ type: 'config-changed' });
   };
 

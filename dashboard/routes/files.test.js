@@ -71,3 +71,15 @@ test('missing repo -> 400', () => {
   r['GET /api/files/tree']({}, res, new URL('http://x/?repo=nope'));
   assert.equal(res._status, 400);
 });
+
+test('serve-file blocks traversal and refuses non-regular files', () => {
+  const r = harness();
+  // traversal -> 403
+  let res = { writeHead(s) { this._status = s; }, end() {} };
+  r['GET /api/files/serve']({}, res, new URL('http://x/?repo=test&path=../../etc/passwd'));
+  assert.equal(res._status, 403);
+  // a directory is not servable -> 403
+  res = { writeHead(s) { this._status = s; }, end() {} };
+  r['GET /api/files/serve']({}, res, new URL('http://x/?repo=test&path=dashboard'));
+  assert.equal(res._status, 403);
+});

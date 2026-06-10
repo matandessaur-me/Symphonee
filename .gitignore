@@ -25,6 +25,9 @@ dashboard/app-recipe-tests/*
 .claude/
 *.ps1.tmp
 temp-*.ps1
+# Junk file created on non-Windows when a `... 2>nul` shell redirect runs (e.g.
+# the CLI-detection probe in tests): on Linux `nul` becomes a literal file.
+nul
 dashboard/public/icon.ico
 dashboard/public/icon.png
 package-lock.json

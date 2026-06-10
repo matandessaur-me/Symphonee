@@ -19,6 +19,36 @@ const LEGACY_ROOT_CONFIG_KEYS = [
 ];
 
 function createConfigStore({ templatePath, configPath, pluginsDir }) {
+  // getConfig() is called on (nearly) every API request. Reading + JSON-parsing
+  // the template, the root config, and every plugin config.json on each call is
+  // wasteful. Cache the merged result and invalidate by source-file mtimes, so a
+  // config edit (from the UI, a plugin, or by hand) is still picked up at once
+  // without serving stale data.
+  let _cache = null;        // last merged config
+  let _cacheSig = null;     // mtime signature the cache was built from
+
+  // Cheap freshness fingerprint: dir-listing + mtime of every config source.
+  // statSync is far cheaper than read+parse, and changes flip the signature.
+  function sourceSignature() {
+    const parts = [];
+    for (const p of [templatePath, configPath]) {
+      try { parts.push(p + ':' + fs.statSync(p).mtimeMs); } catch (_) { parts.push(p + ':0'); }
+    }
+    try {
+      if (fs.existsSync(pluginsDir)) {
+        for (const dir of fs.readdirSync(pluginsDir).sort()) {
+          if (dir === 'sdk') continue;
+          const cfgFile = path.join(pluginsDir, dir, 'config.json');
+          try { parts.push(cfgFile + ':' + fs.statSync(cfgFile).mtimeMs); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return parts.join('|');
+  }
+
+  // Drop the cache so the next getConfig() rebuilds. Call after writing config.
+  function invalidate() { _cache = null; _cacheSig = null; }
+
   function readAllPluginConfigs() {
     const merged = {};
     try {
@@ -34,11 +64,15 @@ function createConfigStore({ templatePath, configPath, pluginsDir }) {
   }
 
   function getConfig() {
+    const sig = sourceSignature();
+    if (_cache && sig === _cacheSig) return { ..._cache };
     let template = {};
     let root = {};
     try { template = JSON.parse(fs.readFileSync(templatePath, 'utf8')); } catch (_) {}
     try { root = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
-    return { ...template, ...root, ...readAllPluginConfigs() };
+    _cache = { ...template, ...root, ...readAllPluginConfigs() };
+    _cacheSig = sig;
+    return { ..._cache };
   }
 
   function getPluginConfigKeyMap() {
@@ -93,7 +127,7 @@ function createConfigStore({ templatePath, configPath, pluginsDir }) {
     return rootConfig;
   }
 
-  return { getConfig, readAllPluginConfigs, getPluginConfigKeyMap, persistPluginConfigKeys, normalizeRootConfig };
+  return { getConfig, invalidate, readAllPluginConfigs, getPluginConfigKeyMap, persistPluginConfigKeys, normalizeRootConfig };
 }
 
 module.exports = { createConfigStore, LEGACY_ROOT_CONFIG_KEYS };

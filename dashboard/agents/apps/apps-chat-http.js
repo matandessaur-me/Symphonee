@@ -7,6 +7,7 @@
 // browser is https-only with different default timeouts).
 const https = require('https');
 const http = require('http');
+const { bindAbort, isAbortError, isTransientError } = require('../chat-http-shared');
 
 const SHARED_HTTPS_AGENT = new https.Agent({
   keepAlive: true,
@@ -15,22 +16,6 @@ const SHARED_HTTPS_AGENT = new https.Agent({
   maxFreeSockets: 2,
   timeout: 120000,
 });
-
-function bindAbort(req, signal, reject, label) {
-  if (!signal) return () => {};
-  const onAbort = () => {
-    try { req.destroy(new Error(label || 'Request aborted')); } catch (_) {}
-    try { reject(new Error(label || 'Request aborted')); } catch (_) {}
-  };
-  if (signal.aborted) { onAbort(); return () => {}; }
-  signal.addEventListener('abort', onAbort, { once: true });
-  return () => { try { signal.removeEventListener('abort', onAbort); } catch (_) {} };
-}
-
-function isAbortError(err) {
-  const msg = String((err && err.message) || err || '');
-  return msg.includes('request aborted') || msg.includes('stream aborted') || msg.includes('aborted');
-}
 
 function httpJson({ hostname, path, port, protocol = 'https', method = 'POST', headers = {}, body, timeoutMs = 90000, signal }) {
   return new Promise((resolve, reject) => {
@@ -122,13 +107,6 @@ async function httpStream(opts, maxRetries = 3) {
     }
   }
   throw lastErr;
-}
-
-function isTransientError(e) {
-  const msg = e.message || '';
-  return msg.includes('429') || msg.includes('SSL') || msg.includes('BAD_RECORD_MAC') ||
-    msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') ||
-    msg.includes('socket hang up') || msg.includes('timed out');
 }
 
 async function httpJsonWithRetry(opts, maxRetries = 3) {
