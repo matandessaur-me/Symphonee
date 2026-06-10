@@ -158,6 +158,12 @@ function createTermInstance(termId, label) {
       webglAddon = new WebglAddon.WebglAddon();
       webglAddon.onContextLoss(() => { try { webglAddon.dispose(); } catch (_) {} webglAddon = null; });
       term.loadAddon(webglAddon);
+      // VS Code parity: "WebGL renderer cell dimensions differ from the DOM
+      // renderer, make sure the terminal gets resized after the webgl addon is
+      // loaded" (xtermTerminal.ts). Resync geometry right after load so the two
+      // never start out disagreeing. Visible containers only -- hidden tabs get
+      // a full fit() on activation via switchTerminal.
+      setTimeout(() => { if (container.offsetWidth) repairRendererGeometry(); }, 0);
     } catch (_) { webglAddon = null; }
   }
   loadWebglAddon();
