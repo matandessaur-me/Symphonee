@@ -185,6 +185,15 @@
     state._notifs = state._notifs.slice(0, NOTIF_MAX);
     _saveNotifs();
     renderNotifBadge();
+    try {
+      const live = document.getElementById("a11yLive");
+      if (live) {
+        const t = String(title || "").slice(0, 160);
+        const b = String(body || "").slice(0, 200);
+        live.textContent = b ? `${t}. ${b}` : t;
+      }
+    } catch (_) {
+    }
     const panel = document.getElementById("notifPanel");
     if (panel && panel.classList.contains("open")) renderNotifList();
     if (!opts.silent) playNotifSound(opts.severity || "info");

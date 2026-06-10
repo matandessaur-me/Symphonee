@@ -60,6 +60,9 @@
   <link rel="stylesheet" href="/styles/app.css">
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+<!-- Polite live region: notify() mirrors toasts here so screen readers announce them. -->
+<div id="a11yLive" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 <script>
   // Restore collapsed side-panel state before first paint to avoid flash.
   try {
@@ -110,18 +113,18 @@
     <img src="/logo.svg" class="header-logo" alt="">
     <span class="header-title">Symphonee</span>
   </div>
-  <div class="cmd-trigger" id="cmdTrigger" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
+  <div class="cmd-trigger" id="cmdTrigger" role="button" tabindex="0" aria-label="Search or run a command (Ctrl+K)" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
     <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
     <span>Search or run a command...</span>
     <kbd id="cmdTriggerKbd">Ctrl+K</kbd>
   </div>
   <div class="header-right">
-    <div id="onboardingChip" style="display:none;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:color-mix(in srgb, var(--accent) 14%, var(--surface0));border:1px solid color-mix(in srgb, var(--accent) 40%, var(--surface2));color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:6px;cursor:pointer;" onclick="toggleOnboardingPanel(event)" title="Getting started">
+    <div id="onboardingChip" role="button" tabindex="0" aria-label="Getting started" style="display:none;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:color-mix(in srgb, var(--accent) 14%, var(--surface0));border:1px solid color-mix(in srgb, var(--accent) 40%, var(--surface2));color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);margin-right:6px;cursor:pointer;" onclick="toggleOnboardingPanel(event)" title="Getting started">
       <i data-lucide="sparkles" style="width:12px;height:12px;color:var(--accent);"></i>
       <span id="onboardingChipText">0 of 4</span>
     </div>
     <div id="permModeSlot" style="display:inline-flex;align-items:center;flex-shrink:0;position:relative;">
-      <div id="permModeChip" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
+      <div id="permModeChip" role="button" tabindex="0" aria-haspopup="menu" aria-label="Permission mode (click to change)" title="Permission mode (click to change)" onclick="openPermModeMenu(event)" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;height:26px;box-sizing:border-box;border-radius:var(--radius);background:var(--surface1);border:1px solid var(--surface2);color:var(--text);font-size:11px;font-weight:600;font-family:var(--font-ui);cursor:pointer;user-select:none;">
         <i data-lucide="shield-check" style="width:13px;height:13px;"></i>
         <span id="permModeLabel">EDIT</span>
       </div>
@@ -132,7 +135,7 @@
         <div class="perm-opt" data-mode="bypass" onclick="setPermMode('bypass')" style="padding:6px 10px;cursor:pointer;border-radius:4px;color:var(--accent);"><strong>Bypass</strong><div style="color:var(--subtext0);font-weight:400;font-size:10px;">Allow everything. Use with care.</div></div>
       </div>
     </div>
-    <div class="notif-bell" id="notifBell" onclick="toggleNotifPanel(event)" title="Notifications">
+    <div class="notif-bell" id="notifBell" role="button" tabindex="0" aria-label="Notifications" aria-haspopup="dialog" onclick="toggleNotifPanel(event)" title="Notifications">
       <i data-lucide="bell"></i>
       <span class="notif-badge" id="notifBadge">0</span>
     </div>
@@ -237,26 +240,26 @@
   </aside>
 
   <!-- ─── Center Panel ─────────────────────────────────────────────────── -->
-  <div class="center">
+  <div class="center" id="main-content" role="main" tabindex="-1">
     <div class="tab-bar">
       <div class="tab-bar-middle">
         <button class="tab-scroll-arrow left" id="tabScrollLeft" onclick="scrollTabs(-200)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
-        <div class="tab-bar-scroll" id="tabBarScroll">
-          <button class="tab-btn active" data-tab="terminal" onclick="switchTab('terminal')">Terminal</button>
-          <button class="tab-btn" data-tab="orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')">Orchestrator</button>
-          <button class="tab-btn" data-tab="automation" id="automationTabBtn" onclick="switchTab('automation')">Automation</button>
-          <button class="tab-btn" data-tab="browser" id="browserTabBtn" onclick="switchTab('browser')" style="display:none;">Browser</button>
-          <button class="tab-btn" data-tab="apps" id="appsTabBtn" onclick="switchTab('apps')" style="display:none;">Apps<span class="tab-running-dot" title="An apps-agent session is running"></span></button>
-          <button class="tab-btn" data-tab="backlog" data-plugin-id="azure-devops" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
-          <button class="tab-btn" data-tab="workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
-          <button class="tab-btn closable" data-tab="automations-editor" id="appsAutomationsTabBtn" onclick="switchTab('automations-editor')" style="display:none;"><span id="appsAutomationsTabLabel">Automations</span><span class="tab-close" onclick="event.stopPropagation();appsCloseAutomations();" title="Close">&times;</span></button>
-          <button class="tab-btn closable" data-tab="apps-instructions" id="appsInstructionsTabBtn" onclick="switchTab('apps-instructions')" style="display:none;"><span id="appsInstructionsTabLabel">Instructions</span><span class="tab-close" onclick="event.stopPropagation();appsCloseInstructions();" title="Close">&times;</span></button>
-          <button class="tab-btn" data-tab="activity" data-plugin-id="azure-devops" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
-          <button class="tab-btn" data-tab="prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
-          <button class="tab-btn" data-tab="files" onclick="switchTab('files')">Files</button>
-          <button class="tab-btn" data-tab="diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
-          <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')">Notes</button>
-          <button class="tab-btn" data-tab="mind" onclick="switchTab('mind')" title="Symphonee's shared knowledge graph">Mind</button>
+        <div class="tab-bar-scroll" id="tabBarScroll" role="tablist" aria-label="Main views">
+          <button class="tab-btn active" data-tab="terminal" role="tab" aria-selected="true" id="tab-terminal" aria-controls="panel-terminal" onclick="switchTab('terminal')">Terminal</button>
+          <button class="tab-btn" data-tab="orchestrator" role="tab" aria-selected="false" aria-controls="panel-orchestrator" id="orchestratorTabBtn" onclick="switchTab('orchestrator')">Orchestrator</button>
+          <button class="tab-btn" data-tab="automation" role="tab" aria-selected="false" id="automationTabBtn" onclick="switchTab('automation')">Automation</button>
+          <button class="tab-btn" data-tab="browser" role="tab" aria-selected="false" aria-controls="panel-browser" id="browserTabBtn" onclick="switchTab('browser')" style="display:none;">Browser</button>
+          <button class="tab-btn" data-tab="apps" role="tab" aria-selected="false" aria-controls="panel-apps" id="appsTabBtn" onclick="switchTab('apps')" style="display:none;">Apps<span class="tab-running-dot" title="An apps-agent session is running"></span></button>
+          <button class="tab-btn" data-tab="backlog" role="tab" aria-selected="false" aria-controls="panel-backlog" data-plugin-id="azure-devops" id="backlogTabBtn" onclick="switchTab('backlog')" style="display:none;">Backlog</button>
+          <button class="tab-btn" data-tab="workitem" role="tab" aria-selected="false" aria-controls="panel-workitem" id="workitemTabBtn" onclick="switchTab('workitem')" style="display:none;">Work Item</button>
+          <button class="tab-btn closable" data-tab="automations-editor" role="tab" aria-selected="false" id="appsAutomationsTabBtn" onclick="switchTab('automations-editor')" style="display:none;"><span id="appsAutomationsTabLabel">Automations</span><span class="tab-close" onclick="event.stopPropagation();appsCloseAutomations();" title="Close">&times;</span></button>
+          <button class="tab-btn closable" data-tab="apps-instructions" role="tab" aria-selected="false" id="appsInstructionsTabBtn" onclick="switchTab('apps-instructions')" style="display:none;"><span id="appsInstructionsTabLabel">Instructions</span><span class="tab-close" onclick="event.stopPropagation();appsCloseInstructions();" title="Close">&times;</span></button>
+          <button class="tab-btn" data-tab="activity" role="tab" aria-selected="false" aria-controls="panel-activity" data-plugin-id="azure-devops" id="activityTabBtn" onclick="switchTab('activity')" style="display:none;">Activity Timeline</button>
+          <button class="tab-btn" data-tab="prs" role="tab" aria-selected="false" aria-controls="panel-prs" id="prsTabBtn" onclick="switchTab('prs')" style="display:none;">Pull Requests</button>
+          <button class="tab-btn" data-tab="files" role="tab" aria-selected="false" id="tab-files" aria-controls="panel-files" onclick="switchTab('files')">Files</button>
+          <button class="tab-btn" data-tab="diffview" role="tab" aria-selected="false" aria-controls="panel-diffview" id="diffviewTabBtn" onclick="switchTab('diffview')" style="display:none;">Diff</button>
+          <button class="tab-btn" data-tab="notes" role="tab" aria-selected="false" id="tab-notes" aria-controls="panel-notes" onclick="switchTab('notes')">Notes</button>
+          <button class="tab-btn" data-tab="mind" role="tab" aria-selected="false" id="tab-mind" aria-controls="panel-mind" onclick="switchTab('mind')" title="Symphonee's shared knowledge graph">Mind</button>
         </div>
         <button class="tab-scroll-arrow right" id="tabScrollRight" onclick="scrollTabs(200)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div>
@@ -276,7 +279,7 @@
     </div>
 
     <!-- Terminal -->
-    <div class="tab-panel active" id="panel-terminal">
+    <div class="tab-panel active" id="panel-terminal" role="tabpanel" tabindex="0" aria-labelledby="tab-terminal">
       <div class="term-tabs" id="termTabs">
         <div class="term-tab active" data-term="main" onclick="switchTerminal('main')" id="mainTermTab" title="Double-click to rename"><span class="term-tab-name">Shell 1</span></div>
         <button class="term-tab-add" onclick="addTerminal()" title="New terminal">+</button>
@@ -306,7 +309,7 @@
 
     <!-- Board -->
     <!-- Backlog (unified: list + board views) -->
-    <div class="tab-panel" id="panel-backlog" data-plugin-id="azure-devops">
+    <div class="tab-panel" id="panel-backlog" role="tabpanel" tabindex="0" aria-labelledby="backlogTabBtn" data-plugin-id="azure-devops">
       <div class="view-toolbar">
         <div style="flex:1"></div>
         <input class="view-search" id="backlogSearch" type="text" placeholder="Search..." oninput="applyBacklogFilters()">
@@ -393,7 +396,7 @@
     </div>
 
     <!-- Work Item Detail -->
-    <div class="tab-panel" id="panel-workitem">
+    <div class="tab-panel" id="panel-workitem" role="tabpanel" tabindex="0" aria-labelledby="workitemTabBtn">
       <div class="wi-detail" id="wiDetail">
         <div class="empty-state">
           <i data-lucide="clipboard-list"></i>
@@ -403,7 +406,7 @@
     </div>
 
     <!-- Activity Timeline -->
-    <div class="tab-panel" id="panel-activity" data-plugin-id="azure-devops">
+    <div class="tab-panel" id="panel-activity" role="tabpanel" tabindex="0" aria-labelledby="activityTabBtn" data-plugin-id="azure-devops">
       <div class="timeline-view" id="timelineView">
         <div class="timeline-header">
           <div>
@@ -427,7 +430,7 @@
     </div>
 
     <!-- Files -->
-    <div class="tab-panel" id="panel-files">
+    <div class="tab-panel" id="panel-files" role="tabpanel" tabindex="0" aria-labelledby="tab-files">
       <div class="files-container">
         <div class="files-sidebar">
           <div class="files-sidebar-header">
@@ -481,7 +484,7 @@
     </div>
 
     <!-- Diff Viewer (dynamic tab) -->
-    <div class="tab-panel" id="panel-diffview">
+    <div class="tab-panel" id="panel-diffview" role="tabpanel" tabindex="0" aria-labelledby="diffviewTabBtn">
       <div class="diffview-container">
         <div class="diffview-sidebar">
           <div style="padding:8px 10px;border-bottom:1px solid var(--surface0);font-size:11px;font-weight:600;color:var(--overlay1);text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;justify-content:space-between;height:38px;">
@@ -501,7 +504,7 @@
     </div>
 
     <!-- Pull Requests -->
-    <div class="tab-panel" id="panel-prs">
+    <div class="tab-panel" id="panel-prs" role="tabpanel" tabindex="0" aria-labelledby="prsTabBtn">
       <div class="prs-container">
         <div class="prs-sidebar">
           <div style="padding:0 8px 0 8px;height:38px;display:flex;align-items:center;border-bottom:1px solid var(--surface0);gap:6px;">
@@ -584,7 +587,7 @@
     </div>
 
     <!-- Notes -->
-    <div class="tab-panel" id="panel-notes">
+    <div class="tab-panel" id="panel-notes" role="tabpanel" tabindex="0" aria-labelledby="tab-notes">
       <div class="notes-container">
         <div class="notes-sidebar">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:38px;border-bottom:1px solid var(--surface0);background:var(--mantle);flex-shrink:0;">
@@ -636,7 +639,7 @@
       </div>
     </div>
     <!-- Mind: Symphonee's shared knowledge graph -->
-    <div class="tab-panel" id="panel-mind">
+    <div class="tab-panel" id="panel-mind" role="tabpanel" tabindex="0" aria-labelledby="tab-mind">
       <div class="mind-root" style="display:flex;flex-direction:column;width:100%;height:100%;background:var(--base);">
         <div class="mind-toolbar">
           <span class="mind-toolbar-title">Mind</span>
@@ -718,7 +721,7 @@
     </div>
     <!-- Browser (in-app webview) -->
     <!-- Apps (desktop control) -->
-    <div class="tab-panel" id="panel-apps">
+    <div class="tab-panel" id="panel-apps" role="tabpanel" tabindex="0" aria-labelledby="appsTabBtn">
       <div class="apps-tab-root">
         <div class="apps-banner" id="appsBanner">
           <span class="apps-banner-dot"></span>
@@ -863,7 +866,7 @@
       </div>
     </div>
 
-    <div class="tab-panel" id="panel-browser">
+    <div class="tab-panel" id="panel-browser" role="tabpanel" tabindex="0" aria-labelledby="browserTabBtn">
       <div class="inapp-browser">
         <div class="inapp-browser-bar">
           <button class="tab-bar-btn" onclick="inappBrowserBack()" title="Back"><i data-lucide="arrow-left" style="width:13px;height:13px;"></i></button>
@@ -979,7 +982,7 @@
     </div>
 
     <!-- Orchestrator -->
-    <div class="tab-panel" id="panel-orchestrator">
+    <div class="tab-panel" id="panel-orchestrator" role="tabpanel" tabindex="0" aria-labelledby="orchestratorTabBtn">
       <div class="orch-header">
         <h3>Orchestrator</h3>
         <span class="orch-status" id="orchStatusBadge">Bus Active</span>

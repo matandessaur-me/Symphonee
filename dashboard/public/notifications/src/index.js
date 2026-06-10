@@ -208,6 +208,15 @@ function notify(title, body, opts) {
   state._notifs = state._notifs.slice(0, NOTIF_MAX);
   _saveNotifs();
   renderNotifBadge();
+  // Announce to screen readers via the polite live region (a11y).
+  try {
+    const live = document.getElementById('a11yLive');
+    if (live) {
+      const t = String(title || '').slice(0, 160);
+      const b = String(body || '').slice(0, 200);
+      live.textContent = b ? `${t}. ${b}` : t;
+    }
+  } catch (_) {}
   // If the panel is open, re-render to show the new one at top.
   const panel = document.getElementById('notifPanel');
   if (panel && panel.classList.contains('open')) renderNotifList();

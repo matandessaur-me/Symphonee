@@ -2142,6 +2142,8 @@ function switchTab(tab, preserveSearch) {
   document.querySelectorAll('.tab-btn').forEach(el => {
     var isActive = el.dataset.tab === tab;
     el.classList.toggle('active', isActive);
+    // Keep the ARIA tab state in sync for screen readers.
+    if (el.getAttribute('role') === 'tab') el.setAttribute('aria-selected', isActive ? 'true' : 'false');
     // Plugin tint: color active tab text + border, clear inactive
     if (el.dataset.tint) {
       if (isActive) {
@@ -4105,3 +4107,48 @@ function renderHotkeys() {
   }
   c.innerHTML = html;
 }
+// ── A11y: keyboard operability for non-native controls + the tab list ────────
+// Several header controls are <div role="button">; native buttons activate on
+// Enter/Space but divs don't. And the main tab bar is an ARIA tablist, which is
+// expected to support Arrow/Home/End navigation. Both are wired here, defensively
+// (scoped to the relevant targets) so they never interfere with the terminal,
+// inputs, or the existing shortcut system.
+(function a11yKeyboard() {
+  function isFormish(el) {
+    const t = (el && el.tagName) || '';
+    return /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t) || (el && el.isContentEditable);
+  }
+
+  // Enter / Space activate a focused role="button" that isn't a native control.
+  document.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const el = document.activeElement;
+    if (!el || el.getAttribute('role') !== 'button' || isFormish(el)) return;
+    e.preventDefault();           // Space would otherwise scroll the page
+    el.click();
+  });
+
+  // Arrow-key navigation across the main tab list (visible tabs only).
+  document.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const el = document.activeElement;
+    if (!el || el.getAttribute('role') !== 'tab' || !el.classList.contains('tab-btn')) return;
+    const tabs = Array.from(document.querySelectorAll('.tab-btn[role="tab"]'))
+      .filter(t => t.offsetParent !== null);   // skip display:none tabs
+    if (!tabs.length) return;
+    const i = tabs.indexOf(el);
+    let next = i;
+    if (e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    const target = tabs[next];
+    if (target && target !== el) {
+      e.preventDefault();
+      target.focus();
+      target.click();             // automatic activation (APG tabs pattern)
+    }
+  });
+})();

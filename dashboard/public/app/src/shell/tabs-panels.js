@@ -86,6 +86,8 @@ function switchTab(tab, preserveSearch) {
   document.querySelectorAll('.tab-btn').forEach(el => {
     var isActive = el.dataset.tab === tab;
     el.classList.toggle('active', isActive);
+    // Keep the ARIA tab state in sync for screen readers.
+    if (el.getAttribute('role') === 'tab') el.setAttribute('aria-selected', isActive ? 'true' : 'false');
     // Plugin tint: color active tab text + border, clear inactive
     if (el.dataset.tint) {
       if (isActive) {

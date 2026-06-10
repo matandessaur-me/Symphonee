@@ -5219,3 +5219,59 @@
     .lg-cp-undo { background: transparent; border: 1px solid var(--surface2); color: var(--subtext1); border-radius: 6px; font-size: 10px; font-weight: 600; padding: 3px 9px; cursor: pointer; flex-shrink: 0; transition: all 0.12s; }
     .lg-cp-undo:hover { border-color: var(--accent); color: var(--accent); }
     .lg-cp-meta { font-size: 10px; color: var(--overlay1); margin-top: 5px; }
+
+    /* ════════════════════════════════════════════════════════════════════
+       Accessibility (a11y) -- keyboard focus, skip link, SR-only, reduced motion.
+       Appended as one block so the additions are easy to find/audit.
+       ════════════════════════════════════════════════════════════════════ */
+
+    /* Visible keyboard-focus ring for EVERYTHING that doesn't already define one.
+       Many controls set `outline: none` for mouse users; :focus-visible only
+       fires for keyboard/AT focus, so this restores a visible indicator without
+       affecting click styling. Components with their own ring (e.g. .sy-btn)
+       keep it -- their more specific :focus-visible rule wins. */
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+
+    /* Skip-to-content link: first focusable element, off-screen until focused. */
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 100000;
+      background: var(--accent);
+      color: var(--crust);
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      font: 600 12px var(--font-ui);
+      text-decoration: none;
+      transform: translateY(-160%);
+      transition: transform 0.15s ease;
+    }
+    .skip-link:focus { transform: translateY(0); outline: 2px solid var(--text); outline-offset: 2px; }
+
+    /* Visually-hidden but available to screen readers (live region, labels). */
+    .sr-only {
+      position: absolute !important;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* Respect the user's reduced-motion preference: neutralise animations and
+       transitions (boot overlay, panel fades, smooth scrolling) for users who
+       opt out, without removing the end states. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
