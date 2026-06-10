@@ -34,6 +34,7 @@ const routeLogModule = require('./route-log');
 const conductorModule = require('./conductor');
 const voiceModule = require('./voice');
 const personasModule = require('./personas');
+const ambientModule = require('./ambient');
 const { createMindClient } = require('../lib/mind-client');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
@@ -230,6 +231,47 @@ function mountBrain(addRoute, json, ctx) {
     const result = voiceModule.frontDoor({ recommendation, recall, question: input, surface });
     if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: result.source, rung: result.rung, persona: surface.userType } });
     return json(res, { ...result, persona: surface, decision: plan.decision });
+  });
+
+  // ── Ambient brain (Stage 6) ─────────────────────────────────────────────
+  // Proactive nudges, gated on value with a user-tunable silent<->chatty dial
+  // and trust that decays dismissed suggestion types. Triggered on signal by a
+  // caller (intent change / fresh insight), never on a timer.
+  //
+  // POST /api/symphonee/ambient/evaluate { candidate:{type,value,interruptsFlow?} }
+  addRoute('POST', '/api/symphonee/ambient/evaluate', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.candidate || typeof body.candidate !== 'object') return json(res, { error: 'candidate required' }, 400);
+    const state = ambientModule.loadState(repoRoot);
+    const verdict = ambientModule.evaluateNudge(body.candidate, { dial: state.dial, trust: state.trust });
+    if (verdict.surface && broadcast) broadcast({ type: 'symphonee-ambient', payload: { candidate: body.candidate, verdict } });
+    return json(res, { ...verdict, dial: state.dial });
+  });
+
+  // POST /api/symphonee/ambient/feedback { type, action: accept|dismiss }
+  addRoute('POST', '/api/symphonee/ambient/feedback', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.type || !['accept', 'dismiss'].includes(body.action)) {
+      return json(res, { error: 'type and action (accept|dismiss) required' }, 400);
+    }
+    const state = ambientModule.loadState(repoRoot);
+    state.trust = ambientModule.applyFeedback(state.trust, body.type, body.action);
+    ambientModule.saveState(repoRoot, state);
+    return json(res, { ok: true, type: body.type, action: body.action, trust: state.trust[body.type] });
+  });
+
+  // GET /api/symphonee/ambient  + POST .../dial { dial }
+  addRoute('GET', '/api/symphonee/ambient', (req, res) => {
+    const state = ambientModule.loadState(repoRoot);
+    return json(res, { dial: state.dial, dials: Object.keys(ambientModule.DIALS), trust: state.trust });
+  });
+  addRoute('POST', '/api/symphonee/ambient/dial', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!ambientModule.DIALS[body.dial]) return json(res, { error: 'dial must be one of ' + Object.keys(ambientModule.DIALS).join(' | ') }, 400);
+    const state = ambientModule.loadState(repoRoot);
+    state.dial = body.dial;
+    ambientModule.saveState(repoRoot, state);
+    return json(res, { ok: true, dial: state.dial });
   });
 
   // ── GET /api/symphonee/route-log ────────────────────────────────────────
