@@ -34,8 +34,7 @@
 
 const planner = require('./planner');
 const llm = require('../lib/llm');
-const store = require('../mind/store');
-const recallMod = require('../mind/recall');
+const { createMindClient } = require('../lib/mind-client');
 const perf = require('./perf');
 
 const MIN_MIND_SCORE = 3.5;     // top hit must beat this to ground a local answer
@@ -161,14 +160,23 @@ function _buildLocalMessages(input, intent) {
  *   OR
  *   { ok: false, reason, mindHitsTotal, topScore }
  */
-async function _answerFromMind({ input, intent, repoRoot, space }) {
-  const graph = store.loadGraph(repoRoot, space);
-  if (!graph || !graph.nodes || !graph.nodes.length) {
-    return { ok: false, reason: 'mind-empty', mindHitsTotal: 0 };
+async function _answerFromMind({ input, intent, repoRoot, space, mindClient }) {
+  // Stage 1 (mind-extraction Phase 1): consume Mind through the client
+  // contract instead of reading the graph in-process. Default transport is
+  // in-process (lib/mind-client.js), so behaviour is identical to the old
+  // store.loadGraph + recall path; callers can inject an http-backed client
+  // for the extracted/remote deployment.
+  const mind = mindClient || createMindClient({ transport: 'inproc', repoRoot, space });
+  let r;
+  try {
+    r = await mind.recall({ question: input, limit: MAX_CITED * 2, space });
+  } catch (err) {
+    return { ok: false, reason: 'mind-threw', error: err.message, mindHitsTotal: 0 };
   }
-  const r = recallMod.recall(graph, { question: input, limit: MAX_CITED * 2 });
   if (!r || !r.hits || !r.hits.length) {
-    return { ok: false, reason: 'no-mind-hits', mindHitsTotal: 0 };
+    // The client returns a `message` (e.g. "no graph for this space") when the
+    // space has no graph at all - preserve the mind-empty vs no-hits split.
+    return { ok: false, reason: r && r.message ? 'mind-empty' : 'no-mind-hits', mindHitsTotal: 0 };
   }
   const strong = r.hits.filter(h => h.score >= MIND_FLOOR);
   const topScore = r.hits[0].score;
@@ -310,6 +318,7 @@ async function answer(input, ctx = {}) {
         intent: ctx.intent,
         repoRoot: ctx.repoRoot,
         space: ctx.space,
+        mindClient: ctx.mindClient,
       });
     } catch (err) {
       mindResult = { ok: false, reason: 'mind-threw', error: err.message };
