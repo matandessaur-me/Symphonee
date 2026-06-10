@@ -31,6 +31,7 @@ const synthesizeModule = require('./synthesize');
 const answerModule = require('./answer');
 const outcomesModule = require('./outcomes');
 const routeLogModule = require('./route-log');
+const conductorModule = require('./conductor');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
 const perfModule = require('./perf');
@@ -159,6 +160,43 @@ function mountBrain(addRoute, json, ctx) {
     return json(res, {
       total: decisionLog.length,
       decisions: decisionLog.slice(-safeLimit).reverse(),
+    });
+  });
+
+  // ── POST /api/symphonee/conduct ─────────────────────────────────────────
+  // The conductor (Stage 4): plan the input, then ADVISE which rung of the
+  // 3-rung ladder should handle it, grounded in triage confidence + outcome
+  // history + recent route-log escalation behaviour. Advisory only - the
+  // caller (a frontier CLI) acts and may override. Replayable: the underlying
+  // plan is logged via the same route-log as /think.
+  addRoute('POST', '/api/symphonee/conduct', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') return json(res, { error: 'input required' }, 400);
+    const ui = getUiContext ? getUiContext() : {};
+    const current = intent.get();
+    const plan = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints(), repoRoot });
+    const logged = logDecision({
+      input: input.slice(0, 240), ok: plan.ok, stage: plan.stage, escalated: plan.escalated,
+      forceEscalated: plan.forceEscalated, triageConfidence: plan.triageConfidence,
+      triagePatches: plan.triagePatches, patches: plan.patches, model: plan.model,
+      triageModel: plan.triageModel, decision: plan.decision, error: plan.error, source: 'conduct',
+    });
+    // Ground the recommendation in history.
+    let bestCliFor = null;
+    try {
+      const stats = outcomesModule.getStats(repoRoot);
+      bestCliFor = outcomesModule.bestCliFor(stats, plan.decision && plan.decision.intent);
+    } catch (_) { /* no outcome data yet */ }
+    let recentEscalationRate = null;
+    try { recentEscalationRate = routeLogModule.getStats(repoRoot).escalationRate; } catch (_) {}
+    const recommendation = conductorModule.recommendRung(plan, { bestCliFor, recentEscalationRate });
+    return json(res, {
+      decisionId: logged.id,
+      decision: plan.decision,
+      recommendation,
+      ladder: conductorModule.LADDER,
+      grounding: { bestCliFor, recentEscalationRate },
     });
   });
 
