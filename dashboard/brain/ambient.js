@@ -86,13 +86,19 @@ function applyFeedback(trust, type, action) {
 function _file(repoRoot) { return path.join(repoRoot, '.symphonee', 'ambient.json'); }
 
 function loadState(repoRoot) {
-  try { return JSON.parse(fs.readFileSync(_file(repoRoot), 'utf8')); }
-  catch (_) { return { dial: DEFAULT_DIAL, trust: {} }; }
+  try {
+    const s = JSON.parse(fs.readFileSync(_file(repoRoot), 'utf8'));
+    return { dial: DEFAULT_DIAL, trust: {}, enabled: true, ...s };
+  } catch (_) { return { dial: DEFAULT_DIAL, trust: {}, enabled: true }; }
 }
 function saveState(repoRoot, state) {
   const file = _file(repoRoot);
   try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch (_) {}
-  fs.writeFileSync(file, JSON.stringify({ dial: state.dial || DEFAULT_DIAL, trust: state.trust || {} }, null, 2), 'utf8');
+  fs.writeFileSync(file, JSON.stringify({
+    dial: state.dial || DEFAULT_DIAL,
+    trust: state.trust || {},
+    enabled: state.enabled !== false,   // hard on/off; default on
+  }, null, 2), 'utf8');
 }
 
 module.exports = {
