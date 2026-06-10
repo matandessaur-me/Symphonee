@@ -400,16 +400,26 @@ function pickEmbedCandidates(graph, max) {
   return out;
 }
 
+// Long-form prose kinds whose full `body` should be embedded, not just their
+// title. Notes and memory cards carry their entire content in `node.body`;
+// embedding the title alone made semantic search unable to find a note by what
+// it SAYS (validated: title-only dense retrieval MRR ~0.14 vs full-body ~0.79
+// on the eval gold set). Code is deliberately excluded - embedding ~6k source
+// bodies is a separate cost/quality decision, not this fix.
+const BODY_EMBED_KINDS = new Set(['note', 'doc', 'memory', 'conversation', 'recipe', 'skill', 'insight']);
+const EMBED_TEXT_CAP = 6000;
+
 function embedText(node) {
   const parts = [node.label || ''];
   if (Array.isArray(node.tags) && node.tags.length) parts.push(node.tags.join(' '));
   if (node.description) parts.push(node.description);
   if (node.summary) parts.push(node.summary);
   if (node.answer) parts.push(node.answer);
+  if (node.body && BODY_EMBED_KINDS.has(node.kind)) parts.push(node.body);
   if (node.source && node.source.ref) parts.push(node.source.ref);
   const t = parts.join(' \n ').trim();
   if (!t) return null;
-  return t.slice(0, 4000);
+  return t.slice(0, EMBED_TEXT_CAP);
 }
 
 function renderReport(graph) {
@@ -432,4 +442,4 @@ function renderReport(graph) {
   return lines.join('\n');
 }
 
-module.exports = { runBuild, refreshEmbeddings };
+module.exports = { runBuild, refreshEmbeddings, embedText, BODY_EMBED_KINDS };
