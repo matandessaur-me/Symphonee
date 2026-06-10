@@ -5,6 +5,7 @@
 //   node scripts/build-mind.js                          full build, all sources
 //   node scripts/build-mind.js --incremental            skip unchanged files
 //   node scripts/build-mind.js --sources notes,learnings  specific sources only
+const { authHeaders } = require('./api-token');
 const args = process.argv.slice(2);
 const incremental = args.includes('--incremental');
 const sourcesIdx = args.indexOf('--sources');
@@ -15,7 +16,7 @@ const sources = sourcesIdx >= 0 && args[sourcesIdx + 1]
 (async () => {
   const url = `http://127.0.0.1:3800/api/mind/${incremental ? 'update' : 'build'}`;
   const r = await fetch(url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ sources }),
   }).then(r => r.json());
   console.log(`Job: ${r.jobId}  space: ${r.space}  sources: ${r.sources.join(', ')}`);

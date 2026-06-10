@@ -4,6 +4,7 @@
 // Usage:
 //   node scripts/query-mind.js "what does the orchestrator do"
 //   node scripts/query-mind.js "auth flow" --budget 1500
+const { authHeaders } = require('./api-token');
 const args = process.argv.slice(2);
 const question = args.find(a => !a.startsWith('--'));
 if (!question) { console.error('Usage: node scripts/query-mind.js "<question>" [--budget N] [--mode bfs|dfs]'); process.exit(1); }
@@ -14,7 +15,7 @@ const mode = modeIdx >= 0 ? args[modeIdx + 1] : 'bfs';
 
 (async () => {
   const r = await fetch('http://127.0.0.1:3800/api/mind/query', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ question, budget, mode }),
   }).then(r => r.json());
   if (r.empty) { console.warn('Brain is empty - run scripts/build-mind.js first.'); return; }

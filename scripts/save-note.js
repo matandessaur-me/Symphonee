@@ -6,6 +6,7 @@
 
 const http = require('http');
 const fs = require('fs');
+const { authHeaders } = require('./api-token');
 
 // Accepts both positional and named-flag forms:
 //   node scripts/save-note.js "Name" "content"
@@ -48,7 +49,7 @@ function post(path, body) {
     const data = JSON.stringify(body);
     const req = http.request({
       hostname: '127.0.0.1', port: 3800, path, method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), ...authHeaders() }
     }, res => {
       let out = '';
       res.on('data', c => out += c);
