@@ -32,6 +32,9 @@ const answerModule = require('./answer');
 const outcomesModule = require('./outcomes');
 const routeLogModule = require('./route-log');
 const conductorModule = require('./conductor');
+const voiceModule = require('./voice');
+const personasModule = require('./personas');
+const { createMindClient } = require('../lib/mind-client');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
 const perfModule = require('./perf');
@@ -198,6 +201,35 @@ function mountBrain(addRoute, json, ctx) {
       ladder: conductorModule.LADDER,
       grounding: { bestCliFor, recentEscalationRate },
     });
+  });
+
+  // ── POST /api/symphonee/ask ─────────────────────────────────────────────
+  // The front door (Stage 5), ARIA-corrected. The local brain routes + recalls;
+  // factual recall is answered with a DETERMINISTIC TEMPLATE filled from the
+  // graph (no robotic local prose), adapted to the caller's persona. Anything
+  // needing real naturalness/reasoning returns escalate:true so a frontier voice
+  // answers. Body: { input, persona?: { userType, role } }.
+  addRoute('POST', '/api/symphonee/ask', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') return json(res, { error: 'input required' }, 400);
+    const ui = getUiContext ? getUiContext() : {};
+    const space = (ui && ui.activeSpace) || '_global';
+    const surface = personasModule.resolveSurface(body.persona || {});
+    const plan = await planner.planRoute(input, { ui, intent: intent.get(), outcomeHints: getOutcomeHints(), repoRoot });
+    const recommendation = conductorModule.recommendRung(plan, {});
+
+    // Only fetch recall when the conductor points at the local recall rung.
+    let recall = null;
+    if (recommendation.rung === 1 && recommendation.intent === 'recall') {
+      try {
+        const mind = createMindClient({ transport: 'inproc', repoRoot, space });
+        recall = await mind.recall({ question: input, limit: 6, space });
+      } catch (_) { recall = null; }
+    }
+    const result = voiceModule.frontDoor({ recommendation, recall, question: input, surface });
+    if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: result.source, rung: result.rung, persona: surface.userType } });
+    return json(res, { ...result, persona: surface, decision: plan.decision });
   });
 
   // ── GET /api/symphonee/route-log ────────────────────────────────────────
