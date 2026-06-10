@@ -598,10 +598,6 @@
         bodyEl.innerHTML = typeof renderMarkdownToHtml === "function" ? renderMarkdownToHtml(d.answer) : esc(d.answer).replace(/\n/g, "<br>");
         const me = document.getElementById("localAnswerModel");
         if (me) me.textContent = "from your notes";
-        try {
-          if (window.symphoneeVoiceOn && window.symphoneeVoiceOn() && window.symphoneeSpeak) window.symphoneeSpeak(String(d.answer).replace(/[*_`#>]/g, ""));
-        } catch (_) {
-        }
       } else {
         overlay.remove();
         toast("Nothing in memory yet - sending to agent", "info");

@@ -183,13 +183,6 @@ const ESBUILD_BUNDLES = [
     outfile: path.join(PUB, 'js', 'ambient-whisper.js'),
   },
   {
-    // Symphonee Voice: speak() via ElevenLabs (server) or browser speechSynthesis
-    // fallback, + the top-bar toggle. Self-contained; load after app.js.
-    name: 'symphonee-voice',
-    entry: path.join(PUB, 'symphonee-voice', 'src', 'index.js'),
-    outfile: path.join(PUB, 'js', 'symphonee-voice.js'),
-  },
-  {
     // Plugin host/shell surface. Source public/plugins/ (distinct from the
     // dashboard/plugins/ install dir). Reads `state` + listeners at load -> after app.js.
     name: 'plugins',

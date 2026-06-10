@@ -278,9 +278,6 @@ function openSettings(tab) {
   document.getElementById('settingsGeminiKey').value = aiKeys.GEMINI_API_KEY || '';
   document.getElementById('settingsAnthropicKey').value = aiKeys.ANTHROPIC_API_KEY || '';
   document.getElementById('settingsXaiKey').value = aiKeys.XAI_API_KEY || '';
-  // Symphonee Voice (ElevenLabs) - top-level key, also used by Video Use.
-  var _elv = document.getElementById('settingsElevenLabsKey');
-  if (_elv) _elv.value = state.configData.ElevenLabsApiKey || '';
   renderBrowserCreds();
   // Populate orchestrator CLI checkboxes
   var orchList = Array.isArray(state.configData.OrchestrateCliList) ? state.configData.OrchestrateCliList : ['claude', 'gemini', 'codex', 'copilot', 'grok', 'qwen'];
@@ -820,7 +817,6 @@ async function saveSettings() {
       DefaultTeam: _txt('settingsTeam'),
       DefaultUser: _txt('settingsUser'),
       GitHubPAT: _txt('settingsGitHubPAT'),
-      ElevenLabsApiKey: _txt('settingsElevenLabsKey') || undefined,
       OrchestrateCliList: Array.from(document.querySelectorAll('.orch-cli-cb:checked')).map(function (cb) {
         return cb.value;
       }),

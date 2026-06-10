@@ -36,6 +36,7 @@ function uncommittedChanges(ctx) {
     detail: names.length
       ? `Recent edits include ${names.join(', ')}. A checkpoint or commit keeps the work safe.`
       : 'A checkpoint or commit keeps the work safe.',
+    actionLabel: 'Review',
     action: { kind: 'ask', prompt: 'review my uncommitted changes' },
   };
 }
@@ -51,6 +52,7 @@ function offerSummary(ctx) {
     value: 0.6,
     title: "You've covered a lot of ground. Want me to summarize where things stand?",
     detail: 'I can pull together what you have been working on from your notes, our conversation, and the recent changes.',
+    actionLabel: 'Summarize',
     action: { kind: 'ask', prompt: 'summarize where things stand right now' },
   };
 }
