@@ -384,8 +384,12 @@ function pickEmbedCandidates(graph, max) {
 
   // Priority 1: gods.
   for (const n of graph.nodes) if (godIds.has(n.id)) pushNode(n);
-  // Priority 2: code/symbol/doc/note/conversation/artifact in that order.
-  for (const order of ['code', 'doc', 'note', 'concept', 'recipe', 'plugin', 'workitem', 'conversation']) {
+  // Priority 2: prose/recall kinds FIRST (note, doc, memory, conversation,
+  // recipe, skill, insight). These carry the long-form body that semantic
+  // search needs and are the recall targets; embedding them by title alone -
+  // or never reaching them under EMBED_MAX because 6k code nodes came first -
+  // was why dense search underperformed. Code/concept follow.
+  for (const order of ['note', 'doc', 'memory', 'conversation', 'recipe', 'skill', 'insight', 'code', 'concept', 'plugin', 'workitem']) {
     if (out.length >= max) break;
     for (const n of graph.nodes) {
       if (out.length >= max) break;

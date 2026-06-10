@@ -106,6 +106,55 @@ function _latestBaseline(repoRoot) {
   try { return loadJson(p); } catch (_) { return null; }
 }
 
+/**
+ * Measure kind-scoped dense + hybrid retrieval against the BM25 baseline
+ * (Stage 0 completion). Model-dependent (embeds the gold queries once via the
+ * dense provider), so it is a runnable measurement, not part of the offline
+ * suite. Returns aggregates for bm25 baseline / dense-only / hybrid and whether
+ * hybrid beats the baseline.
+ */
+async function measureDense({ repoRoot = REPO_ROOT, write = true } = {}) {
+  const { createDenseProvider } = require('./dense');
+  const { bestSeedsRanked } = require('../mind/query');
+  const { fuse } = require('../mind/rrf');
+  const gold = loadJson(GOLD_PATH);
+  const space = gold.space || '_global';
+  const dp = createDenseProvider({ repoRoot, space });
+  if (!dp.ready) throw new Error('dense provider not ready - is the vector index built?');
+  await dp.warm(gold.queries.map(q => q.question));
+
+  const denseOnly = (g, q, k) => dp.hits(q, k).map(h => h.id);
+  const hybrid = (g, q, k) => {
+    const bm = bestSeedsRanked(g, q, k * 5).map(r => ({ id: r.id, score: r.score })); bm._label = 'bm25';
+    const dn = dp.hits(q, k * 5).map(h => ({ id: h.id, score: h.score })); dn._label = 'dense';
+    if (!dn.length) return bm.slice(0, k).map(r => r.id);
+    return fuse([bm, dn], { k: 60, limit: k }).map(r => r.id);
+  };
+
+  const base = _latestBaseline(repoRoot) || runBaseline({ repoRoot, write: false });
+  const rDense = runRetriever(denseOnly, { repoRoot }).result;
+  const rHybrid = runRetriever(hybrid, { repoRoot }).result;
+
+  const record = {
+    kind: 'dense-measurement',
+    recordedAt: new Date().toISOString(),
+    denseScopedKinds: dp.kinds,
+    vectors: dp.count,
+    baselineAggregate: base.aggregate,
+    denseOnlyAggregate: rDense.aggregate,
+    hybridAggregate: rHybrid.aggregate,
+    hybridLatency: rHybrid.latency,
+    hybridBeatsBaseline: (rHybrid.aggregate.mrr || 0) > (base.aggregate.mrr || 0),
+    perQuery: rHybrid.perQuery.map(q => ({ id: q.id, mrr: q.scores.mrr })),
+  };
+  if (write) {
+    const dir = path.join(repoRoot, '.symphonee', 'eval', 'dense');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'latest.json'), JSON.stringify(record, null, 2), 'utf8');
+  }
+  return record;
+}
+
 function _printSummary(record) {
   const a = record.aggregate;
   console.log('\n=== THE EVAL - RRF baseline ===');
@@ -133,13 +182,29 @@ function _printSummary(record) {
 }
 
 if (require.main === module) {
-  try {
-    const rec = runBaseline({});
-    _printSummary(rec);
-  } catch (err) {
-    console.error('[eval] FAILED:', err.message);
-    process.exit(1);
+  if (process.argv.includes('--dense')) {
+    measureDense({}).then(rec => {
+      console.log('\n=== THE EVAL - kind-scoped dense + hybrid vs BM25 baseline ===');
+      console.log(`dense scoped to: ${rec.denseScopedKinds.join(', ')} (${rec.vectors} vectors)`);
+      console.log('metric        bm25-base  dense-only  hybrid');
+      for (const key of ['mrr', 'hit@1', 'hit@3', 'recall@5', 'ndcg@5']) {
+        const b = rec.baselineAggregate[key], d = rec.denseOnlyAggregate[key], h = rec.hybridAggregate[key];
+        if (b == null) continue;
+        console.log(`${key.padEnd(13)} ${String(b).padEnd(9)}  ${String(d).padEnd(10)}  ${h}`);
+      }
+      console.log(`\nhybrid latency p50=${rec.hybridLatency.p50}ms`);
+      const dm = Math.round((rec.hybridAggregate.mrr - rec.baselineAggregate.mrr) * 10000) / 10000;
+      console.log(`\nhybrid MRR delta vs BM25: ${dm >= 0 ? '+' : ''}${dm}  -> hybrid ${rec.hybridBeatsBaseline ? 'BEATS' : 'does NOT beat'} BM25`);
+    }).catch(err => { console.error('[eval] dense FAILED:', err.message); process.exit(1); });
+  } else {
+    try {
+      const rec = runBaseline({});
+      _printSummary(rec);
+    } catch (err) {
+      console.error('[eval] FAILED:', err.message);
+      process.exit(1);
+    }
   }
 }
 
-module.exports = { runRetriever, runBaseline, judgeChallenger, baselinesDir };
+module.exports = { runRetriever, runBaseline, judgeChallenger, measureDense, baselinesDir };
