@@ -571,7 +571,7 @@
     overlay.onclick = (e) => {
       if (e.target === overlay) overlay.remove();
     };
-    overlay.innerHTML = `<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:12px;width:680px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 16px 50px rgba(0,0,0,0.55);"><div style="display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--surface1);"><i data-lucide="sparkles" style="width:16px;height:16px;color:var(--accent);"></i><strong style="font-size:13px;">Quick answer</strong><span id="localAnswerModel" style="font-size:10px;color:var(--overlay1);">memory</span><div style="flex:1;"></div><button onclick="document.getElementById('localAnswerOverlay').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button></div><div style="padding:12px 18px;color:var(--subtext1);font-size:12px;border-bottom:1px solid var(--surface1);">` + esc(question) + '</div><div id="localAnswerBody" style="padding:16px 18px;overflow:auto;font-size:13px;line-height:1.6;color:var(--text);"><span style="color:var(--subtext0);">Searching your memory...</span></div><div style="display:flex;align-items:center;gap:10px;padding:11px 18px;border-top:1px solid var(--surface1);"><span style="font-size:11px;color:var(--overlay1);">Answered instantly from your memory - 0 tokens.</span><div style="flex:1;"></div><button class="hotkey-mini" onclick="_dispatchFromLocalAnswer()">Send to ' + esc(cliLabel) + " instead</button></div></div>";
+    overlay.innerHTML = `<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:12px;width:680px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 16px 50px rgba(0,0,0,0.55);"><div style="display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--surface1);"><i data-lucide="sparkles" style="width:16px;height:16px;color:var(--accent);"></i><strong style="font-size:13px;">Quick answer</strong><span id="localAnswerModel" style="font-size:10px;color:var(--overlay1);">memory</span><div style="flex:1;"></div><button onclick="document.getElementById('localAnswerOverlay').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button></div><div style="padding:12px 18px;color:var(--subtext1);font-size:12px;border-bottom:1px solid var(--surface1);">` + esc(question) + '</div><div id="localAnswerBody" style="padding:16px 18px;overflow:auto;font-size:13px;line-height:1.6;color:var(--text);"><span style="color:var(--subtext0);">Reading your notes...</span></div><div style="display:flex;align-items:center;gap:10px;padding:11px 18px;border-top:1px solid var(--surface1);"><span style="font-size:11px;color:var(--overlay1);">Answered from your own notes.</span><div style="flex:1;"></div><button class="hotkey-mini" onclick="_dispatchFromLocalAnswer()">Send to ' + esc(cliLabel) + " instead</button></div></div>";
     document.body.appendChild(overlay);
     try {
       lucide.createIcons({
@@ -594,10 +594,10 @@
       const d = await r.json().catch(() => ({}));
       const bodyEl = document.getElementById("localAnswerBody");
       if (!bodyEl) return;
-      if (d && d.source === "templated" && d.answer) {
+      if (d && d.source === "local" && d.answer) {
         bodyEl.innerHTML = typeof renderMarkdownToHtml === "function" ? renderMarkdownToHtml(d.answer) : esc(d.answer).replace(/\n/g, "<br>");
         const me = document.getElementById("localAnswerModel");
-        if (me) me.textContent = d.uncertain ? "memory \xB7 uncertain" : "memory \xB7 instant";
+        if (me) me.textContent = "from your notes";
       } else {
         overlay.remove();
         toast("Nothing in memory yet - sending to agent", "info");

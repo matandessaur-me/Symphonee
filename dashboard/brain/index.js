@@ -35,6 +35,7 @@ const conductorModule = require('./conductor');
 const voiceModule = require('./voice');
 const personasModule = require('./personas');
 const ambientModule = require('./ambient');
+const localAnswerModule = require('./local-answer');
 const { createMindClient } = require('../lib/mind-client');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
@@ -218,26 +219,27 @@ function mountBrain(addRoute, json, ctx) {
     const space = (ui && ui.activeSpace) || '_global';
     const surface = personasModule.resolveSurface(body.persona || {});
 
-    // Fast path (palette quick-answer): the caller already knows this is a
-    // recall-shaped question, so skip the ~2s triage and answer INSTANTLY from
-    // memory with a deterministic template (no local prose). Returns a
-    // templated answer when grounded, else an escalate signal the caller turns
-    // into "send to Claude Code".
+    // Fast path (palette quick-answer): the local answering machine. Retrieve
+    // broadly across ALL the user's knowledge (notes/docs/memory via hybrid),
+    // pull the real bodies, and synthesize a HUMAN answer with the local
+    // reasoning model. Symphonee's own voice; the active CLI stays one button
+    // away. Escalates only when memory genuinely has nothing.
     if (body.fast === true) {
-      let recall = null;
-      try {
-        const mind = createMindClient({ transport: 'inproc', repoRoot, space });
-        // Curated knowledge only (memory cards + saved Q&A) - NOT raw CLI drawer
-        // transcripts, which BM25 over-ranks and which make a "quick answer"
-        // noisy. If curated memory can't ground it, we escalate to the agent.
-        recall = await mind.recall({ question: input, limit: 6, space, kinds: ['memory', 'conversation'] });
-      } catch (_) { recall = null; }
-      const fastResult = voiceModule.frontDoor({
-        recommendation: { rung: 1, intent: 'recall', reason: 'fast recall' },
-        recall, question: input, surface,
-      });
-      if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: fastResult.source, rung: 1, persona: surface.userType, fast: true } });
-      return json(res, { ...fastResult, persona: surface, fast: true });
+      const local = await localAnswerModule.localAnswer({ repoRoot, space, question: input });
+      if (local.grounded) {
+        if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'local', persona: surface.userType, fast: true } });
+        return json(res, {
+          source: 'local',
+          answer: local.answer,
+          citedNodeIds: local.citedNodeIds,
+          sources: local.sources,
+          model: local.model,
+          persona: surface,
+          fast: true,
+        });
+      }
+      if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'escalate', persona: surface.userType, fast: true } });
+      return json(res, { source: 'escalate', reason: local.reason || 'no-knowledge', persona: surface, fast: true });
     }
 
     const plan = await planner.planRoute(input, { ui, intent: intent.get(), outcomeHints: getOutcomeHints(), repoRoot });
