@@ -53,11 +53,12 @@ test('applyFeedback reinforces / decays immutably', () => {
 test('loadState/saveState round-trip with a default', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-ambient-'));
   try {
-    assert.deepEqual(ambient.loadState(root), { dial: 'balanced', trust: {} });
-    ambient.saveState(root, { dial: 'chatty', trust: { x: { accepted: 2, dismissed: 1 } } });
+    assert.deepEqual(ambient.loadState(root), { dial: 'balanced', trust: {}, enabled: true });
+    ambient.saveState(root, { dial: 'chatty', trust: { x: { accepted: 2, dismissed: 1 } }, enabled: false });
     const s = ambient.loadState(root);
     assert.equal(s.dial, 'chatty');
     assert.equal(s.trust.x.accepted, 2);
+    assert.equal(s.enabled, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

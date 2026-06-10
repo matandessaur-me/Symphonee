@@ -291,7 +291,7 @@ function mountBrain(addRoute, json, ctx) {
   // GET /api/symphonee/ambient  + POST .../dial { dial }
   addRoute('GET', '/api/symphonee/ambient', (req, res) => {
     const state = ambientModule.loadState(repoRoot);
-    return json(res, { dial: state.dial, dials: Object.keys(ambientModule.DIALS), trust: state.trust });
+    return json(res, { dial: state.dial, dials: Object.keys(ambientModule.DIALS), trust: state.trust, enabled: state.enabled !== false });
   });
   addRoute('POST', '/api/symphonee/ambient/dial', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
@@ -318,11 +318,14 @@ function mountBrain(addRoute, json, ctx) {
       if (a.dormantIds.length) out.push({
         type: 'stale-memory', value: Math.min(0.55 + 0.08 * a.dormantIds.length, 0.9),
         title: a.dormantIds.length === 1 ? '1 memory card has been superseded' : a.dormantIds.length + ' memory cards have been superseded',
+        detail: 'Newer notes have overturned them. A quick review keeps what I remember accurate.',
         action: { kind: 'contradictions' },
       });
       if (a.conflicts.length >= 3) out.push({
         type: 'memory-conflict', value: 0.58,
-        title: a.conflicts.length + ' memories may conflict', action: { kind: 'contradictions' },
+        title: a.conflicts.length + ' memories may conflict',
+        detail: 'Some of your memory cards point in different directions on the same topic.',
+        action: { kind: 'contradictions' },
       });
     } catch (_) { /* contradict optional */ }
     // Mind: pending insights are already phrased as nudges.
@@ -334,6 +337,7 @@ function mountBrain(addRoute, json, ctx) {
           type: 'insight:' + (n.category || 'general'),
           value: 0.62,
           title: String(n.label || 'A suggestion from your notes').slice(0, 100),
+          detail: String(n.body || '').slice(0, 300) || null,
           action: { kind: 'insight', id: n.id },
         });
       }
@@ -348,12 +352,23 @@ function mountBrain(addRoute, json, ctx) {
   // whisper learns to stay quiet.
   addRoute('GET', '/api/symphonee/ambient/nudge', (req, res) => {
     const state = ambientModule.loadState(repoRoot);
+    if (state.enabled === false) return json(res, { nudge: null, dial: state.dial, enabled: false });
     let best = null;
     for (const c of _ambientCandidates()) {
       const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
       if (v.surface && (!best || v.score > best.score)) best = { ...c, score: v.score };
     }
-    return json(res, { nudge: best, dial: state.dial });
+    return json(res, { nudge: best, dial: state.dial, enabled: true });
+  });
+
+  // Hard on/off for the ambient whisper (the "completely deactivate" switch).
+  addRoute('POST', '/api/symphonee/ambient/enabled', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const state = ambientModule.loadState(repoRoot);
+    state.enabled = body.enabled !== false;
+    ambientModule.saveState(repoRoot, state);
+    if (broadcast) broadcast({ type: 'symphonee-ambient', payload: { enabled: state.enabled } });
+    return json(res, { ok: true, enabled: state.enabled });
   });
 
   // ── GET /api/symphonee/route-log ────────────────────────────────────────
