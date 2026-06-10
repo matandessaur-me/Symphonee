@@ -155,79 +155,19 @@ function createTermInstance(termId, label) {
   term.loadAddon(u11);
   term.unicode.activeVersion = '11';
   term.open(container);
-  // Keep a handle on the WebGL addon and a way to recreate it. WebGL stays the
-  // renderer -- repairs below resync or rebuild it, never fall back to DOM.
-  let webglAddon = null;
-  function loadWebglAddon() {
-    try {
-      webglAddon = new WebglAddon.WebglAddon();
-      webglAddon.onContextLoss(() => { try { webglAddon.dispose(); } catch (_) {} webglAddon = null; });
-      term.loadAddon(webglAddon);
-      // VS Code parity: "WebGL renderer cell dimensions differ from the DOM
-      // renderer, make sure the terminal gets resized after the webgl addon is
-      // loaded" (xtermTerminal.ts). Resync geometry right after load so the two
-      // never start out disagreeing. Visible containers only -- hidden tabs get
-      // a full fit() on activation via switchTerminal.
-      setTimeout(() => { if (container.offsetWidth) repairRendererGeometry(); }, 0);
-    } catch (_) { webglAddon = null; }
-  }
-  loadWebglAddon();
-
-  // Scroll ghosting on fractional display scaling (e.g. Windows 125%/150%): the
-  // DOM viewport lays rows out at the FRACTIONAL css cell height while the WebGL
-  // canvas draws rows floored to integer device pixels (core: Math.floor(
-  // char.height * lineHeight)). On non-integer devicePixelRatio the two disagree
-  // by a sliver per row, and scrolling accumulates it into a strip of stale
-  // glyphs stuck over the content. A real RESIZE re-measures everything and
-  // resyncs -- which is why the user's panel-collapse/monitor-switch workaround
-  // fixes it. So: run xterm's own re-measure + DPR + resize pipeline -- the
-  // programmatic equivalent of that workaround -- instead of poking the renderer.
-  //   - Mid-scroll stays hands-off (per-scroll refresh made ghosting worse).
-  //   - The internal services are stable-but-private (term._core); every call is
-  //     guarded, and if the pipeline is unavailable we fall back to rebuilding
-  //     the WebGL addon canvas outright.
-  function repairRendererGeometry() {
-    const core = term._core;
-    const rs = core && core._renderService;
-    requestAnimationFrame(() => {
-      if (rs) {
-        try { core._charSizeService && core._charSizeService.measure && core._charSizeService.measure(); } catch (_) {}
-        try { rs.handleDevicePixelRatioChange && rs.handleDevicePixelRatioChange(); } catch (_) {}
-        try { rs.handleResize && rs.handleResize(term.cols, term.rows); } catch (_) {}
-        try { rs.clear && rs.clear(); } catch (_) {}
-      } else if (webglAddon) {
-        try { webglAddon.dispose(); } catch (_) {}
-        webglAddon = null;
-        loadWebglAddon();
-      }
-      try { term.refresh(0, term.rows - 1); } catch (_) {}
+  // WebGL renderer. The terminal-corruption saga (ghost first-letters on
+  // scroll, misplaced TUI content) turned out to be convertEol -- see
+  // createTermOpts -- NOT the renderer; the auto-repair machinery that lived
+  // here (scroll-settle geometry repair, DPR watcher, post-load resync) was
+  // removed once the root cause was confirmed fixed. If corruption ever
+  // reappears, the command palette's "Repair Terminal" resyncs by hand.
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => {
+      webgl.dispose();
     });
-  }
-  // Once scrolling settles, repair. Debounced so continuous scrolling never pays.
-  let _scrollSettle = null;
-  term.onScroll(() => {
-    if (_scrollSettle) clearTimeout(_scrollSettle);
-    _scrollSettle = setTimeout(repairRendererGeometry, 120);
-  });
-  // Repair proactively when devicePixelRatio changes (window dragged to a
-  // monitor with a different scale, or display scaling changed) -- the exact
-  // events whose manual equivalents the user used as a workaround. matchMedia
-  // fires once per change; re-arm against the new DPR each time.
-  (function watchDpr() {
-    let mql = null;
-    function arm() {
-      try {
-        if (mql) mql.removeEventListener('change', onChange);
-        mql = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
-        mql.addEventListener('change', onChange);
-      } catch (_) {}
-    }
-    function onChange() { repairRendererGeometry(); arm(); }
-    // Deferred: the browser module wraps window.matchMedia after app.js loads,
-    // and app.js load-time code must not call module-touched globals (guarded
-    // by app-load-time.test.js). A 0ms defer arms after all bundles are in.
-    setTimeout(arm, 0);
-  })();
+    term.loadAddon(webgl);
+  } catch (_) {}
 
   // Let modifier-only keys pass through to document handlers (voice recording uses Ctrl+Shift).
   // Also bubble specific UI shortcuts (Ctrl+K/I/./? and their Meta counterparts) so they reach
