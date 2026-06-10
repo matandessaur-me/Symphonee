@@ -34,7 +34,9 @@
         z-index:3200;display:none;align-items:center;gap:9px;max-width:min(560px,84vw);
         padding:8px 12px 8px 14px;border-radius:999px;cursor:pointer;
         font-family:var(--font-ui,system-ui);font-size:12px;color:var(--subtext1,#cdd6f4);
+        background:var(--surface0,#1e1e2e);
         background:color-mix(in srgb, var(--surface0,#1e1e2e) 86%, var(--accent,#89b4fa) 6%);
+        border:1px solid var(--surface2,#45475a);
         border:1px solid color-mix(in srgb, var(--accent,#89b4fa) 38%, transparent);
         box-shadow:0 0 0 1px color-mix(in srgb,var(--accent,#89b4fa) 10%,transparent),
                    0 6px 22px -6px rgba(0,0,0,.5);
