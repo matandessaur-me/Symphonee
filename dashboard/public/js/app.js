@@ -158,6 +158,15 @@ function createTermInstance(termId, label) {
     term.loadAddon(webgl);
   } catch (_) {}
 
+  // The WebGL renderer can leave stale/garbled glyphs in the viewport after a
+  // scrollback scroll on some GPUs/drivers -- the text only corrects itself
+  // after a full re-render (e.g. switching tabs, which fits + repaints). Force
+  // the visible rows to repaint on every scroll so the viewport stays clean.
+  // refresh() just marks rows dirty; xterm coalesces the actual render via rAF.
+  term.onScroll(() => {
+    try { term.refresh(0, term.rows - 1); } catch (_) {}
+  });
+
   // Let modifier-only keys pass through to document handlers (voice recording uses Ctrl+Shift).
   // Also bubble specific UI shortcuts (Ctrl+K/I/./? and their Meta counterparts) so they reach
   // the global keydown listener instead of being swallowed by the terminal.
@@ -197,17 +206,26 @@ function createTermInstance(termId, label) {
     }));
   });
 
-  // Send clipboard text to the PTY as input. Shared by Ctrl/Cmd+V, the
-  // right-click menu, and the paste event (Win+V, dictation tools like Wispr
-  // Flow that inject text via the clipboard).
+  // Inject clipboard text into the PTY, de-duplicated. Two paste paths can fire
+  // for a SINGLE user action on some setups -- e.g. a right-click that triggers
+  // both the contextmenu handler below AND a native 'paste' event, or a mouse
+  // utility that maps right-click to a paste keystroke -- which pasted twice.
+  // Drop an identical payload that arrives within a short window so one action
+  // injects exactly once. Shared by Ctrl/Cmd+V, the right-click menu, and the
+  // paste event (Win+V, dictation tools like Wispr Flow).
+  let _lastPaste = { text: '', at: 0 };
+  function sendPaste(text) {
+    if (!text || !(state.ws && state.ws.readyState === 1)) return;
+    const now = Date.now();
+    if (text === _lastPaste.text && (now - _lastPaste.at) < 120) return;
+    _lastPaste = { text, at: now };
+    state.ws.send(JSON.stringify({ type: 'input', termId, data: text }));
+  }
+
+  // Send clipboard text to the PTY. Shared by Ctrl/Cmd+V and the right-click menu.
   async function pasteIntoTerm() {
     try {
-      const text = await navigator.clipboard.readText();
-      if (text && state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({
-        type: 'input',
-        termId,
-        data: text
-      }));
+      sendPaste(await navigator.clipboard.readText());
     } catch (_) {}
   }
 
@@ -238,11 +256,7 @@ function createTermInstance(termId, label) {
     try {
       text = (e.clipboardData || window.clipboardData).getData('text');
     } catch (_) {}
-    if (text && state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({
-      type: 'input',
-      termId,
-      data: text
-    }));
+    sendPaste(text);
   });
   termInstances.set(termId, {
     term,
