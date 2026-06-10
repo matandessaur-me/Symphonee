@@ -146,34 +146,37 @@ function createTermInstance(termId, label) {
   term.loadAddon(u11);
   term.unicode.activeVersion = '11';
   term.open(container);
-  // Keep a handle on the WebGL addon so the scroll handler below can force a
-  // full re-rasterization (clearTextureAtlas) when needed -- WebGL stays the
-  // renderer the whole time, we never fall back.
+  // Keep a handle on the WebGL addon and a way to recreate it. WebGL stays the
+  // renderer -- a "reset" just tears the GL canvas down and builds a fresh one,
+  // it never falls back to the DOM renderer.
   let webglAddon = null;
-  try {
-    webglAddon = new WebglAddon.WebglAddon();
-    webglAddon.onContextLoss(() => { try { webglAddon.dispose(); } catch (_) {} webglAddon = null; });
-    term.loadAddon(webglAddon);
-  } catch (_) { webglAddon = null; }
+  function loadWebglAddon() {
+    try {
+      webglAddon = new WebglAddon.WebglAddon();
+      webglAddon.onContextLoss(() => { try { webglAddon.dispose(); } catch (_) {} webglAddon = null; });
+      term.loadAddon(webglAddon);
+    } catch (_) { webglAddon = null; }
+  }
+  loadWebglAddon();
 
-  // The WebGL renderer can leave glyphs "stuck" in the viewport when scrolling
-  // on some GPUs/drivers -- old characters stay put instead of moving, and the
-  // text only corrects itself after a full re-render (e.g. switching tabs, which
-  // fits + repaints). Two-step repaint, WebGL stays on throughout:
-  //   1. On every scroll, repaint the visible rows -- cheap, keeps fast wheeling
-  //      smooth, and fixes the common case.
-  //   2. Once scrolling settles, clear the GPU glyph atlas and repaint -- the
-  //      same from-scratch redraw a tab-switch forces -- so anything still stuck
-  //      is guaranteed to redraw. Debounced so continuous scrolling never pays
-  //      for it.
+  // On some GPUs/drivers the WebGL renderer leaves glyphs "stuck" in the viewport
+  // when scrolling -- old characters stay put instead of moving with the text.
+  // The only thing that reliably clears it is a full renderer rebuild: the user's
+  // manual workaround is to collapse/expand a side panel, which RESIZES the
+  // terminal and forces a fresh redraw. We reproduce that ourselves:
+  //   - Do NOT touch the renderer mid-scroll. Repainting on every scroll made the
+  //     ghosting WORSE on affected GPUs, so the scroll path is now hands-off.
+  //   - Once scrolling settles, dispose the WebGL canvas and build a new one, then
+  //     repaint. A brand-new GL canvas cannot carry stale pixels, and it is
+  //     recreated at the SAME size so the shell never reflows. Debounced so
+  //     continuous scrolling never pays for it -- it runs once after you stop.
   let _scrollSettle = null;
   term.onScroll(() => {
-    try { term.refresh(0, term.rows - 1); } catch (_) {}
     if (_scrollSettle) clearTimeout(_scrollSettle);
     _scrollSettle = setTimeout(() => {
-      try { if (webglAddon) webglAddon.clearTextureAtlas(); } catch (_) {}
+      if (webglAddon) { try { webglAddon.dispose(); } catch (_) {} webglAddon = null; loadWebglAddon(); }
       try { term.refresh(0, term.rows - 1); } catch (_) {}
-    }, 60);
+    }, 120);
   });
 
   // Let modifier-only keys pass through to document handlers (voice recording uses Ctrl+Shift).
