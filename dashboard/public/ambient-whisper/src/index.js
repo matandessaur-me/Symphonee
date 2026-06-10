@@ -180,10 +180,10 @@
     if (!_current) return;
     const n = _current;
     _feedback(n.type, 'accept');
-    const title = _plain(n.title);
+    const prompt = (n.action && n.action.prompt) || _plain(n.title);
     _hidePill();
     try {
-      if (typeof window.openCmdPalette === 'function') window.openCmdPalette(title);
+      if (typeof window.openCmdPalette === 'function') window.openCmdPalette(prompt);
       else if (typeof window.toast === 'function') window.toast('Noted', 'info');
     } catch (_) {}
     setTimeout(() => check(true), 1500);
@@ -230,6 +230,21 @@
   window.addEventListener('focus', () => check(false));
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(false); });
   if (document.readyState !== 'loading') setTimeout(() => check(true), 5000);
+
+  // Inactivity: a gentle "still here?" if the user goes quiet for a while. This
+  // nudge is generated client-side (only the client knows about keyboard/mouse
+  // activity); it still honours the disable flag + dismiss.
+  let _idleTimer = null;
+  const IDLE_MS = 4 * 60 * 1000;
+  function _resetIdle() { clearTimeout(_idleTimer); _idleTimer = setTimeout(_onIdle, IDLE_MS); }
+  function _onIdle() {
+    if (_disabled || _current) return;
+    const nudge = { type: 'inactivity', title: 'Still here? I can pick up where we left off whenever you are.', action: { kind: 'ask', prompt: 'where did we leave off' } };
+    if (_dismissed.has(nudge.title)) return;
+    _showPill(nudge);
+  }
+  ['mousemove', 'keydown', 'mousedown'].forEach(ev => window.addEventListener(ev, _resetIdle, { passive: true }));
+  _resetIdle();
 
   // Settings re-enable + force refresh.
   window.ambientWhisperCheck = () => { _disabled = false; check(true); };
