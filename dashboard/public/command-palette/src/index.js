@@ -627,6 +627,8 @@ async function answerLocally(question, opts) {
       bodyEl.innerHTML = typeof renderMarkdownToHtml === 'function' ? renderMarkdownToHtml(d.answer) : esc(d.answer).replace(/\n/g, '<br>');
       const me = document.getElementById('localAnswerModel');
       if (me) me.textContent = 'from your notes';
+      // Speak it if Symphonee Voice is on.
+      try { if (window.symphoneeVoiceOn && window.symphoneeVoiceOn() && window.symphoneeSpeak) window.symphoneeSpeak(String(d.answer).replace(/[*_`#>]/g, '')); } catch (_) {}
     } else {
       // Not grounded in memory -> hand straight to the agent (Claude Code).
       overlay.remove();

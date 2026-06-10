@@ -35,36 +35,39 @@
     s.id = 'ambientWhisperStyles';
     s.textContent = `
       #ambientWhisper{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(16px);
-        z-index:3200;display:none;align-items:center;gap:9px;max-width:min(560px,84vw);
-        padding:8px 12px 8px 13px;border-radius:999px;cursor:pointer;
+        z-index:3200;display:none;align-items:center;gap:9px;box-sizing:border-box;
+        min-width:158px;max-width:min(560px,84vw);height:34px;padding:0 15px;border-radius:999px;cursor:pointer;
         font-family:var(--font-ui,system-ui);font-size:12px;color:var(--subtext1,#cdd6f4);
         background:var(--surface0,#1e1e2e);
-        background:color-mix(in srgb,var(--surface0,#1e1e2e) 86%,var(--accent,#89b4fa) 7%);
+        background:color-mix(in srgb,var(--surface0,#1e1e2e) 84%,var(--accent,#89b4fa) 9%);
         border:1px solid var(--surface2,#45475a);
-        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 40%,transparent);
+        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 42%,transparent);
         opacity:0;overflow:hidden;
-        transition:opacity .3s ease,transform .3s cubic-bezier(.2,.8,.2,1),padding .3s ease,box-shadow .3s ease;
-        animation:aw-breathe 3.8s ease-in-out infinite;}
-      #ambientWhisper.aw-collapsed{padding:6px 11px;gap:0;}
-      #ambientWhisper:hover{box-shadow:0 0 22px -3px var(--accent,#89b4fa),0 6px 22px -6px rgba(0,0,0,.55);}
-      #ambientWhisper::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-        background:linear-gradient(105deg,transparent 35%,color-mix(in srgb,var(--accent,#89b4fa) 28%,transparent) 50%,transparent 65%);
-        background-size:220% 100%;animation:aw-shimmer 5.5s linear infinite;opacity:.5;}
+        transition:opacity .35s ease,transform .4s cubic-bezier(.2,.85,.25,1),min-width .45s cubic-bezier(.2,.85,.25,1),max-width .45s cubic-bezier(.2,.85,.25,1),height .4s cubic-bezier(.2,.85,.25,1),padding .35s ease;
+        animation:aw-breathe 4.4s ease-in-out infinite;}
+      /* resting: an elongated, thin, living capsule - a drawer handle that breathes */
+      #ambientWhisper.aw-collapsed{min-width:150px;max-width:150px;height:13px;padding:0;gap:0;}
+      #ambientWhisper.aw-collapsed .aw-dot,#ambientWhisper.aw-collapsed .aw-text,#ambientWhisper.aw-collapsed .aw-x{opacity:0;max-width:0;margin:0;padding:0;}
+      #ambientWhisper:hover{filter:brightness(1.08);}
+      /* a slow inner light drifting back and forth - feels alive */
+      #ambientWhisper::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
+        background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--accent,#89b4fa) 32%,transparent) 50%,transparent 70%);
+        background-size:240% 100%;animation:aw-shimmer 6s ease-in-out infinite;opacity:.6;}
       #ambientWhisper .aw-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--accent,#89b4fa);
-        box-shadow:0 0 10px var(--accent,#89b4fa);animation:aw-dot 3.8s ease-in-out infinite;position:relative;z-index:1;}
+        box-shadow:0 0 10px var(--accent,#89b4fa);animation:aw-dot 4.4s ease-in-out infinite;position:relative;z-index:1;
+        transition:max-width .3s,opacity .25s;}
       #ambientWhisper .aw-text{flex:1;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
         max-width:480px;opacity:1;position:relative;z-index:1;
-        transition:max-width .32s cubic-bezier(.2,.8,.2,1),opacity .22s ease,margin .32s ease;}
-      #ambientWhisper.aw-collapsed .aw-text{max-width:0;opacity:0;margin:0;}
+        transition:max-width .42s cubic-bezier(.2,.85,.25,1),opacity .3s ease;}
       #ambientWhisper .aw-x{background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:15px;line-height:1;
         padding:1px 3px;cursor:pointer;flex:none;position:relative;z-index:1;border-radius:6px;
         transition:max-width .3s,opacity .2s;overflow:hidden;}
       #ambientWhisper .aw-x:hover{color:var(--text,#cdd6f4);}
-      #ambientWhisper.aw-collapsed .aw-x{max-width:0;opacity:0;padding:0;}
-      @keyframes aw-breathe{0%,100%{box-shadow:0 0 10px -4px var(--accent,#89b4fa),0 6px 22px -6px rgba(0,0,0,.5);}
-        50%{box-shadow:0 0 19px -2px var(--accent,#89b4fa),0 6px 22px -6px rgba(0,0,0,.5);}}
-      @keyframes aw-shimmer{0%{background-position:140% 0;}100%{background-position:-40% 0;}}
-      @keyframes aw-dot{0%,100%{opacity:.6;}50%{opacity:1;}}
+      /* breathing outer glow - organic, biologic */
+      @keyframes aw-breathe{0%,100%{box-shadow:0 0 11px -4px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}
+        50%{box-shadow:0 0 24px -1px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}}
+      @keyframes aw-shimmer{0%{background-position:150% 0;}50%{background-position:-30% 0;}100%{background-position:150% 0;}}
+      @keyframes aw-dot{0%,100%{opacity:.55;transform:scale(.9);}50%{opacity:1;transform:scale(1.06);}}
       #ambientWhisperModalBg{position:fixed;inset:0;z-index:3600;display:none;align-items:center;justify-content:center;
         background:rgba(0,0,0,.45);backdrop-filter:blur(2px);font-family:var(--font-ui,system-ui);}
       #ambientWhisperModal{width:460px;max-width:90vw;border-radius:16px;padding:0;overflow:hidden;
