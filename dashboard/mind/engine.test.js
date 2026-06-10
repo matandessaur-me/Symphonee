@@ -14,6 +14,23 @@ test('embedText includes the full body for prose kinds (notes, memory)', () => {
   assert.match(embedText(mem), /search_query/);
 });
 
+test('embedText loads a file-backed note body when the node has no inline body', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-embed-'));
+  const file = path.join(dir, 'the-plan.md');
+  fs.writeFileSync(file, '# The Plan\n\nsequenced staged build with go and no-go gates and a kill criterion', 'utf8');
+  try {
+    // mirrors a real persisted note node: title + source.file, NO body field
+    const note = { id: 'note_x', kind: 'note', label: 'the-plan', source: { type: 'note', ref: 'the-plan', file } };
+    const t = embedText(note);
+    assert.match(t, /kill criterion/, 'note body loaded from source.file is embedded');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('embedText does NOT embed code bodies (cost/scope decision)', () => {
   const code = { id: 'repo_a', kind: 'code', label: 'parseConfig', body: 'function parseConfig(){ /* 5000 lines */ }' };
   const t = embedText(code);

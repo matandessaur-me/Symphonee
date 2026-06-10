@@ -407,7 +407,23 @@ function pickEmbedCandidates(graph, max) {
 // on the eval gold set). Code is deliberately excluded - embedding ~6k source
 // bodies is a separate cost/quality decision, not this fix.
 const BODY_EMBED_KINDS = new Set(['note', 'doc', 'memory', 'conversation', 'recipe', 'skill', 'insight']);
-const EMBED_TEXT_CAP = 6000;
+// Cap kept conservative so a body never exceeds the embed model's context
+// window (nomic-embed-text 500s on overflow). ~4000 chars is well under it and
+// captures a note's title + intro + first sections - highly discriminative.
+const EMBED_TEXT_CAP = 4000;
+
+// Note/doc nodes do NOT persist their body on the graph node (only the title,
+// tags, and a source.file path). Their content lives in a .md/.txt file on
+// disk. Load it at embed time so semantic search can find a note by what it
+// SAYS, not just its title. Safe: gated to text extensions, size-capped,
+// swallow-throws. Build-time only, never the hot path.
+function _bodyFromSourceFile(node) {
+  try {
+    const f = node.source && node.source.file;
+    if (!f || !/\.(md|markdown|txt|mdx)$/i.test(f)) return '';
+    return fs.readFileSync(f, 'utf8').slice(0, EMBED_TEXT_CAP);
+  } catch (_) { return ''; }
+}
 
 function embedText(node) {
   const parts = [node.label || ''];
@@ -415,7 +431,10 @@ function embedText(node) {
   if (node.description) parts.push(node.description);
   if (node.summary) parts.push(node.summary);
   if (node.answer) parts.push(node.answer);
-  if (node.body && BODY_EMBED_KINDS.has(node.kind)) parts.push(node.body);
+  if (BODY_EMBED_KINDS.has(node.kind)) {
+    const body = node.body || _bodyFromSourceFile(node);
+    if (body) parts.push(body);
+  }
   if (node.source && node.source.ref) parts.push(node.source.ref);
   const t = parts.join(' \n ').trim();
   if (!t) return null;
