@@ -814,6 +814,18 @@ function mountMind(addRoute, json, ctx) {
     try { return json(res, _memoryHealth()); } catch (e) { return json(res, { ok: false, error: e.message }, 500); }
   });
 
+  // ── Contradictions (Stage 3: make it think) ──────────────────────────────
+  // Deterministic supersession + conflict detection over memory cards. The
+  // same analysis recall uses to down-rank overturned facts; exposed so the UI
+  // / a CLI can see what the brain considers stale or self-contradicting.
+  addRoute('GET', '/api/mind/contradictions', (req, res) => {
+    try {
+      const graph = store.loadGraph(repoRoot, getSpace());
+      if (!graph) return json(res, { supersessions: [], conflicts: [], dormantIds: [] });
+      return json(res, require('./contradict').analyze(graph));
+    } catch (e) { return json(res, { error: e.message }, 500); }
+  });
+
   addRoute('POST', '/api/mind/audit', async (req, res) => {
     try {
       const r = await generateInsights({ source: 'audit', categories: ['memory-staleness', 'memory-decay', 'memory-contradiction'] });
