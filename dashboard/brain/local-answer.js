@@ -26,6 +26,7 @@
 'use strict';
 
 const fs = require('fs');
+const { execFile } = require('child_process');
 const store = require('../mind/store');
 const { bestSeedsRanked } = require('../mind/query');
 const { fuse } = require('../mind/rrf');
@@ -134,21 +135,66 @@ function _humanize(s) {
   return out;
 }
 
-function _buildMessages(question, sources) {
+// ── ambient context: not just notes ─────────────────────────────────────────
+// The answer machine is conscious of everything Symphonee knows: notes + memory
+// (relevance retrieval above) PLUS the live signals - recent git history, recent
+// checkpoints (what the user just did), and the recent conversation.
+
+function _gitLog(repoPath, n = 6) {
+  return new Promise((resolve) => {
+    if (!repoPath) return resolve([]);
+    execFile('git', ['-C', repoPath, 'log', '--oneline', '-n', String(n)], { timeout: 4000, windowsHide: true }, (err, stdout) => {
+      resolve((err || !stdout) ? [] : stdout.trim().split('\n').filter(Boolean).slice(0, n));
+    });
+  });
+}
+
+function _recentCheckpoints(repo, n = 3) {
+  try {
+    return (require('../lib/checkpoint').list({ repo, limit: n }) || [])
+      .slice(0, n).map(c => c.label).filter(Boolean);
+  } catch (_) { return []; }
+}
+
+function _recentConversation(graph, n = 3) {
+  return (graph && graph.nodes ? graph.nodes : [])
+    .filter(node => node.kind === 'drawer' || node.kind === 'conversation')
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, n)
+    .map(t => ({
+      role: t.role || t.createdBy || t.kind,
+      text: String(t.content || t.answer || t.body || t.label || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+    }))
+    .filter(t => t.text);
+}
+
+function _buildMessages(question, sources, activity) {
   const sys = [
-    'You are Symphonee - the user\'s own assistant. You are answering a person about THEIR projects, notes, and past decisions, and you have their actual notes in front of you.',
+    'You are Symphonee - the user\'s own assistant. Answer a person about THEIR work using everything you have access to: their notes, their memory cards, your recent conversation with them, the recent checkpoints (things they just did), and the git history.',
     '',
-    'Answer like a sharp, warm colleague who has read everything they wrote.',
+    'Answer like a sharp, warm colleague who has read everything they wrote AND remembers what just happened.',
     'Rules:',
-    '  - Lead with the answer. No "based on the notes provided" preamble.',
-    '  - Be specific and concrete: name the projects, decisions, statuses, files the notes mention.',
-    '  - 2 to 5 sentences for a broad question. End by offering to go deeper if it helps.',
+    '  - Lead with the answer. No "based on your notes" preamble.',
+    '  - Use WHATEVER is relevant: a topic question leans on notes + memory; a "what did I just do / what changed / where are we" question leans on the git history, checkpoints, and recent conversation.',
+    '  - Be specific and concrete: name the projects, decisions, files, commits.',
+    '  - 2 to 5 sentences. End by offering to go deeper if it helps.',
     '  - Plain, human language. No node IDs, no bullet-dump unless it genuinely helps.',
-    '  - If the notes truly do not cover the question, say so in one line and suggest sending it to the agent for a deeper search.',
+    '  - If you genuinely have nothing relevant, say so in one line and suggest sending it to the agent for a deeper search.',
     '  - Plain ASCII only. No emojis, em dashes, or smart quotes.',
   ].join('\n');
-  const ctx = sources.map((s, i) => `[${i + 1}] ${s.label} (${s.kind})\n${s.content}`).join('\n\n');
-  const user = `Question: ${question}\n\nThe user's own notes and memory:\n${ctx}\n\nAnswer the question directly and humanly.`;
+
+  const blocks = [];
+  if (sources.length) {
+    blocks.push('What you know (the user\'s notes, memory, and past Q&A on this topic):\n' +
+      sources.map((s, i) => `[${i + 1}] ${s.label} (${s.kind})\n${s.content}`).join('\n\n'));
+  }
+  const act = [];
+  if (activity.git && activity.git.length) act.push('Recent commits:\n' + activity.git.map(l => '- ' + l).join('\n'));
+  if (activity.checkpoints && activity.checkpoints.length) act.push('Recent checkpoints (things you just did):\n' + activity.checkpoints.map(l => '- ' + l).join('\n'));
+  if (activity.conversation && activity.conversation.length) act.push('Recently discussed:\n' + activity.conversation.map(t => `- ${t.role}: ${t.text}`).join('\n'));
+  if (act.length) blocks.push('Recent activity (use this for "what just happened / changed / where are we" questions):\n' + act.join('\n\n'));
+
+  const user = `Question: ${question}\n\n${blocks.join('\n\n')}\n\nAnswer the question directly and humanly, using whatever above is relevant.`;
   return [{ role: 'system', content: sys }, { role: 'user', content: user }];
 }
 
@@ -157,13 +203,20 @@ function _buildMessages(question, sources) {
  * @returns { grounded:true, answer, citedNodeIds, sources, model }
  *       OR { grounded:false, reason }
  */
-async function localAnswer({ repoRoot, space = '_global', question }) {
+async function localAnswer({ repoRoot, space = '_global', question, activeRepoPath, activeRepo }) {
   if (!question || typeof question !== 'string') return { grounded: false, reason: 'no-question' };
-  const { sources } = await retrieveSources(repoRoot, space, question, MAX_SOURCES);
-  if (!sources.length) return { grounded: false, reason: 'no-knowledge' };
+  const { graph, sources } = await retrieveSources(repoRoot, space, question, MAX_SOURCES);
+  // Be conscious of more than notes: pull the live context too.
+  const activity = {
+    git: await _gitLog(activeRepoPath || repoRoot, 6),
+    checkpoints: _recentCheckpoints(activeRepo, 3),
+    conversation: graph ? _recentConversation(graph, 3) : [],
+  };
+  const hasContext = sources.length || activity.git.length || activity.checkpoints.length || activity.conversation.length;
+  if (!hasContext) return { grounded: false, reason: 'no-context' };
   let res;
   try {
-    res = await llm.chatOllama(_buildMessages(question, sources), {
+    res = await llm.chatOllama(_buildMessages(question, sources, activity), {
       model: SYNTH_MODEL,
       format: null,        // PLAIN PROSE - chatOllama defaults to JSON otherwise
       temperature: 0.4,
@@ -180,6 +233,7 @@ async function localAnswer({ repoRoot, space = '_global', question }) {
     answer,
     citedNodeIds: sources.map(s => s.id),
     sources: sources.map(s => ({ id: s.id, kind: s.kind, label: s.label })),
+    usedActivity: { git: activity.git.length, checkpoints: activity.checkpoints.length, conversation: activity.conversation.length },
     model: (res && res.model) || SYNTH_MODEL,
   };
 }
