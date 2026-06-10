@@ -30,7 +30,7 @@
         transition:opacity .35s ease,transform .4s cubic-bezier(.2,.85,.25,1),min-width .45s cubic-bezier(.2,.85,.25,1),max-width .45s cubic-bezier(.2,.85,.25,1),height .4s cubic-bezier(.2,.85,.25,1),padding .35s ease;
         animation:aw-breathe 4.4s ease-in-out infinite;}
       /* resting: an elongated, thin, living capsule - a drawer handle that breathes */
-      #ambientWhisper.aw-collapsed{min-width:150px;max-width:150px;height:13px;padding:0;gap:0;}
+      #ambientWhisper.aw-collapsed{min-width:75px;max-width:75px;height:13px;padding:0;gap:0;}
       #ambientWhisper.aw-collapsed .aw-dot,#ambientWhisper.aw-collapsed .aw-text,#ambientWhisper.aw-collapsed .aw-x{opacity:0;max-width:0;margin:0;padding:0;}
       #ambientWhisper:hover{filter:brightness(1.08);}
       /* a slow inner light drifting back and forth - feels alive */
@@ -89,27 +89,33 @@
         e.stopPropagation();
         _dismiss();
       });
-      el.addEventListener("mouseenter", () => {
-        _hovering = true;
-        el.classList.remove("aw-collapsed");
-      });
-      el.addEventListener("mouseleave", () => {
-        _hovering = false;
-        if (!_collapseTimer) el.classList.add("aw-collapsed");
-      });
       _pill = el;
       return el;
     }
+    let _moveAt = 0;
+    function _proximity(e) {
+      const now = Date.now();
+      if (now - _moveAt < 50) return;
+      _moveAt = now;
+      if (!_pill || _disabled || _pill.style.display === "none") return;
+      const r = _pill.getBoundingClientRect();
+      const pad = 46;
+      const near = e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
+      if (near && _pill.classList.contains("aw-collapsed")) {
+        _hovering = true;
+        _pill.classList.remove("aw-collapsed");
+      } else if (!near && _hovering) {
+        _hovering = false;
+        if (!_collapseTimer) _pill.classList.add("aw-collapsed");
+      }
+    }
+    document.addEventListener("mousemove", _proximity, { passive: true });
     function _showPill(nudge) {
       _current = nudge;
       const el = _ensurePill();
       el.querySelector(".aw-text").textContent = _plain(nudge.title);
       el.classList.remove("aw-collapsed");
       el.style.display = "flex";
-      try {
-        if (window.symphoneeVoiceOn && window.symphoneeVoiceOn() && window.symphoneeSpeak) window.symphoneeSpeak(_plain(nudge.title));
-      } catch (_) {
-      }
       requestAnimationFrame(() => {
         el.style.opacity = "1";
         el.style.transform = "translateX(-50%) translateY(0)";
@@ -134,15 +140,17 @@
       }, 300);
       _current = null;
     }
+    const _BTN_PRIMARY = "background:var(--accent,#89b4fa);border:none;color:#11111b;font-weight:600;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer;";
+    const _BTN_SOFT = "background:var(--surface1,#313244);border:none;color:var(--subtext1,#cdd6f4);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;";
     function _openModal() {
       if (!_current) return;
       const n = _current;
-      const isSuggestion = n.action && n.action.kind === "suggestion";
+      const label = n.actionLabel || (n.action && n.action.kind === "suggestion" ? "Do it" : "Show me");
       let bg = document.getElementById("ambientWhisperModalBg");
       if (bg) bg.remove();
       bg = document.createElement("div");
       bg.id = "ambientWhisperModalBg";
-      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);">' + _md(n.title) + "</div>" + (n.detail ? '<div style="padding:7px 18px 2px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + '<div style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;"><button id="awmAct" style="background:var(--accent,#89b4fa);border:none;color:#11111b;font-weight:600;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer;">' + (isSuggestion ? "Look into this" : "Review") + '</button><button id="awmDismiss" style="background:var(--surface1,#313244);border:none;color:var(--subtext1,#cdd6f4);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;">Dismiss</button><span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
+      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' + _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + '</div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;"><button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button><button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button><span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
       document.body.appendChild(bg);
       bg.style.display = "flex";
       const modal = bg.querySelector("#ambientWhisperModal");
@@ -155,10 +163,7 @@
         if (e.target === bg) close();
       });
       bg.querySelector("#awmClose").addEventListener("click", close);
-      bg.querySelector("#awmAct").addEventListener("click", () => {
-        close();
-        _act();
-      });
+      bg.querySelector("#awmAct").addEventListener("click", () => _runAction(n, modal));
       bg.querySelector("#awmDismiss").addEventListener("click", () => {
         close();
         _dismiss();
@@ -168,6 +173,47 @@
         _disable();
       });
     }
+    function _closeModal() {
+      const bg = document.getElementById("ambientWhisperModalBg");
+      if (bg) bg.remove();
+    }
+    async function _runAction(n, modal) {
+      _feedback(n.type, "accept");
+      _hidePill();
+      const body = modal.querySelector("#awmBody");
+      const actions = modal.querySelector("#awmActions");
+      actions.innerHTML = '<span style="font-size:12px;color:var(--subtext0,#a6adc8);display:flex;align-items:center;gap:7px;"><span class="aw-dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 8px var(--accent,#89b4fa);"></span>Thinking...</span>';
+      const prompt = n.action && n.action.prompt || _plain(n.title);
+      try {
+        const r = await fetch("/api/symphonee/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: prompt, fast: true, persona: { userType: "coder" } })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (d && d.source === "local" && d.answer) {
+          body.innerHTML = _md(d.answer);
+          body.scrollTop = 0;
+          actions.innerHTML = '<button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
+          modal.querySelector("#awmDone").addEventListener("click", _closeModal);
+        } else {
+          body.innerHTML = '<div style="font-size:13px;color:var(--text,#cdd6f4);">This one is better handled by your agent - I can hand it over with the right context.</div>';
+          actions.innerHTML = '<button id="awmAgent" style="' + _BTN_PRIMARY + '">Send to agent</button><button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
+          modal.querySelector("#awmAgent").addEventListener("click", () => {
+            _closeModal();
+            try {
+              if (window.openCmdPalette) window.openCmdPalette(prompt);
+            } catch (_) {
+            }
+          });
+          modal.querySelector("#awmDone").addEventListener("click", _closeModal);
+        }
+      } catch (_) {
+        body.innerHTML = '<div style="font-size:13px;color:var(--subtext0,#a6adc8);">I could not do that right now.</div>';
+        actions.innerHTML = '<button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
+        modal.querySelector("#awmDone").addEventListener("click", _closeModal);
+      }
+    }
     function _feedback(type, action) {
       return fetch("/api/symphonee/ambient/feedback", {
         method: "POST",
@@ -175,19 +221,6 @@
         body: JSON.stringify({ type, action })
       }).catch(() => {
       });
-    }
-    function _act() {
-      if (!_current) return;
-      const n = _current;
-      _feedback(n.type, "accept");
-      const prompt = n.action && n.action.prompt || _plain(n.title);
-      _hidePill();
-      try {
-        if (typeof window.openCmdPalette === "function") window.openCmdPalette(prompt);
-        else if (typeof window.toast === "function") window.toast("Noted", "info");
-      } catch (_) {
-      }
-      setTimeout(() => check(true), 1500);
     }
     function _dismiss() {
       if (!_current) return;
@@ -248,7 +281,7 @@
     }
     function _onIdle() {
       if (_disabled || _current) return;
-      const nudge = { type: "inactivity", title: "Still here? I can pick up where we left off whenever you are.", action: { kind: "ask", prompt: "where did we leave off" } };
+      const nudge = { type: "inactivity", title: "Still here? I can pick up where we left off whenever you are.", actionLabel: "Catch me up", action: { kind: "ask", prompt: "where did we leave off" } };
       if (_dismissed.has(nudge.title)) return;
       _showPill(nudge);
     }

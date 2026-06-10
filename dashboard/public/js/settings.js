@@ -198,8 +198,6 @@
     document.getElementById("settingsGeminiKey").value = aiKeys.GEMINI_API_KEY || "";
     document.getElementById("settingsAnthropicKey").value = aiKeys.ANTHROPIC_API_KEY || "";
     document.getElementById("settingsXaiKey").value = aiKeys.XAI_API_KEY || "";
-    var _elv = document.getElementById("settingsElevenLabsKey");
-    if (_elv) _elv.value = state.configData.ElevenLabsApiKey || "";
     renderBrowserCreds();
     var orchList = Array.isArray(state.configData.OrchestrateCliList) ? state.configData.OrchestrateCliList : ["claude", "gemini", "codex", "copilot", "grok", "qwen"];
     document.querySelectorAll(".orch-cli-cb").forEach(function(cb) {
@@ -685,7 +683,6 @@
         DefaultTeam: _txt("settingsTeam"),
         DefaultUser: _txt("settingsUser"),
         GitHubPAT: _txt("settingsGitHubPAT"),
-        ElevenLabsApiKey: _txt("settingsElevenLabsKey") || void 0,
         OrchestrateCliList: Array.from(document.querySelectorAll(".orch-cli-cb:checked")).map(function(cb) {
           return cb.value;
         }),
