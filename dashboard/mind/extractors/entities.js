@@ -5,8 +5,8 @@
  * and synthesizes one `kind:entity` hub per canonical key, with `mentions`
  * edges from every node whose searchable text contains the entity. The
  * point is connection: today the brain has six cross-repo edges between
- * Bath Fitter repos and five of those are template noise. After this, a
- * single Bath Fitter entity node fans out to every repo that touches the
+ * Blue Falcon repos and five of those are template noise. After this, a
+ * single Blue Falcon entity node fans out to every repo that touches the
  * brand.
  *
  * Deterministic. No LLM. Pure additive: runs over the merged graph after
@@ -15,14 +15,14 @@
  * Candidates come from three sources, in this order:
  *   1. Plugin nodes already in the graph (kind:plugin) - always promoted.
  *   2. n-grams (1-3) drawn from repo slugs that appear in >=2 repos and
- *      survive the stop-list. This is what catches "bathfitter" without
+ *      survive the stop-list. This is what catches "bluefalcon" without
  *      anyone declaring it.
  *   3. An optional explicit seed list (`opts.seedEntities`) for brands the
  *      auto-detector misses (e.g. a single-repo brand the user wants
  *      surfaced).
  *
  * A canonical key is `label.toLowerCase().replace(/[\s_.\-]+/g, '')`. Every
- * surface form ("Bath Fitter", "bathfitter", "bath_fitter", "Bath-Fitter")
+ * surface form ("Blue Falcon", "bluefalcon", "blue_falcon", "Blue-Falcon")
  * collapses to the same key, so the entity hub lights up regardless of how
  * a node spells the brand. We require min 4 chars to keep matches
  * meaningful.
@@ -82,8 +82,8 @@ function canonicalize(s) {
 function tokenize(s) {
   if (typeof s !== 'string') return [];
   // Split on the usual repo-slug separators AND digit boundaries so that
-  // "dyob3" -> ["dyob", "3"] (gives us the "dyob" entity even though only
-  // one repo is named exactly "dyob3").
+  // "aurora3" -> ["aurora", "3"] (gives us the "aurora" entity even though only
+  // one repo is named exactly "aurora3").
   return s
     .split(/[\s_.\-/]+|(?<=\D)(?=\d)|(?<=\d)(?=\D)/g)
     .map(t => t.trim())
@@ -103,8 +103,8 @@ function entityIdFromKey(key) {
 // between entities. Loaded from <repoRoot>/.symphonee/entity-relations.json
 // when available. Format:
 //   { "relations": [
-//       { "from": "dyob", "to": "bathfitter", "relation": "part_of",
-//         "label": "DYOB is a Bath Fitter program" },
+//       { "from": "aurora", "to": "bluefalcon", "relation": "part_of",
+//         "label": "Aurora is a Blue Falcon program" },
 //       ...
 //   ] }
 // `from` and `to` may be any surface form - we canonicalize them. Allowed
@@ -201,8 +201,8 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
         if (/^\d+$/.test(key)) continue; // pure-numeric n-grams are noise
         if (!ngramRepoCount.has(key)) ngramRepoCount.set(key, new Set());
         ngramRepoCount.get(key).add(slug);
-        // Prefer the most human-readable surface form: a bigram "bath
-        // fitter" beats the smushed unigram "bathfitter" even though it's
+        // Prefer the most human-readable surface form: a bigram "blue
+        // falcon" beats the smushed unigram "bluefalcon" even though it's
         // one char longer. Tiebreak by length.
         const prev = ngramSurface.get(key);
         if (!prev) {
@@ -260,7 +260,7 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
   // ── Phase 2: build matchable canonical-key index ─────────────────────────
   const keys = Array.from(candidates.keys());
   // Sort longest-first so multi-word brands win over their substrings if
-  // both qualify (e.g. "bathfitter" beats "bath" if both somehow ended up
+  // both qualify (e.g. "bluefalcon" beats "blue" if both somehow ended up
   // candidates).
   keys.sort((a, b) => b.length - a.length);
 
@@ -370,8 +370,8 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
   }
 
   // ── Phase 5: declared entity relations ──────────────────────────────────
-  // Domain links the auto-detector can't infer (e.g., DYOB is part of
-  // Bath Fitter). Read from `.symphonee/entity-relations.json`. Edges land
+  // Domain links the auto-detector can't infer (e.g., Aurora is part of
+  // Blue Falcon). Read from `.symphonee/entity-relations.json`. Edges land
   // as `conceptually_related_to` with the user-supplied kind preserved on
   // `relationLabel` and `relationKind`.
   let declaredRelations = 0;
@@ -402,8 +402,8 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
 
   // ── Phase 6: AUTOMATIC entity-to-entity relationships ───────────────────
   // Two entities mentioned by the same set of source nodes are almost
-  // always related: the Bath Fitter Listing Manager docs that name DYOB,
-  // the DYOB3 docs that name Bath Fitter, drawer turns that talk about
+  // always related: the Blue Falcon Listing Manager docs that name Aurora,
+  // the Aurora3 docs that name Blue Falcon, drawer turns that talk about
   // both. Compute pairwise Jaccard over each entity's mention set and
   // emit conceptually_related_to (INFERRED) whenever the overlap is
   // statistically meaningful.
@@ -411,7 +411,7 @@ function extractEntities({ nodes = [], edges = [] } = {}, opts = {}) {
   // Thresholds picked to favour precision: at least 3 shared mention
   // sources AND Jaccard >= 0.10. With those bars, a pair of plugin
   // entities that happen to both appear in one CLAUDE.md doesn't
-  // generate noise, but a pair like Bath Fitter / DYOB - mentioned
+  // generate noise, but a pair like Blue Falcon / Aurora - mentioned
   // together across docs, drawers, and notes - lights up automatically.
   // Edges from this phase carry confidence INFERRED; explicit
   // declarations from entity-relations.json win on rebuild because

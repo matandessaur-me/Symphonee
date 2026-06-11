@@ -256,7 +256,7 @@ function register(addRoute, json, deps) {
         }
       }
       // Carry forward brand tags from cited entity nodes so a memory
-      // about "DYOB design" auto-tags DYOB even if the answer text
+      // about "Aurora design" auto-tags Aurora even if the answer text
       // didn't list it.
       const carryTags = [];
       for (const cited of citedNodeIds) {
@@ -301,10 +301,10 @@ function register(addRoute, json, deps) {
   //
   // POST /api/mind/recall
   //   {
-  //     "question": "DYOB design",          // optional, BM25 ranks
+  //     "question": "Aurora design",          // optional, BM25 ranks
   //     "since":    "10 days ago",          // ISO or natural string
   //     "until":    "today",                // ISO or natural string
-  //     "repo":     "DYOB3",                // optional repo scope
+  //     "repo":     "Aurora3",                // optional repo scope
   //     "kinds":    ["memory","conversation"], // default all
   //     "limit":    20
   //   }
@@ -334,8 +334,8 @@ function register(addRoute, json, deps) {
   });
 
   // ── Memory cards: durable knowledge taught mid-conversation ─────────────
-  // The user (or an AI on their behalf) committed a fact. "DYOB doesn't
-  // follow the Bath Fitter design system." "For Playdate, prefer pulldown
+  // The user (or an AI on their behalf) committed a fact. "Aurora doesn't
+  // follow the Blue Falcon design system." "For Playdate, prefer pulldown
   // for menu navigation." "Don't mock the database in tests - we got
   // burned last quarter." Each becomes a kind:memory node, indexed by
   // tags, linked to its source conversation if known, and surfaceable on
@@ -343,12 +343,12 @@ function register(addRoute, json, deps) {
   //
   // POST /api/mind/teach
   //   {
-  //     "title":          "DYOB doesn't follow Bath Fitter brand",
+  //     "title":          "Aurora doesn't follow Blue Falcon brand",
   //     "body":           "Different colour palette + typography ...",
   //     "kindOfMemory":   "constraint" | "decision" | "preference" |
   //                       "lesson" | "gotcha" | "pattern" | "fact",
-  //     "tags":           ["DYOB", "Bath Fitter", "design"],
-  //     "scope":          { "repo": "DYOB3" },          // optional
+  //     "tags":           ["Aurora", "Blue Falcon", "design"],
+  //     "scope":          { "repo": "Aurora3" },          // optional
   //     "source":         { "type": "conversation",     // optional
   //                         "ref":  "<existing node id>" },
   //     "createdBy":      "claude" | "codex" | "user" | ...

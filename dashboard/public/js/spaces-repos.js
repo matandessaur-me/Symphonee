@@ -135,7 +135,7 @@
         bodyHtml = `
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:11px;font-weight:600;color:var(--subtext1);margin-bottom:5px;">Name <span style="color:var(--red);">*</span></label>
-          <input id="_asoName" type="text" value="${esc2(state2.name)}" placeholder="e.g. Personal, Work, Bath Fitter"
+          <input id="_asoName" type="text" value="${esc2(state2.name)}" placeholder="e.g. Personal, Work, Client Studio"
             style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface1);border:1px solid var(--surface2);border-radius:var(--radius);color:var(--text);font:13px var(--font-ui);outline:none;transition:border-color 0.12s;"
             onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--surface2)'"
             oninput="document.getElementById('_asoNameErr').style.display='none'">

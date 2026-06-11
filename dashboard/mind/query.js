@@ -43,7 +43,7 @@ function bestSeeds(graph, question, max = 3) {
 
   if (maxBm > 0) {
     // Min-score threshold: when no query term is even moderately
-    // discriminative in the corpus (e.g. user asks about "bathfitter" but
+    // discriminative in the corpus (e.g. user asks about "bluefalcon" but
     // the brain has never seen that word — only the stop words "what" and
     // "is" survive in the corpus), bm25Scores returns mostly tiny scores
     // from incidental matches. Cut those off so the UI shows "no relevant

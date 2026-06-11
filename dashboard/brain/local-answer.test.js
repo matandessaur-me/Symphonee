@@ -8,17 +8,17 @@ const path = require('path');
 const la = require('./local-answer');
 
 test('_keyTerms strips question stopwords so the topic drives retrieval', () => {
-  assert.equal(la._keyTerms('what do you know about dyob3'), 'dyob3');
+  assert.equal(la._keyTerms('what do you know about aurora3'), 'aurora3');
   assert.equal(la._keyTerms('what did we decide about the embedding fix'), 'decide embedding fix');
   // all-stopword question falls back to the original
   assert.ok(la._keyTerms('what is it').length > 0);
 });
 
 test('_humanize strips robotic preambles and capitalizes', () => {
-  assert.equal(la._humanize('Based on your notes, DYOB3 is a project.'), 'DYOB3 is a project.');
+  assert.equal(la._humanize('Based on your notes, Aurora3 is a project.'), 'Aurora3 is a project.');
   assert.equal(la._humanize("The user's notes indicate that it failed."), 'It failed.');
   assert.equal(la._humanize('According to your notes: it works.'), 'It works.');
-  assert.equal(la._humanize('DYOB3 is fine.'), 'DYOB3 is fine.'); // unchanged when clean
+  assert.equal(la._humanize('Aurora3 is fine.'), 'Aurora3 is fine.'); // unchanged when clean
 });
 
 test('nodeContent prefers inline body, then file-backed, then label', () => {
@@ -38,9 +38,9 @@ test('nodeContent prefers inline body, then file-backed, then label', () => {
 test('retrieveSources (BM25 leg, offline) finds content-bearing knowledge and drops stubs', async () => {
   const graph = {
     nodes: [
-      { id: 'note_dyob', kind: 'note', label: 'DYOB3 - Production Readiness Plan', body: 'DYOB3 production readiness: secure integrations, migrate CMS to Builder.io, harden booking flow.' },
-      { id: 'concept_stub', kind: 'concept', label: 'DYOB3 thing' }, // tiny stub, no body
-      { id: 'drawer_noise', kind: 'drawer', label: 'dyob3 dyob3 dyob3', body: 'raw cli log mentioning dyob3 many times '.repeat(5) },
+      { id: 'note_aurora', kind: 'note', label: 'Aurora3 - Production Readiness Plan', body: 'Aurora3 production readiness: secure integrations, migrate CMS to Builder.io, harden booking flow.' },
+      { id: 'concept_stub', kind: 'concept', label: 'Aurora3 thing' }, // tiny stub, no body
+      { id: 'drawer_noise', kind: 'drawer', label: 'aurora3 aurora3 aurora3', body: 'raw cli log mentioning aurora3 many times '.repeat(5) },
     ],
     edges: [], gods: [],
   };
@@ -49,9 +49,9 @@ test('retrieveSources (BM25 leg, offline) finds content-bearing knowledge and dr
   const orig = store.loadGraph;
   store.loadGraph = () => graph;
   try {
-    const r = await la.retrieveSources('/tmp', '_global', 'what do you know about dyob3', 6);
+    const r = await la.retrieveSources('/tmp', '_global', 'what do you know about aurora3', 6);
     const ids = r.sources.map(s => s.id);
-    assert.ok(ids.includes('note_dyob'), 'the note with real content is retrieved');
+    assert.ok(ids.includes('note_aurora'), 'the note with real content is retrieved');
     assert.ok(!ids.includes('concept_stub'), 'label-only stub is dropped');
     assert.ok(!ids.includes('drawer_noise'), 'raw drawer is excluded (not a knowledge kind)');
   } finally {

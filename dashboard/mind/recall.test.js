@@ -11,21 +11,21 @@ function fixture() {
   return {
     nodes: [
       // memory cards (highest priority)
-      { id: 'mem_recent_dyob', label: 'DYOB does not follow Bath Fitter brand',
+      { id: 'mem_recent_aurora', label: 'Aurora does not follow Blue Falcon brand',
         kind: 'memory', kindOfMemory: 'constraint',
-        body: 'DYOB has its own design system - different colours.',
-        scope: { repo: 'DYOB3' }, tags: ['memory', 'DYOB', 'design'],
+        body: 'Aurora has its own design system - different colours.',
+        scope: { repo: 'Aurora3' }, tags: ['memory', 'Aurora', 'design'],
         createdAt: '2026-05-01T10:00:00Z' },
       { id: 'mem_old_pg', label: 'use Postgres for listing manager',
         kind: 'memory', kindOfMemory: 'decision',
         body: 'After review we decided to use Postgres over Mongo.',
-        scope: { repo: 'Bath-Fitter-Listing-Manager' }, tags: ['memory', 'database'],
+        scope: { repo: 'Blue-Falcon-Listing-Manager' }, tags: ['memory', 'database'],
         createdAt: '2026-01-15T10:00:00Z' },
 
       // conversation nodes
-      { id: 'qa_recent', label: 'How does DYOB differ from Bath Fitter?',
+      { id: 'qa_recent', label: 'How does Aurora differ from Blue Falcon?',
         kind: 'conversation',
-        answer: 'DYOB has different brand. The colour palette and typography differ.',
+        answer: 'Aurora has different brand. The colour palette and typography differ.',
         createdAt: '2026-05-02T08:00:00Z' },
       { id: 'qa_old', label: 'Setting up the Postgres replica',
         kind: 'conversation',
@@ -34,7 +34,7 @@ function fixture() {
 
       // drawer (verbatim turn)
       { id: 'drawer_recent', label: 'commit and push',
-        kind: 'drawer', content: 'commit and push the DYOB constraint change',
+        kind: 'drawer', content: 'commit and push the Aurora constraint change',
         createdAt: '2026-05-02T07:00:00Z' },
 
       // non-recall kinds (should NEVER appear in results)
@@ -90,7 +90,7 @@ test('recall: only RECALL_KINDS appear in results', () => {
 });
 
 test('recall: memories rank above conversations rank above drawers', () => {
-  const r = recall(fixture(), { question: 'DYOB design' });
+  const r = recall(fixture(), { question: 'Aurora design' });
   // Find the first hit of each kind
   const firstMemory = r.hits.findIndex(h => h.kind === 'memory');
   const firstConv = r.hits.findIndex(h => h.kind === 'conversation');
@@ -104,20 +104,20 @@ test('recall: since filter excludes older nodes', () => {
   assert.equal(r.hits.find(h => h.id === 'mem_old_pg'), undefined);
   assert.equal(r.hits.find(h => h.id === 'qa_old'), undefined);
   // Recent memory is in
-  assert.ok(r.hits.find(h => h.id === 'mem_recent_dyob'));
+  assert.ok(r.hits.find(h => h.id === 'mem_recent_aurora'));
 });
 
 test('recall: until filter excludes newer nodes', () => {
   const r = recall(fixture(), { until: '2026-02-01T00:00:00Z' });
   assert.ok(r.hits.find(h => h.id === 'mem_old_pg'));
-  assert.equal(r.hits.find(h => h.id === 'mem_recent_dyob'), undefined);
+  assert.equal(r.hits.find(h => h.id === 'mem_recent_aurora'), undefined);
 });
 
 test('recall: repo scope restricts to scope.repo match', () => {
-  const r = recall(fixture(), { repo: 'DYOB3' });
-  // mem_recent_dyob has scope.repo === 'DYOB3' -> in
-  assert.ok(r.hits.find(h => h.id === 'mem_recent_dyob'));
-  // mem_old_pg has scope.repo === 'Bath-Fitter-Listing-Manager' -> out
+  const r = recall(fixture(), { repo: 'Aurora3' });
+  // mem_recent_aurora has scope.repo === 'Aurora3' -> in
+  assert.ok(r.hits.find(h => h.id === 'mem_recent_aurora'));
+  // mem_old_pg has scope.repo === 'Blue-Falcon-Listing-Manager' -> out
   assert.equal(r.hits.find(h => h.id === 'mem_old_pg'), undefined);
 });
 
