@@ -287,6 +287,7 @@ function mountBrain(addRoute, json, ctx) {
       const result = await localAnswerModule.deepAnswer({
         repoRoot, space, question: input,
         activeRepoPath: ui && ui.activeRepoPath, activeRepo: ui && ui.activeRepo,
+        history: Array.isArray(body.history) ? body.history.slice(-3) : [],
       }, send);
       if (result.grounded) {
         send({ type: 'done', answer: result.answer, citedNodeIds: result.citedNodeIds, sources: result.sources, recalled: result.recalled, model: result.model, since: result.since });
