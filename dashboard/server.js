@@ -1076,6 +1076,8 @@ const brain = mountBrain(addRoute, json, {
   repoRoot, broadcast,
   getUiContext: getUiContextWithPath,
   getConfig,
+  // The ambient observer writes activity digests into the shared graph.
+  mind,
 });
 console.log('  Brain mounted (/api/symphonee/*) - planner + intent');
 trace.mark('server:brain-mounted');
