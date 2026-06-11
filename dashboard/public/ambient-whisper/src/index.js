@@ -360,13 +360,53 @@
         // from feeling like noise.
         (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + '</div>' : '');
     }
-    for (const t of (card.turns || [])) {
+    const turns = card.turns || [];
+    for (let i = 0; i < turns.length; i++) {
+      const t = turns[i];
+      // Answer-aware follow-ups: chips on the LATEST turn open what the
+      // answer talked about (a note, a file, a task result).
+      const chips = (i === turns.length - 1 && t.actions && t.actions.length)
+        ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;">' +
+            t.actions.map((a, j) =>
+              '<button class="awm-turn-act" data-act="' + j + '" style="background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 22%,var(--surface2,#45475a));color:var(--subtext1,#bac2de);font-size:11px;padding:6px 11px;border-radius:999px;cursor:pointer;font-family:inherit;">' +
+              _md(a.label) + '</button>').join('') +
+          '</div>'
+        : '';
       h += '<div style="margin-top:' + (h ? '12px' : '0') + ';padding-top:' + (h ? '10px' : '0') + ';' + (h ? 'border-top:1px solid var(--surface1,#313244);' : '') + '">' +
         '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:5px;">' + _md(t.q) + '</div>' +
         '<div>' + _md(t.a) + '</div>' +
+        chips +
       '</div>';
     }
     return h;
+  }
+
+  // Run an answer-derived action: open the thing the answer talked about.
+  async function _runTurnAction(a, modal) {
+    if (!a) return;
+    if (a.type === 'open-note') {
+      _closeModal();
+      try { if (typeof window.switchTab === 'function') window.switchTab('notes'); } catch (_) {}
+      try { if (typeof window.openNote === 'function') window.openNote(a.name); } catch (_) {}
+    } else if (a.type === 'open-file') {
+      _closeModal();
+      try { if (typeof window.switchTab === 'function') window.switchTab('files'); } catch (_) {}
+      try { if (typeof window.viewFile === 'function') window.viewFile(a.path); } catch (_) {}
+    } else if (a.type === 'open-task') {
+      // Pull the full result INLINE - the card is the surface.
+      try {
+        const r = await fetch('/api/orchestrator/task?id=' + encodeURIComponent(a.id));
+        const d = await r.json().catch(() => ({}));
+        const body = modal.querySelector('#awmBody');
+        if (body && d && (d.result || d.error)) {
+          const block = document.createElement('div');
+          block.setAttribute('style', 'margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface1,#313244);font-size:12px;line-height:1.6;color:var(--subtext1,#bac2de);max-height:180px;overflow:auto;white-space:pre-wrap;');
+          block.textContent = (d.result || d.error || '').slice(0, 4000);
+          body.appendChild(block);
+          body.scrollTop = body.scrollHeight;
+        }
+      } catch (_) { /* quiet */ }
+    }
   }
 
   function _renderView(modal) {
@@ -400,6 +440,14 @@
 
     body.innerHTML = _cardHtml(card);
     body.scrollTop = (card.turns && card.turns.length) ? body.scrollHeight : 0;
+    // wire the answer-derived action chips (latest turn only)
+    const lastTurn = card.turns && card.turns[card.turns.length - 1];
+    body.querySelectorAll('.awm-turn-act').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const a = lastTurn && lastTurn.actions && lastTurn.actions[parseInt(btn.dataset.act, 10)];
+        _runTurnAction(a, modal);
+      });
+    });
 
     // the card's own reply input - continuing THIS topic
     replyRow.style.display = 'flex';
@@ -611,7 +659,7 @@
     } catch (_) { finale = { type: 'escalate', reason: 'offline' }; }
 
     if (finale && finale.type === 'done' && finale.answer) {
-      card.turns.push({ q: question, a: finale.answer, at: Date.now() });
+      card.turns.push({ q: question, a: finale.answer, at: Date.now(), actions: finale.actions || [] });
       _renderView(modal);
       const reply = panel.querySelector('#awmReply');
       if (reply) reply.focus();

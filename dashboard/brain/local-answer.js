@@ -121,7 +121,7 @@ async function retrieveSources(repoRoot, space, question, max = MAX_SOURCES) {
     const n = byId.get(r.id);
     if (!n) continue;
     const content = nodeContent(n).replace(/\s+/g, ' ').trim().slice(0, BODY_CAP);
-    if (content && content.length >= MIN_CONTENT) sources.push({ id: r.id, kind: n.kind, label: n.label || r.id, content });
+    if (content && content.length >= MIN_CONTENT) sources.push({ id: r.id, kind: n.kind, label: n.label || r.id, content, file: (n.source && n.source.file) || null });
   }
   return { graph, sources };
 }
@@ -130,7 +130,7 @@ async function retrieveSources(repoRoot, space, question, max = MAX_SOURCES) {
 // the answer opens like a person talking, not a search engine reporting.
 function _humanize(s) {
   let out = String(s || '').replace(
-    /^\s*(based on (your|the) (notes|context|information)( and [a-z ]{3,30})?[,:]?\s*|according to (your|the) (notes|records)[,:]?\s*|(the user's|your) notes (indicate|show|say|suggest|mention)( that)?[,:]?\s*|from (your|the) notes[,:]?\s*|here(?:'s| is) what i (know|found)[,:]?\s*)/i,
+    /^\s*(based on [^,.\n]{0,60}[,.]?\s*|according to (your|the) (notes|records)[,:]?\s*|(the user's|your) notes (indicate|show|say|suggest|mention)( that)?[,:]?\s*|from (your|the) notes[,:]?\s*|here(?:'s| is) what i (know|found)[,:]?\s*)/i,
     '',
   ).trim();
   // A stripped preamble can leave a dangling conjunction ("And recent git
@@ -145,11 +145,25 @@ function _humanize(s) {
 // (relevance retrieval above) PLUS the live signals - recent git history, recent
 // checkpoints (what the user just did), and the recent conversation.
 
+// Commit lines carry RELATIVE AGES ("2 hours ago" / "3 days ago") so the
+// answer machine can tell what is actually recent instead of presenting any
+// nearby commit as "today".
 function _gitLog(repoPath, n = 6) {
   return new Promise((resolve) => {
     if (!repoPath) return resolve([]);
-    execFile('git', ['-C', repoPath, 'log', '--oneline', '-n', String(n)], { timeout: 4000, windowsHide: true }, (err, stdout) => {
+    execFile('git', ['-C', repoPath, 'log', '-n', String(n), '--pretty=format:%h %s (%cr)'], { timeout: 4000, windowsHide: true }, (err, stdout) => {
       resolve((err || !stdout) ? [] : stdout.trim().split('\n').filter(Boolean).slice(0, n));
+    });
+  });
+}
+
+// Commits inside an explicit time window - the grounded leg for "what changed
+// today / this week" questions.
+function _gitLogSince(repoPath, sinceIso, max = 20) {
+  return new Promise((resolve) => {
+    if (!repoPath || !sinceIso) return resolve([]);
+    execFile('git', ['-C', repoPath, 'log', '--since', sinceIso, '-n', String(max), '--pretty=format:%h %s (%cr)'], { timeout: 4000, windowsHide: true }, (err, stdout) => {
+      resolve((err || !stdout) ? [] : stdout.trim().split('\n').filter(Boolean));
     });
   });
 }
@@ -401,15 +415,56 @@ function _timeHintFromQuestion(question) {
     return `${n} ${m[2]}${n > 1 ? 's' : ''} ago`;
   }
   if (/\byesterday\b/.test(t)) return 'yesterday';
-  if (/\btoday\b/.test(t)) return '1 day ago';
+  if (/\b(today|this morning|tonight|this afternoon|this evening)\b/.test(t)) return 'today';
+  if (/\bthis week\b/.test(t)) return '1 week ago';
   if (/\b(recently|lately|these days)\b/.test(t)) return '2 weeks ago';
   return null;
+}
+
+// recall.parseDateHint treats 'today' as NOW (which filters out everything);
+// the human meaning is "since midnight". Resolve hints to what recall and git
+// can actually use.
+function _sinceIso(hint, now = new Date()) {
+  if (!hint) return null;
+  if (hint === 'today') {
+    const d = new Date(now); d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }
+  try { const d = require('../mind/recall').parseDateHint(hint, now); return d ? d.toISOString() : null; }
+  catch (_) { return null; }
+}
+
+// "What changed today?" carries no TOPIC - only a time window plus generic
+// activity words. For these, the undated knowledge spine must stay OUT of the
+// synthesis context entirely: a small model will narrate a strongly-matching
+// old changelog as "today" no matter how it is labeled. The windowed legs
+// (commits in window, recall in window, fresh tasks) carry the whole answer.
+const _TEMPORAL_GENERIC = new Set(('today yesterday tonight morning afternoon evening week weeks day days month months year years ' +
+  'hour hours recently lately last past previous changed change changes changing happened happen happens did do done doing ' +
+  'work worked working ship shipped new everything anything went going ' +
+  'one two three four five six seven eight nine ten few couple').split(/\s+/));
+function _isPureTemporal(question) {
+  const terms = _keyTerms(question).split(/\s+/).filter(Boolean);
+  return terms.length > 0 && terms.every(t => _TEMPORAL_GENERIC.has(t) || /^\d+$/.test(t));
+}
+
+// A model that hits its token cap stops mid-word ("...maintainable Sym").
+// Better to end one sentence early than to trail off into nonsense.
+function _trimToSentence(s) {
+  const text = String(s || '').trim();
+  if (!text) return text;
+  if (/[.!?:)"']$/.test(text)) return text;
+  // A dangling half-sentence reads worse than a shorter complete answer -
+  // cut to the last finished sentence whenever one exists.
+  const cut = Math.max(text.lastIndexOf('.'), text.lastIndexOf('!'), text.lastIndexOf('?'));
+  if (cut >= 8) return text.slice(0, cut + 1);
+  return text;
 }
 
 // Recall leg: memory cards + conversations + raw drawer turns in the question's
 // time window, with drawer turns GROUPED BY WHICH AI was driving - the
 // cross-CLI history the curated spine deliberately leaves out.
-function _recallLeg(graph, question, { since = null, limit = 12 } = {}) {
+function _recallLeg(graph, question, { since = null, limit = 12, excludeQaEcho = false } = {}) {
   if (!graph || !graph.nodes || !graph.nodes.length) return { cards: [], byCli: {}, since: null };
   let r;
   try { r = recall(graph, { question, since, limit }); }
@@ -418,6 +473,11 @@ function _recallLeg(graph, question, { since = null, limit = 12 } = {}) {
   const cards = [];
   const byCli = {};
   for (const h of r.hits || []) {
+    // Echo guard: saved Q&A answers (qa_* conversation nodes) repeating into
+    // new answers creates a feedback loop - yesterday's wrong "what changed
+    // today" becomes today's source. For activity questions, only PRIMARY
+    // activity counts (drawer turns, task results, memory cards).
+    if (excludeQaEcho && /^qa_/.test(h.id)) continue;
     const node = byId.get(h.id) || {};
     const text = String(h.snippet || nodeContent(node) || '').replace(/\s+/g, ' ').trim().slice(0, 280);
     if (!text) continue;
@@ -433,17 +493,17 @@ function _recallLeg(graph, question, { since = null, limit = 12 } = {}) {
   return { cards: cards.slice(0, 6), byCli, since: r.since || null };
 }
 
-function _buildDeepMessages(question, sources, recallLeg, activity, history = []) {
+function _buildDeepMessages(question, sources, recallLeg, activity, history = [], windowed = null) {
   const sys = [
     'You are Symphonee - the user\'s own assistant, answering a person about THEIR work from everything you have: their notes, memory cards, cross-AI session history, recent git changes, checkpoints, and task results.',
     '',
     'Answer like a sharp, warm colleague who was in the room for all of it.',
     'Rules:',
     '  - Lead with the answer. No preamble, no "based on your notes".',
-    '  - VERY SHORT. 1 to 3 short sentences, max ~50 words total. People scan, they do not read.',
+    '  - VERY SHORT. 1 to 3 short sentences, max ~50 words total. People scan, they do not read. Always finish your final sentence.',
     '  - One idea per sentence. Cut every word that does not earn its place.',
     '  - Have a point of view: when the question invites it ("what are we missing", "what should I do"), add ONE recommendation on its own line, starting with "My take:" - a single sentence, an OPINION (a next move), never a restatement of facts.',
-    '  - Honour time words: "last three weeks" means exactly that window - the context you were given is already filtered to it.',
+    '  - TIME IS STRICT. When the user asks about a window ("today", "last week"), describe ONLY items explicitly marked inside it: commits listed under "Commits inside the asked window" and recalled items dated in the window. Background knowledge may be OLDER - never present it as the window\'s activity. If nothing falls inside the window, say exactly that in one line.',
     '  - Be specific: name projects, files, decisions, which AI did what. Specifics beat summaries.',
     '  - If you genuinely have nothing relevant, say so in one line and suggest sending it to the agent for a deeper search.',
     '  - Plain, human language. Plain ASCII only. No emojis, em dashes, or smart quotes.',
@@ -451,7 +511,9 @@ function _buildDeepMessages(question, sources, recallLeg, activity, history = []
 
   const blocks = [];
   if (sources.length) {
-    blocks.push('Curated knowledge (notes, docs, memory on this topic):\n' +
+    blocks.push((windowed
+      ? 'Background knowledge on this topic (UNDATED - may be older than the asked window; use for context only, never as the window\'s activity):\n'
+      : 'Curated knowledge (notes, docs, memory on this topic):\n') +
       sources.map((s, i) => `[${i + 1}] ${s.label} (${s.kind})\n${s.content}`).join('\n\n'));
   }
   if (recallLeg.cards.length) {
@@ -464,7 +526,10 @@ function _buildDeepMessages(question, sources, recallLeg, activity, history = []
       clis.map(cli => `${cli}:\n` + recallLeg.byCli[cli].map(t => `  - ${t.text}`).join('\n')).join('\n'));
   }
   const act = [];
-  if (activity.git && activity.git.length) act.push('Recent commits:\n' + activity.git.map(l => '- ' + l).join('\n'));
+  if (windowed && activity.gitWindow) {
+    act.push('Commits inside the asked window (' + windowed + ' -> now)' + (activity.gitWindow.length ? ':\n' + activity.gitWindow.map(l => '- ' + l).join('\n') : ': NONE - no commits in this window.'));
+  }
+  if (activity.git && activity.git.length) act.push('Recent commits (each marked with its age - check the age before calling anything recent):\n' + activity.git.map(l => '- ' + l).join('\n'));
   if (activity.checkpoints && activity.checkpoints.length) act.push('Recent checkpoints:\n' + activity.checkpoints.map(l => '- ' + l).join('\n'));
   if (activity.failures && activity.failures.length) {
     act.push('Recent task failures:\n' + activity.failures.map(f => `- ${f.cli} ${f.state}: ${f.error || 'no error text'}`).join('\n'));
@@ -505,12 +570,17 @@ async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPat
   emit({ type: 'status', label: 'searching your knowledge' });
   const { graph, sources } = await retrieveSources(repoRoot, space, retrievalQ, MAX_SOURCES);
 
-  const since = _timeHintFromQuestion(question) || _timeHintFromQuestion(lastQ);
-  emit({ type: 'status', label: since ? `recalling since ${since}` : 'recalling prior work' });
-  const leg = _recallLeg(graph, retrievalQ, { since });
+  const sinceHint = _timeHintFromQuestion(question) || _timeHintFromQuestion(lastQ);
+  const sinceIso = _sinceIso(sinceHint);
+  const pureTemporal = !!sinceHint && _isPureTemporal(question);
+  emit({ type: 'status', label: sinceHint ? `recalling since ${sinceHint}` : 'recalling prior work' });
+  const leg = _recallLeg(graph, retrievalQ, { since: sinceIso, excludeQaEcho: pureTemporal });
 
+  const repoPath = activeRepoPath || repoRoot;
   const activity = {
-    git: await _gitLog(activeRepoPath || repoRoot, 6),
+    git: await _gitLog(repoPath, 6),
+    // The grounded leg for windowed questions: commits actually IN the window.
+    gitWindow: sinceIso ? await _gitLogSince(repoPath, sinceIso) : null,
     checkpoints: _recentCheckpoints(activeRepo, 3),
     failures: _recentFailures(repoRoot),
     successes: _recentSuccesses(repoRoot),
@@ -520,22 +590,28 @@ async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPat
     || activity.git.length || activity.checkpoints.length || activity.failures.length || activity.successes.length;
   if (!hasContext) return { grounded: false, reason: 'no-context' };
 
+  // Pure-temporal question: the spine is excluded from synthesis (see
+  // _isPureTemporal) but still feeds the follow-up actions (a changelog note
+  // about the period is worth a chip even if it must not drive the answer).
+  const spine = pureTemporal ? [] : sources;
+
   emit({ type: 'status', label: 'thinking' });
   let res;
   try {
     res = await llm.chatOllamaStream(
-      _buildDeepMessages(question, sources, leg, activity, history),
-      // numPredict is a hard cap on rambling: short answers are a feature.
-      { model: SYNTH_MODEL, temperature: 0.4, numPredict: 130, timeoutMs: SYNTH_TIMEOUT_MS },
+      _buildDeepMessages(question, spine, leg, activity, history, sinceHint),
+      // numPredict caps rambling but leaves room to FINISH the sentence; the
+      // trim below cleans up any cap-hit mid-word tail.
+      { model: SYNTH_MODEL, temperature: 0.4, numPredict: 170, timeoutMs: SYNTH_TIMEOUT_MS },
       (t) => emit({ type: 'token', text: t }),
     );
   } catch (e) {
     return { grounded: false, reason: 'synth-error', error: e.message };
   }
-  const answer = _humanize((res && res.text || '').trim());
+  const answer = _trimToSentence(_humanize((res && res.text || '').trim()));
   if (!answer) return { grounded: false, reason: 'empty-synthesis' };
   const citedNodeIds = [
-    ...sources.map(s => s.id),
+    ...spine.map(s => s.id),
     ...leg.cards.map(c => c.id),
     ...Object.values(leg.byCli).flat().map(t => t.id),
   ];
@@ -544,14 +620,43 @@ async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPat
     answer,
     citedNodeIds,
     sources: sources.map(s => ({ id: s.id, kind: s.kind, label: s.label })),
+    actions: _deriveActions(sources, activity),
     recalled: { cards: leg.cards.length, clis: Object.keys(leg.byCli) },
     since: leg.since,
     model: (res && res.model) || SYNTH_MODEL,
   };
 }
 
+// Follow-up actions derived from what the answer was grounded IN: a cited note
+// can be opened, a cited doc file can be viewed, a fresh task result can be
+// pulled up. The card stops being a dead end.
+function _deriveActions(sources, activity, max = 3) {
+  const acts = [];
+  const seen = new Set();
+  for (const s of sources) {
+    if (acts.length >= max) break;
+    if (!s.file) continue;
+    if (s.kind === 'note') {
+      const name = path.basename(s.file).replace(/\.md$/i, '');
+      const key = 'note:' + name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      acts.push({ type: 'open-note', label: 'Open note: ' + (name.length > 26 ? name.slice(0, 26) + '...' : name), name });
+    } else if (s.kind === 'doc') {
+      const key = 'file:' + s.file;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      acts.push({ type: 'open-file', label: 'Open ' + path.basename(s.file), path: s.file });
+    }
+  }
+  if (activity && activity.successes && activity.successes.length && acts.length < max) {
+    acts.push({ type: 'open-task', label: 'View full task result', id: activity.successes[0].id });
+  }
+  return acts;
+}
+
 module.exports = {
   localAnswer, deepAnswer, retrieveSources, gatherContext, nodeContent, KNOWLEDGE_KINDS,
   _keyTerms, _humanize, _recentSuccesses, _recentMemories, _recentNotes,
-  _timeHintFromQuestion, _recallLeg,
+  _timeHintFromQuestion, _recallLeg, _sinceIso, _trimToSentence, _deriveActions, _isPureTemporal,
 };
