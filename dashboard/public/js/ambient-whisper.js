@@ -150,7 +150,9 @@
       if (bg) bg.remove();
       bg = document.createElement("div");
       bg.id = "ambientWhisperModalBg";
-      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' + _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + '</div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;"><button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button><button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button><span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
+      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' + _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + // Provenance: WHY the whisper spoke. Transparency is what keeps
+      // proactivity from feeling like noise.
+      (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + "</div>" : "") + '</div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;"><button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button><button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button><span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
       document.body.appendChild(bg);
       bg.style.display = "flex";
       const modal = bg.querySelector("#ambientWhisperModal");
@@ -283,10 +285,6 @@
     async function _onIdle() {
       if (_disabled || _current) return;
       await check(true, { idle: true });
-      if (_disabled || _current) return;
-      const nudge = { type: "inactivity", title: "Still here? I can pick up where we left off whenever you are.", actionLabel: "Catch me up", action: { kind: "ask", prompt: "where did we leave off" } };
-      if (_dismissed.has(nudge.title)) return;
-      _showPill(nudge);
     }
     ["mousemove", "keydown", "mousedown"].forEach((ev) => window.addEventListener(ev, _resetIdle, { passive: true }));
     _resetIdle();

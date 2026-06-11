@@ -13,6 +13,16 @@
  *      (their value is multiplied down); accepted types are reinforced. This is
  *      the Hebbian "use it or lose it" the plan asked for, applied to nudge
  *      types instead of synapses.
+ *   4. NEVER REPEAT YOURSELF (the novelty gate). A colleague does not say the
+ *      same sentence twice while nothing changed. Three mechanisms:
+ *        - `once` candidates (a specific task, a specific memory card) speak
+ *          exactly once, ever - keyed by full type.
+ *        - standing candidates carry a `fingerprint` of the state they
+ *          describe; the same fingerprint is never spoken twice.
+ *        - even with a NEW fingerprint, a family stays quiet through its
+ *          cooldown window, so a slow-changing state does not flap.
+ *      Delta families (task-failure / task-success / mind-delta) have no
+ *      cooldown - each genuinely new event may speak immediately.
  *
  * Pure decision core + a small file-backed trust/dial store, mirroring
  * outcomes.js. No timers, no LLM - the value judgement is deterministic.
@@ -81,15 +91,84 @@ function applyFeedback(trust, type, action) {
   return next;
 }
 
-// ── tiny file-backed store (trust + dial), like outcomes.js ──────────────────
+// ── the novelty gate (rule 4) ────────────────────────────────────────────────
+
+// How long a FAMILY stays quiet after speaking, even if its state changed.
+// Delta families react to discrete fresh events - no cooldown; their `once`
+// instance keys prevent repeats instead.
+const FAMILY_COOLDOWN_MS = 30 * 60 * 1000;
+const NO_COOLDOWN_FAMILIES = new Set(['task-failure', 'task-success', 'mind-delta']);
+// Shown records older than this are forgotten (a day later, repeating a still
+// true observation once is acceptable - and phrase rotation rewords it anyway).
+const SHOWN_TTL_MS = 24 * 60 * 60 * 1000;
+
+function familyOf(type) { return String(type || '').split(':')[0]; }
+
+function _shown(state) {
+  const s = (state && state.shown) || {};
+  return { types: s.types || {}, families: s.families || {} };
+}
+
+/**
+ * Is this candidate something the whisper has NOT already said?
+ * Pure: reads state, never writes.
+ */
+function isNovel(candidate, state, now = Date.now()) {
+  if (!candidate || !candidate.type) return false;
+  const shown = _shown(state);
+  // Instance candidates (once): exactly one utterance, ever.
+  if (candidate.once && shown.types[candidate.type]) return false;
+  const fam = familyOf(candidate.type);
+  const f = shown.families[fam];
+  if (!f || (now - f.at > SHOWN_TTL_MS)) return true;
+  // Same state already described -> stay silent until the state changes.
+  if (candidate.fingerprint != null && f.fingerprint === candidate.fingerprint) return false;
+  // New state, but the family spoke recently -> respect the cooldown.
+  if (!NO_COOLDOWN_FAMILIES.has(fam) && (now - f.at < FAMILY_COOLDOWN_MS)) return false;
+  return true;
+}
+
+/**
+ * Record that a candidate was actually surfaced (immutable; returns new state).
+ * Also prunes shown records past their TTL so ambient.json stays small.
+ */
+function recordShown(state, candidate, now = Date.now()) {
+  const next = { ...(state || {}) };
+  const shown = _shown(next);
+  const types = {};
+  for (const [k, v] of Object.entries(shown.types)) if (now - v <= SHOWN_TTL_MS) types[k] = v;
+  const families = {};
+  for (const [k, v] of Object.entries(shown.families)) if (v && now - v.at <= SHOWN_TTL_MS) families[k] = v;
+  if (candidate && candidate.type) {
+    if (candidate.once) types[candidate.type] = now;
+    const fam = familyOf(candidate.type);
+    const prev = families[fam];
+    families[fam] = {
+      at: now,
+      fingerprint: candidate.fingerprint != null ? candidate.fingerprint : null,
+      count: ((prev && prev.count) || 0) + 1,
+    };
+  }
+  next.shown = { types, families };
+  return next;
+}
+
+/** Per-family utterance counts - drives deterministic phrase rotation in rules. */
+function shownCounts(state) {
+  const out = {};
+  for (const [fam, v] of Object.entries(_shown(state).families)) out[fam] = (v && v.count) || 0;
+  return out;
+}
+
+// ── tiny file-backed store (trust + dial + shown), like outcomes.js ──────────
 
 function _file(repoRoot) { return path.join(repoRoot, '.symphonee', 'ambient.json'); }
 
 function loadState(repoRoot) {
   try {
     const s = JSON.parse(fs.readFileSync(_file(repoRoot), 'utf8'));
-    return { dial: DEFAULT_DIAL, trust: {}, enabled: true, ...s };
-  } catch (_) { return { dial: DEFAULT_DIAL, trust: {}, enabled: true }; }
+    return { dial: DEFAULT_DIAL, trust: {}, enabled: true, shown: { types: {}, families: {} }, ...s };
+  } catch (_) { return { dial: DEFAULT_DIAL, trust: {}, enabled: true, shown: { types: {}, families: {} } }; }
 }
 function saveState(repoRoot, state) {
   const file = _file(repoRoot);
@@ -98,11 +177,14 @@ function saveState(repoRoot, state) {
     dial: state.dial || DEFAULT_DIAL,
     trust: state.trust || {},
     enabled: state.enabled !== false,   // hard on/off; default on
+    shown: _shown(state),               // what was already said (novelty gate)
   }, null, 2), 'utf8');
 }
 
 module.exports = {
   DIALS, DEFAULT_DIAL, FLOW_INTERRUPT_BAR,
+  FAMILY_COOLDOWN_MS, SHOWN_TTL_MS,
   trustMultiplier, evaluateNudge, applyFeedback,
+  familyOf, isNovel, recordShown, shownCounts,
   loadState, saveState,
 };

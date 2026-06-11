@@ -208,6 +208,10 @@ function _buildMessages(question, sources, activity) {
     act.push('Recent task failures (a dispatched CLI task did not finish - use this for "what went wrong / why did it fail / how do I fix it" questions):\n' +
       activity.failures.map(f => `- ${f.cli}${f.model ? ' (' + f.model + ')' : ''} ${f.state}: ${f.error || 'no error text'}${f.prompt ? `  [task was: ${f.prompt}]` : ''}`).join('\n'));
   }
+  if (activity.successes && activity.successes.length) {
+    act.push('Recently finished tasks (a dispatched CLI task just completed - use this for "what did my task produce / what is the next step" questions; when asked for a next step, propose ONE concrete continuation and offer to draft the prompt for it):\n' +
+      activity.successes.map(s => `- ${s.cli}${s.model ? ' (' + s.model + ')' : ''} finished${s.prompt ? ` [task was: ${s.prompt}]` : ''}${s.result ? `\n  result: ${s.result}` : ''}`).join('\n'));
+  }
   if (act.length) blocks.push('Recent activity (use this for "what just happened / changed / where are we" questions):\n' + act.join('\n\n'));
 
   const user = `Question: ${question}\n\n${blocks.join('\n\n')}\n\nAnswer the question directly and humanly, using whatever above is relevant.`;
@@ -228,8 +232,9 @@ async function localAnswer({ repoRoot, space = '_global', question, activeRepoPa
     checkpoints: _recentCheckpoints(activeRepo, 3),
     conversation: graph ? _recentConversation(graph, 3) : [],
     failures: _recentFailures(repoRoot),
+    successes: _recentSuccesses(repoRoot),
   };
-  const hasContext = sources.length || activity.git.length || activity.checkpoints.length || activity.conversation.length || activity.failures.length;
+  const hasContext = sources.length || activity.git.length || activity.checkpoints.length || activity.conversation.length || activity.failures.length || activity.successes.length;
   if (!hasContext) return { grounded: false, reason: 'no-context' };
   let res;
   try {
@@ -261,32 +266,96 @@ async function localAnswer({ repoRoot, space = '_global', question, activeRepoPa
 // task-update, so by the time a failure event reaches us the file is current.
 // Only genuinely recent failures (default 15 min) so the whisper reacts to
 // "this just broke", not ancient history.
-function _recentFailures(repoRoot, withinMs = 15 * 60 * 1000, max = 3) {
+function _readTasks(repoRoot) {
   try {
     const f = path.join(repoRoot, '.ai-workspace', 'orchestrator', 'tasks.json');
     const arr = JSON.parse(fs.readFileSync(f, 'utf8'));
-    if (!Array.isArray(arr)) return [];
-    const now = Date.now();
-    return arr
-      .filter(t => (t.state === 'failed' || t.state === 'timeout') && (now - (t.completedAt || t.createdAt || 0) <= withinMs))
-      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
-      .slice(0, max)
-      .map(t => ({
-        id: t.id,
-        cli: t.cli || 'task',
-        model: t.model || null,
-        state: t.state,
-        error: typeof t.error === 'string' ? t.error.slice(0, 300) : '',
-        classification: t.errorClassification || null,
-        prompt: typeof t.prompt === 'string' ? t.prompt.slice(0, 160) : '',
-        completedAt: t.completedAt || null,
-      }));
+    return Array.isArray(arr) ? arr : [];
   } catch (_) { return []; }
 }
 
-// Assemble the live context (git + checkpoints + recent conversation + recent
-// task failures) - reused by the ambient whisper to synthesize a contextual nudge.
-async function gatherContext({ repoRoot, space = '_global', activeRepoPath, activeRepo, graph = null } = {}) {
+function _recentFailures(repoRoot, withinMs = 15 * 60 * 1000, max = 3) {
+  const now = Date.now();
+  return _readTasks(repoRoot)
+    .filter(t => (t.state === 'failed' || t.state === 'timeout') && (now - (t.completedAt || t.createdAt || 0) <= withinMs))
+    .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+    .slice(0, max)
+    .map(t => ({
+      id: t.id,
+      cli: t.cli || 'task',
+      model: t.model || null,
+      state: t.state,
+      error: typeof t.error === 'string' ? t.error.slice(0, 300) : '',
+      classification: t.errorClassification || null,
+      prompt: typeof t.prompt === 'string' ? t.prompt.slice(0, 160) : '',
+      completedAt: t.completedAt || null,
+    }));
+}
+
+// Recent task SUCCESSES - the other half of the loop. A finished task is the
+// moment a colleague would lean over: "that landed - here's the thread to pull
+// next". Same disk read as failures; only fresh completions (default 15 min).
+function _recentSuccesses(repoRoot, withinMs = 15 * 60 * 1000, max = 3) {
+  const now = Date.now();
+  return _readTasks(repoRoot)
+    .filter(t => t.state === 'completed' && (now - (t.completedAt || t.createdAt || 0) <= withinMs))
+    .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+    .slice(0, max)
+    .map(t => ({
+      id: t.id,
+      cli: t.cli || 'task',
+      model: t.model || null,
+      result: typeof t.result === 'string' ? t.result.slice(0, 400) : '',
+      prompt: typeof t.prompt === 'string' ? t.prompt.slice(0, 160) : '',
+      completedAt: t.completedAt || null,
+    }));
+}
+
+// Fresh memory cards in the shared brain - "Mind just learned something".
+// createdAt on memory nodes is an ISO string; only genuinely new cards
+// (default 30 min) so the whisper reacts to a delta, not the archive.
+function _recentMemories(graph, withinMs = 30 * 60 * 1000, max = 3) {
+  const now = Date.now();
+  return (graph && graph.nodes ? graph.nodes : [])
+    .filter(n => {
+      if (n.kind !== 'memory') return false;
+      const t = Date.parse(n.createdAt || '');
+      return Number.isFinite(t) && (now - t <= withinMs);
+    })
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, max)
+    .map(n => ({
+      id: n.id,
+      title: String(n.label || '').slice(0, 120),
+      kindOfMemory: n.kindOfMemory || null,
+      createdBy: n.createdBy || null,
+      createdAt: n.createdAt || null,
+    }));
+}
+
+// Notes the user touched recently (by file mtime) - an open thread worth
+// offering to pick back up when they go quiet.
+function _recentNotes(repoRoot, ns = '_global', withinMs = 30 * 60 * 1000, max = 3) {
+  try {
+    const dir = path.join(repoRoot, 'notes', ns);
+    const now = Date.now();
+    return fs.readdirSync(dir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => {
+        try { return { name: f.replace(/\.md$/i, ''), editedAt: fs.statSync(path.join(dir, f)).mtimeMs }; }
+        catch (_) { return null; }
+      })
+      .filter(n => n && (now - n.editedAt <= withinMs))
+      .sort((a, b) => b.editedAt - a.editedAt)
+      .slice(0, max);
+  } catch (_) { return []; }
+}
+
+// Assemble the live context - the whisper's single context bus. Everything the
+// second mind is conscious of flows through here: git + checkpoints + recent
+// conversation + task failures AND successes + fresh Mind memory + recently
+// edited notes.
+async function gatherContext({ repoRoot, space = '_global', activeRepoPath, activeRepo, notesNs = '_global', graph = null } = {}) {
   const g = graph || store.loadGraph(repoRoot, space);
   const repoPath = activeRepoPath || repoRoot;
   const [git, uncommitted] = await Promise.all([_gitLog(repoPath, 6), _gitStatus(repoPath)]);
@@ -296,7 +365,13 @@ async function gatherContext({ repoRoot, space = '_global', activeRepoPath, acti
     checkpoints: _recentCheckpoints(activeRepo, 3),
     conversation: g ? _recentConversation(g, 4) : [],
     failures: _recentFailures(repoRoot),
+    successes: _recentSuccesses(repoRoot),
+    mindNew: g ? _recentMemories(g) : [],
+    notesEdited: _recentNotes(repoRoot, notesNs),
   };
 }
 
-module.exports = { localAnswer, retrieveSources, gatherContext, nodeContent, KNOWLEDGE_KINDS, _keyTerms, _humanize };
+module.exports = {
+  localAnswer, retrieveSources, gatherContext, nodeContent, KNOWLEDGE_KINDS,
+  _keyTerms, _humanize, _recentSuccesses, _recentMemories, _recentNotes,
+};

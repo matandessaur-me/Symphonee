@@ -64,3 +64,91 @@ test('KNOWLEDGE_KINDS excludes drawer, includes note/doc/memory', () => {
   assert.ok(la.KNOWLEDGE_KINDS.has('memory'));
   assert.ok(!la.KNOWLEDGE_KINDS.has('drawer'));
 });
+
+// ── the context bus: successes, fresh memory, edited notes ──────────────────
+
+function _withTasksFile(tasks, fn) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-ctx-'));
+  const dir = path.join(root, '.ai-workspace', 'orchestrator');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify(tasks), 'utf8');
+  try { return fn(root); } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+
+test('_recentSuccesses picks fresh completed tasks with their result, newest first', () => {
+  const now = Date.now();
+  _withTasksFile([
+    { id: 'old', state: 'completed', cli: 'codex', result: 'ancient', completedAt: now - 60 * 60 * 1000 },
+    { id: 'new1', state: 'completed', cli: 'gemini', result: 'fresh result', prompt: 'do a thing', completedAt: now - 60 * 1000 },
+    { id: 'fail', state: 'failed', cli: 'claude', error: 'boom', completedAt: now - 30 * 1000 },
+    { id: 'new2', state: 'completed', cli: 'copilot', result: 'fresher', completedAt: now - 10 * 1000 },
+  ], (root) => {
+    const s = la._recentSuccesses(root);
+    assert.deepEqual(s.map(x => x.id), ['new2', 'new1'], 'fresh successes only, newest first; failures and stale excluded');
+    assert.equal(s[1].result, 'fresh result');
+    assert.equal(s[1].prompt, 'do a thing');
+  });
+});
+
+test('_recentSuccesses tolerates a missing tasks file', () => {
+  assert.deepEqual(la._recentSuccesses(path.join(os.tmpdir(), 'nope-' + Date.now())), []);
+});
+
+test('_recentMemories surfaces only fresh memory cards from the graph', () => {
+  const now = Date.now();
+  const graph = { nodes: [
+    { id: 'm_new', kind: 'memory', label: 'A fresh decision', kindOfMemory: 'decision', createdBy: 'codex', createdAt: new Date(now - 5 * 60000).toISOString() },
+    { id: 'm_old', kind: 'memory', label: 'Ancient lore', createdAt: new Date(now - 5 * 60 * 60 * 1000).toISOString() },
+    { id: 'n_new', kind: 'note', label: 'Not a memory', createdAt: new Date(now).toISOString() },
+    { id: 'm_undated', kind: 'memory', label: 'No timestamp' },
+  ] };
+  const m = la._recentMemories(graph);
+  assert.deepEqual(m.map(x => x.id), ['m_new']);
+  assert.equal(m[0].title, 'A fresh decision');
+  assert.equal(m[0].kindOfMemory, 'decision');
+});
+
+test('_recentNotes finds recently edited notes by mtime', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-notes-'));
+  try {
+    const dir = path.join(root, 'notes', '_global');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Fresh Thread.md'), 'body', 'utf8');
+    const oldFile = path.join(dir, 'Stale.md');
+    fs.writeFileSync(oldFile, 'body', 'utf8');
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(oldFile, old, old);
+    const notes = la._recentNotes(root, '_global');
+    assert.deepEqual(notes.map(n => n.name), ['Fresh Thread']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('_recentNotes tolerates a missing notes dir', () => {
+  assert.deepEqual(la._recentNotes(path.join(os.tmpdir(), 'nope-' + Date.now()), '_global'), []);
+});
+
+test('gatherContext carries the full bus: successes, mindNew, notesEdited', async () => {
+  const now = Date.now();
+  _withTasksFile([
+    { id: 's1', state: 'completed', cli: 'gemini', result: 'r', completedAt: now - 1000 },
+  ], (root) => {
+    const store = require('../mind/store');
+    const orig = store.loadGraph;
+    store.loadGraph = () => ({ nodes: [
+      { id: 'm1', kind: 'memory', label: 'fresh', createdAt: new Date(now).toISOString() },
+    ] });
+    return (async () => {
+      try {
+        const ctx = await la.gatherContext({ repoRoot: root, activeRepoPath: root });
+        assert.equal(ctx.successes.length, 1);
+        assert.equal(ctx.mindNew.length, 1);
+        assert.ok(Array.isArray(ctx.notesEdited));
+        assert.ok(Array.isArray(ctx.failures));
+      } finally {
+        store.loadGraph = orig;
+      }
+    })();
+  });
+});
