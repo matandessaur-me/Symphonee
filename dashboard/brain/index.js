@@ -34,6 +34,7 @@ const routeLogModule = require('./route-log');
 const conductorModule = require('./conductor');
 const voiceModule = require('./voice');
 const personasModule = require('./personas');
+const observerModule = require('./observer');
 const ambientModule = require('./ambient');
 const localAnswerModule = require('./local-answer');
 const nudgeRules = require('./nudge-rules');
@@ -842,10 +843,36 @@ function mountBrain(addRoute, json, ctx) {
     });
   }
 
+  // ── Ambient observer (the whisper's brain, kept alive without a face) ───
+  // Watches the same context bus the whisper used and periodically distills
+  // genuinely new activity (commits, finished tasks, edited notes) into
+  // compact digests saved to Mind. Disable with SYMPHONEE_OBSERVER=0.
+  let observerHandle = null;
+  if (ctx.mind && typeof ctx.mind.saveObservation === 'function' && process.env.SYMPHONEE_OBSERVER !== '0') {
+    observerHandle = observerModule.start({
+      repoRoot,
+      gather: async () => {
+        const ui = getUiContext ? getUiContext() : {};
+        const c = await localAnswerModule.gatherContext({
+          repoRoot,
+          space: (ui && ui.activeSpace) || '_global',
+          activeRepoPath: ui && ui.activeRepoPath,
+          activeRepo: ui && ui.activeRepo,
+          notesNs: (ui && ui.notesNamespace) || '_global',
+        });
+        c.activeRepo = (ui && ui.activeRepo) || null;
+        return c;
+      },
+      save: (o) => ctx.mind.saveObservation(o),
+    });
+  }
+
   return {
     notifyIntent: (ev) => intent.notify(ev),
     getIntent: () => intent.get(),
     forceRecomputeIntent: () => intent.forceRecompute(),
+    stopObserver: () => { if (observerHandle) observerHandle.stop(); },
+    observerTick: () => (observerHandle ? observerHandle.tick() : null),
     plan,
     answer,
     synthesize: (o) => synthesizeModule.synthesize(repoRoot, o || {}),

@@ -987,6 +987,33 @@ function mountMind(addRoute, json, ctx) {
       notifyKnowledgeEvent({ kind: 'task-saved', nodeIds: [id], reason: 'orchestrator-task' });
     },
 
+    // Ambient observation: the background observer (brain/observer.js)
+    // distills what just happened - commits, finished tasks, edited notes -
+    // into compact activity digests. Saved as conversation nodes with an
+    // obs_ id so recall surfaces them as PRIMARY activity for temporal
+    // questions (what did I do today) - they are facts about the work,
+    // not echoes of past answers (qa_ ids, which are echo-guarded).
+    saveObservation({ title, body, tags = [], space = null, at = null } = {}) {
+      if (!title || !body) return null;
+      const sp = space || getSpace() || '_global';
+      let g = store.loadGraph(repoRoot, sp) || store.emptyGraph({ space: sp });
+      const id = `obs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      g.nodes.push({
+        id,
+        label: sanitizeLabel(String(title).slice(0, 120)),
+        kind: 'conversation',
+        source: { type: 'ambient-observer' },
+        sourceLocation: null,
+        createdBy: 'symphonee-observer',
+        createdAt: new Date(at || Date.now()).toISOString(),
+        tags: ['observation', ...tags].filter(Boolean),
+        body: sanitizeLabel(String(body).slice(0, 3000)),
+      });
+      try { persistDerivedGraph(sp, g); } catch (_) { return null; }
+      if (broadcast) broadcast({ type: 'mind-update', payload: { kind: 'node-added', id, createdBy: 'symphonee-observer' } });
+      notifyKnowledgeEvent({ kind: 'observation-saved', nodeIds: [id], reason: 'ambient-observer' });
+      return id;
+    },
     // Public knowledge-event hook. Anything outside Mind that adds graph
     // state (learnings, notes, plugins) calls this so the brain reacts.
     notifyKnowledgeEvent,
