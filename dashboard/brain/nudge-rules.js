@@ -9,7 +9,8 @@
  *
  * Each rule is `(ctx) => candidate | null`, pure and side-effect free.
  *   ctx = { git:[lines], checkpoints:[labels], conversation:[{role,text}],
- *           uncommitted:{count,files}, activeRepo, activeRepoPath, intent, idle }
+ *           uncommitted:{count,files}, failures:[{cli,state,error,classification}],
+ *           activeRepo, activeRepoPath, intent, idle }
  *   candidate = { type, value:0..1, title, detail?, action? }
  * action.kind: 'ask' (open the palette with action.prompt), 'diff', 'open-notes'.
  *
@@ -57,6 +58,34 @@ function offerSummary(ctx) {
   };
 }
 
+// A dispatched CLI task just failed. Per the research, execution FAILURE is the
+// one moment to speak immediately - it is high-signal and the user is in a
+// debugging mindset. Phrasing adapts to the error classification so it is
+// specific, not generic. Highest value of any rule so it wins the moment.
+function taskFailure(ctx) {
+  const f = ((ctx && ctx.failures) || [])[0];
+  if (!f) return null;
+  const who = f.cli && f.cli !== 'task' ? `Your ${f.cli}` : 'A dispatched';
+  const c = f.classification || {};
+  let reason;
+  if (f.state === 'timeout') reason = 'timed out';
+  else if (c.providerOut || c.transient) reason = 'hit a temporary provider issue';
+  else if (c.authError) reason = 'failed on authentication';
+  else if (c.flagError) reason = 'failed on a bad CLI flag';
+  else if (c.modelError) reason = 'failed on the model';
+  else reason = 'did not finish';
+  const firstLine = (f.error || '').split('\n')[0].trim();
+  const tail = firstLine ? ` (${firstLine.slice(0, 80)})` : '';
+  return {
+    type: 'task-failure:' + (f.id || 'x'),
+    value: 0.9,
+    title: `${who} task ${reason}${tail}. Want me to look at what went wrong?`,
+    detail: f.prompt ? `The task was: "${f.prompt}". I can read the error and suggest a fix.` : 'I can read the error and suggest a fix.',
+    actionLabel: 'Diagnose',
+    action: { kind: 'ask', prompt: `what went wrong with my last ${f.cli && f.cli !== 'task' ? f.cli + ' ' : ''}task and how do i fix it` },
+  };
+}
+
 // The user has gone quiet (an explicit idle check). Say ONE context-aware thing,
 // tuned to what is actually on their plate: unsaved work to recap, live momentum
 // to pick a next step from, or just silence. Only fires when ctx.idle - on every
@@ -95,7 +124,7 @@ function idleNudge(ctx) {
   };
 }
 
-const RULES = [idleNudge, uncommittedChanges, offerSummary];
+const RULES = [taskFailure, idleNudge, uncommittedChanges, offerSummary];
 
 function runRules(ctx) {
   const out = [];
@@ -105,4 +134,4 @@ function runRules(ctx) {
   return out;
 }
 
-module.exports = { runRules, RULES, idleNudge, uncommittedChanges, offerSummary };
+module.exports = { runRules, RULES, taskFailure, idleNudge, uncommittedChanges, offerSummary };
