@@ -171,6 +171,9 @@
         '<div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' +
           _md(n.title) +
           (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + '</div>' : '') +
+          // Provenance: WHY the whisper spoke. Transparency is what keeps
+          // proactivity from feeling like noise.
+          (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + '</div>' : '') +
         '</div>' +
         '<div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;">' +
           '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button>' +
@@ -287,14 +290,12 @@
   function _resetIdle() { clearTimeout(_idleTimer); _idleTimer = setTimeout(_onIdle, IDLE_MS); }
   async function _onIdle() {
     if (_disabled || _current) return;
-    // Ask the server for a nudge tuned to the idle moment (unsaved work? momentum?
-    // silence?). The rule engine picks the right words. Fall back to a plain
-    // "still here?" only if the server has nothing to say.
+    // Ask the server for a nudge tuned to the idle moment (unsaved work?
+    // momentum? silence?). The rule engine picks the right words, and the
+    // novelty gate may decide to say NOTHING - which is intentional: a
+    // colleague does not repeat "still here?" every few minutes. No client
+    // fallback.
     await check(true, { idle: true });
-    if (_disabled || _current) return;
-    const nudge = { type: 'inactivity', title: 'Still here? I can pick up where we left off whenever you are.', actionLabel: 'Catch me up', action: { kind: 'ask', prompt: 'where did we leave off' } };
-    if (_dismissed.has(nudge.title)) return;
-    _showPill(nudge);
   }
   ['mousemove', 'keydown', 'mousedown'].forEach(ev => window.addEventListener(ev, _resetIdle, { passive: true }));
   _resetIdle();

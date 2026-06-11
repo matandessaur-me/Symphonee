@@ -317,7 +317,7 @@ function mountBrain(addRoute, json, ctx) {
     const ui = getUiContext ? getUiContext() : {};
     const space = (ui && ui.activeSpace) || '_global';
     let ctx;
-    try { ctx = await localAnswerModule.gatherContext({ repoRoot, space, activeRepoPath: ui.activeRepoPath, activeRepo: ui.activeRepo }); }
+    try { ctx = await localAnswerModule.gatherContext({ repoRoot, space, activeRepoPath: ui.activeRepoPath, activeRepo: ui.activeRepo, notesNs: ui.notesNamespace || '_global' }); }
     catch (_) { ctx = { git: [], checkpoints: [], conversation: [], uncommitted: { count: 0, files: [] } }; }
     ctx.activeRepo = ui.activeRepo || null;
     ctx.activeRepoPath = ui.activeRepoPath || null;
@@ -366,7 +366,7 @@ function mountBrain(addRoute, json, ctx) {
       if (text && text.toLowerCase() !== 'null' && text.length > 6) {
         const value = typeof j.value === 'number' ? Math.max(0, Math.min(1, j.value)) : 0.6;
         const kind = String(j.kind || 'general').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'general';
-        nudge = { type: 'suggestion:' + kind, value, title: text.slice(0, 180), action: { kind: 'suggestion' } };
+        nudge = { type: 'suggestion:' + kind, value, title: text.slice(0, 180), because: 'a hunch from your recent activity', action: { kind: 'suggestion' } };
       }
     } catch (_) { /* model busy / offline - stay quiet */ }
     _nudgeCache = { at: Date.now(), nudge };
@@ -375,22 +375,29 @@ function mountBrain(addRoute, json, ctx) {
 
   // GET /api/symphonee/ambient/nudge - the whisper's brain. RULES first
   // (deterministic, reliable, well-phrased); the fuzzy model only when no rule
-  // fires. Then the dial + trust gate. On real signals only (boot, focus);
-  // dismissing decays the kind.
+  // fires. Then the NOVELTY gate (never say the same thing twice while nothing
+  // changed), then the dial + trust gate. On real signals only (boot, focus);
+  // dismissing decays the kind. Surfaced nudges are recorded so the whisper
+  // remembers what it already said.
   addRoute('GET', '/api/symphonee/ambient/nudge', async (req, res) => {
-    const state = ambientModule.loadState(repoRoot);
+    let state = ambientModule.loadState(repoRoot);
     if (state.enabled === false) return json(res, { nudge: null, dial: state.dial, enabled: false });
     const idle = new URL(req.url, 'http://x').searchParams.get('idle') === '1';
     let candidates = [];
     try {
       const ctx = await _gatherNudgeContext({ idle });
-      candidates = nudgeRules.runRules(ctx);
-      if (!candidates.length) { const s = await _synthesizeNudge(ctx); if (s) candidates.push(s); }
+      ctx.shownCounts = ambientModule.shownCounts(state);   // drives phrase rotation
+      candidates = nudgeRules.runRules(ctx).filter(c => ambientModule.isNovel(c, state));
+      if (!candidates.length && !idle) { const s = await _synthesizeNudge(ctx); if (s && ambientModule.isNovel(s, state)) candidates.push(s); }
     } catch (_) { /* stay quiet on error */ }
     let best = null;
     for (const c of candidates) {
       const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
       if (v.surface && (!best || v.score > best.score)) best = { ...c, score: v.score };
+    }
+    if (best) {
+      state = ambientModule.recordShown(state, best);
+      ambientModule.saveState(repoRoot, state);
     }
     return json(res, { nudge: best, dial: state.dial, enabled: true });
   });

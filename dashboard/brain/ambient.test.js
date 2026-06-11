@@ -53,12 +53,85 @@ test('applyFeedback reinforces / decays immutably', () => {
 test('loadState/saveState round-trip with a default', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-ambient-'));
   try {
-    assert.deepEqual(ambient.loadState(root), { dial: 'balanced', trust: {}, enabled: true });
+    assert.deepEqual(ambient.loadState(root), { dial: 'balanced', trust: {}, enabled: true, shown: { types: {}, families: {} } });
     ambient.saveState(root, { dial: 'chatty', trust: { x: { accepted: 2, dismissed: 1 } }, enabled: false });
     const s = ambient.loadState(root);
     assert.equal(s.dial, 'chatty');
     assert.equal(s.trust.x.accepted, 2);
     assert.equal(s.enabled, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── the novelty gate: the whisper never repeats itself ───────────────────────
+
+test('a once candidate speaks exactly once, ever', () => {
+  const c = { type: 'task-success:abc', value: 0.88, once: true };
+  let state = { shown: { types: {}, families: {} } };
+  assert.equal(ambient.isNovel(c, state), true);
+  state = ambient.recordShown(state, c);
+  assert.equal(ambient.isNovel(c, state), false, 'same instance never repeats');
+  // a DIFFERENT instance of the same family may speak immediately (no cooldown)
+  assert.equal(ambient.isNovel({ type: 'task-success:def', value: 0.88, once: true }, state), true);
+});
+
+test('a standing candidate is silenced while its fingerprint is unchanged', () => {
+  const now = Date.now();
+  const c = { type: 'commit-reminder', value: 0.7, fingerprint: 'repo:1' };
+  let state = ambient.recordShown({}, c, now);
+  // same state, even hours later (within TTL): stay quiet
+  assert.equal(ambient.isNovel(c, state, now + 2 * 60 * 60 * 1000), false);
+  // the state CHANGED (new fingerprint) and the cooldown passed: speak
+  const changed = { type: 'commit-reminder', value: 0.7, fingerprint: 'repo:3' };
+  assert.equal(ambient.isNovel(changed, state, now + ambient.FAMILY_COOLDOWN_MS + 1), true);
+});
+
+test('a new fingerprint still respects the family cooldown (no flapping)', () => {
+  const now = Date.now();
+  const state = ambient.recordShown({}, { type: 'inactivity', value: 0.8, fingerprint: 'silence' }, now);
+  const next = { type: 'inactivity', value: 0.85, fingerprint: 'unsaved:repo:0' };
+  assert.equal(ambient.isNovel(next, state, now + 60 * 1000), false, 'new state but family spoke 1 min ago');
+  assert.equal(ambient.isNovel(next, state, now + ambient.FAMILY_COOLDOWN_MS + 1), true, 'cooldown passed');
+});
+
+test('delta families (failure/success/mind) have no cooldown between distinct events', () => {
+  const now = Date.now();
+  const state = ambient.recordShown({}, { type: 'task-failure:a', value: 0.9, once: true }, now);
+  assert.equal(ambient.isNovel({ type: 'task-failure:b', value: 0.9, once: true }, state, now + 1000), true);
+});
+
+test('shown records expire after the TTL and recordShown prunes them', () => {
+  const now = Date.now();
+  let state = ambient.recordShown({}, { type: 'offer-summary', value: 0.6, fingerprint: 'x' }, now);
+  // past the TTL the same fingerprint may be said again (rotation rewords it)
+  assert.equal(ambient.isNovel({ type: 'offer-summary', value: 0.6, fingerprint: 'x' }, state, now + ambient.SHOWN_TTL_MS + 1), true);
+  // pruning: recording later drops the stale record
+  state = ambient.recordShown(state, { type: 'inactivity', value: 0.8, fingerprint: 's' }, now + ambient.SHOWN_TTL_MS + 1);
+  assert.equal(state.shown.families['offer-summary'], undefined, 'stale family pruned');
+});
+
+test('shownCounts feeds phrase rotation and recordShown increments it', () => {
+  let state = {};
+  assert.deepEqual(ambient.shownCounts(state), {});
+  state = ambient.recordShown(state, { type: 'inactivity', value: 0.8, fingerprint: 'a' });
+  state = ambient.recordShown(state, { type: 'inactivity', value: 0.8, fingerprint: 'b' });
+  assert.equal(ambient.shownCounts(state).inactivity, 2);
+});
+
+test('familyOf strips the instance suffix', () => {
+  assert.equal(ambient.familyOf('task-success:abc123'), 'task-success');
+  assert.equal(ambient.familyOf('commit-reminder'), 'commit-reminder');
+});
+
+test('shown state survives a save/load round-trip', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-ambient-'));
+  try {
+    let state = ambient.loadState(root);
+    state = ambient.recordShown(state, { type: 'task-success:t1', value: 0.88, once: true });
+    ambient.saveState(root, state);
+    const reloaded = ambient.loadState(root);
+    assert.equal(ambient.isNovel({ type: 'task-success:t1', once: true }, reloaded), false, 'memory of what was said survives restart');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
