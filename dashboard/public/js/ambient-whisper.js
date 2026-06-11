@@ -210,49 +210,19 @@
       el.innerHTML = '<div class="aw-goo"><div class="aw-blob b1"></div><div class="aw-blob b2"></div><div class="aw-blob b3"></div></div><div class="aw-sheen"></div><div class="aw-content"><span class="aw-dot"></span><span class="aw-text"></span><button class="aw-x" title="Dismiss">&times;</button></div>';
       document.body.appendChild(el);
       try {
-        const pos = parseFloat(localStorage.getItem("aw-pos") || "");
-        if (pos >= 8 && pos <= 92) el.style.left = pos + "%";
+        localStorage.removeItem("aw-pos");
       } catch (_) {
       }
       el.addEventListener("click", (e) => {
-        if (_dragSuppress) return;
         if (!e.target.classList.contains("aw-x")) _openModal();
       });
       el.querySelector(".aw-x").addEventListener("click", (e) => {
         e.stopPropagation();
         _dismiss();
       });
-      el.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        _drag = { startX: e.clientX, startPct: parseFloat(el.style.left) || 50, moved: false };
-      });
       _pill = el;
       return el;
     }
-    let _drag = null;
-    let _dragSuppress = false;
-    document.addEventListener("mousemove", (e) => {
-      if (!_drag || !_pill) return;
-      const dx = e.clientX - _drag.startX;
-      if (!_drag.moved && Math.abs(dx) < 7) return;
-      _drag.moved = true;
-      const pct = Math.max(8, Math.min(92, _drag.startPct + dx / window.innerWidth * 100));
-      _pill.style.left = pct + "%";
-    }, { passive: true });
-    document.addEventListener("mouseup", () => {
-      if (!_drag) return;
-      if (_drag.moved) {
-        _dragSuppress = true;
-        try {
-          localStorage.setItem("aw-pos", String(parseFloat(_pill.style.left) || 50));
-        } catch (_) {
-        }
-        setTimeout(() => {
-          _dragSuppress = false;
-        }, 80);
-      }
-      _drag = null;
-    });
     function _surface() {
       const el = _ensurePill();
       if (el.style.display !== "flex") {
@@ -798,10 +768,34 @@
       } catch (_) {
       }
     }
+    async function _greet() {
+      if (_disabled || _current) return;
+      let line = "Welcome back. What can I help you with?";
+      try {
+        const r = await fetch("/api/symphonee/ambient/greeting");
+        const d = await r.json();
+        const name = d && d.name ? ", " + d.name : "";
+        const opener = d && d.daypart === "morning" ? "Good morning" : d && d.daypart === "afternoon" ? "Good afternoon" : d && d.daypart === "night" ? "Up late" + name + "?" : "Good evening";
+        line = d && d.daypart === "night" ? opener + " What can I help you with?" : opener + name + ". What can I help you with?";
+      } catch (_) {
+      }
+      const el = _ensurePill();
+      el.querySelector(".aw-text").textContent = line;
+      el.classList.remove("aw-collapsed");
+      el.classList.remove("aw-fresh");
+      void el.offsetWidth;
+      el.classList.add("aw-fresh");
+      clearTimeout(_collapseTimer);
+      _collapseTimer = setTimeout(() => {
+        _collapseTimer = null;
+        if (!_hovering && _pill) _pill.classList.add("aw-collapsed");
+      }, EXPAND_MS);
+    }
     function _boot() {
       if (!_disabled) {
         _surface();
         _updateBadge();
+        setTimeout(_greet, 700);
       }
       fetch("/api/orchestrator/tasks?state=running").then((r) => r.json()).then((d) => {
         const tasks = Array.isArray(d) ? d : d && d.tasks || [];
@@ -809,7 +803,7 @@
         if (tasks.length) _updateBadge();
       }).catch(() => {
       });
-      setTimeout(() => check(true), 5e3);
+      setTimeout(() => check(true), 25e3);
     }
     window.addEventListener("DOMContentLoaded", _boot);
     window.addEventListener("focus", () => check(false));
