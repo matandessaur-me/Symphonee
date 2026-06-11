@@ -4,13 +4,13 @@
  * This replaces the templated snippet-dump, which was robotic in a different
  * way: it searched the wrong corpus (memory cards only, not the NOTES/DOCS
  * where project knowledge lives) and never synthesized, so "what do you know
- * about DYOB3" came back as unrelated fragments. The user's verdict was correct.
+ * about Aurora3" came back as unrelated fragments. The user's verdict was correct.
  *
  * What this does instead - per the user's direction ("pull all knowledge, then
  * answer humanly; a human will use this"):
  *   1. RETRIEVE BROADLY across ALL curated knowledge - notes, docs, memory,
  *      conversations, concepts - with a hybrid of BM25 (catches the topic by
- *      title, e.g. "DYOB3 - Production Readiness Plan") and dense vectors
+ *      title, e.g. "Aurora3 - Production Readiness Plan") and dense vectors
  *      (catches meaning). Raw CLI drawer transcripts are excluded (noise).
  *   2. PULL THE REAL BODIES of the top sources (notes/docs from their .md on
  *      disk, memory cards from node.body) - not just titles.
@@ -50,7 +50,7 @@ const MIN_CONTENT = 60;    // drop label-only stubs (e.g. 40-char concept nodes)
 const SYNTH_TIMEOUT_MS = 45_000;
 
 // Question stopwords stripped before BM25 so the TOPIC drives the title match
-// ("what do you know about dyob3" -> "dyob3"), not "know"/"about".
+// ("what do you know about aurora3" -> "aurora3"), not "know"/"about".
 const QUESTION_STOPWORDS = new Set(('what whats what\'s how why when where who which whose do does did is are am was were ' +
   'can could should would will the a an of to in on for and or about tell me give show know explain define i you we ' +
   'my your our this that it its any some please got have has had with').split(/\s+/));

@@ -4,8 +4,8 @@
  *
  * The mental model: most of Mind's content (notes, code, drawers,
  * conversations) is HISTORICAL ARTIFACTS - things that happened. A
- * memory card is a DISTILLED FACT - the takeaway. "DYOB doesn't follow
- * the Bath Fitter design system." "For Playdate development, prefer
+ * memory card is a DISTILLED FACT - the takeaway. "Aurora doesn't follow
+ * the Blue Falcon design system." "For Playdate development, prefer
  * pulldown for menu navigation over the d-pad."
  *
  * Cards are first-class graph nodes (kind:memory) with rich metadata:
