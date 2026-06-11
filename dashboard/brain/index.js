@@ -263,6 +263,44 @@ function mountBrain(addRoute, json, ctx) {
     return json(res, { ...result, persona: surface, decision: plan.decision });
   });
 
+  // ── POST /api/symphonee/ask/stream ──────────────────────────────────────
+  // The ask surface's engine: deep recall (time-window honoured, cross-AI
+  // drawer history grouped by CLI) + token streaming over SSE. Events:
+  //   {type:'status',label}  retrieval milestones (perceived latency)
+  //   {type:'token',text}    answer fragments as the model generates
+  //   {type:'done', answer, citedNodeIds, sources, recalled, model, since}
+  //   {type:'escalate', reason}  nothing grounded - hand to the agent
+  addRoute('POST', '/api/symphonee/ask/stream', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') return json(res, { error: 'input required' }, 400);
+    const ui = getUiContext ? getUiContext() : {};
+    const space = (ui && ui.activeSpace) || '_global';
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (ev) => { try { res.write('data: ' + JSON.stringify(ev) + '\n\n'); } catch (_) { /* client gone */ } };
+    try {
+      const result = await localAnswerModule.deepAnswer({
+        repoRoot, space, question: input,
+        activeRepoPath: ui && ui.activeRepoPath, activeRepo: ui && ui.activeRepo,
+      }, send);
+      if (result.grounded) {
+        send({ type: 'done', answer: result.answer, citedNodeIds: result.citedNodeIds, sources: result.sources, recalled: result.recalled, model: result.model, since: result.since });
+        if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'local', stream: true } });
+      } else {
+        send({ type: 'escalate', reason: result.reason || 'no-knowledge' });
+        if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'escalate', stream: true } });
+      }
+    } catch (e) {
+      send({ type: 'escalate', reason: 'error', error: e.message });
+    }
+    try { res.end(); } catch (_) {}
+  });
+
   // ── Ambient brain (Stage 6) ─────────────────────────────────────────────
   // Proactive nudges, gated on value with a user-tunable silent<->chatty dial
   // and trust that decays dismissed suggestion types. Triggered on signal by a

@@ -557,6 +557,13 @@
   state._localAnswerPending = null;
   async function answerLocally(question, opts) {
     opts = opts || {};
+    if (typeof window.ambientWhisperAsk === "function") {
+      try {
+        window.ambientWhisperAsk(question);
+        return;
+      } catch (_) {
+      }
+    }
     const cli = opts.cli || state.activeCli || "claude";
     const cliLabel = CLI_CONFIG[cli] && CLI_CONFIG[cli].label || cli;
     state._localAnswerPending = {

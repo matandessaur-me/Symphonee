@@ -33,6 +33,7 @@ const { bestSeedsRanked } = require('../mind/query');
 const { fuse } = require('../mind/rrf');
 const { VectorStore } = require('../mind/vectors');
 const embeddings = require('../mind/embeddings');
+const { recall } = require('../mind/recall');
 const llm = require('../lib/llm');
 
 // Curated knowledge worth answering FROM. Raw drawers (verbatim CLI turns) are
@@ -371,7 +372,168 @@ async function gatherContext({ repoRoot, space = '_global', activeRepoPath, acti
   };
 }
 
+// ── deep answer: the ask surface's engine ────────────────────────────────────
+// "What did I do the last three weeks for project X?" "Did I change my env
+// recently?" "What are we missing?" Vague and temporal questions need MORE than
+// the curated spine: they need the time window honoured and the raw AI session
+// history (drawer turns) cross-referenced across every CLI. This is that.
+
+// Pull a time window out of the question itself ("last three weeks", "2 days
+// ago", "recently") as a natural-language hint recall.parseDateHint accepts.
+const _WORD_NUMS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+function _timeHintFromQuestion(question) {
+  const t = String(question || '').toLowerCase();
+  let m = t.match(/\b(?:last|past|previous)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an|few|couple(?:\s+of)?)?\s*(hour|day|week|month|year)s?\b/);
+  if (m) {
+    const raw = m[1] || 'a';
+    const n = /^\d+$/.test(raw) ? parseInt(raw, 10)
+      : _WORD_NUMS[raw] != null ? _WORD_NUMS[raw]
+      : (raw === 'a' || raw === 'an') ? 1
+      : 3; // "few" / "couple of"
+    return `${n} ${m[2]}${n > 1 ? 's' : ''} ago`;
+  }
+  m = t.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(hour|day|week|month|year)s?\s+ago\b/);
+  if (m) {
+    const n = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : _WORD_NUMS[m[1]];
+    return `${n} ${m[2]}${n > 1 ? 's' : ''} ago`;
+  }
+  if (/\byesterday\b/.test(t)) return 'yesterday';
+  if (/\btoday\b/.test(t)) return '1 day ago';
+  if (/\b(recently|lately|these days)\b/.test(t)) return '2 weeks ago';
+  return null;
+}
+
+// Recall leg: memory cards + conversations + raw drawer turns in the question's
+// time window, with drawer turns GROUPED BY WHICH AI was driving - the
+// cross-CLI history the curated spine deliberately leaves out.
+function _recallLeg(graph, question, { since = null, limit = 12 } = {}) {
+  if (!graph || !graph.nodes || !graph.nodes.length) return { cards: [], byCli: {}, since: null };
+  let r;
+  try { r = recall(graph, { question, since, limit }); }
+  catch (_) { return { cards: [], byCli: {}, since: null }; }
+  const byId = new Map(graph.nodes.map(n => [n.id, n]));
+  const cards = [];
+  const byCli = {};
+  for (const h of r.hits || []) {
+    const node = byId.get(h.id) || {};
+    const text = String(h.snippet || nodeContent(node) || '').replace(/\s+/g, ' ').trim().slice(0, 280);
+    if (!text) continue;
+    if (h.kind === 'drawer') {
+      const cli = String(node.createdBy || node.cli || 'unknown').toLowerCase();
+      (byCli[cli] = byCli[cli] || []).push({ id: h.id, text, when: h.createdAt || null });
+    } else {
+      cards.push({ id: h.id, kind: h.kind, label: h.label || h.id, text, when: h.createdAt || null });
+    }
+  }
+  // Cap each CLI's contribution so one chatty session does not drown the rest.
+  for (const cli of Object.keys(byCli)) byCli[cli] = byCli[cli].slice(0, 4);
+  return { cards: cards.slice(0, 6), byCli, since: r.since || null };
+}
+
+function _buildDeepMessages(question, sources, recallLeg, activity) {
+  const sys = [
+    'You are Symphonee - the user\'s own assistant, answering a person about THEIR work from everything you have: their notes, memory cards, cross-AI session history, recent git changes, checkpoints, and task results.',
+    '',
+    'Answer like a sharp, warm colleague who was in the room for all of it.',
+    'Rules:',
+    '  - Lead with the answer. No preamble, no "based on your notes".',
+    '  - SHORT. 2 to 4 sentences unless the question truly needs more. People want answers, not reading.',
+    '  - Have a point of view: when the question invites it ("what are we missing", "what should I do"), end with ONE concrete opinionated recommendation.',
+    '  - Honour time words: "last three weeks" means exactly that window - the context you were given is already filtered to it.',
+    '  - Be specific: name projects, files, decisions, commits, which AI did what.',
+    '  - If you genuinely have nothing relevant, say so in one line and suggest sending it to the agent for a deeper search.',
+    '  - Plain, human language. Plain ASCII only. No emojis, em dashes, or smart quotes.',
+  ].join('\n');
+
+  const blocks = [];
+  if (sources.length) {
+    blocks.push('Curated knowledge (notes, docs, memory on this topic):\n' +
+      sources.map((s, i) => `[${i + 1}] ${s.label} (${s.kind})\n${s.content}`).join('\n\n'));
+  }
+  if (recallLeg.cards.length) {
+    blocks.push('Recalled memory in the question\'s time window:\n' +
+      recallLeg.cards.map(c => `- [${c.kind}] ${c.label}${c.when ? ' (' + String(c.when).slice(0, 10) + ')' : ''}: ${c.text}`).join('\n'));
+  }
+  const clis = Object.keys(recallLeg.byCli);
+  if (clis.length) {
+    blocks.push('Cross-AI session history (what each AI worked on, same window):\n' +
+      clis.map(cli => `${cli}:\n` + recallLeg.byCli[cli].map(t => `  - ${t.text}`).join('\n')).join('\n'));
+  }
+  const act = [];
+  if (activity.git && activity.git.length) act.push('Recent commits:\n' + activity.git.map(l => '- ' + l).join('\n'));
+  if (activity.checkpoints && activity.checkpoints.length) act.push('Recent checkpoints:\n' + activity.checkpoints.map(l => '- ' + l).join('\n'));
+  if (activity.failures && activity.failures.length) {
+    act.push('Recent task failures:\n' + activity.failures.map(f => `- ${f.cli} ${f.state}: ${f.error || 'no error text'}`).join('\n'));
+  }
+  if (activity.successes && activity.successes.length) {
+    act.push('Recently finished tasks:\n' + activity.successes.map(s => `- ${s.cli} finished${s.prompt ? ` [${s.prompt}]` : ''}${s.result ? `: ${s.result.slice(0, 200)}` : ''}`).join('\n'));
+  }
+  if (act.length) blocks.push('Live activity:\n' + act.join('\n\n'));
+
+  const user = `Question: ${question}\n\n${blocks.join('\n\n')}\n\nAnswer directly, short, and human - with an opinion where one is invited.`;
+  return [{ role: 'system', content: sys }, { role: 'user', content: user }];
+}
+
+/**
+ * Deep, streaming answer for the ask surface. Emits progress through onEvent:
+ *   { type:'status', label }            - retrieval milestones
+ *   { type:'token', text }              - answer fragments as they generate
+ * Resolves { grounded:true, answer, citedNodeIds, sources, model, since }
+ *       OR { grounded:false, reason }.
+ */
+async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPath, activeRepo }, onEvent = () => {}) {
+  if (!question || typeof question !== 'string') return { grounded: false, reason: 'no-question' };
+  const emit = (e) => { try { onEvent(e); } catch (_) { /* listener errors never break the answer */ } };
+
+  emit({ type: 'status', label: 'searching your knowledge' });
+  const { graph, sources } = await retrieveSources(repoRoot, space, question, MAX_SOURCES);
+
+  const since = _timeHintFromQuestion(question);
+  emit({ type: 'status', label: since ? `recalling since ${since}` : 'recalling prior work' });
+  const leg = _recallLeg(graph, question, { since });
+
+  const activity = {
+    git: await _gitLog(activeRepoPath || repoRoot, 6),
+    checkpoints: _recentCheckpoints(activeRepo, 3),
+    failures: _recentFailures(repoRoot),
+    successes: _recentSuccesses(repoRoot),
+  };
+
+  const hasContext = sources.length || leg.cards.length || Object.keys(leg.byCli).length
+    || activity.git.length || activity.checkpoints.length || activity.failures.length || activity.successes.length;
+  if (!hasContext) return { grounded: false, reason: 'no-context' };
+
+  emit({ type: 'status', label: 'thinking' });
+  let res;
+  try {
+    res = await llm.chatOllamaStream(
+      _buildDeepMessages(question, sources, leg, activity),
+      { model: SYNTH_MODEL, temperature: 0.4, numPredict: 700, timeoutMs: SYNTH_TIMEOUT_MS },
+      (t) => emit({ type: 'token', text: t }),
+    );
+  } catch (e) {
+    return { grounded: false, reason: 'synth-error', error: e.message };
+  }
+  const answer = _humanize((res && res.text || '').trim());
+  if (!answer) return { grounded: false, reason: 'empty-synthesis' };
+  const citedNodeIds = [
+    ...sources.map(s => s.id),
+    ...leg.cards.map(c => c.id),
+    ...Object.values(leg.byCli).flat().map(t => t.id),
+  ];
+  return {
+    grounded: true,
+    answer,
+    citedNodeIds,
+    sources: sources.map(s => ({ id: s.id, kind: s.kind, label: s.label })),
+    recalled: { cards: leg.cards.length, clis: Object.keys(leg.byCli) },
+    since: leg.since,
+    model: (res && res.model) || SYNTH_MODEL,
+  };
+}
+
 module.exports = {
-  localAnswer, retrieveSources, gatherContext, nodeContent, KNOWLEDGE_KINDS,
+  localAnswer, deepAnswer, retrieveSources, gatherContext, nodeContent, KNOWLEDGE_KINDS,
   _keyTerms, _humanize, _recentSuccesses, _recentMemories, _recentNotes,
+  _timeHintFromQuestion, _recallLeg,
 };

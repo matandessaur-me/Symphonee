@@ -584,6 +584,12 @@ state._localAnswerPending = null; // Answer a question locally via Gemma (Mind-g
 // dispatching an agent. Falls back to dispatch if no local model / on error.
 async function answerLocally(question, opts) {
   opts = opts || {};
+  // The liquid whisper IS the ask surface: a palette question opens the same
+  // organism with the question and streams the deep answer there. The legacy
+  // overlay below survives only as a fallback when the whisper is not loaded.
+  if (typeof window.ambientWhisperAsk === 'function') {
+    try { window.ambientWhisperAsk(question); return; } catch (_) { /* fall through */ }
+  }
   const cli = opts.cli || state.activeCli || 'claude';
   const cliLabel = CLI_CONFIG[cli] && CLI_CONFIG[cli].label || cli;
   state._localAnswerPending = {

@@ -129,6 +129,52 @@ test('_recentNotes tolerates a missing notes dir', () => {
   assert.deepEqual(la._recentNotes(path.join(os.tmpdir(), 'nope-' + Date.now()), '_global'), []);
 });
 
+// ── the ask surface: time hints, cross-AI recall, deep answer ────────────────
+
+test('_timeHintFromQuestion pulls a window out of the question', () => {
+  assert.equal(la._timeHintFromQuestion('what did I do the last three weeks for the website project'), '3 weeks ago');
+  assert.equal(la._timeHintFromQuestion('what happened in the past 2 days'), '2 days ago');
+  assert.equal(la._timeHintFromQuestion('show me what changed 5 days ago'), '5 days ago');
+  assert.equal(la._timeHintFromQuestion('what did we ship yesterday'), 'yesterday');
+  assert.equal(la._timeHintFromQuestion('did I change my env recently'), '2 weeks ago');
+  assert.equal(la._timeHintFromQuestion('what do you know about the parser'), null, 'no time words, no window');
+  assert.equal(la._timeHintFromQuestion('what moved in the last week'), '1 week ago');
+  assert.equal(la._timeHintFromQuestion('the last few months of work'), '3 months ago');
+});
+
+test('_recallLeg groups drawer turns by which AI was driving', () => {
+  const now = Date.now();
+  const iso = (msAgo) => new Date(now - msAgo).toISOString();
+  const graph = { nodes: [
+    { id: 'd1', kind: 'drawer', label: 'turn', body: 'claude refactored the env loader for the website project', createdBy: 'claude', createdAt: iso(2 * 24 * 3600 * 1000) },
+    { id: 'd2', kind: 'drawer', label: 'turn', body: 'codex fixed env parsing in the website project config', createdBy: 'codex', createdAt: iso(3 * 24 * 3600 * 1000) },
+    { id: 'm1', kind: 'memory', label: 'env decision', body: 'we decided to keep env files per environment for the website project', createdAt: iso(24 * 3600 * 1000) },
+    { id: 'old', kind: 'drawer', label: 'turn', body: 'ancient env work on the website', createdBy: 'claude', createdAt: iso(90 * 24 * 3600 * 1000) },
+  ], edges: [] };
+  const leg = la._recallLeg(graph, 'did I change my env for the website recently', { since: '2 weeks ago' });
+  assert.ok(leg.byCli.claude && leg.byCli.claude.length === 1, 'claude turns grouped');
+  assert.ok(leg.byCli.codex && leg.byCli.codex.length === 1, 'codex turns grouped');
+  assert.ok(!JSON.stringify(leg.byCli).includes('ancient'), 'outside the window is excluded');
+  assert.ok(leg.cards.some(c => c.id === 'm1'), 'memory cards ride along');
+});
+
+test('deepAnswer reports ungrounded when there is genuinely nothing', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-deep-'));
+  const store = require('../mind/store');
+  const orig = store.loadGraph;
+  store.loadGraph = () => ({ nodes: [], edges: [] });
+  try {
+    const events = [];
+    const r = await la.deepAnswer({ repoRoot: root, question: 'what do you know about anything' }, (e) => events.push(e));
+    assert.equal(r.grounded, false);
+    assert.equal(r.reason, 'no-context');
+    assert.ok(events.some(e => e.type === 'status'), 'status milestones emitted');
+  } finally {
+    store.loadGraph = orig;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('gatherContext carries the full bus: successes, mindNew, notesEdited', async () => {
   const now = Date.now();
   _withTasksFile([
