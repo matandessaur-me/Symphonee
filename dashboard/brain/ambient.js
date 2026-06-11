@@ -160,6 +160,36 @@ function shownCounts(state) {
   return out;
 }
 
+// ── auto-quiet (respect for attention) ───────────────────────────────────────
+// If the user keeps dismissing whatever the whisper says, the whisper should
+// take the hint and turn ITSELF down a step - without being asked. It only
+// ever moves toward silence; getting chattier is always the user's explicit
+// choice. The feedback log is cleared on each step so one bad streak cannot
+// cascade straight to silent.
+const AUTOQUIET_WINDOW = 8;          // look at the last N feedback events
+const AUTOQUIET_RATIO = 0.875;       // 7 of 8 dismissed -> step down
+const QUIETER = { chatty: 'balanced', balanced: 'reserved', reserved: 'silent' };
+
+function recordFeedbackEvent(state, action, now = Date.now()) {
+  const next = { ...(state || {}) };
+  const log = Array.isArray(next.feedbackLog) ? next.feedbackLog.slice() : [];
+  log.push({ at: now, action });
+  next.feedbackLog = log.slice(-20);
+  return next;
+}
+
+/** Returns a NEW state, possibly one dial-step quieter. Never louder. */
+function autoQuiet(state, now = Date.now()) {
+  const log = (state && state.feedbackLog) || [];
+  if (log.length < AUTOQUIET_WINDOW) return state;
+  const recent = log.slice(-AUTOQUIET_WINDOW);
+  const dismissed = recent.filter(e => e && e.action === 'dismiss').length;
+  if (dismissed / recent.length < AUTOQUIET_RATIO) return state;
+  const to = QUIETER[state.dial];
+  if (!to) return state;
+  return { ...state, dial: to, feedbackLog: [], autoTuned: { at: now, from: state.dial, to } };
+}
+
 // ── tiny file-backed store (trust + dial + shown), like outcomes.js ──────────
 
 function _file(repoRoot) { return path.join(repoRoot, '.symphonee', 'ambient.json'); }
@@ -178,13 +208,16 @@ function saveState(repoRoot, state) {
     trust: state.trust || {},
     enabled: state.enabled !== false,   // hard on/off; default on
     shown: _shown(state),               // what was already said (novelty gate)
+    feedbackLog: state.feedbackLog || [],
+    autoTuned: state.autoTuned || null,
   }, null, 2), 'utf8');
 }
 
 module.exports = {
   DIALS, DEFAULT_DIAL, FLOW_INTERRUPT_BAR,
-  FAMILY_COOLDOWN_MS, SHOWN_TTL_MS,
+  FAMILY_COOLDOWN_MS, SHOWN_TTL_MS, AUTOQUIET_WINDOW,
   trustMultiplier, evaluateNudge, applyFeedback,
   familyOf, isNovel, recordShown, shownCounts,
+  recordFeedbackEvent, autoQuiet,
   loadState, saveState,
 };

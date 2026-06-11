@@ -98,6 +98,16 @@
          write), the liquid flares briefly - alive, learning, seeing */
       #ambientWhisper.aw-synapse .aw-goo{animation:aw-synapse 1.4s ease-out;}
       @keyframes aw-synapse{0%{opacity:.5;}16%{opacity:.95;}100%{opacity:.5;}}
+      /* working: while dispatched tasks run, the liquid flows fast - the pill
+         is a peripheral-vision readout of the AI workforce */
+      #ambientWhisper.aw-busy .aw-goo{opacity:.62;}
+      #ambientWhisper.aw-busy .aw-blob.b1{animation-duration:1.7s;}
+      #ambientWhisper.aw-busy .aw-blob.b2{animation-duration:2.2s;}
+      #ambientWhisper.aw-busy .aw-blob.b3{animation-duration:1.9s;}
+      #ambientWhisper.aw-busy .aw-sheen::before{animation-duration:2.6s;}
+      /* running-count badge variant: outlined, not filled (it is status, not news) */
+      #ambientWhisper .aw-badge.aw-badge-run{background:transparent;border:1px solid var(--accent,#89b4fa);
+        color:var(--accent,#89b4fa);}
       /* fresh thought: the liquid inside sloshes (the shell stays a pill) */
       #ambientWhisper.aw-fresh .aw-goo{animation:aw-slosh .9s cubic-bezier(.36,.07,.19,.97);}
       @keyframes aw-slosh{0%{transform:translateX(0) scale(1,1);}25%{transform:translateX(4px) scale(1.04,.94);}
@@ -195,16 +205,27 @@
     return _hintCur;
   }
 
-  // Unread count: thoughts that joined the thread but were never opened. The
-  // human eye tracks change - a tiny number on the resting pill says "there is
-  // something here you have not seen" without shouting.
+  // The badge wears two hats: unread thoughts (filled - news) win over the
+  // running-task count (outlined - status). The human eye tracks change; a
+  // tiny number says "something here" without shouting.
+  const _running = new Set();   // dispatched task ids currently in flight
   function _updateBadge() {
     if (!_pill) return;
     let b = _pill.querySelector('.aw-badge');
     if (!b) { b = document.createElement('span'); b.className = 'aw-badge'; _pill.appendChild(b); }
-    const n = _thread.filter(c => !c._seen).length;
-    b.textContent = n > 9 ? '9+' : String(n);
-    b.style.display = n ? 'flex' : 'none';
+    const unread = _thread.filter(c => !c._seen).length;
+    if (unread) {
+      b.classList.remove('aw-badge-run');
+      b.textContent = unread > 9 ? '9+' : String(unread);
+      b.style.display = 'flex';
+    } else if (_running.size) {
+      b.classList.add('aw-badge-run');
+      b.textContent = String(_running.size);
+      b.style.display = 'flex';
+    } else {
+      b.style.display = 'none';
+    }
+    _pill.classList.toggle('aw-busy', _running.size > 0);
   }
 
   function _ensurePill() {
@@ -218,11 +239,44 @@
       '<div class="aw-sheen"></div>' +
       '<div class="aw-content"><span class="aw-dot"></span><span class="aw-text"></span><button class="aw-x" title="Dismiss">&times;</button></div>';
     document.body.appendChild(el);
-    el.addEventListener('click', (e) => { if (!e.target.classList.contains('aw-x')) _openModal(); });
+    // dock position survives restarts (percent of viewport width)
+    try {
+      const pos = parseFloat(localStorage.getItem('aw-pos') || '');
+      if (pos >= 8 && pos <= 92) el.style.left = pos + '%';
+    } catch (_) {}
+    el.addEventListener('click', (e) => {
+      if (_dragSuppress) return;   // a drag is not a click
+      if (!e.target.classList.contains('aw-x')) _openModal();
+    });
     el.querySelector('.aw-x').addEventListener('click', (e) => { e.stopPropagation(); _dismiss(); });
+    // drag to dock: slide the pill anywhere along the waterline
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      _drag = { startX: e.clientX, startPct: parseFloat(el.style.left) || 50, moved: false };
+    });
     _pill = el;
     return el;
   }
+
+  let _drag = null;
+  let _dragSuppress = false;
+  document.addEventListener('mousemove', (e) => {
+    if (!_drag || !_pill) return;
+    const dx = e.clientX - _drag.startX;
+    if (!_drag.moved && Math.abs(dx) < 7) return;
+    _drag.moved = true;
+    const pct = Math.max(8, Math.min(92, _drag.startPct + (dx / window.innerWidth) * 100));
+    _pill.style.left = pct + '%';
+  }, { passive: true });
+  document.addEventListener('mouseup', () => {
+    if (!_drag) return;
+    if (_drag.moved) {
+      _dragSuppress = true;
+      try { localStorage.setItem('aw-pos', String(parseFloat(_pill.style.left) || 50)); } catch (_) {}
+      setTimeout(() => { _dragSuppress = false; }, 80);
+    }
+    _drag = null;
+  });
 
   // The droplet is ALWAYS there (unless whispers are off): presence, not popup.
   function _surface() {
@@ -274,6 +328,7 @@
     if (!(last && last.kind === 'nudge' && last.n.title === nudge.title)) {
       _thread.push({ at: Date.now(), kind: 'nudge', n: nudge, turns: [] });
       _updateBadge();
+      _saveThread();
     }
     const el = _ensurePill();
     el.querySelector('.aw-text').textContent = _plain(nudge.title);
@@ -338,8 +393,26 @@
   //     spawns a new card. Flip through cards with the nav chip (timestamps).
   //   - the ASK SYMPHONEE BAR: a separate floating pill BELOW the panel.
   //     Typing there always starts a NEW topic. No ambiguity.
-  const _thread = [];   // topic cards: {at, kind:'nudge'|'qa', n?, turns:[{q,a,at}]}
+  const _thread = [];   // topic cards: {at, kind:'nudge'|'qa', n?, turns:[{q,a,at}], pinned?, _seen?}
   let _view = -1;       // which card is showing; -1 = no card (just the ask bar)
+
+  // Topics survive restarts: recent cards (24h) come back, PINNED cards come
+  // back forever. The thread is the user's short-term shared memory with
+  // Symphonee - it should not evaporate on every restart.
+  const THREAD_KEY = 'aw-thread-v1';
+  const THREAD_TTL_MS = 24 * 60 * 60 * 1000;
+  function _saveThread() {
+    try { localStorage.setItem(THREAD_KEY, JSON.stringify(_thread.slice(-20))); } catch (_) { /* storage full / private mode */ }
+  }
+  (function _loadThread() {
+    try {
+      const arr = JSON.parse(localStorage.getItem(THREAD_KEY) || '[]');
+      const now = Date.now();
+      for (const c of arr) {
+        if (c && c.at && (c.pinned || now - c.at <= THREAD_TTL_MS)) _thread.push(c);
+      }
+    } catch (_) { /* corrupted store - start fresh */ }
+  })();
 
   function _fmtTime(ts) {
     const d = new Date(ts);
@@ -423,7 +496,7 @@
     const chips = document.getElementById('awChips');
     if (chips) chips.style.display = card ? 'none' : 'flex';
     if (!card) return;
-    card._seen = true;   // opened = read
+    if (!card._seen) { card._seen = true; _saveThread(); }   // opened = read
     _updateBadge();
 
     // nav chip: flip through the session's topic cards (real touch targets)
@@ -437,6 +510,13 @@
     } else {
       nav.innerHTML = '<span style="font-size:10.5px;color:var(--overlay1,#7f849c);white-space:nowrap;">' + _fmtTime(card.at) + '</span>';
     }
+    // pin: keep this topic beyond the 24h thread window
+    const pin = document.createElement('button');
+    pin.setAttribute('style', 'background:transparent;border:1px solid ' + (card.pinned ? 'var(--accent,#89b4fa)' : 'var(--surface2,#45475a)') + ';color:' + (card.pinned ? 'var(--accent,#89b4fa)' : 'var(--overlay1,#7f849c)') + ';font-size:10px;padding:4px 9px;border-radius:999px;cursor:pointer;font-family:inherit;margin-left:5px;');
+    pin.textContent = card.pinned ? 'Pinned' : 'Pin';
+    pin.title = card.pinned ? 'Unpin - let this topic expire with the thread' : 'Keep this topic beyond the 24h window';
+    pin.addEventListener('click', () => { card.pinned = !card.pinned; _saveThread(); _renderView(modal); });
+    nav.appendChild(pin);
 
     body.innerHTML = _cardHtml(card);
     body.scrollTop = (card.turns && card.turns.length) ? body.scrollHeight : 0;
@@ -544,18 +624,27 @@
     };
     bg.querySelector('#awAskGo').addEventListener('click', goNew);
     askInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goNew(); });
-    // suggestion chips: one tap teaches what asking feels like
+    // suggestion chips: one tap teaches what asking feels like. Static set
+    // renders instantly; the context-aware set (drawn from what is actually
+    // going on - a finished task, an edited note) replaces it when it lands.
     const chips = bg.querySelector('#awChips');
     const CHIP = 'background:color-mix(in srgb,var(--surface0,#1e1e2e) 88%,var(--accent,#89b4fa) 5%);border:1px solid var(--surface2,#45475a);color:var(--subtext1,#bac2de);font-size:11.5px;padding:8px 14px;border-radius:999px;cursor:pointer;font-family:inherit;';
-    for (const q of ['What changed today?', 'Where did we leave off?', 'What should I do next?']) {
-      const c = document.createElement('button');
-      c.setAttribute('style', CHIP);
-      c.textContent = q;
-      c.addEventListener('mouseenter', () => { c.style.borderColor = 'var(--accent,#89b4fa)'; c.style.color = 'var(--text,#cdd6f4)'; });
-      c.addEventListener('mouseleave', () => { c.style.borderColor = 'var(--surface2,#45475a)'; c.style.color = 'var(--subtext1,#bac2de)'; });
-      c.addEventListener('click', () => newTopic(q));
-      chips.appendChild(c);
-    }
+    const fillChips = (list) => {
+      chips.innerHTML = '';
+      for (const q of list) {
+        const c = document.createElement('button');
+        c.setAttribute('style', CHIP);
+        c.textContent = q;
+        c.addEventListener('mouseenter', () => { c.style.borderColor = 'var(--accent,#89b4fa)'; c.style.color = 'var(--text,#cdd6f4)'; });
+        c.addEventListener('mouseleave', () => { c.style.borderColor = 'var(--surface2,#45475a)'; c.style.color = 'var(--subtext1,#bac2de)'; });
+        c.addEventListener('click', () => newTopic(q));
+        chips.appendChild(c);
+      }
+    };
+    fillChips(['What changed today?', 'Where did we leave off?', 'What should I do next?']);
+    fetch('/api/symphonee/ambient/chips').then(r => r.json()).then(d => {
+      if (d && Array.isArray(d.chips) && d.chips.length && document.getElementById('awChips')) fillChips(d.chips);
+    }).catch(() => {});
     // default view: the latest card (the freshest topic), or just the ask bar
     _view = opts.askOnly ? -1 : (_thread.length ? _thread.length - 1 : -1);
     _renderView(modal);
@@ -660,6 +749,7 @@
 
     if (finale && finale.type === 'done' && finale.answer) {
       card.turns.push({ q: question, a: finale.answer, at: Date.now(), actions: finale.actions || [] });
+      _saveThread();
       _renderView(modal);
       const reply = panel.querySelector('#awmReply');
       if (reply) reply.focus();
@@ -692,6 +782,12 @@
     return fetch('/api/symphonee/ambient/feedback', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type, action }),
+    }).then(r => r.json()).then(d => {
+      // The whisper just turned itself down after a dismissal streak - say so
+      // once, plainly. Respect for attention should be visible, not sneaky.
+      if (d && d.autoTuned) {
+        try { if (typeof window.toast === 'function') window.toast('Noted - I will speak up less often. (You can re-tune me in Settings.)', 'info'); } catch (_) {}
+      }
     }).catch(() => {});
   }
 
@@ -734,7 +830,13 @@
   // The pill appears the moment the app does - it is the door to asking, so
   // it must always be there. The first nudge check follows a few seconds later.
   function _boot() {
-    if (!_disabled) _surface();
+    if (!_disabled) { _surface(); _updateBadge(); }
+    // seed the running-task monitor with whatever is already in flight
+    fetch('/api/orchestrator/tasks?state=running').then(r => r.json()).then(d => {
+      const tasks = Array.isArray(d) ? d : (d && d.tasks) || [];
+      for (const t of tasks) if (t && t.id) _running.add(t.id);
+      if (tasks.length) _updateBadge();
+    }).catch(() => {});
     setTimeout(() => check(true), 5000);
   }
   window.addEventListener('DOMContentLoaded', _boot);
@@ -772,7 +874,15 @@
           // The brain just learned something - let the liquid show it.
           if (msg.type === 'mind-update') { _synapse(); return; }
           if (msg.type !== 'orchestrator-event' || msg.event !== 'task-update') return;
-          const st = msg.task && msg.task.state;
+          const t = msg.task || {};
+          const st = t.state;
+          // Ambient task monitor: the liquid flows fast while work is in
+          // flight, and the badge counts the running tasks.
+          if (t.id) {
+            if (st === 'running' || st === 'pending' || st === 'queued') _running.add(t.id);
+            else _running.delete(t.id);
+            _updateBadge();
+          }
           if (st !== 'failed' && st !== 'timeout' && st !== 'completed') return;
           // Debounce a burst of completions into one check; force past the interval.
           if (_taskTimer) return;

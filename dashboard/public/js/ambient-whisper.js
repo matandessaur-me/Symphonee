@@ -74,6 +74,16 @@
          write), the liquid flares briefly - alive, learning, seeing */
       #ambientWhisper.aw-synapse .aw-goo{animation:aw-synapse 1.4s ease-out;}
       @keyframes aw-synapse{0%{opacity:.5;}16%{opacity:.95;}100%{opacity:.5;}}
+      /* working: while dispatched tasks run, the liquid flows fast - the pill
+         is a peripheral-vision readout of the AI workforce */
+      #ambientWhisper.aw-busy .aw-goo{opacity:.62;}
+      #ambientWhisper.aw-busy .aw-blob.b1{animation-duration:1.7s;}
+      #ambientWhisper.aw-busy .aw-blob.b2{animation-duration:2.2s;}
+      #ambientWhisper.aw-busy .aw-blob.b3{animation-duration:1.9s;}
+      #ambientWhisper.aw-busy .aw-sheen::before{animation-duration:2.6s;}
+      /* running-count badge variant: outlined, not filled (it is status, not news) */
+      #ambientWhisper .aw-badge.aw-badge-run{background:transparent;border:1px solid var(--accent,#89b4fa);
+        color:var(--accent,#89b4fa);}
       /* fresh thought: the liquid inside sloshes (the shell stays a pill) */
       #ambientWhisper.aw-fresh .aw-goo{animation:aw-slosh .9s cubic-bezier(.36,.07,.19,.97);}
       @keyframes aw-slosh{0%{transform:translateX(0) scale(1,1);}25%{transform:translateX(4px) scale(1.04,.94);}
@@ -168,6 +178,7 @@
       }
       return _hintCur;
     }
+    const _running = /* @__PURE__ */ new Set();
     function _updateBadge() {
       if (!_pill) return;
       let b = _pill.querySelector(".aw-badge");
@@ -176,9 +187,19 @@
         b.className = "aw-badge";
         _pill.appendChild(b);
       }
-      const n = _thread.filter((c) => !c._seen).length;
-      b.textContent = n > 9 ? "9+" : String(n);
-      b.style.display = n ? "flex" : "none";
+      const unread = _thread.filter((c) => !c._seen).length;
+      if (unread) {
+        b.classList.remove("aw-badge-run");
+        b.textContent = unread > 9 ? "9+" : String(unread);
+        b.style.display = "flex";
+      } else if (_running.size) {
+        b.classList.add("aw-badge-run");
+        b.textContent = String(_running.size);
+        b.style.display = "flex";
+      } else {
+        b.style.display = "none";
+      }
+      _pill.classList.toggle("aw-busy", _running.size > 0);
     }
     function _ensurePill() {
       if (_pill) return _pill;
@@ -188,16 +209,50 @@
       el.className = "aw-collapsed";
       el.innerHTML = '<div class="aw-goo"><div class="aw-blob b1"></div><div class="aw-blob b2"></div><div class="aw-blob b3"></div></div><div class="aw-sheen"></div><div class="aw-content"><span class="aw-dot"></span><span class="aw-text"></span><button class="aw-x" title="Dismiss">&times;</button></div>';
       document.body.appendChild(el);
+      try {
+        const pos = parseFloat(localStorage.getItem("aw-pos") || "");
+        if (pos >= 8 && pos <= 92) el.style.left = pos + "%";
+      } catch (_) {
+      }
       el.addEventListener("click", (e) => {
+        if (_dragSuppress) return;
         if (!e.target.classList.contains("aw-x")) _openModal();
       });
       el.querySelector(".aw-x").addEventListener("click", (e) => {
         e.stopPropagation();
         _dismiss();
       });
+      el.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        _drag = { startX: e.clientX, startPct: parseFloat(el.style.left) || 50, moved: false };
+      });
       _pill = el;
       return el;
     }
+    let _drag = null;
+    let _dragSuppress = false;
+    document.addEventListener("mousemove", (e) => {
+      if (!_drag || !_pill) return;
+      const dx = e.clientX - _drag.startX;
+      if (!_drag.moved && Math.abs(dx) < 7) return;
+      _drag.moved = true;
+      const pct = Math.max(8, Math.min(92, _drag.startPct + dx / window.innerWidth * 100));
+      _pill.style.left = pct + "%";
+    }, { passive: true });
+    document.addEventListener("mouseup", () => {
+      if (!_drag) return;
+      if (_drag.moved) {
+        _dragSuppress = true;
+        try {
+          localStorage.setItem("aw-pos", String(parseFloat(_pill.style.left) || 50));
+        } catch (_) {
+        }
+        setTimeout(() => {
+          _dragSuppress = false;
+        }, 80);
+      }
+      _drag = null;
+    });
     function _surface() {
       const el = _ensurePill();
       if (el.style.display !== "flex") {
@@ -240,6 +295,7 @@
       if (!(last && last.kind === "nudge" && last.n.title === nudge.title)) {
         _thread.push({ at: Date.now(), kind: "nudge", n: nudge, turns: [] });
         _updateBadge();
+        _saveThread();
       }
       const el = _ensurePill();
       el.querySelector(".aw-text").textContent = _plain(nudge.title);
@@ -293,6 +349,24 @@
     const _STATUS = (label) => '<span style="font-size:12px;color:var(--subtext0,#a6adc8);display:flex;align-items:center;gap:7px;"><span class="aw-dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 8px var(--accent,#89b4fa);"></span>' + label + "</span>";
     const _thread = [];
     let _view = -1;
+    const THREAD_KEY = "aw-thread-v1";
+    const THREAD_TTL_MS = 24 * 60 * 60 * 1e3;
+    function _saveThread() {
+      try {
+        localStorage.setItem(THREAD_KEY, JSON.stringify(_thread.slice(-20)));
+      } catch (_) {
+      }
+    }
+    (function _loadThread() {
+      try {
+        const arr = JSON.parse(localStorage.getItem(THREAD_KEY) || "[]");
+        const now = Date.now();
+        for (const c of arr) {
+          if (c && c.at && (c.pinned || now - c.at <= THREAD_TTL_MS)) _thread.push(c);
+        }
+      } catch (_) {
+      }
+    })();
     function _fmtTime(ts) {
       const d = new Date(ts);
       let h = d.getHours();
@@ -366,7 +440,10 @@
       const chips = document.getElementById("awChips");
       if (chips) chips.style.display = card ? "none" : "flex";
       if (!card) return;
-      card._seen = true;
+      if (!card._seen) {
+        card._seen = true;
+        _saveThread();
+      }
       _updateBadge();
       if (_thread.length > 1) {
         nav.innerHTML = '<button id="awmPrev" class="awm-icon-btn" ' + (_view > 0 ? "" : "disabled") + '>&lsaquo;</button><span style="font-size:10.5px;color:var(--overlay1,#7f849c);white-space:nowrap;">' + (_view + 1) + "/" + _thread.length + " &middot; " + _fmtTime(card.at) + '</span><button id="awmNext" class="awm-icon-btn" ' + (_view < _thread.length - 1 ? "" : "disabled") + ">&rsaquo;</button>";
@@ -385,6 +462,16 @@
       } else {
         nav.innerHTML = '<span style="font-size:10.5px;color:var(--overlay1,#7f849c);white-space:nowrap;">' + _fmtTime(card.at) + "</span>";
       }
+      const pin = document.createElement("button");
+      pin.setAttribute("style", "background:transparent;border:1px solid " + (card.pinned ? "var(--accent,#89b4fa)" : "var(--surface2,#45475a)") + ";color:" + (card.pinned ? "var(--accent,#89b4fa)" : "var(--overlay1,#7f849c)") + ";font-size:10px;padding:4px 9px;border-radius:999px;cursor:pointer;font-family:inherit;margin-left:5px;");
+      pin.textContent = card.pinned ? "Pinned" : "Pin";
+      pin.title = card.pinned ? "Unpin - let this topic expire with the thread" : "Keep this topic beyond the 24h window";
+      pin.addEventListener("click", () => {
+        card.pinned = !card.pinned;
+        _saveThread();
+        _renderView(modal);
+      });
+      nav.appendChild(pin);
       body.innerHTML = _cardHtml(card);
       body.scrollTop = card.turns && card.turns.length ? body.scrollHeight : 0;
       const lastTurn = card.turns && card.turns[card.turns.length - 1];
@@ -485,21 +572,29 @@
       });
       const chips = bg.querySelector("#awChips");
       const CHIP = "background:color-mix(in srgb,var(--surface0,#1e1e2e) 88%,var(--accent,#89b4fa) 5%);border:1px solid var(--surface2,#45475a);color:var(--subtext1,#bac2de);font-size:11.5px;padding:8px 14px;border-radius:999px;cursor:pointer;font-family:inherit;";
-      for (const q of ["What changed today?", "Where did we leave off?", "What should I do next?"]) {
-        const c = document.createElement("button");
-        c.setAttribute("style", CHIP);
-        c.textContent = q;
-        c.addEventListener("mouseenter", () => {
-          c.style.borderColor = "var(--accent,#89b4fa)";
-          c.style.color = "var(--text,#cdd6f4)";
-        });
-        c.addEventListener("mouseleave", () => {
-          c.style.borderColor = "var(--surface2,#45475a)";
-          c.style.color = "var(--subtext1,#bac2de)";
-        });
-        c.addEventListener("click", () => newTopic(q));
-        chips.appendChild(c);
-      }
+      const fillChips = (list) => {
+        chips.innerHTML = "";
+        for (const q of list) {
+          const c = document.createElement("button");
+          c.setAttribute("style", CHIP);
+          c.textContent = q;
+          c.addEventListener("mouseenter", () => {
+            c.style.borderColor = "var(--accent,#89b4fa)";
+            c.style.color = "var(--text,#cdd6f4)";
+          });
+          c.addEventListener("mouseleave", () => {
+            c.style.borderColor = "var(--surface2,#45475a)";
+            c.style.color = "var(--subtext1,#bac2de)";
+          });
+          c.addEventListener("click", () => newTopic(q));
+          chips.appendChild(c);
+        }
+      };
+      fillChips(["What changed today?", "Where did we leave off?", "What should I do next?"]);
+      fetch("/api/symphonee/ambient/chips").then((r) => r.json()).then((d) => {
+        if (d && Array.isArray(d.chips) && d.chips.length && document.getElementById("awChips")) fillChips(d.chips);
+      }).catch(() => {
+      });
       _view = opts.askOnly ? -1 : _thread.length ? _thread.length - 1 : -1;
       _renderView(modal);
       setTimeout(() => askInput.focus(), 80);
@@ -617,6 +712,7 @@
       }
       if (finale && finale.type === "done" && finale.answer) {
         card.turns.push({ q: question, a: finale.answer, at: Date.now(), actions: finale.actions || [] });
+        _saveThread();
         _renderView(modal);
         const reply = panel.querySelector("#awmReply");
         if (reply) reply.focus();
@@ -648,6 +744,13 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, action })
+      }).then((r) => r.json()).then((d) => {
+        if (d && d.autoTuned) {
+          try {
+            if (typeof window.toast === "function") window.toast("Noted - I will speak up less often. (You can re-tune me in Settings.)", "info");
+          } catch (_) {
+          }
+        }
       }).catch(() => {
       });
     }
@@ -696,7 +799,16 @@
       }
     }
     function _boot() {
-      if (!_disabled) _surface();
+      if (!_disabled) {
+        _surface();
+        _updateBadge();
+      }
+      fetch("/api/orchestrator/tasks?state=running").then((r) => r.json()).then((d) => {
+        const tasks = Array.isArray(d) ? d : d && d.tasks || [];
+        for (const t of tasks) if (t && t.id) _running.add(t.id);
+        if (tasks.length) _updateBadge();
+      }).catch(() => {
+      });
       setTimeout(() => check(true), 5e3);
     }
     window.addEventListener("DOMContentLoaded", _boot);
@@ -730,7 +842,13 @@
               return;
             }
             if (msg.type !== "orchestrator-event" || msg.event !== "task-update") return;
-            const st = msg.task && msg.task.state;
+            const t = msg.task || {};
+            const st = t.state;
+            if (t.id) {
+              if (st === "running" || st === "pending" || st === "queued") _running.add(t.id);
+              else _running.delete(t.id);
+              _updateBadge();
+            }
             if (st !== "failed" && st !== "timeout" && st !== "completed") return;
             if (_taskTimer) return;
             _taskTimer = setTimeout(() => {

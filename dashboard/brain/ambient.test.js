@@ -124,6 +124,39 @@ test('familyOf strips the instance suffix', () => {
   assert.equal(ambient.familyOf('commit-reminder'), 'commit-reminder');
 });
 
+// ── auto-quiet: sustained dismissal turns the whisper down by itself ─────────
+
+test('autoQuiet steps the dial down after a sustained dismissal streak', () => {
+  let state = { dial: 'balanced', trust: {}, enabled: true };
+  for (let i = 0; i < 8; i++) state = ambient.recordFeedbackEvent(state, 'dismiss');
+  state = ambient.autoQuiet(state);
+  assert.equal(state.dial, 'reserved');
+  assert.equal(state.autoTuned.from, 'balanced');
+  assert.deepEqual(state.feedbackLog, [], 'log cleared so one streak cannot cascade');
+});
+
+test('autoQuiet stays put on mixed feedback and never goes below silent', () => {
+  let state = { dial: 'balanced', trust: {}, enabled: true };
+  for (let i = 0; i < 4; i++) state = ambient.recordFeedbackEvent(state, 'dismiss');
+  for (let i = 0; i < 4; i++) state = ambient.recordFeedbackEvent(state, 'accept');
+  assert.equal(ambient.autoQuiet(state).dial, 'balanced', 'mixed feedback: no change');
+  let s2 = { dial: 'silent', trust: {}, enabled: true };
+  for (let i = 0; i < 8; i++) s2 = ambient.recordFeedbackEvent(s2, 'dismiss');
+  assert.equal(ambient.autoQuiet(s2).dial, 'silent', 'already silent: stays');
+});
+
+test('autoQuiet never tunes LOUDER, even on an all-accept streak', () => {
+  let state = { dial: 'reserved', trust: {}, enabled: true };
+  for (let i = 0; i < 12; i++) state = ambient.recordFeedbackEvent(state, 'accept');
+  assert.equal(ambient.autoQuiet(state).dial, 'reserved');
+});
+
+test('recordFeedbackEvent caps the log at 20 entries', () => {
+  let state = {};
+  for (let i = 0; i < 30; i++) state = ambient.recordFeedbackEvent(state, 'accept');
+  assert.equal(state.feedbackLog.length, 20);
+});
+
 test('shown state survives a save/load round-trip', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sym-ambient-'));
   try {
