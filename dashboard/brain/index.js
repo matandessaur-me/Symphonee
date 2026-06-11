@@ -313,7 +313,7 @@ function mountBrain(addRoute, json, ctx) {
   let _nudgeCache = { at: 0, nudge: null };
   const _NUDGE_TTL_MS = 60_000;
   // Shared context for the nudge engine: what the user is actually doing.
-  async function _gatherNudgeContext() {
+  async function _gatherNudgeContext(opts) {
     const ui = getUiContext ? getUiContext() : {};
     const space = (ui && ui.activeSpace) || '_global';
     let ctx;
@@ -322,6 +322,7 @@ function mountBrain(addRoute, json, ctx) {
     ctx.activeRepo = ui.activeRepo || null;
     ctx.activeRepoPath = ui.activeRepoPath || null;
     ctx.intent = intent.get();
+    ctx.idle = !!(opts && opts.idle);
     return ctx;
   }
 
@@ -379,9 +380,10 @@ function mountBrain(addRoute, json, ctx) {
   addRoute('GET', '/api/symphonee/ambient/nudge', async (req, res) => {
     const state = ambientModule.loadState(repoRoot);
     if (state.enabled === false) return json(res, { nudge: null, dial: state.dial, enabled: false });
+    const idle = new URL(req.url, 'http://x').searchParams.get('idle') === '1';
     let candidates = [];
     try {
-      const ctx = await _gatherNudgeContext();
+      const ctx = await _gatherNudgeContext({ idle });
       candidates = nudgeRules.runRules(ctx);
       if (!candidates.length) { const s = await _synthesizeNudge(ctx); if (s) candidates.push(s); }
     } catch (_) { /* stay quiet on error */ }
