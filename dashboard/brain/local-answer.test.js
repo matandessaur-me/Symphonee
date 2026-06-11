@@ -156,15 +156,25 @@ test('_deriveActions turns cited notes/docs/tasks into follow-up actions', () =>
   const sources = [
     { id: 'n1', kind: 'note', label: 'Launch Plan', file: 'C:\\repo\\notes\\_global\\Launch Plan.md' },
     { id: 'n1b', kind: 'note', label: 'Launch Plan dup', file: 'C:\\repo\\notes\\_global\\Launch Plan.md' },
-    { id: 'd1', kind: 'doc', label: 'README', file: 'C:\\repo\\README.md' },
+    { id: 'd1', kind: 'doc', label: 'README', file: 'C:\\repo\\docs\\README.md' },
     { id: 'm1', kind: 'memory', label: 'a card', file: null },
   ];
-  const acts = la._deriveActions(sources, { successes: [{ id: 'task9' }] });
+  const acts = la._deriveActions(sources, { successes: [{ id: 'task9' }] }, ['C:\\repo']);
   assert.equal(acts.length, 3);
   assert.deepEqual(acts.map(a => a.type), ['open-note', 'open-file', 'open-task']);
   assert.equal(acts[0].name, 'Launch Plan');
-  assert.equal(acts[1].path, 'C:\\repo\\README.md');
+  assert.equal(acts[1].path, 'docs/README.md', 'file path is REPO-RELATIVE (the viewer joins repoRoot + path)');
   assert.equal(acts[2].id, 'task9');
+});
+
+test('_deriveActions skips files outside the viewer roots (no dead chips)', () => {
+  const sources = [
+    { id: 'd1', kind: 'doc', label: 'elsewhere', file: 'D:\\other\\README.md' },
+    { id: 'd2', kind: 'doc', label: 'inside', file: 'C:\\repo\\CHANGELOG.md' },
+  ];
+  const acts = la._deriveActions(sources, {}, ['C:\\repo']);
+  assert.equal(acts.length, 1);
+  assert.equal(acts[0].path, 'CHANGELOG.md');
 });
 
 test('_isPureTemporal separates "what changed today" from topic questions', () => {

@@ -620,7 +620,7 @@ async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPat
     answer,
     citedNodeIds,
     sources: sources.map(s => ({ id: s.id, kind: s.kind, label: s.label })),
-    actions: _deriveActions(sources, activity),
+    actions: _deriveActions(sources, activity, [activeRepoPath, repoRoot]),
     recalled: { cards: leg.cards.length, clis: Object.keys(leg.byCli) },
     since: leg.since,
     model: (res && res.model) || SYNTH_MODEL,
@@ -630,7 +630,21 @@ async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPat
 // Follow-up actions derived from what the answer was grounded IN: a cited note
 // can be opened, a cited doc file can be viewed, a fresh task result can be
 // pulled up. The card stops being a dead end.
-function _deriveActions(sources, activity, max = 3) {
+//
+// File paths in the graph are ABSOLUTE, but the file viewer resolves `path`
+// RELATIVE to its repo (server joins repoRoot + path - an absolute path here
+// produced "C:\repo\C:\repo\..." ENOENT). So open-file actions carry a
+// repo-relative path, and files OUTSIDE the given roots get no chip at all.
+function _relInside(file, roots) {
+  for (const r of roots || []) {
+    if (!r) continue;
+    const rel = path.relative(r, file);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return rel.split(path.sep).join('/');
+  }
+  return null;
+}
+
+function _deriveActions(sources, activity, roots = [], max = 3) {
   const acts = [];
   const seen = new Set();
   for (const s of sources) {
@@ -643,10 +657,12 @@ function _deriveActions(sources, activity, max = 3) {
       seen.add(key);
       acts.push({ type: 'open-note', label: 'Open note: ' + (name.length > 26 ? name.slice(0, 26) + '...' : name), name });
     } else if (s.kind === 'doc') {
-      const key = 'file:' + s.file;
+      const rel = _relInside(s.file, roots);
+      if (!rel) continue;                       // outside the viewer's repo - no dead chip
+      const key = 'file:' + rel;
       if (seen.has(key)) continue;
       seen.add(key);
-      acts.push({ type: 'open-file', label: 'Open ' + path.basename(s.file), path: s.file });
+      acts.push({ type: 'open-file', label: 'Open ' + path.basename(s.file), path: rel });
     }
   }
   if (activity && activity.successes && activity.successes.length && acts.length < max) {
