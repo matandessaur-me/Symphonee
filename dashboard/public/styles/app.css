@@ -7,10 +7,10 @@
       --radius-lg: 10px;
       --radius-xl: 14px;
       --radius-pill: 999px;
-      /* Balanced rails: equal 280px left and right so the terminal sits
+      /* Balanced rails: equal 300px left and right so the terminal sits
          dead-center (user-specified). */
-      --sidebar-w: 280px;
-      --intel-w:   280px;
+      --sidebar-w: 300px;
+      --intel-w:   300px;
       --header-h:  46px;
       --term-bar-h: 40px;
 
@@ -4157,7 +4157,7 @@
     }
     .intel-tab .tab-close:hover { color: var(--red); }
     .intel-tab.closable:hover .tab-close { display: inline; }
-    .intel-panel { display: none; flex: 1; overflow-y: auto; padding: 12px; }
+    .intel-panel { display: none; flex: 1; overflow-y: auto; padding: 0; }
     .intel-panel.active { display: block; }
     #ipanel-activity { flex-direction: column; padding: 0; }
     #ipanel-activity.active { display: flex; }
