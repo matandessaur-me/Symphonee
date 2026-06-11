@@ -63,11 +63,16 @@
       #ambientWhisper:hover{filter:brightness(1.1);}
       @keyframes aw-breathe{0%,100%{box-shadow:0 0 8px -5px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent),0 5px 18px -6px rgba(0,0,0,.5);}
         50%{box-shadow:0 0 15px -3px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent),0 5px 18px -6px rgba(0,0,0,.5);}}
-      /* resting: a short pill on the waterline - always visible, and big enough
-         to actually hit. Approaching it swells it open (see _proximity), so
-         nobody ever has to aim at a sliver. */
-      #ambientWhisper.aw-collapsed{min-width:110px;max-width:110px;height:24px;padding:0;}
+      /* resting: a small pill on the waterline - always visible, and the
+         approach-swell (see _proximity) means nobody ever aims at it small. */
+      #ambientWhisper.aw-collapsed{min-width:92px;max-width:92px;height:18px;padding:0;}
       #ambientWhisper.aw-collapsed .aw-content{opacity:0;pointer-events:none;}
+      /* unread thoughts: a tiny count riding the resting pill, hidden once the
+         pill is open/expanded (the content speaks for itself then) */
+      #ambientWhisper .aw-badge{position:absolute;right:7px;top:50%;transform:translateY(-50%);z-index:2;
+        display:none;align-items:center;justify-content:center;min-width:13px;height:13px;padding:0 3px;
+        border-radius:999px;background:var(--accent,#89b4fa);color:#11111b;font-size:9px;font-weight:700;line-height:1;}
+      #ambientWhisper:not(.aw-collapsed) .aw-badge{display:none !important;}
       /* the liquid INSIDE the shell: gooey metaballs clipped by the pill,
          drifting like light under glass */
       #ambientWhisper .aw-goo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:.5;
@@ -89,6 +94,10 @@
         background:linear-gradient(100deg,transparent 32%,color-mix(in srgb,var(--accent,#89b4fa) 36%,transparent) 50%,transparent 68%);
         background-size:240% 100%;animation:aw-sheen 7s ease-in-out infinite;}
       @keyframes aw-sheen{0%{background-position:150% 0;}50%{background-position:-30% 0;}100%{background-position:150% 0;}}
+      /* synapse pulse: every time the shared brain learns something (a Mind
+         write), the liquid flares briefly - alive, learning, seeing */
+      #ambientWhisper.aw-synapse .aw-goo{animation:aw-synapse 1.4s ease-out;}
+      @keyframes aw-synapse{0%{opacity:.5;}16%{opacity:.95;}100%{opacity:.5;}}
       /* fresh thought: the liquid inside sloshes (the shell stays a pill) */
       #ambientWhisper.aw-fresh .aw-goo{animation:aw-slosh .9s cubic-bezier(.36,.07,.19,.97);}
       @keyframes aw-slosh{0%{transform:translateX(0) scale(1,1);}25%{transform:translateX(4px) scale(1.04,.94);}
@@ -162,6 +171,42 @@
   }
   function _plain(s) { return String(s == null ? '' : s).replace(/[*`_]/g, ''); }
 
+  // Rotating invitations: each approach teaches one more thing the pill can
+  // do. Persisted index so the rotation continues across sessions; advances at
+  // most every few seconds so hover-bouncing does not churn it.
+  const _HINTS = [
+    'Ask me anything about your work...',
+    'Ask me what changed today',
+    'Ask me where we left off',
+    'Ask me what your AIs worked on',
+    'Ask me what to do next',
+    'Ask me about any of your projects',
+  ];
+  let _hintAt = 0;
+  let _hintCur = null;
+  function _nextHint() {
+    const now = Date.now();
+    if (_hintCur && now - _hintAt < 8000) return _hintCur;
+    let i = 0;
+    try { i = parseInt(localStorage.getItem('aw-hint') || '0', 10) || 0; } catch (_) {}
+    _hintCur = _HINTS[i % _HINTS.length];
+    _hintAt = now;
+    try { localStorage.setItem('aw-hint', String(i + 1)); } catch (_) {}
+    return _hintCur;
+  }
+
+  // Unread count: thoughts that joined the thread but were never opened. The
+  // human eye tracks change - a tiny number on the resting pill says "there is
+  // something here you have not seen" without shouting.
+  function _updateBadge() {
+    if (!_pill) return;
+    let b = _pill.querySelector('.aw-badge');
+    if (!b) { b = document.createElement('span'); b.className = 'aw-badge'; _pill.appendChild(b); }
+    const n = _thread.filter(c => !c._seen).length;
+    b.textContent = n > 9 ? '9+' : String(n);
+    b.style.display = n ? 'flex' : 'none';
+  }
+
   function _ensurePill() {
     if (_pill) return _pill;
     _injectStyles();
@@ -208,10 +253,11 @@
       _pill.style.setProperty('--aw-lean', '0');
     }
     // Swell open on approach - ALWAYS. With a thought it shows the thought;
-    // silent it invites the ask. Nobody aims at a sliver.
+    // silent it invites the ask with a ROTATING capability hint, so over time
+    // the user learns everything the pill can do just by passing near it.
     if (near && _pill.classList.contains('aw-collapsed')) {
       _hovering = true;
-      if (!_current) _pill.querySelector('.aw-text').textContent = 'Ask me anything about your work...';
+      if (!_current) _pill.querySelector('.aw-text').textContent = _nextHint();
       _pill.classList.remove('aw-collapsed');
     } else if (!near && _hovering) {
       _hovering = false;
@@ -227,6 +273,7 @@
     const last = _thread[_thread.length - 1];
     if (!(last && last.kind === 'nudge' && last.n.title === nudge.title)) {
       _thread.push({ at: Date.now(), kind: 'nudge', n: nudge, turns: [] });
+      _updateBadge();
     }
     const el = _ensurePill();
     el.querySelector('.aw-text').textContent = _plain(nudge.title);
@@ -241,6 +288,19 @@
       _collapseTimer = null;
       if (!_hovering && _pill) _pill.classList.add('aw-collapsed');
     }, EXPAND_MS);
+  }
+
+  // Synapse pulse: a brief flare of the inner liquid whenever the shared brain
+  // learns (any Mind write broadcast). Restartable for bursts; never stacks.
+  let _synTimer = null;
+  function _synapse() {
+    if (_disabled) return;
+    const el = _ensurePill();
+    el.classList.remove('aw-synapse');
+    void el.offsetWidth;
+    el.classList.add('aw-synapse');
+    clearTimeout(_synTimer);
+    _synTimer = setTimeout(() => { if (_pill) _pill.classList.remove('aw-synapse'); }, 1500);
   }
 
   // Settle: clear the thought but KEEP the droplet present (it lives here).
@@ -317,9 +377,14 @@
     const replyRow = panel.querySelector('#awmReplyRow');
     const card = _view >= 0 && _view < _thread.length ? _thread[_view] : null;
 
-    // No card: the panel hides entirely - the floating ask bar stands alone.
+    // No card: the panel hides entirely - the floating ask bar stands alone,
+    // with tappable suggestion chips teaching what to ask.
     panel.style.display = card ? 'block' : 'none';
+    const chips = document.getElementById('awChips');
+    if (chips) chips.style.display = card ? 'none' : 'flex';
     if (!card) return;
+    card._seen = true;   // opened = read
+    _updateBadge();
 
     // nav chip: flip through the session's topic cards (real touch targets)
     if (_thread.length > 1) {
@@ -395,6 +460,7 @@
           '<div id="awmReplyRow" style="display:flex;align-items:center;gap:8px;padding:12px 18px 4px;"></div>' +
           '<div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:10px 18px 14px;"></div>' +
         '</div>' +
+        '<div id="awChips" style="display:none;gap:8px;flex-wrap:wrap;justify-content:center;max-width:480px;"></div>' +
         '<div id="awAskBar">' +
           '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span>' +
           '<input id="awAskNew" type="text" placeholder="Ask Symphonee anything... (new topic)"/>' +
@@ -413,25 +479,58 @@
     });
     bg.addEventListener('click', (e) => { if (e.target === bg) _closeModal(); });
     bg.querySelector('#awmClose').addEventListener('click', _closeModal);
+    // a new topic card, from the ask bar or a suggestion chip
+    const newTopic = (q) => {
+      const card = { at: Date.now(), kind: 'qa', turns: [] };
+      _thread.push(card);
+      _view = _thread.length - 1;
+      _streamAsk(q, modal, card);
+    };
     // the Ask Symphonee bar ALWAYS starts a new topic card
     const askInput = bg.querySelector('#awAskNew');
     const goNew = () => {
       const q = askInput.value.trim();
       if (!q) return;
       askInput.value = '';
-      const card = { at: Date.now(), kind: 'qa', turns: [] };
-      _thread.push(card);
-      _view = _thread.length - 1;
-      _streamAsk(q, modal, card);
+      newTopic(q);
     };
     bg.querySelector('#awAskGo').addEventListener('click', goNew);
     askInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goNew(); });
+    // suggestion chips: one tap teaches what asking feels like
+    const chips = bg.querySelector('#awChips');
+    const CHIP = 'background:color-mix(in srgb,var(--surface0,#1e1e2e) 88%,var(--accent,#89b4fa) 5%);border:1px solid var(--surface2,#45475a);color:var(--subtext1,#bac2de);font-size:11.5px;padding:8px 14px;border-radius:999px;cursor:pointer;font-family:inherit;';
+    for (const q of ['What changed today?', 'Where did we leave off?', 'What should I do next?']) {
+      const c = document.createElement('button');
+      c.setAttribute('style', CHIP);
+      c.textContent = q;
+      c.addEventListener('mouseenter', () => { c.style.borderColor = 'var(--accent,#89b4fa)'; c.style.color = 'var(--text,#cdd6f4)'; });
+      c.addEventListener('mouseleave', () => { c.style.borderColor = 'var(--surface2,#45475a)'; c.style.color = 'var(--subtext1,#bac2de)'; });
+      c.addEventListener('click', () => newTopic(q));
+      chips.appendChild(c);
+    }
     // default view: the latest card (the freshest topic), or just the ask bar
     _view = opts.askOnly ? -1 : (_thread.length ? _thread.length - 1 : -1);
     _renderView(modal);
     setTimeout(() => askInput.focus(), 80);
     return modal;
   }
+
+  // Keyboard: Escape closes the island; left/right arrows flip cards when the
+  // focus is not in an input. Muscle memory beats hunting for chips.
+  document.addEventListener('keydown', (e) => {
+    const bg = document.getElementById('ambientWhisperModalBg');
+    if (!bg) return;
+    if (e.key === 'Escape') { _closeModal(); return; }
+    const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    const modal = bg.querySelector('#ambientWhisperModal');
+    if (e.key === 'ArrowLeft') {
+      if (_view === -1 && _thread.length) { _view = _thread.length - 1; _renderView(modal); }
+      else if (_view > 0) { _view -= 1; _renderView(modal); }
+    } else if (e.key === 'ArrowRight' && _view >= 0 && _view < _thread.length - 1) {
+      _view += 1; _renderView(modal);
+    }
+  });
 
   function _closeModal() {
     const bg = document.getElementById('ambientWhisperModalBg');
@@ -622,6 +721,8 @@
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);
+          // The brain just learned something - let the liquid show it.
+          if (msg.type === 'mind-update') { _synapse(); return; }
           if (msg.type !== 'orchestrator-event' || msg.event !== 'task-update') return;
           const st = msg.task && msg.task.state;
           if (st !== 'failed' && st !== 'timeout' && st !== 'completed') return;
