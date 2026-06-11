@@ -9,7 +9,7 @@
  *
  * Each rule is `(ctx) => candidate | null`, pure and side-effect free.
  *   ctx = { git:[lines], checkpoints:[labels], conversation:[{role,text}],
- *           uncommitted:{count,files}, activeRepo, activeRepoPath, intent }
+ *           uncommitted:{count,files}, activeRepo, activeRepoPath, intent, idle }
  *   candidate = { type, value:0..1, title, detail?, action? }
  * action.kind: 'ask' (open the palette with action.prompt), 'diff', 'open-notes'.
  *
@@ -57,7 +57,45 @@ function offerSummary(ctx) {
   };
 }
 
-const RULES = [uncommittedChanges, offerSummary];
+// The user has gone quiet (an explicit idle check). Say ONE context-aware thing,
+// tuned to what is actually on their plate: unsaved work to recap, live momentum
+// to pick a next step from, or just silence. Only fires when ctx.idle - on every
+// other check it stays out of the way. High value so it wins the idle moment.
+function idleNudge(ctx) {
+  if (!ctx || !ctx.idle) return null;
+  const repo = (ctx && ctx.activeRepo) || 'this project';
+  const u = (ctx && ctx.uncommitted) || {};
+  const momentum = (((ctx && ctx.git) || []).length
+    + ((ctx && ctx.checkpoints) || []).length
+    + ((ctx && ctx.conversation) || []).length) >= 3;
+  if (u.count >= 1) {
+    return {
+      type: 'inactivity',
+      value: 0.85,
+      title: `You've got unsaved work in ${repo}. Want a quick recap before you move on?`,
+      actionLabel: 'Recap',
+      action: { kind: 'ask', prompt: 'summarize my uncommitted changes' },
+    };
+  }
+  if (momentum) {
+    return {
+      type: 'inactivity',
+      value: 0.82,
+      title: 'Are you out of ideas? I can suggest a sensible next step from where things stand.',
+      actionLabel: 'Suggest next',
+      action: { kind: 'ask', prompt: 'what should I do next' },
+    };
+  }
+  return {
+    type: 'inactivity',
+    value: 0.8,
+    title: 'Are you still here? I can pick up whenever you are.',
+    actionLabel: 'Catch me up',
+    action: { kind: 'ask', prompt: 'where did we leave off' },
+  };
+}
+
+const RULES = [idleNudge, uncommittedChanges, offerSummary];
 
 function runRules(ctx) {
   const out = [];
@@ -67,4 +105,4 @@ function runRules(ctx) {
   return out;
 }
 
-module.exports = { runRules, RULES, uncommittedChanges, offerSummary };
+module.exports = { runRules, RULES, idleNudge, uncommittedChanges, offerSummary };

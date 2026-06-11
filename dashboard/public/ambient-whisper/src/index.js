@@ -251,14 +251,14 @@
     try { if (typeof window.toast === 'function') window.toast('Symphonee whispers off. Re-enable in Settings.', 'info'); } catch (_) {}
   }
 
-  async function check(force) {
+  async function check(force, opts) {
     if (_disabled) return;
     if (_current && !force) return;
     const now = Date.now();
     if (!force && now - _lastCheck < MIN_INTERVAL_MS) return;
     _lastCheck = now;
     try {
-      const r = await fetch('/api/symphonee/ambient/nudge');
+      const r = await fetch('/api/symphonee/ambient/nudge' + (opts && opts.idle ? '?idle=1' : ''));
       if (!r.ok) return;
       const d = await r.json().catch(() => ({}));
       if (d && d.enabled === false) { _disabled = true; _hidePill(); return; }
@@ -282,7 +282,12 @@
   let _idleTimer = null;
   const IDLE_MS = 4 * 60 * 1000;
   function _resetIdle() { clearTimeout(_idleTimer); _idleTimer = setTimeout(_onIdle, IDLE_MS); }
-  function _onIdle() {
+  async function _onIdle() {
+    if (_disabled || _current) return;
+    // Ask the server for a nudge tuned to the idle moment (unsaved work? momentum?
+    // silence?). The rule engine picks the right words. Fall back to a plain
+    // "still here?" only if the server has nothing to say.
+    await check(true, { idle: true });
     if (_disabled || _current) return;
     const nudge = { type: 'inactivity', title: 'Still here? I can pick up where we left off whenever you are.', actionLabel: 'Catch me up', action: { kind: 'ask', prompt: 'where did we leave off' } };
     if (_dismissed.has(nudge.title)) return;
