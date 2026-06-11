@@ -33,7 +33,7 @@ function createDenseProvider({ repoRoot, space = '_global', kinds = DEFAULT_KIND
   async function warm(questions) {
     for (const q of questions) {
       if (cache.has(q)) continue;
-      const v = await embeddings.embedSingle(q, { provider });
+      const v = await embeddings.embedSingle(q, { provider, task: 'search_query' });
       if (v) cache.set(q, v);
     }
     return cache.size;

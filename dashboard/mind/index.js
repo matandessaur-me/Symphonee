@@ -65,7 +65,7 @@ async function tryDenseSeeds(repoRoot, space, question, k = 50) {
   if (!provider) return null;
   let qv;
   try {
-    qv = await embeddings.embedSingle(question, { provider, model: vs.model || undefined });
+    qv = await embeddings.embedSingle(question, { provider, model: vs.model || undefined, task: 'search_query' });
   } catch (_) {
     return null;
   }
@@ -153,7 +153,7 @@ function mountMind(addRoute, json, ctx) {
     const provider = vs.provider || embeddings.pickProvider();
     if (!provider) return { ok: false, reason: 'no-provider' };
     try {
-      const vec = await embeddings.embedSingle(text, { provider, model: vs.model || undefined });
+      const vec = await embeddings.embedSingle(text, { provider, model: vs.model || undefined, task: 'search_document' });
       if (!vec) return { ok: false, reason: 'empty-embedding' };
       vs.upsert(nodeId, vec);
       vs.save();
