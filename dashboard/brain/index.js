@@ -336,6 +336,17 @@ function mountBrain(addRoute, json, ctx) {
     });
   });
 
+  // GET /api/symphonee/ambient/greeting - who to greet and when. The name
+  // comes from the OS account (never hardcoded); the client composes the words.
+  addRoute('GET', '/api/symphonee/ambient/greeting', (req, res) => {
+    let name = process.env.USERNAME || process.env.USER || '';
+    if (!name) { try { name = require('os').userInfo().username; } catch (_) { name = ''; } }
+    name = name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
+    const h = new Date().getHours();
+    const daypart = h < 5 ? 'night' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+    return json(res, { name, daypart });
+  });
+
   // GET /api/symphonee/ambient/chips - three context-aware ask suggestions for
   // the island's empty state, drawn from what is ACTUALLY going on right now.
   addRoute('GET', '/api/symphonee/ambient/chips', async (req, res) => {
