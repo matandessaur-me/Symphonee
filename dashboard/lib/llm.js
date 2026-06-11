@@ -141,6 +141,70 @@ function pickChatModel() {
  * @param {number} [opts.timeoutMs]
  * @param {number} [opts.numPredict]   ollama options.num_predict cap
  */
+/**
+ * Call Ollama /api/chat with stream:true. Plain-prose only (no format
+ * constraint - streaming JSON makes no sense). Calls onToken(text) for each
+ * content fragment as it arrives; resolves { text, model } when complete.
+ * Same model/temperature/numPredict semantics as chatOllama.
+ */
+function chatOllamaStream(messages, opts = {}, onToken = () => {}) {
+  const model = opts.model || pickChatModel();
+  if (!model) return Promise.reject(new Error('no-chat-model-available'));
+  const body = {
+    model,
+    messages,
+    stream: true,
+    options: {
+      temperature: typeof opts.temperature === 'number' ? opts.temperature : 0.2,
+      num_predict: opts.numPredict || 512,
+    },
+  };
+  return new Promise((resolve, reject) => {
+    const u = new URL(OLLAMA_BASE + '/api/chat');
+    const data = JSON.stringify(body);
+    const req = http.request({
+      hostname: u.hostname,
+      port: u.port || 80,
+      path: u.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        let err = '';
+        res.on('data', c => err += c);
+        res.on('end', () => reject(new Error(`HTTP ${res.statusCode}: ${err.slice(0, 200)}`)));
+        return;
+      }
+      let buf = '';
+      let text = '';
+      res.on('data', (chunk) => {
+        buf += chunk;
+        // NDJSON: one JSON object per line, partial lines stay in the buffer.
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          try {
+            const j = JSON.parse(line);
+            const t = j && j.message && typeof j.message.content === 'string' ? j.message.content : '';
+            if (t) { text += t; try { onToken(t); } catch (_) { /* listener errors never kill the stream */ } }
+          } catch (_) { /* tolerate malformed line */ }
+        }
+      });
+      res.on('end', () => {
+        if (!text.trim()) return reject(new Error('empty chat response'));
+        resolve({ text, model });
+      });
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(opts.timeoutMs || DEFAULT_TIMEOUT_MS, () => req.destroy(new Error('chat-timeout')));
+    req.write(data);
+    req.end();
+  });
+}
+
 async function chatOllama(messages, opts = {}) {
   const model = opts.model || pickChatModel();
   if (!model) throw new Error('no-chat-model-available');
@@ -177,6 +241,7 @@ async function chatOllama(messages, opts = {}) {
 
 module.exports = {
   chatOllama,
+  chatOllamaStream,
   refreshChatStatus,
   getChatStatus,
   pickChatModel,

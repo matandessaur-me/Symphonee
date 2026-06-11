@@ -191,22 +191,17 @@
     }
     const _BTN_PRIMARY = "background:var(--accent,#89b4fa);border:none;color:#11111b;font-weight:600;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer;";
     const _BTN_SOFT = "background:var(--surface1,#313244);border:none;color:var(--subtext1,#cdd6f4);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;";
-    function _openModal() {
-      const n = _current || {
-        // Resting click with nothing pressing: still answer the door.
-        type: "presence",
-        title: "I'm here. Nothing pressing right now.",
-        detail: "I will speak up when a task lands, something breaks, or a thread is worth picking back up.",
-        _noActions: true
-      };
-      const label = n.actionLabel || (n.action && n.action.kind === "suggestion" ? "Do it" : "Show me");
+    const _STATUS = (label) => '<span style="font-size:12px;color:var(--subtext0,#a6adc8);display:flex;align-items:center;gap:7px;"><span class="aw-dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 8px var(--accent,#89b4fa);"></span>' + label + "</span>";
+    function _openModal(opts) {
+      opts = opts || {};
+      const n = _current && !opts.askOnly ? _current : null;
       let bg = document.getElementById("ambientWhisperModalBg");
       if (bg) bg.remove();
       bg = document.createElement("div");
       bg.id = "ambientWhisperModalBg";
-      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' + _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + // Provenance: WHY the whisper spoke. Transparency is what keeps
+      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' + (n ? _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + // Provenance: WHY the whisper spoke. Transparency is what keeps
       // proactivity from feeling like noise.
-      (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + "</div>" : "") + '</div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;">' + (n._noActions ? '<button id="awmDone" style="' + _BTN_SOFT + '">Close</button>' : '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button><button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>') + '<span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
+      (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + "</div>" : "") : '<div style="font-size:13px;color:var(--subtext0,#a6adc8);">What do you want to know? I remember your notes, your decisions, and what every AI here has worked on.</div>') + '</div><div style="display:flex;align-items:center;gap:8px;padding:11px 18px 4px;"><input id="awmAsk" type="text" placeholder="Ask about your work..." style="flex:1;background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 22%,var(--surface2,#45475a));border-radius:10px;color:var(--text,#cdd6f4);font-size:12.5px;padding:8px 12px;outline:none;font-family:inherit;"/><button id="awmAskGo" style="' + _BTN_PRIMARY + 'padding:8px 13px;">Ask</button></div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:11px 18px 16px;">' + (n ? '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + (n.actionLabel || (n.action && n.action.kind === "suggestion" ? "Do it" : "Show me")) + '</button><button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>' : "") + '<span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
       document.body.appendChild(bg);
       bg.style.display = "flex";
       const modal = bg.querySelector("#ambientWhisperModal");
@@ -219,8 +214,7 @@
         if (e.target === bg) close();
       });
       bg.querySelector("#awmClose").addEventListener("click", close);
-      if (n._noActions) bg.querySelector("#awmDone").addEventListener("click", close);
-      else {
+      if (n) {
         bg.querySelector("#awmAct").addEventListener("click", () => _runAction(n, modal));
         bg.querySelector("#awmDismiss").addEventListener("click", () => {
           close();
@@ -231,48 +225,106 @@
         close();
         _disable();
       });
+      const askInput = bg.querySelector("#awmAsk");
+      const go = () => {
+        const q = askInput.value.trim();
+        if (q) {
+          askInput.value = "";
+          _streamAsk(q, modal);
+        }
+      };
+      bg.querySelector("#awmAskGo").addEventListener("click", go);
+      askInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") go();
+      });
+      if (!n || opts.focusAsk) setTimeout(() => askInput.focus(), 80);
+      return modal;
     }
     function _closeModal() {
       const bg = document.getElementById("ambientWhisperModalBg");
       if (bg) bg.remove();
     }
-    async function _runAction(n, modal) {
+    async function _streamAsk(question, modal) {
+      const body = modal.querySelector("#awmBody");
+      const actions = modal.querySelector("#awmActions");
+      body.innerHTML = '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:7px;">' + _md(question) + '</div><div id="awmAnswer"></div>';
+      const answerEl = body.querySelector("#awmAnswer");
+      actions.innerHTML = _STATUS("listening...");
+      let text = "";
+      let finale = null;
+      try {
+        const r = await fetch("/api/symphonee/ask/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: question })
+        });
+        if (!r.ok || !r.body) throw new Error("stream unavailable");
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        for (; ; ) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const frame = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const line = frame.split("\n").find((l) => l.indexOf("data: ") === 0);
+            if (!line) continue;
+            let ev;
+            try {
+              ev = JSON.parse(line.slice(6));
+            } catch (_) {
+              continue;
+            }
+            if (ev.type === "status") actions.innerHTML = _STATUS(ev.label + "...");
+            else if (ev.type === "token") {
+              text += ev.text;
+              answerEl.innerHTML = _md(text);
+              body.scrollTop = body.scrollHeight;
+            } else if (ev.type === "done" || ev.type === "escalate") finale = ev;
+          }
+        }
+      } catch (_) {
+        finale = { type: "escalate", reason: "offline" };
+      }
+      if (finale && finale.type === "done" && finale.answer) {
+        answerEl.innerHTML = _md(finale.answer);
+        body.scrollTop = 0;
+        actions.innerHTML = '<button id="awmAgent" style="' + _BTN_SOFT + '">Go deeper with agent</button><span style="flex:1;"></span><button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
+        modal.querySelector("#awmDone").addEventListener("click", _closeModal);
+        modal.querySelector("#awmAgent").addEventListener("click", () => {
+          _closeModal();
+          try {
+            if (window.openCmdPalette) window.openCmdPalette(question);
+          } catch (_) {
+          }
+        });
+        fetch("/api/mind/save-result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, answer: finale.answer, citedNodeIds: finale.citedNodeIds || [], createdBy: "symphonee" })
+        }).catch(() => {
+        });
+      } else {
+        answerEl.innerHTML = '<div style="font-size:13px;color:var(--text,#cdd6f4);">I do not have enough on that - your agent can dig deeper. Want me to hand it over?</div>';
+        actions.innerHTML = '<button id="awmAgent" style="' + _BTN_PRIMARY + '">Send to agent</button><button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
+        modal.querySelector("#awmAgent").addEventListener("click", () => {
+          _closeModal();
+          try {
+            if (window.openCmdPalette) window.openCmdPalette(question);
+          } catch (_) {
+          }
+        });
+        modal.querySelector("#awmDone").addEventListener("click", _closeModal);
+      }
+    }
+    function _runAction(n, modal) {
       _feedback(n.type, "accept");
       if (n.type && (n.type.indexOf("task-failure") === 0 || n.type.indexOf("task-success") === 0)) _dismissed.add(n.title);
       _settle();
-      const body = modal.querySelector("#awmBody");
-      const actions = modal.querySelector("#awmActions");
-      actions.innerHTML = '<span style="font-size:12px;color:var(--subtext0,#a6adc8);display:flex;align-items:center;gap:7px;"><span class="aw-dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 8px var(--accent,#89b4fa);"></span>Thinking...</span>';
-      const prompt = n.action && n.action.prompt || _plain(n.title);
-      try {
-        const r = await fetch("/api/symphonee/ask", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: prompt, fast: true, persona: { userType: "coder" } })
-        });
-        const d = await r.json().catch(() => ({}));
-        if (d && d.source === "local" && d.answer) {
-          body.innerHTML = _md(d.answer);
-          body.scrollTop = 0;
-          actions.innerHTML = '<button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
-          modal.querySelector("#awmDone").addEventListener("click", _closeModal);
-        } else {
-          body.innerHTML = '<div style="font-size:13px;color:var(--text,#cdd6f4);">This one is better handled by your agent - I can hand it over with the right context.</div>';
-          actions.innerHTML = '<button id="awmAgent" style="' + _BTN_PRIMARY + '">Send to agent</button><button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
-          modal.querySelector("#awmAgent").addEventListener("click", () => {
-            _closeModal();
-            try {
-              if (window.openCmdPalette) window.openCmdPalette(prompt);
-            } catch (_) {
-            }
-          });
-          modal.querySelector("#awmDone").addEventListener("click", _closeModal);
-        }
-      } catch (_) {
-        body.innerHTML = '<div style="font-size:13px;color:var(--subtext0,#a6adc8);">I could not do that right now.</div>';
-        actions.innerHTML = '<button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
-        modal.querySelector("#awmDone").addEventListener("click", _closeModal);
-      }
+      _streamAsk(n.action && n.action.prompt || _plain(n.title), modal);
     }
     function _feedback(type, action) {
       return fetch("/api/symphonee/ambient/feedback", {
@@ -377,6 +429,14 @@
     window.ambientWhisperCheck = () => {
       _disabled = false;
       check(true);
+    };
+    window.ambientWhisperAsk = (question) => {
+      const q = String(question || "").trim();
+      _ensurePill();
+      _surface();
+      const modal = _openModal({ askOnly: true, focusAsk: !q });
+      if (q) _streamAsk(q, modal);
+      return true;
     };
   })();
 })();
