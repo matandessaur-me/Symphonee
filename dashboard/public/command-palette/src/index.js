@@ -361,7 +361,12 @@ function renderPaletteSuggestions() {
   let histBlock = '';
   if (aiHist.length) {
     const items = aiHist.map((h, i) => '<div class="cmd-recent-item" data-hist-idx="' + i + '" title="' + (h.prompt || '').replace(/"/g, '&quot;') + '">' + '<i data-lucide="sparkles" style="width:12px;height:12px;"></i>' + '<span>' + esc((h.prompt || '').slice(0, 80)) + '</span>' + '<span class="cmd-recent-cat">Ask again</span>' + '<button class="cmd-recent-del" data-del-hist="' + i + '" title="Remove from history"><i data-lucide="x" style="width:11px;height:11px;"></i></button>' + '</div>').join('');
-    histBlock = '<div class="cmd-suggest-block">' + '<div class="cmd-suggest-heading">Recent prompts</div>' + '<div class="cmd-recent-list">' + items + '</div>' + '</div>';
+    histBlock = '<div class="cmd-suggest-block" id="cmdHistBlock">' +
+      '<div class="cmd-suggest-heading" style="display:flex;align-items:center;gap:8px;">Recent prompts' +
+        '<span style="flex:1;"></span>' +
+        '<button id="cmdHistClear" class="cmd-hist-clear" title="Clear all recent prompts">Clear all</button>' +
+      '</div>' +
+      '<div class="cmd-recent-list">' + items + '</div>' + '</div>';
   }
 
   // Recents row: quick re-run of the last 5 palette picks.
@@ -374,6 +379,25 @@ function renderPaletteSuggestions() {
   const chips = PALETTE_SUGGESTIONS.map(s => '<button class="cmd-suggest-chip" data-prompt="' + s.replace(/"/g, '&quot;') + '">' + '<i data-lucide="sparkles" style="width:11px;height:11px;"></i>' + esc(s) + '</button>').join('');
   const suggestBlock = '<div class="cmd-suggest-block">' + '<div class="cmd-suggest-heading">Try asking</div>' + '<div class="cmd-suggest-chips">' + chips + '</div>' + '</div>';
   list.insertAdjacentHTML('afterbegin', histBlock + recentsBlock + suggestBlock);
+  // Clear all recent prompts: fade the block out, THEN wipe and re-render -
+  // smoothness is the detail.
+  const histClear = list.querySelector('#cmdHistClear');
+  if (histClear) {
+    histClear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const block = list.querySelector('#cmdHistBlock');
+      const wipe = () => {
+        _clearAiHistory();
+        try { filterCmdPalette(); renderPaletteSuggestions(); } catch (_) { if (block) block.remove(); }
+      };
+      if (block) {
+        block.style.transition = 'opacity .16s ease, transform .16s ease';
+        block.style.opacity = '0';
+        block.style.transform = 'translateY(-3px)';
+        setTimeout(wipe, 170);
+      } else wipe();
+    });
+  }
   list.querySelectorAll('.cmd-suggest-chip').forEach(el => {
     el.addEventListener('click', () => {
       const p = el.dataset.prompt || '';
@@ -518,6 +542,11 @@ function _recordAiHistory(query) {
     const next = [entry, ...prev.filter(e => e.prompt !== query)].slice(0, 25);
     localStorage.setItem(key, JSON.stringify(next));
   } catch (_) {}
+}
+// Wipe the CURRENT space's ask history (the key is space-scoped on purpose -
+// clearing one workspace's prompts leaves the others alone).
+function _clearAiHistory() {
+  try { localStorage.removeItem(_aiHistoryKey()); } catch (_) {}
 }
 function _readAiHistory() {
   _migrateLegacyAiHistory();
