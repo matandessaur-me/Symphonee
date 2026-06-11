@@ -7,10 +7,10 @@
       --radius-lg: 10px;
       --radius-xl: 14px;
       --radius-pill: 999px;
-      /* Balanced rails: near-equal widths so the terminal sits visually
-         centered - left a touch wider than right by design. */
-      --sidebar-w: 290px;
-      --intel-w:   278px;
+      /* Balanced rails: equal 280px left and right so the terminal sits
+         dead-center (user-specified). */
+      --sidebar-w: 280px;
+      --intel-w:   280px;
       --header-h:  46px;
       --term-bar-h: 40px;
 
