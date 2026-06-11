@@ -63,8 +63,10 @@
       #ambientWhisper:hover{filter:brightness(1.1);}
       @keyframes aw-breathe{0%,100%{box-shadow:0 0 11px -4px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}
         50%{box-shadow:0 0 24px -1px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}}
-      /* resting: a short pill on the waterline - always visible, always clickable */
-      #ambientWhisper.aw-collapsed{min-width:84px;max-width:84px;height:15px;padding:0;}
+      /* resting: a short pill on the waterline - always visible, and big enough
+         to actually hit. Approaching it swells it open (see _proximity), so
+         nobody ever has to aim at a sliver. */
+      #ambientWhisper.aw-collapsed{min-width:110px;max-width:110px;height:24px;padding:0;}
       #ambientWhisper.aw-collapsed .aw-content{opacity:0;pointer-events:none;}
       /* the liquid INSIDE the shell: gooey metaballs clipped by the pill,
          drifting like light under glass */
@@ -100,11 +102,14 @@
       #ambientWhisper .aw-x{background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:15px;line-height:1;
         padding:1px 3px;cursor:pointer;flex:none;border-radius:6px;}
       #ambientWhisper .aw-x:hover{color:var(--text,#cdd6f4);}
-      /* the panel melts UP out of the droplet - anchored to the waterline, not
-         floating in the void like a dialog */
+      /* the island opens as a STACK above the waterline: the card panel (the
+         rectangle that expands) with the floating Ask Symphonee bar BELOW it -
+         two distinct components, so replying to a card and asking something
+         new are never confused */
       #ambientWhisperModalBg{position:fixed;inset:0;z-index:3600;display:none;align-items:flex-end;justify-content:center;
         padding-bottom:62px;background:rgba(0,0,0,.32);backdrop-filter:blur(2px);font-family:var(--font-ui,system-ui);}
-      #ambientWhisperModal{width:480px;max-width:90vw;border-radius:22px 22px 26px 26px;padding:0;overflow:hidden;
+      #awmStack{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:92vw;}
+      #ambientWhisperModal{width:480px;max-width:92vw;border-radius:22px;padding:0;overflow:hidden;box-sizing:border-box;
         background:color-mix(in srgb,var(--surface0,#1e1e2e) 90%,var(--accent,#89b4fa) 6%);
         border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 30%,var(--surface2,#45475a));
         box-shadow:0 0 44px -12px var(--accent,#89b4fa),0 18px 50px rgba(0,0,0,.55);
@@ -114,6 +119,26 @@
       #ambientWhisperModal em{color:var(--subtext1,#cdd6f4);font-style:italic;}
       #ambientWhisperModal code{font-family:var(--font-mono,monospace);font-size:.92em;
         background:var(--surface1,#313244);padding:1px 5px;border-radius:5px;}
+      /* the Ask Symphonee bar: its own floating pill under the card */
+      #awAskBar{display:flex;align-items:center;gap:9px;width:480px;max-width:92vw;box-sizing:border-box;
+        height:46px;padding:0 8px 0 16px;border-radius:999px;
+        background:color-mix(in srgb,var(--surface0,#1e1e2e) 90%,var(--accent,#89b4fa) 6%);
+        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 32%,var(--surface2,#45475a));
+        box-shadow:0 0 30px -12px var(--accent,#89b4fa),0 12px 36px rgba(0,0,0,.5);
+        opacity:0;transform:translateY(14px);
+        transition:opacity .26s ease .06s,transform .3s cubic-bezier(.26,1.2,.32,1) .06s;}
+      #awAskBar input{flex:1;background:transparent;border:none;outline:none;color:var(--text,#cdd6f4);
+        font-size:13px;font-family:inherit;min-width:0;}
+      #awAskBar input::placeholder{color:var(--overlay1,#7f849c);}
+      /* comfortable touch targets everywhere in the island */
+      .awm-icon-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;flex:none;
+        background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;
+        cursor:pointer;border-radius:9px;padding:0;}
+      .awm-icon-btn:hover:not(:disabled){background:var(--surface1,#313244);color:var(--text,#cdd6f4);}
+      .awm-icon-btn:disabled{opacity:.3;cursor:default;}
+      .awm-reply{flex:1;background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 18%,var(--surface2,#45475a));
+        border-radius:11px;color:var(--text,#cdd6f4);font-size:12.5px;padding:9px 13px;outline:none;font-family:inherit;min-width:0;}
+      .awm-reply::placeholder{color:var(--overlay1,#7f849c);}
       @media (prefers-reduced-motion: reduce){
         #ambientWhisper,#ambientWhisper .aw-goo,#ambientWhisper .aw-blob,#ambientWhisper .aw-sheen::before,
         #ambientWhisper .aw-dot{animation:none !important;transition:opacity .2s ease !important;}
@@ -179,9 +204,16 @@
     } else {
       _pill.style.setProperty('--aw-lean', '0');
     }
-    // Only swell open on approach when there is a thought to show.
-    if (near && _current && _pill.classList.contains('aw-collapsed')) { _hovering = true; _pill.classList.remove('aw-collapsed'); }
-    else if (!near && _hovering) { _hovering = false; if (!_collapseTimer) _pill.classList.add('aw-collapsed'); }
+    // Swell open on approach - ALWAYS. With a thought it shows the thought;
+    // silent it invites the ask. Nobody aims at a sliver.
+    if (near && _pill.classList.contains('aw-collapsed')) {
+      _hovering = true;
+      if (!_current) _pill.querySelector('.aw-text').textContent = 'Ask me anything about your work...';
+      _pill.classList.remove('aw-collapsed');
+    } else if (!near && _hovering) {
+      _hovering = false;
+      if (!_collapseTimer) _pill.classList.add('aw-collapsed');
+    }
   }
   document.addEventListener('mousemove', _proximity, { passive: true });
 
@@ -191,7 +223,7 @@
     // misses, so they can flip back through the cards later.
     const last = _thread[_thread.length - 1];
     if (!(last && last.kind === 'nudge' && last.n.title === nudge.title)) {
-      _thread.push({ at: Date.now(), kind: 'nudge', n: nudge });
+      _thread.push({ at: Date.now(), kind: 'nudge', n: nudge, turns: [] });
     }
     const el = _ensurePill();
     el.querySelector('.aw-text').textContent = _plain(nudge.title);
@@ -235,14 +267,16 @@
     label + '</span>';
 
   // ── the island ──────────────────────────────────────────────────────────
-  // A bottom Dynamic Island for AI: the pill morphs into a panel that holds
-  // this SESSION'S whole thread - every thought Symphonee had (even dismissed
-  // ones) and every Q&A, as cards you flip through with timestamps. The ask
-  // box is always there; follow-ups carry the conversation so "explain more"
-  // means something.
-  const _thread = [];   // session history: {at, kind:'nudge', n} | {at, kind:'qa', q, a}
-  let _convo = [];      // live conversation turns for follow-ups (panel lifetime)
-  let _view = -1;       // which thread card is showing; -1 = the empty ask state
+  // A bottom Dynamic Island for AI, opened as a STACK of two distinct
+  // components:
+  //   - the CARD PANEL: one card per TOPIC. A nudge is a topic; a question
+  //     starts a topic. Each card holds its whole conversation (turn after
+  //     turn) and its own reply input - replying continues THAT topic, never
+  //     spawns a new card. Flip through cards with the nav chip (timestamps).
+  //   - the ASK SYMPHONEE BAR: a separate floating pill BELOW the panel.
+  //     Typing there always starts a NEW topic. No ambiguity.
+  const _thread = [];   // topic cards: {at, kind:'nudge'|'qa', n?, turns:[{q,a,at}]}
+  let _view = -1;       // which card is showing; -1 = no card (just the ask bar)
 
   function _fmtTime(ts) {
     const d = new Date(ts);
@@ -251,59 +285,87 @@
     return h + ':' + m + ' ' + ap;
   }
 
-  function _renderView(modal) {
-    const body = modal.querySelector('#awmBody');
-    const actions = modal.querySelector('#awmActions');
-    const nav = modal.querySelector('#awmNav');
-    const e = _view >= 0 && _view < _thread.length ? _thread[_view] : null;
-    // nav chip: flip through the session's cards
-    if (_thread.length > 0) {
-      const canPrev = _view !== 0;                       // from the ask state, prev opens the latest card
-      const canNext = _view >= 0 && _view < _thread.length - 1;
-      nav.innerHTML =
-        '<button id="awmPrev" ' + (canPrev ? '' : 'disabled') + ' style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:13px;cursor:pointer;padding:0 2px;">&lsaquo;</button>' +
-        '<span style="font-size:10.5px;color:var(--overlay1,#7f849c);">' + (e ? (_view + 1) + '/' + _thread.length + ' &middot; ' + _fmtTime(e.at) : _thread.length + ' this session') + '</span>' +
-        '<button id="awmNext" ' + (canNext ? '' : 'disabled') + ' style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:13px;cursor:pointer;padding:0 2px;">&rsaquo;</button>';
-      const prev = nav.querySelector('#awmPrev'); const next = nav.querySelector('#awmNext');
-      if (prev) prev.addEventListener('click', () => { _view = _view === -1 ? _thread.length - 1 : Math.max(0, _view - 1); _renderView(modal); });
-      if (next) next.addEventListener('click', () => { if (_view >= 0 && _view < _thread.length - 1) { _view += 1; _renderView(modal); } });
-    } else nav.innerHTML = '';
-
-    if (!e) {
-      body.innerHTML = '<div style="font-size:13px;color:var(--subtext0,#a6adc8);">What do you want to know? I remember your notes, your decisions, and what every AI here has worked on.</div>';
-      actions.innerHTML = _offHtml();
-      _wireOff(modal);
-      return;
-    }
-    if (e.kind === 'nudge') {
-      const n = e.n;
-      body.innerHTML =
-        _md(n.title) +
+  // The static content of a card: the nudge (if any) plus every conversation
+  // turn so far.
+  function _cardHtml(card) {
+    let h = '';
+    if (card.kind === 'nudge' && card.n) {
+      const n = card.n;
+      h += _md(n.title) +
         (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + '</div>' : '') +
         // Provenance: WHY the whisper spoke - transparency keeps proactivity
         // from feeling like noise.
         (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + '</div>' : '');
-      const live = _current && _current.title === n.title;
-      actions.innerHTML =
-        '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + (n.actionLabel || 'Show me') + '</button>' +
-        (live ? '<button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>' : '') +
-        _offHtml();
-      modal.querySelector('#awmAct').addEventListener('click', () => _runAction(n, modal));
-      const dis = modal.querySelector('#awmDismiss');
-      if (dis) dis.addEventListener('click', () => { _closeModal(); _dismiss(); });
-      _wireOff(modal);
-    } else {
-      body.innerHTML =
-        '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:7px;">' + _md(e.q) + '</div>' +
-        '<div id="awmAnswer">' + _md(e.a) + '</div>';
-      actions.innerHTML = '<button id="awmAgent" style="' + _BTN_SOFT + '">Go deeper in terminal</button>' + _offHtml();
-      modal.querySelector('#awmAgent').addEventListener('click', () => { _closeModal(); _handToAgent(e.q, e.a); });
-      _wireOff(modal);
     }
+    for (const t of (card.turns || [])) {
+      h += '<div style="margin-top:' + (h ? '12px' : '0') + ';padding-top:' + (h ? '10px' : '0') + ';' + (h ? 'border-top:1px solid var(--surface1,#313244);' : '') + '">' +
+        '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:5px;">' + _md(t.q) + '</div>' +
+        '<div>' + _md(t.a) + '</div>' +
+      '</div>';
+    }
+    return h;
+  }
+
+  function _renderView(modal) {
+    const panel = modal;
+    const body = panel.querySelector('#awmBody');
+    const actions = panel.querySelector('#awmActions');
+    const nav = panel.querySelector('#awmNav');
+    const replyRow = panel.querySelector('#awmReplyRow');
+    const card = _view >= 0 && _view < _thread.length ? _thread[_view] : null;
+
+    // No card: the panel hides entirely - the floating ask bar stands alone.
+    panel.style.display = card ? 'block' : 'none';
+    if (!card) return;
+
+    // nav chip: flip through the session's topic cards (real touch targets)
+    if (_thread.length > 1) {
+      nav.innerHTML =
+        '<button id="awmPrev" class="awm-icon-btn" ' + (_view > 0 ? '' : 'disabled') + '>&lsaquo;</button>' +
+        '<span style="font-size:10.5px;color:var(--overlay1,#7f849c);white-space:nowrap;">' + (_view + 1) + '/' + _thread.length + ' &middot; ' + _fmtTime(card.at) + '</span>' +
+        '<button id="awmNext" class="awm-icon-btn" ' + (_view < _thread.length - 1 ? '' : 'disabled') + '>&rsaquo;</button>';
+      nav.querySelector('#awmPrev').addEventListener('click', () => { if (_view > 0) { _view -= 1; _renderView(modal); } });
+      nav.querySelector('#awmNext').addEventListener('click', () => { if (_view < _thread.length - 1) { _view += 1; _renderView(modal); } });
+    } else {
+      nav.innerHTML = '<span style="font-size:10.5px;color:var(--overlay1,#7f849c);white-space:nowrap;">' + _fmtTime(card.at) + '</span>';
+    }
+
+    body.innerHTML = _cardHtml(card);
+    body.scrollTop = (card.turns && card.turns.length) ? body.scrollHeight : 0;
+
+    // the card's own reply input - continuing THIS topic
+    replyRow.style.display = 'flex';
+    replyRow.innerHTML =
+      '<input id="awmReply" class="awm-reply" type="text" placeholder="Reply to this thread..."/>' +
+      '<button id="awmReplyGo" style="' + _BTN_PRIMARY + 'padding:9px 14px;">Reply</button>';
+    const replyInput = replyRow.querySelector('#awmReply');
+    const goReply = () => { const q = replyInput.value.trim(); if (q) { replyInput.value = ''; _streamAsk(q, modal, card); } };
+    replyRow.querySelector('#awmReplyGo').addEventListener('click', goReply);
+    replyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goReply(); });
+
+    // actions: the nudge's own action (until used), dismiss while live, handoff
+    let act = '';
+    const hasTurns = card.turns && card.turns.length;
+    if (card.kind === 'nudge' && card.n && !hasTurns) {
+      act += '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + (card.n.actionLabel || 'Show me') + '</button>';
+      if (_current && _current.title === card.n.title) act += '<button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>';
+    }
+    if (hasTurns) act += '<button id="awmAgent" style="' + _BTN_SOFT + '">Go deeper in terminal</button>';
+    actions.innerHTML = act + _offHtml();
+    const actBtn = actions.querySelector('#awmAct');
+    if (actBtn) actBtn.addEventListener('click', () => _runAction(card.n, modal, card));
+    const dis = actions.querySelector('#awmDismiss');
+    if (dis) dis.addEventListener('click', () => { _closeModal(); _dismiss(); });
+    const agent = actions.querySelector('#awmAgent');
+    if (agent) agent.addEventListener('click', () => {
+      const last = card.turns[card.turns.length - 1];
+      _closeModal(); _handToAgent(last.q, last.a);
+    });
+    _wireOff(modal);
   }
 
   function _offHtml() {
-    return '<span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off</button>';
+    return '<span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;padding:8px 4px;">Turn off</button>';
   }
   function _wireOff(modal) {
     const off = modal.querySelector('#awmOff');
@@ -317,44 +379,60 @@
     bg = document.createElement('div');
     bg.id = 'ambientWhisperModalBg';
     bg.innerHTML =
-      '<div id="ambientWhisperModal">' +
-        '<div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;">' +
-          '<span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span>' +
-          '<strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong>' +
-          '<span id="awmNav" style="display:flex;align-items:center;gap:5px;margin-left:4px;"></span>' +
-          '<span style="flex:1;"></span>' +
-          '<button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button>' +
+      '<div id="awmStack">' +
+        '<div id="ambientWhisperModal">' +
+          '<div style="display:flex;align-items:center;gap:7px;padding:13px 12px 9px 18px;">' +
+            '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span>' +
+            '<strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong>' +
+            '<span id="awmNav" style="display:flex;align-items:center;gap:3px;margin-left:4px;"></span>' +
+            '<span style="flex:1;"></span>' +
+            '<button id="awmClose" class="awm-icon-btn">&times;</button>' +
+          '</div>' +
+          '<div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:44vh;overflow:auto;"></div>' +
+          '<div id="awmReplyRow" style="display:flex;align-items:center;gap:8px;padding:12px 18px 4px;"></div>' +
+          '<div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:10px 18px 14px;"></div>' +
         '</div>' +
-        '<div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;"></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;padding:11px 18px 4px;">' +
-          '<input id="awmAsk" type="text" placeholder="Ask about your work..." style="flex:1;background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 22%,var(--surface2,#45475a));border-radius:10px;color:var(--text,#cdd6f4);font-size:12.5px;padding:8px 12px;outline:none;font-family:inherit;"/>' +
-          '<button id="awmAskGo" style="' + _BTN_PRIMARY + 'padding:8px 13px;">Ask</button>' +
+        '<div id="awAskBar">' +
+          '<span style="width:8px;height:8px;border-radius:50%;flex:none;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span>' +
+          '<input id="awAskNew" type="text" placeholder="Ask Symphonee anything... (new topic)"/>' +
+          '<button id="awAskGo" style="' + _BTN_PRIMARY + 'padding:9px 16px;border-radius:999px;">Ask</button>' +
         '</div>' +
-        '<div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:11px 18px 16px;"></div>' +
       '</div>';
     document.body.appendChild(bg);
     bg.style.display = 'flex';
     const modal = bg.querySelector('#ambientWhisperModal');
-    // The island morph: the pill becomes the panel (it fades while open).
+    const askBar = bg.querySelector('#awAskBar');
+    // The island morph: the pill becomes the stack (it fades while open).
     if (_pill) { _pill.style.opacity = '0'; _pill.style.pointerEvents = 'none'; }
-    requestAnimationFrame(() => { modal.style.opacity = '1'; modal.style.transform = 'translateY(0) scale(1)'; });
+    requestAnimationFrame(() => {
+      modal.style.opacity = '1'; modal.style.transform = 'translateY(0) scale(1)';
+      askBar.style.opacity = '1'; askBar.style.transform = 'translateY(0)';
+    });
     bg.addEventListener('click', (e) => { if (e.target === bg) _closeModal(); });
     bg.querySelector('#awmClose').addEventListener('click', _closeModal);
-    const askInput = bg.querySelector('#awmAsk');
-    const go = () => { const q = askInput.value.trim(); if (q) { askInput.value = ''; _streamAsk(q, modal); } };
-    bg.querySelector('#awmAskGo').addEventListener('click', go);
-    askInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-    // default view: the latest card (the freshest thought), or the ask state
+    // the Ask Symphonee bar ALWAYS starts a new topic card
+    const askInput = bg.querySelector('#awAskNew');
+    const goNew = () => {
+      const q = askInput.value.trim();
+      if (!q) return;
+      askInput.value = '';
+      const card = { at: Date.now(), kind: 'qa', turns: [] };
+      _thread.push(card);
+      _view = _thread.length - 1;
+      _streamAsk(q, modal, card);
+    };
+    bg.querySelector('#awAskGo').addEventListener('click', goNew);
+    askInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goNew(); });
+    // default view: the latest card (the freshest topic), or just the ask bar
     _view = opts.askOnly ? -1 : (_thread.length ? _thread.length - 1 : -1);
     _renderView(modal);
-    if (_view === -1 || opts.focusAsk) setTimeout(() => askInput.focus(), 80);
+    setTimeout(() => askInput.focus(), 80);
     return modal;
   }
 
   function _closeModal() {
     const bg = document.getElementById('ambientWhisperModalBg');
     if (bg) bg.remove();
-    _convo = [];   // a closed panel ends the conversation; the thread survives
     if (_pill && !_disabled) { _pill.style.opacity = '1'; _pill.style.pointerEvents = ''; }
   }
 
@@ -379,24 +457,35 @@
     return false;
   }
 
-  // Stream a deep answer INTO the panel: status milestones while it retrieves,
-  // tokens as the local model writes, then a clean final render. Follow-ups
-  // carry the conversation (so "explain more" works); finished Q&As join the
-  // session thread and are saved back to Mind so every CLI inherits them.
-  async function _streamAsk(question, modal) {
-    const body = modal.querySelector('#awmBody');
-    const actions = modal.querySelector('#awmActions');
-    body.innerHTML =
-      '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:7px;">' + _md(question) + '</div>' +
-      '<div id="awmAnswer"></div>';
+  // Stream a deep answer INTO a topic card: the card's prior turns ride along
+  // as conversation history (so "explain more" works), status milestones show
+  // while retrieving, tokens render as the model writes, and the finished turn
+  // is appended to THAT card - never a new one. Grounded answers save back to
+  // Mind so every CLI inherits them.
+  async function _streamAsk(question, modal, card) {
+    const panel = modal;
+    panel.style.display = 'block';
+    const body = panel.querySelector('#awmBody');
+    const actions = panel.querySelector('#awmActions');
+    const replyRow = panel.querySelector('#awmReplyRow');
+    if (replyRow) replyRow.style.display = 'none';   // one question at a time
+    if (!card.turns) card.turns = [];
+    const history = card.turns.slice(-3).map(t => ({ q: t.q, a: t.a }));
+    const prior = _cardHtml(card);
+    body.innerHTML = prior +
+      '<div style="margin-top:' + (prior ? '12px' : '0') + ';padding-top:' + (prior ? '10px' : '0') + ';' + (prior ? 'border-top:1px solid var(--surface1,#313244);' : '') + '">' +
+        '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:5px;">' + _md(question) + '</div>' +
+        '<div id="awmAnswer"></div>' +
+      '</div>';
     const answerEl = body.querySelector('#awmAnswer');
+    body.scrollTop = body.scrollHeight;
     actions.innerHTML = _STATUS('listening...');
     let text = '';
     let finale = null;
     try {
       const r = await fetch('/api/symphonee/ask/stream', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: question, history: _convo.slice(-3) }),
+        body: JSON.stringify({ input: question, history }),
       });
       if (!r.ok || !r.body) throw new Error('stream unavailable');
       const reader = r.body.getReader();
@@ -420,12 +509,10 @@
     } catch (_) { finale = { type: 'escalate', reason: 'offline' }; }
 
     if (finale && finale.type === 'done' && finale.answer) {
-      _convo.push({ q: question, a: finale.answer });
-      _thread.push({ at: Date.now(), kind: 'qa', q: question, a: finale.answer });
-      _view = _thread.length - 1;
+      card.turns.push({ q: question, a: finale.answer, at: Date.now() });
       _renderView(modal);
-      const ask = modal.querySelector('#awmAsk');
-      if (ask) ask.focus();
+      const reply = panel.querySelector('#awmReply');
+      if (reply) reply.focus();
       // Save back to the shared brain - the next session of every CLI inherits this.
       fetch('/api/mind/save-result', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -434,20 +521,21 @@
     } else {
       answerEl.innerHTML = '<div style="font-size:13px;color:var(--text,#cdd6f4);">I do not have enough on that - your agent can dig deeper.</div>';
       actions.innerHTML = '<button id="awmAgent" style="' + _BTN_PRIMARY + '">Hand to my terminal</button>' + _offHtml();
-      modal.querySelector('#awmAgent').addEventListener('click', () => { _closeModal(); _handToAgent(question, ''); });
+      panel.querySelector('#awmAgent').addEventListener('click', () => { _closeModal(); _handToAgent(question, ''); });
+      if (replyRow) replyRow.style.display = 'flex';
       _wireOff(modal);
     }
   }
 
-  // Run the nudge's action RIGHT HERE through the same deep streaming engine.
-  // No trip to the palette; the panel is the answer surface.
-  function _runAction(n, modal) {
+  // Run the nudge's action RIGHT HERE through the same deep streaming engine,
+  // INSIDE the nudge's own card - the answer becomes that topic's first turn.
+  function _runAction(n, modal, card) {
     _feedback(n.type, 'accept');
     // A one-shot nudge (a specific task) should not re-surface once the user
     // has engaged with it - acting counts as handled.
     if (n.type && (n.type.indexOf('task-failure') === 0 || n.type.indexOf('task-success') === 0)) _dismissed.add(n.title);
     _settle();
-    _streamAsk((n.action && n.action.prompt) || _plain(n.title), modal);
+    _streamAsk((n.action && n.action.prompt) || _plain(n.title), modal, card);
   }
 
   function _feedback(type, action) {
@@ -549,14 +637,20 @@
   window.ambientWhisperCheck = () => { _disabled = false; check(true); };
 
   // The front door for questions from ANYWHERE in the app (command palette,
-  // future surfaces): open the liquid's panel with the question and stream the
-  // deep answer there. One organism - asking and whispering share a body.
+  // future surfaces): open the island with the question as a NEW topic card
+  // and stream the deep answer there. One organism - asking and whispering
+  // share a body.
   window.ambientWhisperAsk = (question) => {
     const q = String(question || '').trim();
     _ensurePill();
     _surface();
-    const modal = _openModal({ askOnly: true, focusAsk: !q });
-    if (q) _streamAsk(q, modal);
+    const modal = _openModal({ askOnly: true });
+    if (q) {
+      const card = { at: Date.now(), kind: 'qa', turns: [] };
+      _thread.push(card);
+      _view = _thread.length - 1;
+      _streamAsk(q, modal, card);
+    }
     return true;
   };
 })();
