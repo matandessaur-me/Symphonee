@@ -575,12 +575,13 @@
     }
     .tab-bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     /* Ask Symphonee trigger: the pill identity (accent tint + border + a
-       breathing dot) living in the topbar. */
+       breathing dot) in the topbar - but squared off to match the mode
+       switch chip, not a full capsule. */
     .cmd-trigger {
       display: flex; align-items: center; gap: 8px; padding: 4px 12px;
       background: color-mix(in srgb, var(--surface0) 90%, var(--accent) 5%);
       border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
-      border-radius: var(--radius-pill);
+      border-radius: var(--radius);
       cursor: pointer; transition: all 0.12s; width: 280px;
     }
     .cmd-trigger:hover {
