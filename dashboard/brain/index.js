@@ -318,15 +318,40 @@ function mountBrain(addRoute, json, ctx) {
   });
 
   // POST /api/symphonee/ambient/feedback { type, action: accept|dismiss }
+  // Feeds per-type trust AND the auto-quiet tuner: a sustained dismissal
+  // streak turns the whisper one dial-step quieter on its own.
   addRoute('POST', '/api/symphonee/ambient/feedback', async (req, res) => {
     const body = await readBody(req).catch(() => ({}));
     if (!body.type || !['accept', 'dismiss'].includes(body.action)) {
       return json(res, { error: 'type and action (accept|dismiss) required' }, 400);
     }
-    const state = ambientModule.loadState(repoRoot);
+    let state = ambientModule.loadState(repoRoot);
     state.trust = ambientModule.applyFeedback(state.trust, body.type, body.action);
+    const dialBefore = state.dial;
+    state = ambientModule.autoQuiet(ambientModule.recordFeedbackEvent(state, body.action));
     ambientModule.saveState(repoRoot, state);
-    return json(res, { ok: true, type: body.type, action: body.action, trust: state.trust[body.type] });
+    return json(res, {
+      ok: true, type: body.type, action: body.action, trust: state.trust[body.type],
+      dial: state.dial, autoTuned: state.dial !== dialBefore ? state.autoTuned : null,
+    });
+  });
+
+  // GET /api/symphonee/ambient/chips - three context-aware ask suggestions for
+  // the island's empty state, drawn from what is ACTUALLY going on right now.
+  addRoute('GET', '/api/symphonee/ambient/chips', async (req, res) => {
+    const chips = [];
+    try {
+      const ctx = await _gatherNudgeContext({});
+      if (ctx.failures && ctx.failures.length) chips.push('What went wrong with my last task?');
+      if (ctx.successes && ctx.successes.length) chips.push(`What did my ${ctx.successes[0].cli} task produce?`);
+      if (ctx.notesEdited && ctx.notesEdited.length) chips.push(`What's in my note "${ctx.notesEdited[0].name}"?`);
+      if (ctx.uncommitted && ctx.uncommitted.count >= 3) chips.push('Summarize my uncommitted changes');
+    } catch (_) { /* fall through to the evergreen set */ }
+    for (const f of ['What changed today?', 'Where did we leave off?', 'What should I do next?']) {
+      if (chips.length >= 3) break;
+      if (!chips.includes(f)) chips.push(f);
+    }
+    return json(res, { chips: chips.slice(0, 3) });
   });
 
   // GET /api/symphonee/ambient  + POST .../dial { dial }
