@@ -26,6 +26,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
 const store = require('../mind/store');
 const { bestSeedsRanked } = require('../mind/query');
@@ -181,7 +182,7 @@ function _recentConversation(graph, n = 3) {
 
 function _buildMessages(question, sources, activity) {
   const sys = [
-    'You are Symphonee - the user\'s own assistant. Answer a person about THEIR work using everything you have access to: their notes, their memory cards, your recent conversation with them, the recent checkpoints (things they just did), and the git history.',
+    'You are Symphonee - the user\'s own assistant. Answer a person about THEIR work using everything you have access to: their notes, their memory cards, your recent conversation with them, the recent checkpoints (things they just did), the git history, and any recent dispatched-task failures.',
     '',
     'Answer like a sharp, warm colleague who has read everything they wrote AND remembers what just happened.',
     'Rules:',
@@ -203,6 +204,10 @@ function _buildMessages(question, sources, activity) {
   if (activity.git && activity.git.length) act.push('Recent commits:\n' + activity.git.map(l => '- ' + l).join('\n'));
   if (activity.checkpoints && activity.checkpoints.length) act.push('Recent checkpoints (things you just did):\n' + activity.checkpoints.map(l => '- ' + l).join('\n'));
   if (activity.conversation && activity.conversation.length) act.push('Recently discussed:\n' + activity.conversation.map(t => `- ${t.role}: ${t.text}`).join('\n'));
+  if (activity.failures && activity.failures.length) {
+    act.push('Recent task failures (a dispatched CLI task did not finish - use this for "what went wrong / why did it fail / how do I fix it" questions):\n' +
+      activity.failures.map(f => `- ${f.cli}${f.model ? ' (' + f.model + ')' : ''} ${f.state}: ${f.error || 'no error text'}${f.prompt ? `  [task was: ${f.prompt}]` : ''}`).join('\n'));
+  }
   if (act.length) blocks.push('Recent activity (use this for "what just happened / changed / where are we" questions):\n' + act.join('\n\n'));
 
   const user = `Question: ${question}\n\n${blocks.join('\n\n')}\n\nAnswer the question directly and humanly, using whatever above is relevant.`;
@@ -222,8 +227,9 @@ async function localAnswer({ repoRoot, space = '_global', question, activeRepoPa
     git: await _gitLog(activeRepoPath || repoRoot, 6),
     checkpoints: _recentCheckpoints(activeRepo, 3),
     conversation: graph ? _recentConversation(graph, 3) : [],
+    failures: _recentFailures(repoRoot),
   };
-  const hasContext = sources.length || activity.git.length || activity.checkpoints.length || activity.conversation.length;
+  const hasContext = sources.length || activity.git.length || activity.checkpoints.length || activity.conversation.length || activity.failures.length;
   if (!hasContext) return { grounded: false, reason: 'no-context' };
   let res;
   try {
@@ -249,8 +255,37 @@ async function localAnswer({ repoRoot, space = '_global', question, activeRepoPa
   };
 }
 
-// Assemble the live context (git + checkpoints + recent conversation) - reused
-// by the ambient whisper to synthesize a contextual nudge.
+// Recent orchestrator task failures, read straight from disk - the same
+// low-coupling pattern as git/checkpoints (no orchestrator instance needed in
+// the brain). The orchestrator writes tasks.json BEFORE it broadcasts a
+// task-update, so by the time a failure event reaches us the file is current.
+// Only genuinely recent failures (default 15 min) so the whisper reacts to
+// "this just broke", not ancient history.
+function _recentFailures(repoRoot, withinMs = 15 * 60 * 1000, max = 3) {
+  try {
+    const f = path.join(repoRoot, '.ai-workspace', 'orchestrator', 'tasks.json');
+    const arr = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (!Array.isArray(arr)) return [];
+    const now = Date.now();
+    return arr
+      .filter(t => (t.state === 'failed' || t.state === 'timeout') && (now - (t.completedAt || t.createdAt || 0) <= withinMs))
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+      .slice(0, max)
+      .map(t => ({
+        id: t.id,
+        cli: t.cli || 'task',
+        model: t.model || null,
+        state: t.state,
+        error: typeof t.error === 'string' ? t.error.slice(0, 300) : '',
+        classification: t.errorClassification || null,
+        prompt: typeof t.prompt === 'string' ? t.prompt.slice(0, 160) : '',
+        completedAt: t.completedAt || null,
+      }));
+  } catch (_) { return []; }
+}
+
+// Assemble the live context (git + checkpoints + recent conversation + recent
+// task failures) - reused by the ambient whisper to synthesize a contextual nudge.
 async function gatherContext({ repoRoot, space = '_global', activeRepoPath, activeRepo, graph = null } = {}) {
   const g = graph || store.loadGraph(repoRoot, space);
   const repoPath = activeRepoPath || repoRoot;
@@ -260,6 +295,7 @@ async function gatherContext({ repoRoot, space = '_global', activeRepoPath, acti
     uncommitted,
     checkpoints: _recentCheckpoints(activeRepo, 3),
     conversation: g ? _recentConversation(g, 4) : [],
+    failures: _recentFailures(repoRoot),
   };
 }
 

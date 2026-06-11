@@ -198,6 +198,9 @@
   // it over with the right prompt.
   async function _runAction(n, modal) {
     _feedback(n.type, 'accept');
+    // A one-shot nudge (e.g. a specific task failure) should not re-surface once
+    // the user has engaged with it - acting counts as handled.
+    if (n.type && n.type.indexOf('task-failure') === 0) _dismissed.add(n.title);
     _hidePill();
     const body = modal.querySelector('#awmBody');
     const actions = modal.querySelector('#awmActions');
@@ -295,6 +298,32 @@
   }
   ['mousemove', 'keydown', 'mousedown'].forEach(ev => window.addEventListener(ev, _resetIdle, { passive: true }));
   _resetIdle();
+
+  // Failure-triggered: the research is clear that execution FAILURE is the one
+  // moment to speak immediately. The orchestrator broadcasts a task-update (and
+  // has already written tasks.json) the instant a task fails - so we listen on
+  // the WS and force an immediate nudge check instead of waiting up to 90s.
+  let _failTimer = null;
+  function _connectWS() {
+    try {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}`);
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type !== 'orchestrator-event' || msg.event !== 'task-update') return;
+          const st = msg.task && msg.task.state;
+          if (st !== 'failed' && st !== 'timeout') return;
+          // Debounce a burst of failures into one check; force past the interval.
+          if (_failTimer) return;
+          _failTimer = setTimeout(() => { _failTimer = null; if (!_disabled) check(true); }, 1200);
+        } catch (_) { /* ignore malformed frames */ }
+      };
+      ws.onclose = () => setTimeout(_connectWS, 4000);
+      ws.onerror = () => { try { ws.close(); } catch (_) {} };
+    } catch (_) { /* WS unavailable - the 90s pull still covers it */ }
+  }
+  _connectWS();
 
   // Settings re-enable + force refresh.
   window.ambientWhisperCheck = () => { _disabled = false; check(true); };
