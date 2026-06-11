@@ -1,0 +1,23 @@
+{
+  "name": "symphonee-mind-retrieval-v1",
+  "frozenAt": "2026-06-10",
+  "space": "_global",
+  "description": "Frozen known-item retrieval gold set for THE EVAL. Each query is a natural-language question whose answer lives in a specific Mind node (notes have stable content-derived ids). Questions are paraphrased - they deliberately do NOT echo the note title verbatim - so retrieval is genuinely tested and there is headroom for the Stage-2 activation kernel to prove (or fail to prove) it beats the RRF baseline. Difficulty is a hint only, not used in scoring. DO NOT edit relevance to chase a score: this set is FROZEN. Add new queries with new ids; never retune existing ones.",
+  "queries": [
+    { "id": "q_2_0_plan", "difficulty": "hard", "question": "where is the sequenced, staged build with go/no-go gates for shipping the next major version of Symphonee?", "relevant": ["note_symphonee_2_0_development_plan"] },
+    { "id": "q_cog_arch", "difficulty": "hard", "question": "which note lays out the brain design - activation, spreading, the settle loop?", "relevant": ["note_cognitive_architecture_design"] },
+    { "id": "q_mind_extraction", "difficulty": "hard", "question": "what's the plan to pull the knowledge graph out into its own standalone served component with a clean seam?", "relevant": ["note_mind_extraction_scope"] },
+    { "id": "q_next_evolution", "difficulty": "hard", "question": "where did we write the long-term vision for where this product is heading - the cognitive substrate idea?", "relevant": ["note_symphonee_next_evolution"] },
+    { "id": "q_instruction_playbook", "difficulty": "medium", "question": "how do we check that the multi-CLI instruction system stays coherent and self-heals?", "relevant": ["note_instruction_verification_playbook"] },
+    { "id": "q_dyob3_readiness", "difficulty": "medium", "question": "what has to happen before DYOB3 is production ready?", "relevant": ["note_dyob3_production_readiness_plan"] },
+    { "id": "q_dyob3_flows", "difficulty": "medium", "question": "how does the upload-photo path differ from the designer path in DYOB3?", "relevant": ["note_dyob3_upload_vs_designer_flow_as_of_master"] },
+    { "id": "q_dyob3_rollback", "difficulty": "medium", "question": "why was the DYOB3 render-contract branch abandoned and rolled back?", "relevant": ["note_dyob3_render_contract_branch_rollback_note"] },
+    { "id": "q_endpoint_map", "difficulty": "medium", "question": "where's the reference for which API endpoints moved where during the restructure?", "relevant": ["note_reference_endpoint_map_what_moved_where", "note_endpoint_catalog_restoration_april_2026"] },
+    { "id": "q_dyob3_audit", "difficulty": "medium", "question": "what did the end-to-end audit of the DYOB3 AI generation workflow uncover?", "relevant": ["note_dyob3_ai_workflow_full_a_to_z_audit_2026_04_24"] },
+    { "id": "q_auth_smoke", "difficulty": "easy", "question": "how do we smoke-test the API auth token?", "relevant": ["note_auth_token_smoke_test"] },
+    { "id": "q_socraticode", "difficulty": "easy", "question": "what's the plan to port SocratiCode?", "relevant": ["note_socraticode_port_plan"] },
+    { "id": "q_zero_loss", "difficulty": "medium", "question": "where's the audit covering zero-loss restoration and self-healing?", "relevant": ["note_zero_loss_restoration_self_healing_audit"] },
+    { "id": "q_claude_suggestion", "difficulty": "hard", "question": "what was Claude's proposed layering approach for the architecture?", "relevant": ["note_claude_suggestion"] },
+    { "id": "q_instructions_trim", "difficulty": "medium", "question": "how should the shared instructions base file be slimmed down?", "relevant": ["note_instructions_base_trim_april_2026"] }
+  ]
+}

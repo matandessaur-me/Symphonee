@@ -74,8 +74,8 @@ test('_buildLocalMessages includes the no-tools instruction', () => {
 });
 
 test('_buildLocalMessages includes intent context when supplied', () => {
-  const msgs = answer._buildLocalMessages('q', { summary: 'fixing DYOB hero' });
-  assert.match(msgs[0].content, /fixing DYOB hero/);
+  const msgs = answer._buildLocalMessages('q', { summary: 'fixing Aurora hero' });
+  assert.match(msgs[0].content, /fixing Aurora hero/);
 });
 
 test('answer returns no-op for empty input', async () => {

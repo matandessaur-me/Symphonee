@@ -6,34 +6,34 @@ const test = require('node:test');
 const { extractEntities, canonicalize, tokenize } = require('./entities');
 
 test('canonicalize collapses surface forms to one key', () => {
-  assert.equal(canonicalize('Bath Fitter'), 'bathfitter');
-  assert.equal(canonicalize('bath_fitter'), 'bathfitter');
-  assert.equal(canonicalize('Bath-Fitter'), 'bathfitter');
-  assert.equal(canonicalize('BATHFITTER'), 'bathfitter');
+  assert.equal(canonicalize('Blue Falcon'), 'bluefalcon');
+  assert.equal(canonicalize('blue_falcon'), 'bluefalcon');
+  assert.equal(canonicalize('Blue-Falcon'), 'bluefalcon');
+  assert.equal(canonicalize('BLUEFALCON'), 'bluefalcon');
   assert.equal(canonicalize('Builder.io'), 'builderio');
 });
 
 test('tokenize splits on separators and digit boundaries', () => {
-  assert.deepEqual(tokenize('bath-fitter-listing-manager'), ['bath', 'fitter', 'listing', 'manager']);
-  assert.deepEqual(tokenize('dyob3'), ['dyob', '3']);
-  assert.deepEqual(tokenize('website_bathfitter_residential'), ['website', 'bathfitter', 'residential']);
+  assert.deepEqual(tokenize('blue-falcon-listing-manager'), ['blue', 'falcon', 'listing', 'manager']);
+  assert.deepEqual(tokenize('aurora3'), ['aurora', '3']);
+  assert.deepEqual(tokenize('website_bluefalcon_residential'), ['website', 'bluefalcon', 'residential']);
 });
 
 test('extractEntities: auto-detects cross-repo brands from tag names', () => {
   const graph = {
     nodes: [
-      { id: 'cwd_bath_fitter_listing_manager', label: '@bath-fitter-listing-manager', kind: 'tag' },
-      { id: 'cwd_website_bathfitter_residential', label: '@website-bathfitter-residential', kind: 'tag' },
-      { id: 'cwd_dyob3', label: '@dyob3', kind: 'tag' },
-      { id: 'cwd_dyob_react_wordpress', label: '@dyob-react-wordpress', kind: 'tag' },
+      { id: 'cwd_blue_falcon_listing_manager', label: '@blue-falcon-listing-manager', kind: 'tag' },
+      { id: 'cwd_website_bluefalcon_residential', label: '@website-bluefalcon-residential', kind: 'tag' },
+      { id: 'cwd_aurora3', label: '@aurora3', kind: 'tag' },
+      { id: 'cwd_aurora_react_wordpress', label: '@aurora-react-wordpress', kind: 'tag' },
       { id: 'cwd_lonely', label: '@lonely', kind: 'tag' }, // no cross-repo overlap
     ],
     edges: [],
   };
   const r = extractEntities(graph);
   const labels = r.nodes.map(n => n.label).sort();
-  assert.ok(labels.includes('Bath Fitter'), `expected Bath Fitter in ${labels.join(',')}`);
-  assert.ok(labels.includes('Dyob'), `expected Dyob in ${labels.join(',')}`);
+  assert.ok(labels.includes('Blue Falcon'), `expected Blue Falcon in ${labels.join(',')}`);
+  assert.ok(labels.includes('Aurora'), `expected Aurora in ${labels.join(',')}`);
   // "Lonely" only appears in one repo, must NOT become an entity
   assert.ok(!labels.includes('Lonely'), `Lonely should not be an entity`);
 });
@@ -53,22 +53,22 @@ test('extractEntities: plugin nodes always become entities', () => {
 });
 
 test('extractEntities: prefers human-readable surface form (with separators)', () => {
-  // Two repos share the canonical key "bathfitter":
-  //  - repo A surfaces it as the bigram "bath fitter" (tokenized from
-  //    "bath-fitter-listing-manager")
-  //  - repo B surfaces it as the unigram "bathfitter" (its slug already
-  //    smushed, like "website-bathfitter-residential")
+  // Two repos share the canonical key "bluefalcon":
+  //  - repo A surfaces it as the bigram "blue falcon" (tokenized from
+  //    "blue-falcon-listing-manager")
+  //  - repo B surfaces it as the unigram "bluefalcon" (its slug already
+  //    smushed, like "website-bluefalcon-residential")
   // The more readable bigram should win the surface form.
   const graph = {
     nodes: [
-      { id: 'cwd_bath_fitter_listing_manager',     label: '@bath-fitter-listing-manager',     kind: 'tag' },
-      { id: 'cwd_website_bathfitter_residential',  label: '@website-bathfitter-residential',  kind: 'tag' },
+      { id: 'cwd_blue_falcon_listing_manager',     label: '@blue-falcon-listing-manager',     kind: 'tag' },
+      { id: 'cwd_website_bluefalcon_residential',  label: '@website-bluefalcon-residential',  kind: 'tag' },
     ],
     edges: [],
   };
   const r = extractEntities(graph);
   const labels = r.nodes.map(n => n.label);
-  assert.ok(labels.includes('Bath Fitter'), `expected 'Bath Fitter', got [${labels.join(', ')}]`);
+  assert.ok(labels.includes('Blue Falcon'), `expected 'Blue Falcon', got [${labels.join(', ')}]`);
 });
 
 test('extractEntities: stopwords are filtered (no website/manager entities)', () => {
@@ -140,14 +140,14 @@ test('extractEntities: declared entity-relations emit conceptually_related_to ed
     fs.mkdirSync(path.join(root, '.symphonee'), { recursive: true });
     fs.writeFileSync(
       path.join(root, '.symphonee', 'entity-relations.json'),
-      JSON.stringify({ relations: [{ from: 'DYOB', to: 'Bath Fitter', relation: 'part_of', label: 'DYOB is a Bath Fitter program' }] }),
+      JSON.stringify({ relations: [{ from: 'Aurora', to: 'Blue Falcon', relation: 'part_of', label: 'Aurora is a Blue Falcon program' }] }),
     );
     const graph = {
       nodes: [
-        { id: 'cwd_bath_fitter_x', label: '@bath-fitter-x', kind: 'tag' },
-        { id: 'cwd_bath_fitter_y', label: '@bath-fitter-y', kind: 'tag' },
-        { id: 'cwd_dyob3',         label: '@dyob3',         kind: 'tag' },
-        { id: 'cwd_dyob_react',    label: '@dyob-react',    kind: 'tag' },
+        { id: 'cwd_blue_falcon_x', label: '@blue-falcon-x', kind: 'tag' },
+        { id: 'cwd_blue_falcon_y', label: '@blue-falcon-y', kind: 'tag' },
+        { id: 'cwd_aurora3',         label: '@aurora3',         kind: 'tag' },
+        { id: 'cwd_aurora_react',    label: '@aurora-react',    kind: 'tag' },
       ],
       edges: [],
     };
@@ -155,10 +155,10 @@ test('extractEntities: declared entity-relations emit conceptually_related_to ed
     assert.equal(r.declaredRelations, 1);
     const rel = r.edges.find(e => e.relation === 'conceptually_related_to');
     assert.ok(rel, 'expected conceptually_related_to edge');
-    assert.equal(rel.source, 'entity_dyob');
-    assert.equal(rel.target, 'entity_bathfitter');
+    assert.equal(rel.source, 'entity_aurora');
+    assert.equal(rel.target, 'entity_bluefalcon');
     assert.equal(rel.relationKind, 'part_of');
-    assert.equal(rel.relationLabel, 'DYOB is a Bath Fitter program');
+    assert.equal(rel.relationLabel, 'Aurora is a Blue Falcon program');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -298,12 +298,12 @@ test('extractEntities: declared relation skipped when one side is unknown', () =
     fs.mkdirSync(path.join(root, '.symphonee'), { recursive: true });
     fs.writeFileSync(
       path.join(root, '.symphonee', 'entity-relations.json'),
-      JSON.stringify({ relations: [{ from: 'DYOB', to: 'NeverHeardOf', relation: 'part_of' }] }),
+      JSON.stringify({ relations: [{ from: 'Aurora', to: 'NeverHeardOf', relation: 'part_of' }] }),
     );
     const graph = {
       nodes: [
-        { id: 'cwd_dyob3',      label: '@dyob3',      kind: 'tag' },
-        { id: 'cwd_dyob_react', label: '@dyob-react', kind: 'tag' },
+        { id: 'cwd_aurora3',      label: '@aurora3',      kind: 'tag' },
+        { id: 'cwd_aurora_react', label: '@aurora-react', kind: 'tag' },
       ],
       edges: [],
     };

@@ -7,8 +7,10 @@
       --radius-lg: 10px;
       --radius-xl: 14px;
       --radius-pill: 999px;
-      --sidebar-w: 250px;
-      --intel-w:   420px;
+      /* Balanced rails: equal 300px left and right so the terminal sits
+         dead-center (user-specified). */
+      --sidebar-w: 300px;
+      --intel-w:   300px;
       --header-h:  46px;
       --term-bar-h: 40px;
 
@@ -572,13 +574,32 @@
       font-size: 11px; color: var(--green); margin-left: auto; flex-shrink: 0;
     }
     .tab-bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    /* Ask Symphonee trigger: the pill identity (accent tint + border + a
+       breathing dot) in the topbar - but squared off to match the mode
+       switch chip, not a full capsule. */
     .cmd-trigger {
       display: flex; align-items: center; gap: 8px; padding: 4px 12px;
-      background: var(--surface0); border: 1px solid var(--surface1); border-radius: var(--radius);
+      background: color-mix(in srgb, var(--surface0) 90%, var(--accent) 5%);
+      border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+      border-radius: var(--radius);
       cursor: pointer; transition: all 0.12s; width: 280px;
     }
-    .cmd-trigger:hover { border-color: var(--accent); background: var(--surface1); }
+    .cmd-trigger:hover {
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+      background: color-mix(in srgb, var(--surface0) 84%, var(--accent) 9%);
+      box-shadow: 0 0 12px -6px var(--accent);
+    }
     .cmd-trigger span { font: 11px var(--font-ui); color: var(--subtext0); flex: 1; }
+    .cmd-trigger .ask-dot {
+      flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 8px var(--accent);
+      animation: askDotBreathe 4.4s ease-in-out infinite;
+    }
+    @keyframes askDotBreathe {
+      0%, 100% { opacity: .55; transform: scale(.9); }
+      50% { opacity: 1; transform: scale(1.06); }
+    }
+    @media (prefers-reduced-motion: reduce) { .cmd-trigger .ask-dot { animation: none; } }
     .cmd-trigger kbd {
       font: 9px var(--font-mono); background: var(--mantle); border: 1px solid var(--surface1);
       border-radius: 3px; padding: 1px 5px; color: var(--subtext0);
@@ -3633,7 +3654,8 @@
     .changed-file-status.renamed { color: var(--blue); }
     .changed-file-status.new { color: var(--green); }
     .commit-item {
-      padding: 8px 10px; border-bottom: 1px solid var(--surface0);
+      /* the panel already pads 12px - the item only needs breathing room */
+      padding: 8px 2px; border-bottom: 1px solid var(--surface0);
       cursor: default; transition: background 0.1s;
     }
     .commit-item:hover { background: var(--surface0); }
@@ -4539,12 +4561,16 @@
       animation: cmdPaletteFade 0.16s ease-out;
     }
     .cmd-palette-overlay.open { display: flex; }
+    /* Ask Symphonee: the palette wears the pill's identity - accent-tinted
+       border and a quiet accent glow. */
     .cmd-palette {
       width: 620px; max-height: 480px;
       background: color-mix(in srgb, var(--base) 96%, transparent);
-      border: 1px solid var(--surface2); border-radius: var(--radius-xl);
+      border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--surface2));
+      border-radius: var(--radius-xl);
       box-shadow:
         0 1px 0 rgba(255,255,255,0.04) inset,
+        0 0 26px -14px var(--accent),
         0 24px 60px rgba(0,0,0,0.55);
       backdrop-filter: blur(14px);
       display: flex; flex-direction: column; overflow: hidden;
@@ -4566,6 +4592,15 @@
       background-position: 14px center;
     }
     .cmd-palette-input::placeholder { color: var(--subtext0); }
+    /* quiet until you mean it: the clear control sits faded in the heading
+       and wakes on hover */
+    .cmd-hist-clear {
+      background: transparent; border: none; cursor: pointer;
+      font: 10px var(--font-ui); color: var(--subtext0);
+      padding: 3px 7px; border-radius: var(--radius);
+      opacity: .55; transition: opacity .12s, color .12s, background .12s;
+    }
+    .cmd-hist-clear:hover { opacity: 1; color: var(--text); background: var(--surface1); }
     .cmd-palette-list {
       flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px;
     }

@@ -24,7 +24,7 @@
 
 'use strict';
 
-const llm = require('../mind/llm');
+const llm = require('../lib/llm');
 const outcomes = require('./outcomes');
 const promptStore = require('./prompt-store');
 

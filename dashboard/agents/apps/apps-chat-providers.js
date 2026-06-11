@@ -346,7 +346,7 @@ function buildProviderRegistry(aiKeys) {
   // a cryptic ECONNREFUSED after the retry loop. When Ollama is down it simply
   // isn't listed.
   let _ollamaReachable = false;
-  try { _ollamaReachable = !!require('../../mind/llm').getChatStatus().reachable; } catch (_) {}
+  try { _ollamaReachable = !!require('../../lib/llm').getChatStatus().reachable; } catch (_) {}
   if (_ollamaReachable) {
     const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
     let host = '127.0.0.1', ollPort = 11434;

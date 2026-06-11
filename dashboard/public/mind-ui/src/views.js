@@ -127,7 +127,7 @@ import { escapeHtml, renderWakeupPreview } from './helpers.js';
   }
 
   async function runSmart() {
-    // Lowercase the query so 'Bathfitter' and 'bathfitter' produce
+    // Lowercase the query so 'Bluefalcon' and 'bluefalcon' produce
     // identical results. The BM25 backend already lowercases internally,
     // but the dense embedding endpoint passes the query verbatim to the
     // embedding model — and embedding models DO produce different

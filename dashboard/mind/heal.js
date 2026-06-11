@@ -55,7 +55,7 @@ async function _embedMissingNodes({ repoRoot, space, getAiApiKeys, maxNodes = 25
   let healed = 0;
   for (const c of candidates) {
     try {
-      const vec = await embeddings.embedSingle(c.text, { provider, model: vs.model || undefined });
+      const vec = await embeddings.embedSingle(c.text, { provider, model: vs.model || undefined, task: 'search_document' });
       if (!vec) continue;
       vs.upsert(c.id, vec);
       healed++;

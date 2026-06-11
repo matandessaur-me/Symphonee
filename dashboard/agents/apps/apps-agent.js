@@ -413,15 +413,16 @@ function mountAppsRoutes(addRoute, json, { getConfig, broadcast, permGate, resol
     } catch (_) { /* file missing / parse fail — fall through to Mind */ }
 
     try {
-      const mindStore = require('../../mind/store');
-      const mindQuery = require('../../mind/query');
-      // No direct space accessor here; default to '_global' which is the
-      // Symphonee notesNamespace fallback that mind/index.js uses too.
+      // Stage 1: query Mind through the client contract, not an in-process
+      // graph read. Default transport is in-process (lib/mind-client.js) so
+      // behaviour is unchanged; '_global' is the notesNamespace fallback that
+      // mind/index.js uses too.
+      const { createMindClient } = require('../../lib/mind-client');
       const space = '_global';
       const repoRoot = require('path').resolve(__dirname, '..', '..', '..');
-      const graph = mindStore.loadGraph(repoRoot, space);
-      if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
-        const r = mindQuery.runQuery(graph, { question: `${session.app}: ${goal}`, budget: 1200 });
+      const mind = createMindClient({ transport: 'inproc', repoRoot, space });
+      const r = await mind.query({ question: `${session.app}: ${goal}`, budget: 1200 });
+      if (r && Array.isArray(r.nodes) && r.nodes.length) {
         const candidates = (r.nodes || []).filter(n => n.kind === 'recipe' && (n.tags || []).includes('app-automation') && (n.tags || []).includes(session.app));
         priorRecipes = candidates.slice(0, 3).map(n => ({
           id: n.id, label: n.label, status: (n.tags || []).includes('verified') ? 'verified' : 'draft',

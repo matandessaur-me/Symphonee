@@ -115,6 +115,7 @@ const ROUTES = {
   '/js/spaces-repos.js':      { file: path.join(publicDir, 'js', 'spaces-repos.js'),                               type: 'application/javascript' },
   '/js/work-items.js':        { file: path.join(publicDir, 'js', 'work-items.js'),                                 type: 'application/javascript' },
   '/js/command-palette.js':   { file: path.join(publicDir, 'js', 'command-palette.js'),                            type: 'application/javascript' },
+  '/js/ambient-whisper.js':   { file: path.join(publicDir, 'js', 'ambient-whisper.js'),                            type: 'application/javascript' },
   '/js/plugins.js':           { file: path.join(publicDir, 'js', 'plugins.js'),                                    type: 'application/javascript' },
   '/js/settings.js':          { file: path.join(publicDir, 'js', 'settings.js'),                                   type: 'application/javascript' },
   '/js/browser.js':           { file: path.join(publicDir, 'js', 'browser.js'),                                    type: 'application/javascript' },
@@ -545,7 +546,7 @@ const server = http.createServer(async (req, res) => {
         let brainField = null;
         try {
           if (brain && typeof brain.getIntent === 'function') {
-            const brainSetup = await require('./mind/ollama-setup').detectBrainSetup();
+            const brainSetup = await require('./lib/ollama-setup').detectBrainSetup();
             brainField = {
               intent: brain.getIntent(),
               triageModel: require('./brain/planner').TRIAGE_MODEL,
@@ -1075,6 +1076,8 @@ const brain = mountBrain(addRoute, json, {
   repoRoot, broadcast,
   getUiContext: getUiContextWithPath,
   getConfig,
+  // The ambient observer writes activity digests into the shared graph.
+  mind,
 });
 console.log('  Brain mounted (/api/symphonee/*) - planner + intent');
 trace.mark('server:brain-mounted');
@@ -1117,7 +1120,7 @@ _brainForKnowledgeEvents = brain;
 // work AFTER the dashboard has rendered (see runDeferredBootWork) so it does not
 // starve the renderer's event loop during first paint.
 function runBrainSetup() {
-  const setupMod = require('./mind/ollama-setup');
+  const setupMod = require('./lib/ollama-setup');
   return setupMod.detectBrainSetup().then(async (status) => {
     if (!status.ollamaInstalled) {
       console.log('[brain/setup] Ollama not installed - brain features disabled until you install it from https://ollama.com/download');

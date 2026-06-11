@@ -30,10 +30,20 @@ const sequencesModule = require('./sequences');
 const synthesizeModule = require('./synthesize');
 const answerModule = require('./answer');
 const outcomesModule = require('./outcomes');
+const routeLogModule = require('./route-log');
+const conductorModule = require('./conductor');
+const voiceModule = require('./voice');
+const personasModule = require('./personas');
+const observerModule = require('./observer');
+const ambientModule = require('./ambient');
+const localAnswerModule = require('./local-answer');
+const nudgeRules = require('./nudge-rules');
+const llm = require('../lib/llm');
+const { createMindClient } = require('../lib/mind-client');
 const promptStoreModule = require('./prompt-store');
 const selfIterateModule = require('./self-iterate');
 const perfModule = require('./perf');
-const ollamaSetup = require('../mind/ollama-setup');
+const ollamaSetup = require('../lib/ollama-setup');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -74,6 +84,25 @@ function mountBrain(addRoute, json, ctx) {
     const record = { id, at: new Date().toISOString(), ...entry };
     decisionLog.push(record);
     if (decisionLog.length > DECISION_LOG_MAX) decisionLog.shift();
+    // Stage-0 instrumentation: durably persist the recall-vs-escalate signal
+    // so it survives restart and Stage 4 can measure routing on real traffic.
+    // Both call sites (/think and the orchestrator plan()) funnel through
+    // here, so this single hook captures all real traffic. Wrapped in a guard
+    // because instrumentation must never be able to break a routing request -
+    // routeLog.record() already swallows IO errors, this catches everything
+    // else (e.g. a malformed entry).
+    try {
+      const classification = planner.classifyRoute(record);
+      routeLogModule.record(repoRoot, {
+        decisionId: id,
+        input: record.input,
+        source: record.source,
+        plan: record,
+        classification,
+        tookMs: record.tookMs,
+        escalationThreshold: planner.ESCALATION_THRESHOLD,
+      });
+    } catch (_) { /* instrumentation must never break routing */ }
     return record;
   }
   function findDecision(id) {
@@ -140,6 +169,347 @@ function mountBrain(addRoute, json, ctx) {
       total: decisionLog.length,
       decisions: decisionLog.slice(-safeLimit).reverse(),
     });
+  });
+
+  // ── POST /api/symphonee/conduct ─────────────────────────────────────────
+  // The conductor (Stage 4): plan the input, then ADVISE which rung of the
+  // 3-rung ladder should handle it, grounded in triage confidence + outcome
+  // history + recent route-log escalation behaviour. Advisory only - the
+  // caller (a frontier CLI) acts and may override. Replayable: the underlying
+  // plan is logged via the same route-log as /think.
+  addRoute('POST', '/api/symphonee/conduct', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') return json(res, { error: 'input required' }, 400);
+    const ui = getUiContext ? getUiContext() : {};
+    const current = intent.get();
+    const plan = await planner.planRoute(input, { ui, intent: current, outcomeHints: getOutcomeHints(), repoRoot });
+    const logged = logDecision({
+      input: input.slice(0, 240), ok: plan.ok, stage: plan.stage, escalated: plan.escalated,
+      forceEscalated: plan.forceEscalated, triageConfidence: plan.triageConfidence,
+      triagePatches: plan.triagePatches, patches: plan.patches, model: plan.model,
+      triageModel: plan.triageModel, decision: plan.decision, error: plan.error, source: 'conduct',
+    });
+    // Ground the recommendation in history.
+    let bestCliFor = null;
+    try {
+      const stats = outcomesModule.getStats(repoRoot);
+      bestCliFor = outcomesModule.bestCliFor(stats, plan.decision && plan.decision.intent);
+    } catch (_) { /* no outcome data yet */ }
+    let recentEscalationRate = null;
+    try { recentEscalationRate = routeLogModule.getStats(repoRoot).escalationRate; } catch (_) {}
+    const recommendation = conductorModule.recommendRung(plan, { bestCliFor, recentEscalationRate });
+    return json(res, {
+      decisionId: logged.id,
+      decision: plan.decision,
+      recommendation,
+      ladder: conductorModule.LADDER,
+      grounding: { bestCliFor, recentEscalationRate },
+    });
+  });
+
+  // ── POST /api/symphonee/ask ─────────────────────────────────────────────
+  // The front door (Stage 5), ARIA-corrected. The local brain routes + recalls;
+  // factual recall is answered with a DETERMINISTIC TEMPLATE filled from the
+  // graph (no robotic local prose), adapted to the caller's persona. Anything
+  // needing real naturalness/reasoning returns escalate:true so a frontier voice
+  // answers. Body: { input, persona?: { userType, role } }.
+  addRoute('POST', '/api/symphonee/ask', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') return json(res, { error: 'input required' }, 400);
+    const ui = getUiContext ? getUiContext() : {};
+    const space = (ui && ui.activeSpace) || '_global';
+    const surface = personasModule.resolveSurface(body.persona || {});
+
+    // Fast path (palette quick-answer): the local answering machine. Retrieve
+    // broadly across ALL the user's knowledge (notes/docs/memory via hybrid),
+    // pull the real bodies, and synthesize a HUMAN answer with the local
+    // reasoning model. Symphonee's own voice; the active CLI stays one button
+    // away. Escalates only when memory genuinely has nothing.
+    if (body.fast === true) {
+      const local = await localAnswerModule.localAnswer({
+        repoRoot, space, question: input,
+        activeRepoPath: ui && ui.activeRepoPath, activeRepo: ui && ui.activeRepo,
+      });
+      if (local.grounded) {
+        if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'local', persona: surface.userType, fast: true } });
+        return json(res, {
+          source: 'local',
+          answer: local.answer,
+          citedNodeIds: local.citedNodeIds,
+          sources: local.sources,
+          model: local.model,
+          persona: surface,
+          fast: true,
+        });
+      }
+      if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'escalate', persona: surface.userType, fast: true } });
+      return json(res, { source: 'escalate', reason: local.reason || 'no-knowledge', persona: surface, fast: true });
+    }
+
+    const plan = await planner.planRoute(input, { ui, intent: intent.get(), outcomeHints: getOutcomeHints(), repoRoot });
+    const recommendation = conductorModule.recommendRung(plan, {});
+
+    // Only fetch recall when the conductor points at the local recall rung.
+    let recall = null;
+    if (recommendation.rung === 1 && recommendation.intent === 'recall') {
+      try {
+        const mind = createMindClient({ transport: 'inproc', repoRoot, space });
+        recall = await mind.recall({ question: input, limit: 6, space });
+      } catch (_) { recall = null; }
+    }
+    const result = voiceModule.frontDoor({ recommendation, recall, question: input, surface });
+    if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: result.source, rung: result.rung, persona: surface.userType } });
+    return json(res, { ...result, persona: surface, decision: plan.decision });
+  });
+
+  // ── POST /api/symphonee/ask/stream ──────────────────────────────────────
+  // The ask surface's engine: deep recall (time-window honoured, cross-AI
+  // drawer history grouped by CLI) + token streaming over SSE. Events:
+  //   {type:'status',label}  retrieval milestones (perceived latency)
+  //   {type:'token',text}    answer fragments as the model generates
+  //   {type:'done', answer, citedNodeIds, sources, recalled, model, since}
+  //   {type:'escalate', reason}  nothing grounded - hand to the agent
+  addRoute('POST', '/api/symphonee/ask/stream', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const input = body.input || body.prompt || body.text;
+    if (!input || typeof input !== 'string') return json(res, { error: 'input required' }, 400);
+    const ui = getUiContext ? getUiContext() : {};
+    const space = (ui && ui.activeSpace) || '_global';
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (ev) => { try { res.write('data: ' + JSON.stringify(ev) + '\n\n'); } catch (_) { /* client gone */ } };
+    try {
+      const result = await localAnswerModule.deepAnswer({
+        repoRoot, space, question: input,
+        activeRepoPath: ui && ui.activeRepoPath, activeRepo: ui && ui.activeRepo,
+        history: Array.isArray(body.history) ? body.history.slice(-3) : [],
+      }, send);
+      if (result.grounded) {
+        send({ type: 'done', answer: result.answer, citedNodeIds: result.citedNodeIds, sources: result.sources, actions: result.actions || [], recalled: result.recalled, model: result.model, since: result.since });
+        if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'local', stream: true } });
+      } else {
+        send({ type: 'escalate', reason: result.reason || 'no-knowledge' });
+        if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'escalate', stream: true } });
+      }
+    } catch (e) {
+      send({ type: 'escalate', reason: 'error', error: e.message });
+    }
+    try { res.end(); } catch (_) {}
+  });
+
+  // ── Ambient brain (Stage 6) ─────────────────────────────────────────────
+  // Proactive nudges, gated on value with a user-tunable silent<->chatty dial
+  // and trust that decays dismissed suggestion types. Triggered on signal by a
+  // caller (intent change / fresh insight), never on a timer.
+  //
+  // POST /api/symphonee/ambient/evaluate { candidate:{type,value,interruptsFlow?} }
+  addRoute('POST', '/api/symphonee/ambient/evaluate', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.candidate || typeof body.candidate !== 'object') return json(res, { error: 'candidate required' }, 400);
+    const state = ambientModule.loadState(repoRoot);
+    const verdict = ambientModule.evaluateNudge(body.candidate, { dial: state.dial, trust: state.trust });
+    if (verdict.surface && broadcast) broadcast({ type: 'symphonee-ambient', payload: { candidate: body.candidate, verdict } });
+    return json(res, { ...verdict, dial: state.dial });
+  });
+
+  // POST /api/symphonee/ambient/feedback { type, action: accept|dismiss }
+  // Feeds per-type trust AND the auto-quiet tuner: a sustained dismissal
+  // streak turns the whisper one dial-step quieter on its own.
+  addRoute('POST', '/api/symphonee/ambient/feedback', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!body.type || !['accept', 'dismiss'].includes(body.action)) {
+      return json(res, { error: 'type and action (accept|dismiss) required' }, 400);
+    }
+    let state = ambientModule.loadState(repoRoot);
+    state.trust = ambientModule.applyFeedback(state.trust, body.type, body.action);
+    const dialBefore = state.dial;
+    state = ambientModule.autoQuiet(ambientModule.recordFeedbackEvent(state, body.action));
+    ambientModule.saveState(repoRoot, state);
+    return json(res, {
+      ok: true, type: body.type, action: body.action, trust: state.trust[body.type],
+      dial: state.dial, autoTuned: state.dial !== dialBefore ? state.autoTuned : null,
+    });
+  });
+
+  // GET /api/symphonee/ambient/greeting - who to greet and when. The name
+  // comes from the OS account (never hardcoded); the client composes the words.
+  addRoute('GET', '/api/symphonee/ambient/greeting', (req, res) => {
+    let name = process.env.USERNAME || process.env.USER || '';
+    if (!name) { try { name = require('os').userInfo().username; } catch (_) { name = ''; } }
+    name = name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
+    const h = new Date().getHours();
+    const daypart = h < 5 ? 'night' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+    return json(res, { name, daypart });
+  });
+
+  // GET /api/symphonee/ambient/chips - three context-aware ask suggestions for
+  // the island's empty state, drawn from what is ACTUALLY going on right now.
+  addRoute('GET', '/api/symphonee/ambient/chips', async (req, res) => {
+    const chips = [];
+    try {
+      const ctx = await _gatherNudgeContext({});
+      if (ctx.failures && ctx.failures.length) chips.push('What went wrong with my last task?');
+      if (ctx.successes && ctx.successes.length) chips.push(`What did my ${ctx.successes[0].cli} task produce?`);
+      if (ctx.notesEdited && ctx.notesEdited.length) chips.push(`What's in my note "${ctx.notesEdited[0].name}"?`);
+      if (ctx.uncommitted && ctx.uncommitted.count >= 3) chips.push('Summarize my uncommitted changes');
+    } catch (_) { /* fall through to the evergreen set */ }
+    for (const f of ['What changed today?', 'Where did we leave off?', 'What should I do next?']) {
+      if (chips.length >= 3) break;
+      if (!chips.includes(f)) chips.push(f);
+    }
+    return json(res, { chips: chips.slice(0, 3) });
+  });
+
+  // GET /api/symphonee/ambient  + POST .../dial { dial }
+  addRoute('GET', '/api/symphonee/ambient', (req, res) => {
+    const state = ambientModule.loadState(repoRoot);
+    return json(res, { dial: state.dial, dials: Object.keys(ambientModule.DIALS), trust: state.trust, enabled: state.enabled !== false });
+  });
+  addRoute('POST', '/api/symphonee/ambient/dial', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    if (!ambientModule.DIALS[body.dial]) return json(res, { error: 'dial must be one of ' + Object.keys(ambientModule.DIALS).join(' | ') }, 400);
+    const state = ambientModule.loadState(repoRoot);
+    state.dial = body.dial;
+    ambientModule.saveState(repoRoot, state);
+    return json(res, { ok: true, dial: state.dial });
+  });
+
+  // The whisper's brain: SYNTHESIZE one short, genuinely helpful nudge from what
+  // the user is ACTUALLY doing (current focus + recent conversation + git +
+  // checkpoints), phrased like a thoughtful colleague - NOT raw system
+  // housekeeping ("memory cards superseded" helps nobody). Returns a {type,
+  // value, title} candidate or null. Cached briefly so focus-checks don't hammer
+  // the model.
+  let _nudgeCache = { at: 0, nudge: null };
+  const _NUDGE_TTL_MS = 60_000;
+  // Shared context for the nudge engine: what the user is actually doing.
+  async function _gatherNudgeContext(opts) {
+    const ui = getUiContext ? getUiContext() : {};
+    const space = (ui && ui.activeSpace) || '_global';
+    let ctx;
+    try { ctx = await localAnswerModule.gatherContext({ repoRoot, space, activeRepoPath: ui.activeRepoPath, activeRepo: ui.activeRepo, notesNs: ui.notesNamespace || '_global' }); }
+    catch (_) { ctx = { git: [], checkpoints: [], conversation: [], uncommitted: { count: 0, files: [] } }; }
+    ctx.activeRepo = ui.activeRepo || null;
+    ctx.activeRepoPath = ui.activeRepoPath || null;
+    ctx.intent = intent.get();
+    ctx.idle = !!(opts && opts.idle);
+    return ctx;
+  }
+
+  // Fuzzy FALLBACK only (used when no rule fires). Cached 60s.
+  async function _synthesizeNudge(ctx) {
+    if (Date.now() - _nudgeCache.at < _NUDGE_TTL_MS) return _nudgeCache.nudge;
+    const cur = ctx.intent;
+    const lines = [];
+    if (cur && cur.summary) lines.push('Their current focus: ' + cur.summary);
+    if (ctx.conversation.length) lines.push('Recent conversation:\n' + ctx.conversation.map(t => `- ${t.role}: ${t.text}`).join('\n'));
+    if (ctx.git.length) lines.push('Recent commits:\n' + ctx.git.map(l => '- ' + l).join('\n'));
+    if (ctx.checkpoints.length) lines.push('Recently did:\n' + ctx.checkpoints.map(l => '- ' + l).join('\n'));
+    if (!lines.length) { _nudgeCache = { at: Date.now(), nudge: null }; return null; }
+
+    const sys = [
+      'You are Symphonee, the user\'s AI workspace, quietly noticing what they are doing.',
+      'Decide if there is ONE short, genuinely helpful thing to gently say right now - a reminder, a suggestion, or a heads-up - grounded in what they have ACTUALLY been doing.',
+      '',
+      'Good nudges (specific, warm, useful):',
+      '  - "You\'ve made several changes - probably worth restarting Symphonee to test them."',
+      '  - "You\'ve been deep in the booking flow a while - want me to summarize where things stand?"',
+      '  - "You mentioned moving the ElevenLabs key earlier - still want to do that?"',
+      '',
+      'RULES:',
+      '  - Speak ONLY if it is genuinely useful AND specific to what they are doing. When in doubt, say nothing (nudge=null).',
+      '  - The user DIRECTS the work and may not be a coder. Help THEM decide what to do NEXT (test it, restart to see changes, review something, continue, summarize where things stand). NEVER suggest writing code or implementation tasks, and never just paraphrase a commit.',
+      '  - NEVER report system internals (memory cards, node ids, kinds, scores). NEVER generic filler ("remember to take breaks").',
+      '  - One sentence. Warm, plain, human. Talk TO them ("you"), like a sharp colleague.',
+      '  - Plain ASCII only. No emojis, em dashes, or smart quotes.',
+      '',
+      'Output strict JSON: { "nudge": string|null, "kind": "short-slug", "value": 0..1 }.',
+      'value = how worth-saying it is; use 0.7+ only when clearly helpful. nudge=null and value 0 when nothing is worth saying.',
+    ].join('\n');
+    const user = 'What the user has been doing:\n\n' + lines.join('\n\n') + '\n\nIs there one genuinely helpful thing to gently say? Respond with the JSON.';
+
+    let nudge = null;
+    try {
+      const r = await llm.chatOllama([{ role: 'system', content: sys }, { role: 'user', content: user }], { model: planner.TRIAGE_MODEL, format: 'json', timeoutMs: 20000 });
+      const j = r && r.json;
+      const text = j && typeof j.nudge === 'string' ? j.nudge.trim() : '';
+      if (text && text.toLowerCase() !== 'null' && text.length > 6) {
+        const value = typeof j.value === 'number' ? Math.max(0, Math.min(1, j.value)) : 0.6;
+        const kind = String(j.kind || 'general').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'general';
+        nudge = { type: 'suggestion:' + kind, value, title: text.slice(0, 180), because: 'a hunch from your recent activity', action: { kind: 'suggestion' } };
+      }
+    } catch (_) { /* model busy / offline - stay quiet */ }
+    _nudgeCache = { at: Date.now(), nudge };
+    return nudge;
+  }
+
+  // GET /api/symphonee/ambient/nudge - the whisper's brain. RULES first
+  // (deterministic, reliable, well-phrased); the fuzzy model only when no rule
+  // fires. Then the NOVELTY gate (never say the same thing twice while nothing
+  // changed), then the dial + trust gate. On real signals only (boot, focus);
+  // dismissing decays the kind. Surfaced nudges are recorded so the whisper
+  // remembers what it already said.
+  addRoute('GET', '/api/symphonee/ambient/nudge', async (req, res) => {
+    let state = ambientModule.loadState(repoRoot);
+    if (state.enabled === false) return json(res, { nudge: null, dial: state.dial, enabled: false });
+    const idle = new URL(req.url, 'http://x').searchParams.get('idle') === '1';
+    let candidates = [];
+    try {
+      const ctx = await _gatherNudgeContext({ idle });
+      ctx.shownCounts = ambientModule.shownCounts(state);   // drives phrase rotation
+      candidates = nudgeRules.runRules(ctx).filter(c => ambientModule.isNovel(c, state));
+      if (!candidates.length && !idle) { const s = await _synthesizeNudge(ctx); if (s && ambientModule.isNovel(s, state)) candidates.push(s); }
+    } catch (_) { /* stay quiet on error */ }
+    let best = null;
+    for (const c of candidates) {
+      const v = ambientModule.evaluateNudge(c, { dial: state.dial, trust: state.trust });
+      if (v.surface && (!best || v.score > best.score)) best = { ...c, score: v.score };
+    }
+    if (best) {
+      state = ambientModule.recordShown(state, best);
+      ambientModule.saveState(repoRoot, state);
+    }
+    return json(res, { nudge: best, dial: state.dial, enabled: true });
+  });
+
+  // Hard on/off for the ambient whisper (the "completely deactivate" switch).
+  addRoute('POST', '/api/symphonee/ambient/enabled', async (req, res) => {
+    const body = await readBody(req).catch(() => ({}));
+    const state = ambientModule.loadState(repoRoot);
+    state.enabled = body.enabled !== false;
+    ambientModule.saveState(repoRoot, state);
+    if (broadcast) broadcast({ type: 'symphonee-ambient', payload: { enabled: state.enabled } });
+    return json(res, { ok: true, enabled: state.enabled });
+  });
+
+  // ── GET /api/symphonee/route-log ────────────────────────────────────────
+  // Durable Stage-0 instrumentation: the raw recall-vs-escalate decision
+  // stream, newest first. Unlike /decisions (in-memory, 200-cap, lost on
+  // restart) this survives restart and is the substrate Stage 4 measures
+  // routing accuracy against.
+  addRoute('GET', '/api/symphonee/route-log', (req, res) => {
+    const url = new URL(req.url, 'http://x');
+    const limit = parseInt(url.searchParams.get('limit') || '100', 10);
+    const safeLimit = Math.max(1, Math.min(2000, limit));
+    const all = routeLogModule.readRouteLog(repoRoot);
+    return json(res, {
+      total: all.length,
+      decisions: all.slice(-safeLimit).reverse(),
+    });
+  });
+
+  // ── GET /api/symphonee/route-log/stats ──────────────────────────────────
+  // Aggregate recall-vs-escalate picture: escalation rate, escalation reasons,
+  // per-intent split, plus confidence + latency means per branch. The honest
+  // "what is the conductor actually choosing?" view before we deepen routing.
+  addRoute('GET', '/api/symphonee/route-log/stats', (req, res) => {
+    return json(res, routeLogModule.getStats(repoRoot));
   });
 
   // ── GET /api/symphonee/intent ───────────────────────────────────────────
@@ -473,10 +843,36 @@ function mountBrain(addRoute, json, ctx) {
     });
   }
 
+  // ── Ambient observer (the whisper's brain, kept alive without a face) ───
+  // Watches the same context bus the whisper used and periodically distills
+  // genuinely new activity (commits, finished tasks, edited notes) into
+  // compact digests saved to Mind. Disable with SYMPHONEE_OBSERVER=0.
+  let observerHandle = null;
+  if (ctx.mind && typeof ctx.mind.saveObservation === 'function' && process.env.SYMPHONEE_OBSERVER !== '0') {
+    observerHandle = observerModule.start({
+      repoRoot,
+      gather: async () => {
+        const ui = getUiContext ? getUiContext() : {};
+        const c = await localAnswerModule.gatherContext({
+          repoRoot,
+          space: (ui && ui.activeSpace) || '_global',
+          activeRepoPath: ui && ui.activeRepoPath,
+          activeRepo: ui && ui.activeRepo,
+          notesNs: (ui && ui.notesNamespace) || '_global',
+        });
+        c.activeRepo = (ui && ui.activeRepo) || null;
+        return c;
+      },
+      save: (o) => ctx.mind.saveObservation(o),
+    });
+  }
+
   return {
     notifyIntent: (ev) => intent.notify(ev),
     getIntent: () => intent.get(),
     forceRecomputeIntent: () => intent.forceRecompute(),
+    stopObserver: () => { if (observerHandle) observerHandle.stop(); },
+    observerTick: () => (observerHandle ? observerHandle.tick() : null),
     plan,
     answer,
     synthesize: (o) => synthesizeModule.synthesize(repoRoot, o || {}),

@@ -63,10 +63,10 @@ import { render } from './router.js';
     applySearch('');
   }
 
-  // Normalize away word separators so "bathfitter", "bath fitter",
-  // "bath_fitter", and "Bath-Fitter" all match the same set of nodes.
-  // Without this, repos that smush the brand together ("bathfitter") only
-  // match nodes that also smush, while repos that split it ("bath_fitter")
+  // Normalize away word separators so "bluefalcon", "blue falcon",
+  // "blue_falcon", and "Blue-Falcon" all match the same set of nodes.
+  // Without this, repos that smush the brand together ("bluefalcon") only
+  // match nodes that also smush, while repos that split it ("blue_falcon")
   // match a different set - and the user has to guess which spelling is
   // in the graph today.
   function normForSearch(s) {
@@ -127,7 +127,7 @@ import { render } from './router.js';
     let matchIds = scored.map(x => x.id);
 
     // Expand matches one hop along semantic edges so the user SEES
-    // related entities ("DYOB is connected to Bath Fitter") without
+    // related entities ("Aurora is connected to Blue Falcon") without
     // pulling in the full cohort. If they want the cohort they click
     // the related entity to drill in - cheaper for the eye, cheaper for
     // the LLM if the search context is later sent as graph state.
@@ -135,7 +135,7 @@ import { render } from './router.js';
     // Edges traversed: conceptually_related_to (either direction) and
     // mentions where the OTHER end is a kind:entity. Nothing more. An
     // earlier version added Stage 2 (each reached entity's incoming
-    // mentions, capped at 50) which made "DYOB" pull every Bath Fitter
+    // mentions, capped at 50) which made "Aurora" pull every Blue Falcon
     // node and visually drowned the actual answer. Removed.
     if (matchIds.length) {
       const matchSet = new Set(matchIds);

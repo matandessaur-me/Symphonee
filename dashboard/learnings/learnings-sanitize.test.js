@@ -29,9 +29,19 @@ test('isSuspicious flags leftover redactions and company-specific mentions', () 
   assert.equal(s.isSuspicious('still has [REDACTED] in it'), true);
   assert.equal(s.isSuspicious('this is about a client deliverable'), true);
   assert.equal(s.isSuspicious('proprietary and confidential notes'), true);
-  // global-flag regexes must not go stateful across calls
-  assert.equal(s.isSuspicious('mentions bathfitter brand'), true);
-  assert.equal(s.isSuspicious('mentions bathfitter brand'), true); // same answer twice
+});
+
+test('isSuspicious flags locally configured private terms (and stays stateless)', () => {
+  s._setPrivateTerms(['bluefalcon', 'blue falcon']);
+  try {
+    // global-flag regexes must not go stateful across calls
+    assert.equal(s.isSuspicious('mentions bluefalcon brand'), true);
+    assert.equal(s.isSuspicious('mentions bluefalcon brand'), true); // same answer twice
+    assert.equal(s.isSuspicious('mentions Blue Falcon work'), true);
+    assert.equal(s.isSuspicious('a generic sentence about caching'), false);
+  } finally {
+    s._setPrivateTerms([]); // do not leak terms into other tests
+  }
 });
 
 test('isSuspicious passes clean, generic technical text', () => {

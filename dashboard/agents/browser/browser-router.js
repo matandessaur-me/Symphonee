@@ -332,12 +332,13 @@ function mountBrowserRouterRoutes(addRoute, json, { getConfig, broadcast, port }
         if (url) host = require('../../site-recipes').normalizeHost(url);
       } catch (_) {}
       if (goal) {
-        const mindStore = require('../../mind/store');
-        const mindQuery = require('../../mind/query');
+        // Stage 1: query Mind through the client contract, not an in-process
+        // graph read. Default transport is in-process (lib/mind-client.js).
+        const { createMindClient } = require('../../lib/mind-client');
         const repoRoot = require('path').resolve(__dirname, '..', '..', '..');
-        const graph = mindStore.loadGraph(repoRoot, '_global');
-        if (graph && Array.isArray(graph.nodes) && graph.nodes.length) {
-          const r = mindQuery.runQuery(graph, { question: host ? `${host}: ${goal}` : goal, budget: 1200 });
+        const mind = createMindClient({ transport: 'inproc', repoRoot, space: '_global' });
+        const r = await mind.query({ question: host ? `${host}: ${goal}` : goal, budget: 1200 });
+        if (r && Array.isArray(r.nodes) && r.nodes.length) {
           const candidates = (r.nodes || []).filter(n => n.kind === 'recipe' && (n.tags || []).includes('site-automation'));
           const filtered = host ? candidates.filter(n => (n.tags || []).includes(host)) : candidates;
           const verifiedHit = filtered.find(n => (n.tags || []).includes('verified'));

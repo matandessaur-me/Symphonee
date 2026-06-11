@@ -26,23 +26,23 @@ test('buildMemoryFragment: minimal valid spec', () => {
 
 test('buildMemoryFragment: rich spec produces all metadata', () => {
   const { node } = buildMemoryFragment({
-    title: 'DYOB design',
-    body: 'DYOB does not follow the Bath Fitter design system',
+    title: 'Aurora design',
+    body: 'Aurora does not follow the Blue Falcon design system',
     kindOfMemory: 'constraint',
-    tags: ['DYOB', 'Bath Fitter', 'design'],
-    scope: { repo: 'DYOB3' },
+    tags: ['Aurora', 'Blue Falcon', 'design'],
+    scope: { repo: 'Aurora3' },
     source: { type: 'conversation', ref: 'qa_123' },
     createdBy: 'claude',
   });
   assert.equal(node.kindOfMemory, 'constraint');
-  assert.equal(node.body.includes('Bath Fitter'), true);
-  assert.equal(node.scope.repo, 'DYOB3');
+  assert.equal(node.body.includes('Blue Falcon'), true);
+  assert.equal(node.scope.repo, 'Aurora3');
   assert.equal(node.source.ref, 'qa_123');
   assert.equal(node.createdBy, 'claude');
   // tags are normalized + 'memory' is auto-prepended
   assert.ok(node.tags.includes('memory'));
-  assert.ok(node.tags.includes('DYOB'));
-  assert.ok(node.tags.includes('Bath Fitter'));
+  assert.ok(node.tags.includes('Aurora'));
+  assert.ok(node.tags.includes('Blue Falcon'));
   assert.ok(node.tags.includes('design'));
 });
 
@@ -65,23 +65,23 @@ test('buildMemoryFragment: no derived_from edge when source.ref is unknown', () 
 });
 
 test('buildMemoryFragment: mentions edges to known entity tags', () => {
-  // Existing graph has entity_dyob and entity_bathfitter.
+  // Existing graph has entity_aurora and entity_bluefalcon.
   const { edges } = buildMemoryFragment(
-    { title: 'X', tags: ['DYOB', 'Bath Fitter', 'design'] },
-    { existingNodeIds: new Set(['entity_dyob', 'entity_bathfitter']) },
+    { title: 'X', tags: ['Aurora', 'Blue Falcon', 'design'] },
+    { existingNodeIds: new Set(['entity_aurora', 'entity_bluefalcon']) },
   );
   const ents = edges.filter(e => e.relation === 'mentions').map(e => e.target).sort();
-  assert.deepEqual(ents, ['entity_bathfitter', 'entity_dyob']);
+  assert.deepEqual(ents, ['entity_aurora', 'entity_bluefalcon']);
 });
 
 test('buildMemoryFragment: in_repo edge when scope.repo names a known cwd_*', () => {
   const { edges } = buildMemoryFragment(
-    { title: 'X', scope: { repo: 'DYOB3' } },
-    { existingNodeIds: new Set(['cwd_dyob3']) },
+    { title: 'X', scope: { repo: 'Aurora3' } },
+    { existingNodeIds: new Set(['cwd_aurora3']) },
   );
   const ir = edges.find(e => e.relation === 'in_repo');
   assert.ok(ir);
-  assert.equal(ir.target, 'cwd_dyob3');
+  assert.equal(ir.target, 'cwd_aurora3');
 });
 
 test('buildMemoryFragment: rejects invalid input', () => {
@@ -101,10 +101,10 @@ test('addMemoryCard: writes to disk and survives a reload', async () => {
       scope: { space: SPACE, isGlobal: false },
       generatedAt: new Date().toISOString(),
       nodes: [
-        { id: 'entity_dyob',     label: 'DYOB',        kind: 'entity',
-          source: { type: 'entity-enrichment', ref: 'dyob' },
+        { id: 'entity_aurora',     label: 'Aurora',        kind: 'entity',
+          source: { type: 'entity-enrichment', ref: 'aurora' },
           createdBy: 'test', createdAt: new Date().toISOString(), tags: ['entity'] },
-        { id: 'cwd_dyob3',       label: '@DYOB3',      kind: 'tag',
+        { id: 'cwd_aurora3',       label: '@Aurora3',      kind: 'tag',
           source: null, createdBy: 'test', createdAt: new Date().toISOString(), tags: [] },
       ],
       edges: [],
@@ -118,20 +118,20 @@ test('addMemoryCard: writes to disk and survives a reload', async () => {
     const { node, edges } = await addMemoryCard({
       repoRoot: root, space: SPACE,
       spec: {
-        title: 'DYOB brand divergence',
-        body: 'DYOB does not follow the Bath Fitter design system - different colours and typography.',
+        title: 'Aurora brand divergence',
+        body: 'Aurora does not follow the Blue Falcon design system - different colours and typography.',
         kindOfMemory: 'constraint',
-        tags: ['DYOB', 'design'],
-        scope: { repo: 'DYOB3' },
+        tags: ['Aurora', 'design'],
+        scope: { repo: 'Aurora3' },
         createdBy: 'test',
       },
     });
 
     assert.equal(node.kind, 'memory');
     assert.equal(node.kindOfMemory, 'constraint');
-    // mentions DYOB + in_repo to cwd_dyob3
-    assert.equal(edges.some(e => e.relation === 'mentions' && e.target === 'entity_dyob'), true);
-    assert.equal(edges.some(e => e.relation === 'in_repo'  && e.target === 'cwd_dyob3'),    true);
+    // mentions Aurora + in_repo to cwd_aurora3
+    assert.equal(edges.some(e => e.relation === 'mentions' && e.target === 'entity_aurora'), true);
+    assert.equal(edges.some(e => e.relation === 'in_repo'  && e.target === 'cwd_aurora3'),    true);
 
     // Reload graph and confirm the node is on disk.
     const reloaded = store.loadGraph(root, SPACE);
@@ -163,10 +163,10 @@ test('addMemoryCard: rejects unknown kindOfMemory', async () => {
 });
 
 test('extractMemoriesFromText: explicit "remember:" line', () => {
-  const r = extractMemoriesFromText('Working on this. Remember: DYOB does not follow the Bath Fitter design system.');
+  const r = extractMemoriesFromText('Working on this. Remember: Aurora does not follow the Blue Falcon design system.');
   assert.equal(r.length, 1);
   assert.equal(r[0].kindOfMemory, 'fact');
-  assert.ok(r[0].body.includes('DYOB does not follow'));
+  assert.ok(r[0].body.includes('Aurora does not follow'));
   assert.ok(r[0].title.length <= 80);
 });
 
@@ -202,7 +202,7 @@ test('extractMemoriesFromText: no signal -> no extraction', () => {
 
 test('extractMemoriesFromText: dedupes identical bodies', () => {
   const r = extractMemoriesFromText(
-    'Remember: DYOB has its own design.\nNote that DYOB has its own design.'
+    'Remember: Aurora has its own design.\nNote that Aurora has its own design.'
   );
   assert.equal(r.length, 1, 'duplicate bodies should dedupe');
 });

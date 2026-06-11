@@ -274,6 +274,28 @@ function recall(graph, opts = {}) {
     };
   });
   scored.sort((a, b) => b.score - a.score || (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  // Stage 3 (make it think): contradiction-aware recall. Flag memory the graph
+  // has SUPERSEDED and stable-push it below live memory, so the brain never
+  // recalls an overturned fact as its top hit; flag unresolved CONFLICTS as
+  // uncertain. Deterministic, cheap (memory cards only), never breaks recall.
+  let contradictionSummary = null;
+  if (opts.contradictionAware !== false) {
+    try {
+      const analysis = require('./contradict').analyze(graph);
+      if (analysis.dormantIds.length || analysis.conflicts.length) {
+        const dormant = new Set(analysis.dormantIds);
+        const conflicted = new Set();
+        for (const c of analysis.conflicts) { conflicted.add(c.a); conflicted.add(c.b); }
+        for (const h of scored) { h.superseded = dormant.has(h.id); h.contradicted = conflicted.has(h.id); }
+        // Array.sort is stable in Node, so score order is preserved within each
+        // group while all live memory moves ahead of superseded memory.
+        scored.sort((a, b) => Number(!!a.superseded) - Number(!!b.superseded));
+        contradictionSummary = { superseded: analysis.dormantIds.length, conflicts: analysis.conflicts.length };
+      }
+    } catch (_) { /* contradiction analysis must never break recall */ }
+  }
+
   const limit = Math.max(1, Math.min(200, opts.limit || 20));
   // When the user explicitly asked for suggestions ("any suggestions?",
   // "what should I clean up?"), reserve the top slots for insights so
@@ -289,6 +311,7 @@ function recall(graph, opts = {}) {
   } else {
     out.hits = scored.slice(0, limit);
   }
+  if (contradictionSummary) out.contradictions = contradictionSummary;
   return out;
 }
 
