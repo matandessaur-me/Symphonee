@@ -3654,7 +3654,8 @@
     .changed-file-status.renamed { color: var(--blue); }
     .changed-file-status.new { color: var(--green); }
     .commit-item {
-      padding: 8px 10px; border-bottom: 1px solid var(--surface0);
+      /* the panel already pads 12px - the item only needs breathing room */
+      padding: 8px 2px; border-bottom: 1px solid var(--surface0);
       cursor: default; transition: background 0.1s;
     }
     .commit-item:hover { background: var(--surface0); }
@@ -4157,7 +4158,7 @@
     }
     .intel-tab .tab-close:hover { color: var(--red); }
     .intel-tab.closable:hover .tab-close { display: inline; }
-    .intel-panel { display: none; flex: 1; overflow-y: auto; padding: 0; }
+    .intel-panel { display: none; flex: 1; overflow-y: auto; padding: 12px; }
     .intel-panel.active { display: block; }
     #ipanel-activity { flex-direction: column; padding: 0; }
     #ipanel-activity.active { display: flex; }
