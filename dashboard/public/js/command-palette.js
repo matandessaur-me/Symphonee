@@ -555,70 +555,165 @@
     return QWORDS.has(first);
   }
   state._localAnswerPending = null;
-  async function answerLocally(question, opts) {
-    opts = opts || {};
-    if (typeof window.ambientWhisperAsk === "function") {
+  var _askConvo = [];
+  function _askMd(s) {
+    return typeof renderMarkdownToHtml === "function" ? renderMarkdownToHtml(s) : esc(s).replace(/\n/g, "<br>");
+  }
+  function _askStatus(label) {
+    return '<span style="font-size:12px;color:var(--subtext0);display:inline-flex;align-items:center;gap:7px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);"></span>' + esc(label) + "</span>";
+  }
+  function _askRunAction(a) {
+    if (!a) return;
+    if (a.type === "open-note") {
+      document.getElementById("localAnswerOverlay")?.remove();
       try {
-        window.ambientWhisperAsk(question);
-        return;
+        if (typeof switchTab === "function") switchTab("notes");
       } catch (_) {
       }
+      try {
+        if (typeof window.openNote === "function") window.openNote(a.name);
+      } catch (_) {
+      }
+    } else if (a.type === "open-file") {
+      document.getElementById("localAnswerOverlay")?.remove();
+      try {
+        if (typeof switchTab === "function") switchTab("files");
+      } catch (_) {
+      }
+      try {
+        if (typeof window.viewFile === "function") window.viewFile(a.path);
+      } catch (_) {
+      }
+    } else if (a.type === "open-task") {
+      fetch("/api/orchestrator/task?id=" + encodeURIComponent(a.id)).then((r) => r.json()).then((d) => {
+        const body = document.getElementById("localAnswerBody");
+        if (!body || !d || !(d.result || d.error)) return;
+        const block = document.createElement("div");
+        block.style.cssText = "margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface1);font-size:12px;line-height:1.6;color:var(--subtext1);max-height:200px;overflow:auto;white-space:pre-wrap;";
+        block.textContent = (d.result || d.error || "").slice(0, 4e3);
+        body.appendChild(block);
+        body.scrollTop = body.scrollHeight;
+      }).catch(() => {
+      });
     }
+  }
+  async function _askStream(question, opts) {
+    opts = opts || {};
+    const body = document.getElementById("localAnswerBody");
+    const statusEl = document.getElementById("localAnswerStatus");
+    const replyRow = document.getElementById("localAnswerReplyRow");
+    if (!body) return;
+    if (replyRow) replyRow.style.display = "none";
+    const turn = document.createElement("div");
+    turn.style.cssText = body.childElementCount ? "margin-top:12px;padding-top:10px;border-top:1px solid var(--surface1);" : "";
+    turn.innerHTML = '<div style="font-size:11.5px;color:var(--overlay1);margin-bottom:5px;">' + esc(question) + '</div><div class="ask-answer"></div>';
+    body.appendChild(turn);
+    const answerEl = turn.querySelector(".ask-answer");
+    if (statusEl) statusEl.innerHTML = _askStatus("listening...");
+    body.scrollTop = body.scrollHeight;
+    let text = "";
+    let finale = null;
+    try {
+      const r = await fetch("/api/symphonee/ask/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: question, history: _askConvo.slice(-3) })
+      });
+      if (!r.ok || !r.body) throw new Error("stream unavailable");
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (; ; ) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const line = frame.split("\n").find((l) => l.indexOf("data: ") === 0);
+          if (!line) continue;
+          let ev;
+          try {
+            ev = JSON.parse(line.slice(6));
+          } catch (_) {
+            continue;
+          }
+          if (ev.type === "status" && statusEl) statusEl.innerHTML = _askStatus(ev.label + "...");
+          else if (ev.type === "token") {
+            text += ev.text;
+            answerEl.innerHTML = _askMd(text);
+            body.scrollTop = body.scrollHeight;
+          } else if (ev.type === "done" || ev.type === "escalate") finale = ev;
+        }
+      }
+    } catch (_) {
+      finale = { type: "escalate", reason: "offline" };
+    }
+    if (!document.getElementById("localAnswerBody")) return;
+    if (finale && finale.type === "done" && finale.answer) {
+      answerEl.innerHTML = _askMd(finale.answer);
+      _askConvo.push({ q: question, a: finale.answer });
+      if (Array.isArray(finale.actions) && finale.actions.length) {
+        const chips = document.createElement("div");
+        chips.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;";
+        finale.actions.forEach((a) => {
+          const c = document.createElement("button");
+          c.style.cssText = "background:var(--surface1);border:1px solid color-mix(in srgb,var(--accent) 22%,var(--surface2));color:var(--subtext1);font-size:11px;padding:6px 11px;border-radius:999px;cursor:pointer;font-family:inherit;";
+          c.textContent = a.label;
+          c.onclick = () => _askRunAction(a);
+          chips.appendChild(c);
+        });
+        turn.appendChild(chips);
+      }
+      if (statusEl) statusEl.innerHTML = '<span style="font-size:11px;color:var(--overlay1);">answered from your own knowledge</span>';
+      if (replyRow) {
+        replyRow.style.display = "flex";
+        const inp = document.getElementById("localAnswerReply");
+        if (inp) inp.focus();
+      }
+      body.scrollTop = body.scrollHeight;
+      fetch("/api/mind/save-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, answer: finale.answer, citedNodeIds: finale.citedNodeIds || [], createdBy: "symphonee" })
+      }).catch(() => {
+      });
+    } else {
+      answerEl.innerHTML = '<span style="color:var(--subtext0);">I do not have enough on that - your agent can dig deeper.</span>';
+      if (statusEl) statusEl.innerHTML = "";
+      if (replyRow) replyRow.style.display = "flex";
+    }
+  }
+  async function answerLocally(question, opts) {
+    opts = opts || {};
     const cli = opts.cli || state.activeCli || "claude";
     const cliLabel = CLI_CONFIG[cli] && CLI_CONFIG[cli].label || cli;
-    state._localAnswerPending = {
-      question,
-      cli
-    };
+    state._localAnswerPending = { question, cli };
+    _askConvo.length = 0;
     let overlay = document.getElementById("localAnswerOverlay");
     if (overlay) overlay.remove();
     overlay = document.createElement("div");
     overlay.id = "localAnswerOverlay";
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4600;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh;font-family:var(--font-ui);";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);z-index:4600;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh;font-family:var(--font-ui);";
     overlay.onclick = (e) => {
       if (e.target === overlay) overlay.remove();
     };
-    overlay.innerHTML = `<div style="background:var(--surface0);border:1px solid var(--surface2);border-radius:12px;width:680px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 16px 50px rgba(0,0,0,0.55);"><div style="display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid var(--surface1);"><i data-lucide="sparkles" style="width:16px;height:16px;color:var(--accent);"></i><strong style="font-size:13px;">Quick answer</strong><span id="localAnswerModel" style="font-size:10px;color:var(--overlay1);">memory</span><div style="flex:1;"></div><button onclick="document.getElementById('localAnswerOverlay').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;"><i data-lucide="x" style="width:14px;height:14px;"></i></button></div><div style="padding:12px 18px;color:var(--subtext1);font-size:12px;border-bottom:1px solid var(--surface1);">` + esc(question) + '</div><div id="localAnswerBody" style="padding:16px 18px;overflow:auto;font-size:13px;line-height:1.6;color:var(--text);"><span style="color:var(--subtext0);">Reading your notes...</span></div><div style="display:flex;align-items:center;gap:10px;padding:11px 18px;border-top:1px solid var(--surface1);"><span style="font-size:11px;color:var(--overlay1);">Answered from your own notes.</span><div style="flex:1;"></div><button class="hotkey-mini" onclick="_dispatchFromLocalAnswer()">Send to ' + esc(cliLabel) + " instead</button></div></div>";
+    overlay.innerHTML = `<div style="background:color-mix(in srgb,var(--base) 96%,transparent);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--surface2));border-radius:16px;width:680px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 0 26px -14px var(--accent),0 16px 50px rgba(0,0,0,0.55);backdrop-filter:blur(14px);"><div style="display:flex;align-items:center;gap:9px;padding:13px 18px;border-bottom:1px solid var(--surface1);"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);"></span><strong style="font-size:13px;">Ask Symphonee</strong><span id="localAnswerStatus" style="margin-left:6px;"></span><div style="flex:1;"></div><button onclick="document.getElementById('localAnswerOverlay').remove()" style="background:transparent;border:none;color:var(--subtext0);cursor:pointer;font-size:16px;line-height:1;padding:4px 8px;border-radius:8px;">&times;</button></div><div id="localAnswerBody" style="padding:14px 18px 6px;overflow:auto;font-size:13px;line-height:1.6;color:var(--text);"></div><div id="localAnswerReplyRow" style="display:none;align-items:center;gap:8px;padding:12px 18px 4px;"><input id="localAnswerReply" type="text" placeholder="Reply..." style="flex:1;background:var(--surface1);border:1px solid color-mix(in srgb,var(--accent) 18%,var(--surface2));border-radius:11px;color:var(--text);font-size:12.5px;padding:9px 13px;outline:none;font-family:inherit;min-width:0;"/><button id="localAnswerReplyGo" style="background:var(--accent);border:none;color:#11111b;font-weight:600;font-size:12px;padding:9px 14px;border-radius:8px;cursor:pointer;">Reply</button></div><div style="display:flex;align-items:center;gap:10px;padding:11px 18px 14px;"><button class="hotkey-mini" onclick="_askGoDeeper()">Go deeper in terminal</button><div style="flex:1;"></div><button class="hotkey-mini" onclick="_dispatchFromLocalAnswer()">Send to ` + esc(cliLabel) + " instead</button></div></div>";
     document.body.appendChild(overlay);
-    try {
-      lucide.createIcons({
-        nodes: [overlay]
-      });
-    } catch (_) {
-    }
-    try {
-      const r = await fetch("/api/symphonee/ask", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          input: question,
-          fast: true,
-          persona: { userType: "coder" }
-        })
-      });
-      const d = await r.json().catch(() => ({}));
-      const bodyEl = document.getElementById("localAnswerBody");
-      if (!bodyEl) return;
-      if (d && d.source === "local" && d.answer) {
-        bodyEl.innerHTML = typeof renderMarkdownToHtml === "function" ? renderMarkdownToHtml(d.answer) : esc(d.answer).replace(/\n/g, "<br>");
-        const me = document.getElementById("localAnswerModel");
-        if (me) me.textContent = "from your notes";
-      } else {
-        overlay.remove();
-        toast("Nothing in memory yet - sending to agent", "info");
-        askAIFromPalette(question, {
-          forceDispatch: true
-        });
+    const replyGo = () => {
+      const inp = document.getElementById("localAnswerReply");
+      const q = inp && inp.value.trim();
+      if (q) {
+        inp.value = "";
+        _askStream(q, opts);
       }
-    } catch (_) {
-      if (overlay) overlay.remove();
-      toast("Local answer failed - sending to agent", "info");
-      askAIFromPalette(question, {
-        forceDispatch: true
-      });
-    }
+    };
+    document.getElementById("localAnswerReplyGo").onclick = replyGo;
+    document.getElementById("localAnswerReply").onkeydown = (e) => {
+      if (e.key === "Enter") replyGo();
+    };
+    _askStream(question, opts);
   }
   function _dispatchFromLocalAnswer() {
     const p = state._localAnswerPending;
