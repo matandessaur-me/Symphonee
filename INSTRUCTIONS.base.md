@@ -130,6 +130,31 @@ You are an AI assistant inside **Symphonee**, an Electron-based AI terminal with
 
 Pre-made scripts in `./scripts/` (prefer these), the Symphonee REST API at `http://127.0.0.1:3800/api/`, bash, PowerShell, git, and any installed CLI tools. Plugins add their own routes under `/api/plugins/<id>/*` and show up in the bootstrap payload.
 
+## API Token for Local POST/PUT/PATCH/DELETE
+
+Symphonee gates every mutating local API request (`POST`, `PUT`, `PATCH`, `DELETE`) behind a per-boot token. `GET` requests like `/api/bootstrap` work without it, but `POST /api/mind/query`, `/api/mind/recall`, `/api/mind/teach`, `/api/mind/save-result`, checkpoints, plugin writes, orchestrator spawns, and similar mutations require the header.
+
+The launched terminal normally has `$env:SYMPHONEE_TOKEN`; out-of-process helpers can also read `config/runtime.json`. Prefer scripts because they attach the token for you:
+
+- PowerShell helpers dot-source `scripts/_ApiInit.ps1`.
+- Node helpers use `scripts/api-token.js`.
+
+For raw PowerShell `Invoke-RestMethod`, include:
+```powershell
+$headers = @{ 'x-symphonee-token' = $env:SYMPHONEE_TOKEN }
+Invoke-RestMethod 'http://127.0.0.1:3800/api/mind/query' -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+```
+
+For raw bash/curl, include:
+```bash
+curl -s -X POST http://127.0.0.1:3800/api/mind/query \
+  -H "Content-Type: application/json" \
+  -H "x-symphonee-token: $SYMPHONEE_TOKEN" \
+  -d '{"question":"<the user question>","budget":2000}'
+```
+
+If a mutating local API call returns `403` with `TOKEN_REQUIRED`, do not retry the same tokenless call. Attach `x-symphonee-token` or use the relevant `./scripts/*` helper.
+
 ## Integrations are plugin-driven
 
 Never assume any integration (issue tracker, code host, CMS, analytics) is installed. Read the `plugins` array from bootstrap -- that is the ground truth. If a plugin's keywords match the user's task, use its routes; if the relevant plugin is not present, tell the user which plugin would unlock the feature rather than guessing or shelling out to an external CLI.
@@ -245,6 +270,7 @@ curl -s http://127.0.0.1:3800/api/mind/instructions
 ```bash
 curl -s -X POST http://127.0.0.1:3800/api/mind/query \
   -H "Content-Type: application/json" \
+  -H "x-symphonee-token: $SYMPHONEE_TOKEN" \
   -d '{"question":"<the user question>","budget":2000}'
 ```
 
@@ -263,6 +289,7 @@ Returns `{ nodes, edges, seedIds, answer }`. Cite returned node IDs. Solid edges
 ```bash
 curl -s -X POST http://127.0.0.1:3800/api/mind/recall \
   -H "Content-Type: application/json" \
+  -H "x-symphonee-token: $SYMPHONEE_TOKEN" \
   -d '{"question":"DYOB design","since":"last month","repo":"DYOB3","limit":10}'
 ```
 
@@ -285,6 +312,7 @@ Capture the verbatim or near-verbatim fact as `body`, short imperative as `title
 ```bash
 curl -s -X POST http://127.0.0.1:3800/api/mind/teach \
   -H "Content-Type: application/json" \
+  -H "x-symphonee-token: $SYMPHONEE_TOKEN" \
   -d '{
     "title":        "DYOB does not follow Bath Fitter brand",
     "body":         "DYOB has its own design system - different colours and typography. Do not apply Bath Fitter brand assumptions when working on DYOB code.",
@@ -302,6 +330,7 @@ Memory cards survive across sessions and surface first in the next wake-up.
 ```bash
 curl -s -X POST http://127.0.0.1:3800/api/mind/save-result \
   -H "Content-Type: application/json" \
+  -H "x-symphonee-token: $SYMPHONEE_TOKEN" \
   -d '{"question":"...","answer":"...","citedNodeIds":["..."],"createdBy":"<your CLI: claude|codex|gemini|copilot|grok|qwen>"}'
 ```
 

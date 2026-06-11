@@ -5,7 +5,7 @@
 // Five checks (mirrors scripts/Audit-Instructions.ps1 exactly):
 //   1. Hallucinated URLs - URLs mentioned in docs with no '/api/...' string
 //      in dashboard/**/*.js source.
-//   2. Required inline phrases - 24 recognition-time triggers must live in
+//   2. Required inline phrases - recognition-time triggers must live in
 //      INSTRUCTIONS.base.md, not just the references.
 //   3. Baseline atoms reachable - every atom in scripts/audit-baseline.txt
 //      must be findable in the corpus (whitespace-insensitive). This is
@@ -36,6 +36,9 @@ const REQUIRED_INLINE_PHRASES = [
   { name: 'Mind: POST /recall mentioned',     pattern: /\/api\/mind\/recall/i },
   { name: 'Mind: POST /query mentioned',      pattern: /\/api\/mind\/query/i },
   { name: 'Mind: save-result mentioned',      pattern: /\/api\/mind\/save-result/i },
+  { name: 'API token: env var mentioned',     pattern: /SYMPHONEE_TOKEN/i },
+  { name: 'API token: header mentioned',      pattern: /x-symphonee-token/i },
+  { name: 'API token: TOKEN_REQUIRED',         pattern: /TOKEN_REQUIRED/i },
   { name: 'Apps: /api/apps/do default',       pattern: /\/api\/apps\/do/i },
   { name: 'Apps: COM decision (Office)',      pattern: /\/api\/apps\/com/i },
   { name: 'Apps: stealth decision (UIA)',     pattern: /sandbox.*true/i },
