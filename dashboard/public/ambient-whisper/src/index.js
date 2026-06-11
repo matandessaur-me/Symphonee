@@ -54,15 +54,15 @@
         z-index:3200;display:none;align-items:center;box-sizing:border-box;cursor:pointer;overflow:hidden;
         min-width:170px;max-width:min(560px,84vw);height:34px;padding:0 16px;border-radius:999px;
         font-family:var(--font-ui,system-ui);font-size:12px;color:var(--text,#cdd6f4);
-        background:color-mix(in srgb,var(--surface0,#1e1e2e) 86%,var(--accent,#89b4fa) 8%);
-        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 42%,transparent);
+        background:color-mix(in srgb,var(--surface0,#1e1e2e) 90%,var(--accent,#89b4fa) 5%);
+        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 26%,transparent);
         opacity:0;animation:aw-breathe 4.4s ease-in-out infinite;
         transition:opacity .45s ease,transform .5s cubic-bezier(.2,.85,.25,1),
           min-width .55s cubic-bezier(.34,1.3,.3,1),max-width .55s cubic-bezier(.34,1.3,.3,1),
           height .5s cubic-bezier(.34,1.3,.3,1),padding .4s ease;}
       #ambientWhisper:hover{filter:brightness(1.1);}
-      @keyframes aw-breathe{0%,100%{box-shadow:0 0 11px -4px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}
-        50%{box-shadow:0 0 24px -1px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}}
+      @keyframes aw-breathe{0%,100%{box-shadow:0 0 8px -5px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent),0 5px 18px -6px rgba(0,0,0,.5);}
+        50%{box-shadow:0 0 15px -3px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent),0 5px 18px -6px rgba(0,0,0,.5);}}
       /* resting: a short pill on the waterline - always visible, and big enough
          to actually hit. Approaching it swells it open (see _proximity), so
          nobody ever has to aim at a sliver. */
@@ -70,11 +70,11 @@
       #ambientWhisper.aw-collapsed .aw-content{opacity:0;pointer-events:none;}
       /* the liquid INSIDE the shell: gooey metaballs clipped by the pill,
          drifting like light under glass */
-      #ambientWhisper .aw-goo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:.7;
+      #ambientWhisper .aw-goo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:.5;
         filter:url(#awGoo);
         transform:translateX(calc(var(--aw-lean,0)*7px));transition:transform .6s cubic-bezier(.2,.8,.2,1);}
       #ambientWhisper .aw-blob{position:absolute;border-radius:50%;
-        background:color-mix(in srgb,var(--accent,#89b4fa) 30%,transparent);}
+        background:color-mix(in srgb,var(--accent,#89b4fa) 22%,transparent);}
       #ambientWhisper .aw-blob.b1{left:-6%;top:14%;width:42%;height:120%;animation:aw-b1 4.6s ease-in-out infinite;}
       #ambientWhisper .aw-blob.b2{left:28%;top:-22%;width:50%;height:130%;animation:aw-b2 5.9s ease-in-out infinite;}
       #ambientWhisper .aw-blob.b3{left:62%;top:18%;width:44%;height:118%;animation:aw-b3 5.1s ease-in-out infinite;}
@@ -84,7 +84,7 @@
       @keyframes aw-b3{0%,100%{transform:translate(0,0) scale(1);}55%{transform:translate(-10%,-6%) scale(1.08,.94);}}
       /* a slow sheen drifting across the glass */
       #ambientWhisper .aw-sheen{position:absolute;inset:0;border-radius:inherit;pointer-events:none;overflow:hidden;
-        opacity:.55;mix-blend-mode:screen;}
+        opacity:.32;mix-blend-mode:screen;}
       #ambientWhisper .aw-sheen::before{content:'';position:absolute;inset:-20%;
         background:linear-gradient(100deg,transparent 32%,color-mix(in srgb,var(--accent,#89b4fa) 36%,transparent) 50%,transparent 68%);
         background-size:240% 100%;animation:aw-sheen 7s ease-in-out infinite;}
@@ -107,12 +107,12 @@
          two distinct components, so replying to a card and asking something
          new are never confused */
       #ambientWhisperModalBg{position:fixed;inset:0;z-index:3600;display:none;align-items:flex-end;justify-content:center;
-        padding-bottom:62px;background:rgba(0,0,0,.32);backdrop-filter:blur(2px);font-family:var(--font-ui,system-ui);}
+        padding-bottom:62px;background:rgba(0,0,0,.24);backdrop-filter:blur(2px);font-family:var(--font-ui,system-ui);}
       #awmStack{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:92vw;}
       #ambientWhisperModal{width:480px;max-width:92vw;border-radius:22px;padding:0;overflow:hidden;box-sizing:border-box;
         background:color-mix(in srgb,var(--surface0,#1e1e2e) 90%,var(--accent,#89b4fa) 6%);
-        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 30%,var(--surface2,#45475a));
-        box-shadow:0 0 44px -12px var(--accent,#89b4fa),0 18px 50px rgba(0,0,0,.55);
+        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 20%,var(--surface2,#45475a));
+        box-shadow:0 0 26px -14px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent),0 18px 50px rgba(0,0,0,.5);
         transform-origin:50% 100%;transform:translateY(26px) scale(.86,.7);opacity:0;
         transition:opacity .26s ease,transform .34s cubic-bezier(.26,1.2,.32,1);}
       #ambientWhisperModal strong{color:var(--text,#cdd6f4);font-weight:600;}
@@ -123,19 +123,22 @@
       #awAskBar{display:flex;align-items:center;gap:9px;width:480px;max-width:92vw;box-sizing:border-box;
         height:46px;padding:0 8px 0 16px;border-radius:999px;
         background:color-mix(in srgb,var(--surface0,#1e1e2e) 90%,var(--accent,#89b4fa) 6%);
-        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 32%,var(--surface2,#45475a));
-        box-shadow:0 0 30px -12px var(--accent,#89b4fa),0 12px 36px rgba(0,0,0,.5);
+        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 20%,var(--surface2,#45475a));
+        box-shadow:0 0 18px -12px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent),0 12px 36px rgba(0,0,0,.45);
         opacity:0;transform:translateY(14px);
         transition:opacity .26s ease .06s,transform .3s cubic-bezier(.26,1.2,.32,1) .06s;}
       #awAskBar input{flex:1;background:transparent;border:none;outline:none;color:var(--text,#cdd6f4);
         font-size:13px;font-family:inherit;min-width:0;}
       #awAskBar input::placeholder{color:var(--overlay1,#7f849c);}
-      /* comfortable touch targets everywhere in the island */
+      /* comfortable touch targets everywhere in the island. Nav chips are
+         VISIBLE at rest (a quiet filled circle), not bare glyphs you have to
+         hunt for. */
       .awm-icon-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;flex:none;
-        background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;
-        cursor:pointer;border-radius:9px;padding:0;}
-      .awm-icon-btn:hover:not(:disabled){background:var(--surface1,#313244);color:var(--text,#cdd6f4);}
-      .awm-icon-btn:disabled{opacity:.3;cursor:default;}
+        background:var(--surface1,#313244);border:1px solid var(--surface2,#45475a);
+        color:var(--subtext1,#bac2de);font-size:17px;line-height:1;
+        cursor:pointer;border-radius:999px;padding:0;}
+      .awm-icon-btn:hover:not(:disabled){background:var(--surface2,#45475a);color:var(--text,#cdd6f4);}
+      .awm-icon-btn:disabled{opacity:.25;cursor:default;}
       .awm-reply{flex:1;background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 18%,var(--surface2,#45475a));
         border-radius:11px;color:var(--text,#cdd6f4);font-size:12.5px;padding:9px 13px;outline:none;font-family:inherit;min-width:0;}
       .awm-reply::placeholder{color:var(--overlay1,#7f849c);}
