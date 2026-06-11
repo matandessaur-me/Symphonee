@@ -113,9 +113,9 @@
     <img src="/logo.svg" class="header-logo" alt="">
     <span class="header-title">Symphonee</span>
   </div>
-  <div class="cmd-trigger" id="cmdTrigger" role="button" tabindex="0" aria-label="Search or run a command (Ctrl+K)" onclick="openCmdPalette()" title="Command Palette (Ctrl+K)">
-    <i data-lucide="search" style="width:12px;height:12px;color:var(--subtext0);flex-shrink:0;"></i>
-    <span>Search or run a command...</span>
+  <div class="cmd-trigger" id="cmdTrigger" role="button" tabindex="0" aria-label="Ask Symphonee (Ctrl+K)" onclick="openCmdPalette()" title="Ask Symphonee (Ctrl+K)">
+    <span class="ask-dot" aria-hidden="true"></span>
+    <span>Ask Symphonee...</span>
     <kbd id="cmdTriggerKbd">Ctrl+K</kbd>
   </div>
   <div class="header-right">
@@ -2102,7 +2102,7 @@
 <!-- ═══ Command Palette ═══════════════════════════════════════════════ -->
 <div class="cmd-palette-overlay" id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
   <div class="cmd-palette">
-    <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Ask AI, or type a command..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
+    <input class="cmd-palette-input" id="cmdPaletteInput" placeholder="Ask Symphonee anything, or type a command..." autocomplete="off" oninput="filterCmdPalette()" onkeydown="cmdPaletteKeydown(event)">
     <div id="cmdPaletteCmdBadge" style="display:none;align-items:center;gap:6px;padding:6px 14px;border-bottom:1px solid var(--surface1);background:color-mix(in srgb, var(--accent) 8%, transparent);font-size:11px;color:var(--accent);">
       <i data-lucide="search" style="width:11px;height:11px;"></i>
       <span style="background:color-mix(in srgb, var(--accent) 22%, var(--surface0));border:1px solid var(--accent);color:var(--accent);font-weight:600;border-radius:11px;padding:1px 9px;font-size:11px;" id="cmdPaletteCmdBadgeText">find</span>
@@ -2151,7 +2151,6 @@
 <script src="/js/notes.js"></script>
 <script src="/js/spaces-repos.js"></script>
 <script src="/js/command-palette.js"></script>
-<script src="/js/ambient-whisper.js"></script>
 <script src="/js/plugins.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/3d-force-graph.min.js"></script>

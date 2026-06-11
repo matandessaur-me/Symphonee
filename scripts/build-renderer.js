@@ -175,14 +175,6 @@ const ESBUILD_BUNDLES = [
     outfile: path.join(PUB, 'js', 'command-palette.js'),
   },
   {
-    // Ambient whisper: the proactive Stage-6 nudge line. Self-contained; reads
-    // only global toast/openCmdPalette -> load after app.js. Checks
-    // /api/symphonee/ambient/nudge on boot + window focus (no timer).
-    name: 'ambient-whisper',
-    entry: path.join(PUB, 'ambient-whisper', 'src', 'index.js'),
-    outfile: path.join(PUB, 'js', 'ambient-whisper.js'),
-  },
-  {
     // Plugin host/shell surface. Source public/plugins/ (distinct from the
     // dashboard/plugins/ install dir). Reads `state` + listeners at load -> after app.js.
     name: 'plugins',
