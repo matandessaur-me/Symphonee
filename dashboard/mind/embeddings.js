@@ -108,12 +108,30 @@ function postJson(urlStr, body, headers = {}) {
   });
 }
 
+// nomic-embed REQUIRES asymmetric task-instruction prefixes: 'search_document'
+// on corpus text, 'search_query' on queries (also 'classification'/'clustering').
+// Ollama does NOT add them automatically - verified empirically: cos(raw,
+// "search_document: "+raw) ~= 0.92, not 1.0 - so we prepend them ourselves.
+// Applied ONLY to nomic models (gated by name); any other model is left exactly
+// as-is. Correct prefixes meaningfully strengthen a true query/document match
+// (sample pair: cosine 0.54 unprefixed -> 0.64 with the right prefixes), which
+// is the whole point of an asymmetric biencoder. opts.task = null is a safe
+// no-op, preserving the prior behaviour for callers that don't set it yet.
+const NOMIC_TASKS = new Set(['search_document', 'search_query', 'classification', 'clustering']);
+function applyTaskPrefix(text, model, task) {
+  if (!task || !model || !/nomic/i.test(model)) return text;
+  if (!NOMIC_TASKS.has(task)) return text;
+  return `${task}: ${text}`;
+}
+
 async function ollamaEmbed(texts, opts = {}) {
   const url = (opts.url || process.env.OLLAMA_URL || 'http://localhost:11434') + '/api/embeddings';
   const model = opts.model || process.env.SYMPHONEE_EMBED_MODEL || 'nomic-embed-text';
+  const task = opts.task || null;
   const out = [];
   for (const text of texts) {
-    const r = await postJson(url, { model, prompt: text });
+    const prompt = applyTaskPrefix(text, model, task);
+    const r = await postJson(url, { model, prompt });
     if (!r.embedding) throw new Error('ollama returned no embedding');
     out.push(r.embedding);
   }
@@ -208,6 +226,7 @@ async function health(opts = {}) {
 module.exports = {
   embed,
   embedSingle,
+  applyTaskPrefix,
   ping,
   health,
   pickProvider,

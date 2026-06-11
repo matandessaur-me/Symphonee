@@ -350,7 +350,7 @@ async function refreshEmbeddings({ repoRoot, space, graph, onProgress = () => {}
     const texts = slice.map(c => c.text);
     let vectors;
     try {
-      vectors = await embeddings.embed(texts, { provider });
+      vectors = await embeddings.embed(texts, { provider, task: 'search_document' });
     } catch (err) {
       onProgress(`Embed batch ${i}/${candidates.length} failed: ${err.message}`);
       break;

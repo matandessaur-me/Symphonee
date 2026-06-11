@@ -54,7 +54,7 @@ function aggLine(label, agg) {
   // One-time embed of every gold query (the only async/model-dependent step).
   const qvec = new Map();
   for (const q of gold.queries) {
-    const v = await embeddings.embedSingle(q.question, { provider: 'ollama' });
+    const v = await embeddings.embedSingle(q.question, { provider: 'ollama', task: 'search_query' });
     if (!v || v.length !== vs.dim) throw new Error(`embed dim mismatch for ${q.id}: got ${v && v.length}, want ${vs.dim}`);
     qvec.set(q.question, v);
   }

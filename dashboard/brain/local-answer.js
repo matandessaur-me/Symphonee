@@ -104,7 +104,7 @@ async function retrieveSources(repoRoot, space, question, max = MAX_SOURCES) {
   try {
     const vs = new VectorStore(repoRoot, space);
     if (vs.load()) {
-      const qv = await embeddings.embedSingle(terms, { provider: 'ollama' });
+      const qv = await embeddings.embedSingle(terms, { provider: 'ollama', task: 'search_query' });
       if (qv && qv.length) {
         dn = vs.query(qv, max * 12).filter(h => hasContent(h.id)).slice(0, max * 3)
           .map(h => ({ id: h.id, score: h.score }));
