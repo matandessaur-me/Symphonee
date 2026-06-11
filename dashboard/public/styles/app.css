@@ -4591,6 +4591,15 @@
       background-position: 14px center;
     }
     .cmd-palette-input::placeholder { color: var(--subtext0); }
+    /* quiet until you mean it: the clear control sits faded in the heading
+       and wakes on hover */
+    .cmd-hist-clear {
+      background: transparent; border: none; cursor: pointer;
+      font: 10px var(--font-ui); color: var(--subtext0);
+      padding: 3px 7px; border-radius: var(--radius);
+      opacity: .55; transition: opacity .12s, color .12s, background .12s;
+    }
+    .cmd-hist-clear:hover { opacity: 1; color: var(--text); background: var(--surface1); }
     .cmd-palette-list {
       flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px;
     }
