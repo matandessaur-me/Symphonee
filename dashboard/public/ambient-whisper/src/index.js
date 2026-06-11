@@ -1,17 +1,22 @@
 /**
- * The ambient whisper - Symphonee's proactive presence (Stage 6, surfaced).
+ * The ambient whisper - Symphonee's living presence (the liquid body).
  *
- * Minimalist + futuristic, Gemini-style. States:
- *   - EXPANDED pill: when a fresh nudge arrives, a glowing accent pill shows the
- *     one-line message for a few seconds.
- *   - COLLAPSED pill: with no new message it tucks into a thin, text-less,
- *     accent-glowing pill (the ambient presence). HOVER reveals the text again.
- *   - MODAL: CLICK either state to open a calm modal with the full thought,
- *     rendered markdown, and actions.
+ * Not a widget: a small organism of liquid resting at the bottom edge of the
+ * app. The visible shape is three gooey metaballs (an SVG blur+contrast
+ * filter merges them), breathing on independent rhythms so the motion never
+ * loops visibly. States:
+ *   - RESTING droplet: always present, slowly breathing. Symphonee is with
+ *     you even when it has nothing to say.
+ *   - SWELLED capsule: a fresh thought arrives - the droplet swells into a
+ *     liquid capsule with the one-line message and a jelly wobble.
+ *   - PROXIMITY: the liquid leans toward the cursor as it comes near, and
+ *     reopens the last thought without precise aiming.
+ *   - OPEN panel: click melts the droplet upward into a calm panel with the
+ *     full thought, its provenance ("because ..."), and inline actions.
  *
- * Anti-Clippy: triggers on signal (boot, focus) not a timer; the server dial
- * decides whether to speak; dismiss STICKS (suppressed this session) and decays
- * the nudge kind server-side; fully deactivatable.
+ * Anti-Clippy: triggers on signal (boot, focus, task events) not a timer; the
+ * server's novelty gate + dial decide whether to speak; dismiss STICKS;
+ * fully deactivatable. prefers-reduced-motion stills the liquid.
  *
  * Loads after app.js as /js/ambient-whisper.js. Self-contained.
  */
@@ -20,7 +25,7 @@
   'use strict';
 
   const MIN_INTERVAL_MS = 90_000;
-  const EXPAND_MS = 6500;          // how long a fresh nudge stays expanded
+  const EXPAND_MS = 6500;          // how long a fresh thought stays swelled
   let _lastCheck = 0;
   let _current = null;
   let _disabled = false;
@@ -31,55 +36,82 @@
 
   function _injectStyles() {
     if (document.getElementById('ambientWhisperStyles')) return;
+    // The goo filter: blur the blobs, then crush the alpha curve so the blurred
+    // edges fuse into one liquid silhouette. This is what makes it biology, not UI.
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+    svg.style.position = 'absolute';
+    svg.innerHTML = '<defs><filter id="awGoo" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/>' +
+      '<feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -11"/></filter></defs>';
+    document.body.appendChild(svg);
+
     const s = document.createElement('style');
     s.id = 'ambientWhisperStyles';
     s.textContent = `
-      #ambientWhisper{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(16px);
-        z-index:3200;display:none;align-items:center;gap:9px;box-sizing:border-box;
-        min-width:158px;max-width:min(560px,84vw);height:34px;padding:0 15px;border-radius:999px;cursor:pointer;
-        font-family:var(--font-ui,system-ui);font-size:12px;color:var(--subtext1,#cdd6f4);
-        background:var(--surface0,#1e1e2e);
-        background:color-mix(in srgb,var(--surface0,#1e1e2e) 84%,var(--accent,#89b4fa) 9%);
-        border:1px solid var(--surface2,#45475a);
-        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 42%,transparent);
-        opacity:0;overflow:hidden;
-        transition:opacity .35s ease,transform .4s cubic-bezier(.2,.85,.25,1),min-width .45s cubic-bezier(.2,.85,.25,1),max-width .45s cubic-bezier(.2,.85,.25,1),height .4s cubic-bezier(.2,.85,.25,1),padding .35s ease;
-        animation:aw-breathe 4.4s ease-in-out infinite;}
-      /* resting: an elongated, thin, living capsule - a drawer handle that breathes */
-      #ambientWhisper.aw-collapsed{min-width:75px;max-width:75px;height:13px;padding:0;gap:0;}
-      #ambientWhisper.aw-collapsed .aw-dot,#ambientWhisper.aw-collapsed .aw-text,#ambientWhisper.aw-collapsed .aw-x{opacity:0;max-width:0;margin:0;padding:0;}
-      #ambientWhisper:hover{filter:brightness(1.08);}
-      /* a slow inner light drifting back and forth - feels alive */
-      #ambientWhisper::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
-        background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--accent,#89b4fa) 32%,transparent) 50%,transparent 70%);
-        background-size:240% 100%;animation:aw-shimmer 6s ease-in-out infinite;opacity:.6;}
+      #ambientWhisper{position:fixed;left:50%;bottom:14px;transform:translateX(-50%) translateY(18px);
+        z-index:3200;display:none;align-items:center;box-sizing:border-box;cursor:pointer;
+        min-width:170px;max-width:min(560px,84vw);height:36px;padding:0 16px;border-radius:999px;
+        font-family:var(--font-ui,system-ui);font-size:12px;color:var(--text,#cdd6f4);
+        opacity:0;
+        transition:opacity .45s ease,transform .5s cubic-bezier(.2,.85,.25,1),
+          min-width .55s cubic-bezier(.34,1.3,.3,1),max-width .55s cubic-bezier(.34,1.3,.3,1),
+          height .5s cubic-bezier(.34,1.3,.3,1),padding .4s ease;}
+      /* resting: a small breathing droplet on the waterline */
+      #ambientWhisper.aw-collapsed{min-width:58px;max-width:58px;height:17px;padding:0;}
+      #ambientWhisper.aw-collapsed .aw-content{opacity:0;pointer-events:none;}
+      /* the liquid itself: three metaballs fused by the goo filter. The glow is
+         a drop-shadow AFTER the goo so light follows the merged silhouette. */
+      #ambientWhisper .aw-goo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+        filter:url(#awGoo) drop-shadow(0 0 11px color-mix(in srgb,var(--accent,#89b4fa) 55%,transparent));
+        transform:translateX(calc(var(--aw-lean,0)*7px));transition:transform .6s cubic-bezier(.2,.8,.2,1);}
+      #ambientWhisper .aw-blob{position:absolute;border-radius:50%;
+        background:color-mix(in srgb,var(--surface0,#1e1e2e) 72%,var(--accent,#89b4fa) 24%);}
+      #ambientWhisper .aw-blob.b1{left:4%;top:8%;width:46%;height:86%;animation:aw-b1 4.6s ease-in-out infinite;}
+      #ambientWhisper .aw-blob.b2{left:30%;top:4%;width:48%;height:94%;animation:aw-b2 5.9s ease-in-out infinite;}
+      #ambientWhisper .aw-blob.b3{left:58%;top:10%;width:40%;height:82%;animation:aw-b3 5.1s ease-in-out infinite;}
+      /* each blob breathes on its own rhythm - the composite never repeats */
+      @keyframes aw-b1{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(3%,-5%) scale(1.07,.94);}}
+      @keyframes aw-b2{0%,100%{transform:translate(0,0) scale(1);}45%{transform:translate(-2%,6%) scale(.95,1.08);}}
+      @keyframes aw-b3{0%,100%{transform:translate(0,0) scale(1);}55%{transform:translate(-4%,-4%) scale(1.05,.96);}}
+      /* a slow inner light drifting through the liquid */
+      #ambientWhisper .aw-sheen{position:absolute;inset:0;border-radius:inherit;pointer-events:none;overflow:hidden;
+        opacity:.55;mix-blend-mode:screen;}
+      #ambientWhisper .aw-sheen::before{content:'';position:absolute;inset:-20%;
+        background:linear-gradient(100deg,transparent 32%,color-mix(in srgb,var(--accent,#89b4fa) 36%,transparent) 50%,transparent 68%);
+        background-size:240% 100%;animation:aw-sheen 7s ease-in-out infinite;}
+      @keyframes aw-sheen{0%{background-position:150% 0;}50%{background-position:-30% 0;}100%{background-position:150% 0;}}
+      /* fresh thought: a jelly wobble - the swell of having something to say */
+      #ambientWhisper.aw-fresh .aw-goo{animation:aw-wobble .9s cubic-bezier(.36,.07,.19,.97);}
+      @keyframes aw-wobble{0%{transform:scale(1,1);}25%{transform:scale(1.05,.92);}50%{transform:scale(.97,1.05);}
+        72%{transform:scale(1.02,.97);}100%{transform:scale(1,1);}}
+      #ambientWhisper .aw-content{position:relative;z-index:1;display:flex;align-items:center;gap:9px;width:100%;
+        opacity:1;transition:opacity .35s ease .12s;}
       #ambientWhisper .aw-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--accent,#89b4fa);
-        box-shadow:0 0 10px var(--accent,#89b4fa);animation:aw-dot 4.4s ease-in-out infinite;position:relative;z-index:1;
-        transition:max-width .3s,opacity .25s;}
-      #ambientWhisper .aw-text{flex:1;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-        max-width:480px;opacity:1;position:relative;z-index:1;
-        transition:max-width .42s cubic-bezier(.2,.85,.25,1),opacity .3s ease;}
-      #ambientWhisper .aw-x{background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:15px;line-height:1;
-        padding:1px 3px;cursor:pointer;flex:none;position:relative;z-index:1;border-radius:6px;
-        transition:max-width .3s,opacity .2s;overflow:hidden;}
-      #ambientWhisper .aw-x:hover{color:var(--text,#cdd6f4);}
-      /* breathing outer glow - organic, biologic */
-      @keyframes aw-breathe{0%,100%{box-shadow:0 0 11px -4px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}
-        50%{box-shadow:0 0 24px -1px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}}
-      @keyframes aw-shimmer{0%{background-position:150% 0;}50%{background-position:-30% 0;}100%{background-position:150% 0;}}
+        box-shadow:0 0 10px var(--accent,#89b4fa);animation:aw-dot 4.4s ease-in-out infinite;}
       @keyframes aw-dot{0%,100%{opacity:.55;transform:scale(.9);}50%{opacity:1;transform:scale(1.06);}}
-      #ambientWhisperModalBg{position:fixed;inset:0;z-index:3600;display:none;align-items:center;justify-content:center;
-        background:rgba(0,0,0,.45);backdrop-filter:blur(2px);font-family:var(--font-ui,system-ui);}
-      #ambientWhisperModal{width:460px;max-width:90vw;border-radius:16px;padding:0;overflow:hidden;
-        background:var(--surface0,#1e1e2e);border:1px solid var(--surface2,#45475a);
+      #ambientWhisper .aw-text{flex:1;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      #ambientWhisper .aw-x{background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:15px;line-height:1;
+        padding:1px 3px;cursor:pointer;flex:none;border-radius:6px;}
+      #ambientWhisper .aw-x:hover{color:var(--text,#cdd6f4);}
+      #ambientWhisper:hover .aw-goo{filter:url(#awGoo) drop-shadow(0 0 16px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent));}
+      /* the panel melts UP out of the droplet - anchored to the waterline, not
+         floating in the void like a dialog */
+      #ambientWhisperModalBg{position:fixed;inset:0;z-index:3600;display:none;align-items:flex-end;justify-content:center;
+        padding-bottom:62px;background:rgba(0,0,0,.32);backdrop-filter:blur(2px);font-family:var(--font-ui,system-ui);}
+      #ambientWhisperModal{width:480px;max-width:90vw;border-radius:22px 22px 26px 26px;padding:0;overflow:hidden;
+        background:color-mix(in srgb,var(--surface0,#1e1e2e) 90%,var(--accent,#89b4fa) 6%);
         border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 30%,var(--surface2,#45475a));
-        box-shadow:0 0 40px -10px var(--accent,#89b4fa),0 18px 50px rgba(0,0,0,.55);
-        transform:translateY(8px) scale(.98);opacity:0;transition:opacity .22s ease,transform .22s cubic-bezier(.2,.8,.2,1);}
+        box-shadow:0 0 44px -12px var(--accent,#89b4fa),0 18px 50px rgba(0,0,0,.55);
+        transform-origin:50% 100%;transform:translateY(26px) scale(.86,.7);opacity:0;
+        transition:opacity .26s ease,transform .34s cubic-bezier(.26,1.2,.32,1);}
       #ambientWhisperModal strong{color:var(--text,#cdd6f4);font-weight:600;}
       #ambientWhisperModal em{color:var(--subtext1,#cdd6f4);font-style:italic;}
       #ambientWhisperModal code{font-family:var(--font-mono,monospace);font-size:.92em;
         background:var(--surface1,#313244);padding:1px 5px;border-radius:5px;}
-      @media (prefers-reduced-motion: reduce){#ambientWhisper,#ambientWhisper::before,#ambientWhisper .aw-dot{animation:none !important;}}
+      @media (prefers-reduced-motion: reduce){
+        #ambientWhisper,#ambientWhisper .aw-goo,#ambientWhisper .aw-blob,#ambientWhisper .aw-sheen::before,
+        #ambientWhisper .aw-dot{animation:none !important;transition:opacity .2s ease !important;}
+      }
     `;
     document.head.appendChild(s);
   }
@@ -101,7 +133,11 @@
     _injectStyles();
     const el = document.createElement('div');
     el.id = 'ambientWhisper';
-    el.innerHTML = '<span class="aw-dot"></span><span class="aw-text"></span><button class="aw-x" title="Dismiss">&times;</button>';
+    el.className = 'aw-collapsed';
+    el.innerHTML =
+      '<div class="aw-goo"><div class="aw-blob b1"></div><div class="aw-blob b2"></div><div class="aw-blob b3"></div></div>' +
+      '<div class="aw-sheen"></div>' +
+      '<div class="aw-content"><span class="aw-dot"></span><span class="aw-text"></span><button class="aw-x" title="Dismiss">&times;</button></div>';
     document.body.appendChild(el);
     el.addEventListener('click', (e) => { if (!e.target.classList.contains('aw-x')) _openModal(); });
     el.querySelector('.aw-x').addEventListener('click', (e) => { e.stopPropagation(); _dismiss(); });
@@ -109,8 +145,17 @@
     return el;
   }
 
-  // Forgiving hover: expand when the cursor comes NEAR the pill (no precise
-  // aiming), collapse when it leaves. Throttled; no blocking overlay.
+  // The droplet is ALWAYS there (unless whispers are off): presence, not popup.
+  function _surface() {
+    const el = _ensurePill();
+    if (el.style.display !== 'flex') {
+      el.style.display = 'flex';
+      requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)'; });
+    }
+  }
+
+  // Forgiving hover: the liquid leans toward a NEARBY cursor and swells open
+  // (no precise aiming); it settles back when the cursor leaves. Throttled.
   let _moveAt = 0;
   function _proximity(e) {
     const now = Date.now();
@@ -118,9 +163,18 @@
     _moveAt = now;
     if (!_pill || _disabled || _pill.style.display === 'none') return;
     const r = _pill.getBoundingClientRect();
-    const pad = 46;
+    const pad = 52;
     const near = e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
-    if (near && _pill.classList.contains('aw-collapsed')) { _hovering = true; _pill.classList.remove('aw-collapsed'); }
+    if (near) {
+      // lean: -1 (cursor left of center) .. 1 (right of center)
+      const cx = r.left + r.width / 2;
+      const lean = Math.max(-1, Math.min(1, (e.clientX - cx) / (r.width / 2 + pad)));
+      _pill.style.setProperty('--aw-lean', lean.toFixed(2));
+    } else {
+      _pill.style.setProperty('--aw-lean', '0');
+    }
+    // Only swell open on approach when there is a thought to show.
+    if (near && _current && _pill.classList.contains('aw-collapsed')) { _hovering = true; _pill.classList.remove('aw-collapsed'); }
     else if (!near && _hovering) { _hovering = false; if (!_collapseTimer) _pill.classList.add('aw-collapsed'); }
   }
   document.addEventListener('mousemove', _proximity, { passive: true });
@@ -129,10 +183,12 @@
     _current = nudge;
     const el = _ensurePill();
     el.querySelector('.aw-text').textContent = _plain(nudge.title);
+    _surface();
     el.classList.remove('aw-collapsed');
-    el.style.display = 'flex';
-    requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)'; });
-    // After a few seconds, tuck into the thin glowing pill (unless hovered).
+    el.classList.remove('aw-fresh');
+    void el.offsetWidth;              // restart the wobble for back-to-back thoughts
+    el.classList.add('aw-fresh');
+    // After a few seconds, settle back into the resting droplet (unless hovered).
     clearTimeout(_collapseTimer);
     _collapseTimer = setTimeout(() => {
       _collapseTimer = null;
@@ -140,11 +196,21 @@
     }, EXPAND_MS);
   }
 
+  // Settle: clear the thought but KEEP the droplet present (it lives here).
+  function _settle() {
+    clearTimeout(_collapseTimer); _collapseTimer = null;
+    _current = null;
+    if (!_pill) return;
+    _pill.classList.add('aw-collapsed');
+    _pill.classList.remove('aw-fresh');
+  }
+
+  // Hide entirely (only for disable).
   function _hidePill() {
     clearTimeout(_collapseTimer); _collapseTimer = null;
     if (!_pill) { _current = null; return; }
     _pill.style.opacity = '0';
-    _pill.style.transform = 'translateX(-50%) translateY(16px)';
+    _pill.style.transform = 'translateX(-50%) translateY(18px)';
     setTimeout(() => { if (_pill) _pill.style.display = 'none'; }, 300);
     _current = null;
   }
@@ -153,8 +219,13 @@
   const _BTN_SOFT = 'background:var(--surface1,#313244);border:none;color:var(--subtext1,#cdd6f4);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;';
 
   function _openModal() {
-    if (!_current) return;
-    const n = _current;
+    const n = _current || {
+      // Resting click with nothing pressing: still answer the door.
+      type: 'presence',
+      title: "I'm here. Nothing pressing right now.",
+      detail: 'I will speak up when a task lands, something breaks, or a thread is worth picking back up.',
+      _noActions: true,
+    };
     const label = n.actionLabel || (n.action && n.action.kind === 'suggestion' ? 'Do it' : 'Show me');
     let bg = document.getElementById('ambientWhisperModalBg');
     if (bg) bg.remove();
@@ -176,8 +247,10 @@
           (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + '</div>' : '') +
         '</div>' +
         '<div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:15px 18px 16px;">' +
-          '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button>' +
-          '<button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>' +
+          (n._noActions
+            ? '<button id="awmDone" style="' + _BTN_SOFT + '">Close</button>'
+            : '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + label + '</button>' +
+              '<button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>') +
           '<span style="flex:1;"></span>' +
           '<button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button>' +
         '</div>' +
@@ -189,8 +262,11 @@
     const close = () => bg.remove();
     bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
     bg.querySelector('#awmClose').addEventListener('click', close);
-    bg.querySelector('#awmAct').addEventListener('click', () => _runAction(n, modal));
-    bg.querySelector('#awmDismiss').addEventListener('click', () => { close(); _dismiss(); });
+    if (n._noActions) bg.querySelector('#awmDone').addEventListener('click', close);
+    else {
+      bg.querySelector('#awmAct').addEventListener('click', () => _runAction(n, modal));
+      bg.querySelector('#awmDismiss').addEventListener('click', () => { close(); _dismiss(); });
+    }
     bg.querySelector('#awmOff').addEventListener('click', () => { close(); _disable(); });
   }
 
@@ -201,10 +277,10 @@
   // it over with the right prompt.
   async function _runAction(n, modal) {
     _feedback(n.type, 'accept');
-    // A one-shot nudge (e.g. a specific task failure) should not re-surface once
-    // the user has engaged with it - acting counts as handled.
-    if (n.type && n.type.indexOf('task-failure') === 0) _dismissed.add(n.title);
-    _hidePill();
+    // A one-shot nudge (a specific task) should not re-surface once the user
+    // has engaged with it - acting counts as handled.
+    if (n.type && (n.type.indexOf('task-failure') === 0 || n.type.indexOf('task-success') === 0)) _dismissed.add(n.title);
+    _settle();
     const body = modal.querySelector('#awmBody');
     const actions = modal.querySelector('#awmActions');
     actions.innerHTML = '<span style="font-size:12px;color:var(--subtext0,#a6adc8);display:flex;align-items:center;gap:7px;"><span class="aw-dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 8px var(--accent,#89b4fa);"></span>Thinking...</span>';
@@ -244,7 +320,7 @@
     if (!_current) return;
     _dismissed.add(_current.title);   // sticks: never re-show this exact nudge
     _feedback(_current.type, 'dismiss');
-    _hidePill();
+    _settle();
     setTimeout(() => check(true), 1500);
   }
 
@@ -268,11 +344,10 @@
       if (!r.ok) return;
       const d = await r.json().catch(() => ({}));
       if (d && d.enabled === false) { _disabled = true; _hidePill(); return; }
+      _surface();   // the droplet lives here whether or not there is a thought
       const nudge = d && d.nudge;
       if (nudge && nudge.title && !_dismissed.has(nudge.title)) {
         if (!_current || _current.title !== nudge.title) _showPill(nudge);
-      } else if (!_current) {
-        _hidePill();
       }
     } catch (_) { /* offline / not ready */ }
   }
@@ -282,29 +357,26 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(false); });
   if (document.readyState !== 'loading') setTimeout(() => check(true), 5000);
 
-  // Inactivity: a gentle "still here?" if the user goes quiet for a while. This
-  // nudge is generated client-side (only the client knows about keyboard/mouse
-  // activity); it still honours the disable flag + dismiss.
+  // Inactivity: when the user goes quiet, ask the server for a nudge tuned to
+  // the idle moment (unsaved work? momentum? an open note thread?). The rule
+  // engine picks the words, and the novelty gate may choose SILENCE - which is
+  // intentional: a colleague does not repeat "still here?" every few minutes.
   let _idleTimer = null;
   const IDLE_MS = 4 * 60 * 1000;
   function _resetIdle() { clearTimeout(_idleTimer); _idleTimer = setTimeout(_onIdle, IDLE_MS); }
   async function _onIdle() {
     if (_disabled || _current) return;
-    // Ask the server for a nudge tuned to the idle moment (unsaved work?
-    // momentum? silence?). The rule engine picks the right words, and the
-    // novelty gate may decide to say NOTHING - which is intentional: a
-    // colleague does not repeat "still here?" every few minutes. No client
-    // fallback.
     await check(true, { idle: true });
   }
   ['mousemove', 'keydown', 'mousedown'].forEach(ev => window.addEventListener(ev, _resetIdle, { passive: true }));
   _resetIdle();
 
-  // Failure-triggered: the research is clear that execution FAILURE is the one
-  // moment to speak immediately. The orchestrator broadcasts a task-update (and
-  // has already written tasks.json) the instant a task fails - so we listen on
+  // Failure/landing-triggered: the orchestrator broadcasts a task-update (and
+  // has already written tasks.json) the instant a task finishes - listen on
   // the WS and force an immediate nudge check instead of waiting up to 90s.
-  let _failTimer = null;
+  // Failures speak immediately; successes are the "second mind" moment (the
+  // work landed - offer the next thread).
+  let _taskTimer = null;
   function _connectWS() {
     try {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -314,10 +386,10 @@
           const msg = JSON.parse(ev.data);
           if (msg.type !== 'orchestrator-event' || msg.event !== 'task-update') return;
           const st = msg.task && msg.task.state;
-          if (st !== 'failed' && st !== 'timeout') return;
-          // Debounce a burst of failures into one check; force past the interval.
-          if (_failTimer) return;
-          _failTimer = setTimeout(() => { _failTimer = null; if (!_disabled) check(true); }, 1200);
+          if (st !== 'failed' && st !== 'timeout' && st !== 'completed') return;
+          // Debounce a burst of completions into one check; force past the interval.
+          if (_taskTimer) return;
+          _taskTimer = setTimeout(() => { _taskTimer = null; if (!_disabled) check(true); }, 1200);
         } catch (_) { /* ignore malformed frames */ }
       };
       ws.onclose = () => setTimeout(_connectWS, 4000);
