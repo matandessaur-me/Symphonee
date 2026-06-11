@@ -290,7 +290,7 @@ function mountBrain(addRoute, json, ctx) {
         history: Array.isArray(body.history) ? body.history.slice(-3) : [],
       }, send);
       if (result.grounded) {
-        send({ type: 'done', answer: result.answer, citedNodeIds: result.citedNodeIds, sources: result.sources, recalled: result.recalled, model: result.model, since: result.since });
+        send({ type: 'done', answer: result.answer, citedNodeIds: result.citedNodeIds, sources: result.sources, actions: result.actions || [], recalled: result.recalled, model: result.model, since: result.since });
         if (broadcast) broadcast({ type: 'symphonee-ask', payload: { source: 'local', stream: true } });
       } else {
         send({ type: 'escalate', reason: result.reason || 'no-knowledge' });

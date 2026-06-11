@@ -131,6 +131,51 @@ test('_recentNotes tolerates a missing notes dir', () => {
 
 // ── the ask surface: time hints, cross-AI recall, deep answer ────────────────
 
+test('_sinceIso resolves today to start-of-day, not now', () => {
+  const now = new Date('2026-06-10T15:30:00');
+  const iso = la._sinceIso('today', now);
+  const d = new Date(iso);
+  assert.equal(d.getHours(), 0);
+  assert.equal(d.getDate(), 10);
+  // natural hints resolve through recall.parseDateHint
+  const week = new Date(la._sinceIso('1 week ago', now));
+  assert.ok(now - week >= 6.9 * 24 * 3600 * 1000);
+  assert.equal(la._sinceIso(null), null);
+});
+
+test('_trimToSentence cuts a token-capped mid-word tail back to the last sentence', () => {
+  assert.equal(
+    la._trimToSentence('This works. This is a critical step towards a more maintainable Sym'),
+    'This works.');
+  assert.equal(la._trimToSentence('A complete sentence.'), 'A complete sentence.');
+  // no sentence boundary worth keeping: leave as is
+  assert.equal(la._trimToSentence('no punctuation at all here'), 'no punctuation at all here');
+});
+
+test('_deriveActions turns cited notes/docs/tasks into follow-up actions', () => {
+  const sources = [
+    { id: 'n1', kind: 'note', label: 'Launch Plan', file: 'C:\\repo\\notes\\_global\\Launch Plan.md' },
+    { id: 'n1b', kind: 'note', label: 'Launch Plan dup', file: 'C:\\repo\\notes\\_global\\Launch Plan.md' },
+    { id: 'd1', kind: 'doc', label: 'README', file: 'C:\\repo\\README.md' },
+    { id: 'm1', kind: 'memory', label: 'a card', file: null },
+  ];
+  const acts = la._deriveActions(sources, { successes: [{ id: 'task9' }] });
+  assert.equal(acts.length, 3);
+  assert.deepEqual(acts.map(a => a.type), ['open-note', 'open-file', 'open-task']);
+  assert.equal(acts[0].name, 'Launch Plan');
+  assert.equal(acts[1].path, 'C:\\repo\\README.md');
+  assert.equal(acts[2].id, 'task9');
+});
+
+test('_isPureTemporal separates "what changed today" from topic questions', () => {
+  assert.equal(la._isPureTemporal('what changed today?'), true);
+  assert.equal(la._isPureTemporal('what did I do the last two weeks?'), true);
+  assert.equal(la._isPureTemporal('what happened yesterday'), true);
+  assert.equal(la._isPureTemporal('what changed in the parser today?'), false, 'parser is a topic');
+  assert.equal(la._isPureTemporal('did I change my env recently?'), false, 'env is a topic');
+  assert.equal(la._isPureTemporal('what do you know about the booking flow'), false);
+});
+
 test('_timeHintFromQuestion pulls a window out of the question', () => {
   assert.equal(la._timeHintFromQuestion('what did I do the last three weeks for the website project'), '3 weeks ago');
   assert.equal(la._timeHintFromQuestion('what happened in the past 2 days'), '2 days ago');

@@ -309,10 +309,51 @@
         // from feeling like noise.
         (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + "</div>" : "");
       }
-      for (const t of card.turns || []) {
-        h += '<div style="margin-top:' + (h ? "12px" : "0") + ";padding-top:" + (h ? "10px" : "0") + ";" + (h ? "border-top:1px solid var(--surface1,#313244);" : "") + '"><div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:5px;">' + _md(t.q) + "</div><div>" + _md(t.a) + "</div></div>";
+      const turns = card.turns || [];
+      for (let i = 0; i < turns.length; i++) {
+        const t = turns[i];
+        const chips = i === turns.length - 1 && t.actions && t.actions.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;">' + t.actions.map((a, j) => '<button class="awm-turn-act" data-act="' + j + '" style="background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 22%,var(--surface2,#45475a));color:var(--subtext1,#bac2de);font-size:11px;padding:6px 11px;border-radius:999px;cursor:pointer;font-family:inherit;">' + _md(a.label) + "</button>").join("") + "</div>" : "";
+        h += '<div style="margin-top:' + (h ? "12px" : "0") + ";padding-top:" + (h ? "10px" : "0") + ";" + (h ? "border-top:1px solid var(--surface1,#313244);" : "") + '"><div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:5px;">' + _md(t.q) + "</div><div>" + _md(t.a) + "</div>" + chips + "</div>";
       }
       return h;
+    }
+    async function _runTurnAction(a, modal) {
+      if (!a) return;
+      if (a.type === "open-note") {
+        _closeModal();
+        try {
+          if (typeof window.switchTab === "function") window.switchTab("notes");
+        } catch (_) {
+        }
+        try {
+          if (typeof window.openNote === "function") window.openNote(a.name);
+        } catch (_) {
+        }
+      } else if (a.type === "open-file") {
+        _closeModal();
+        try {
+          if (typeof window.switchTab === "function") window.switchTab("files");
+        } catch (_) {
+        }
+        try {
+          if (typeof window.viewFile === "function") window.viewFile(a.path);
+        } catch (_) {
+        }
+      } else if (a.type === "open-task") {
+        try {
+          const r = await fetch("/api/orchestrator/task?id=" + encodeURIComponent(a.id));
+          const d = await r.json().catch(() => ({}));
+          const body = modal.querySelector("#awmBody");
+          if (body && d && (d.result || d.error)) {
+            const block = document.createElement("div");
+            block.setAttribute("style", "margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface1,#313244);font-size:12px;line-height:1.6;color:var(--subtext1,#bac2de);max-height:180px;overflow:auto;white-space:pre-wrap;");
+            block.textContent = (d.result || d.error || "").slice(0, 4e3);
+            body.appendChild(block);
+            body.scrollTop = body.scrollHeight;
+          }
+        } catch (_) {
+        }
+      }
     }
     function _renderView(modal) {
       const panel = modal;
@@ -346,6 +387,13 @@
       }
       body.innerHTML = _cardHtml(card);
       body.scrollTop = card.turns && card.turns.length ? body.scrollHeight : 0;
+      const lastTurn = card.turns && card.turns[card.turns.length - 1];
+      body.querySelectorAll(".awm-turn-act").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const a = lastTurn && lastTurn.actions && lastTurn.actions[parseInt(btn.dataset.act, 10)];
+          _runTurnAction(a, modal);
+        });
+      });
       replyRow.style.display = "flex";
       replyRow.innerHTML = '<input id="awmReply" class="awm-reply" type="text" placeholder="Reply to this thread..."/><button id="awmReplyGo" style="' + _BTN_PRIMARY + 'padding:9px 14px;">Reply</button>';
       const replyInput = replyRow.querySelector("#awmReply");
@@ -568,7 +616,7 @@
         finale = { type: "escalate", reason: "offline" };
       }
       if (finale && finale.type === "done" && finale.answer) {
-        card.turns.push({ q: question, a: finale.answer, at: Date.now() });
+        card.turns.push({ q: question, a: finale.answer, at: Date.now(), actions: finale.actions || [] });
         _renderView(modal);
         const reply = panel.querySelector("#awmReply");
         if (reply) reply.focus();
