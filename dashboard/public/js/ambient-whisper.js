@@ -24,42 +24,49 @@
       const s = document.createElement("style");
       s.id = "ambientWhisperStyles";
       s.textContent = `
+      /* The shell is a CRISP PILL (Wispr Flow style) - the liquid lives INSIDE
+         it, never as the silhouette. Clean edge, breathing glow. */
       #ambientWhisper{position:fixed;left:50%;bottom:14px;transform:translateX(-50%) translateY(18px);
-        z-index:3200;display:none;align-items:center;box-sizing:border-box;cursor:pointer;
-        min-width:170px;max-width:min(560px,84vw);height:36px;padding:0 16px;border-radius:999px;
+        z-index:3200;display:none;align-items:center;box-sizing:border-box;cursor:pointer;overflow:hidden;
+        min-width:170px;max-width:min(560px,84vw);height:34px;padding:0 16px;border-radius:999px;
         font-family:var(--font-ui,system-ui);font-size:12px;color:var(--text,#cdd6f4);
-        opacity:0;
+        background:color-mix(in srgb,var(--surface0,#1e1e2e) 86%,var(--accent,#89b4fa) 8%);
+        border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 42%,transparent);
+        opacity:0;animation:aw-breathe 4.4s ease-in-out infinite;
         transition:opacity .45s ease,transform .5s cubic-bezier(.2,.85,.25,1),
           min-width .55s cubic-bezier(.34,1.3,.3,1),max-width .55s cubic-bezier(.34,1.3,.3,1),
           height .5s cubic-bezier(.34,1.3,.3,1),padding .4s ease;}
-      /* resting: a small breathing droplet on the waterline */
-      #ambientWhisper.aw-collapsed{min-width:58px;max-width:58px;height:17px;padding:0;}
+      #ambientWhisper:hover{filter:brightness(1.1);}
+      @keyframes aw-breathe{0%,100%{box-shadow:0 0 11px -4px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}
+        50%{box-shadow:0 0 24px -1px var(--accent,#89b4fa),0 5px 18px -6px rgba(0,0,0,.5);}}
+      /* resting: a short pill on the waterline - always visible, always clickable */
+      #ambientWhisper.aw-collapsed{min-width:84px;max-width:84px;height:15px;padding:0;}
       #ambientWhisper.aw-collapsed .aw-content{opacity:0;pointer-events:none;}
-      /* the liquid itself: three metaballs fused by the goo filter. The glow is
-         a drop-shadow AFTER the goo so light follows the merged silhouette. */
-      #ambientWhisper .aw-goo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-        filter:url(#awGoo) drop-shadow(0 0 11px color-mix(in srgb,var(--accent,#89b4fa) 55%,transparent));
+      /* the liquid INSIDE the shell: gooey metaballs clipped by the pill,
+         drifting like light under glass */
+      #ambientWhisper .aw-goo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:.7;
+        filter:url(#awGoo);
         transform:translateX(calc(var(--aw-lean,0)*7px));transition:transform .6s cubic-bezier(.2,.8,.2,1);}
       #ambientWhisper .aw-blob{position:absolute;border-radius:50%;
-        background:color-mix(in srgb,var(--surface0,#1e1e2e) 72%,var(--accent,#89b4fa) 24%);}
-      #ambientWhisper .aw-blob.b1{left:4%;top:8%;width:46%;height:86%;animation:aw-b1 4.6s ease-in-out infinite;}
-      #ambientWhisper .aw-blob.b2{left:30%;top:4%;width:48%;height:94%;animation:aw-b2 5.9s ease-in-out infinite;}
-      #ambientWhisper .aw-blob.b3{left:58%;top:10%;width:40%;height:82%;animation:aw-b3 5.1s ease-in-out infinite;}
-      /* each blob breathes on its own rhythm - the composite never repeats */
-      @keyframes aw-b1{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(3%,-5%) scale(1.07,.94);}}
-      @keyframes aw-b2{0%,100%{transform:translate(0,0) scale(1);}45%{transform:translate(-2%,6%) scale(.95,1.08);}}
-      @keyframes aw-b3{0%,100%{transform:translate(0,0) scale(1);}55%{transform:translate(-4%,-4%) scale(1.05,.96);}}
-      /* a slow inner light drifting through the liquid */
+        background:color-mix(in srgb,var(--accent,#89b4fa) 30%,transparent);}
+      #ambientWhisper .aw-blob.b1{left:-6%;top:14%;width:42%;height:120%;animation:aw-b1 4.6s ease-in-out infinite;}
+      #ambientWhisper .aw-blob.b2{left:28%;top:-22%;width:50%;height:130%;animation:aw-b2 5.9s ease-in-out infinite;}
+      #ambientWhisper .aw-blob.b3{left:62%;top:18%;width:44%;height:118%;animation:aw-b3 5.1s ease-in-out infinite;}
+      /* each puddle of light breathes on its own rhythm - never loops visibly */
+      @keyframes aw-b1{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(9%,-7%) scale(1.12,.92);}}
+      @keyframes aw-b2{0%,100%{transform:translate(0,0) scale(1);}45%{transform:translate(-7%,9%) scale(.93,1.1);}}
+      @keyframes aw-b3{0%,100%{transform:translate(0,0) scale(1);}55%{transform:translate(-10%,-6%) scale(1.08,.94);}}
+      /* a slow sheen drifting across the glass */
       #ambientWhisper .aw-sheen{position:absolute;inset:0;border-radius:inherit;pointer-events:none;overflow:hidden;
         opacity:.55;mix-blend-mode:screen;}
       #ambientWhisper .aw-sheen::before{content:'';position:absolute;inset:-20%;
         background:linear-gradient(100deg,transparent 32%,color-mix(in srgb,var(--accent,#89b4fa) 36%,transparent) 50%,transparent 68%);
         background-size:240% 100%;animation:aw-sheen 7s ease-in-out infinite;}
       @keyframes aw-sheen{0%{background-position:150% 0;}50%{background-position:-30% 0;}100%{background-position:150% 0;}}
-      /* fresh thought: a jelly wobble - the swell of having something to say */
-      #ambientWhisper.aw-fresh .aw-goo{animation:aw-wobble .9s cubic-bezier(.36,.07,.19,.97);}
-      @keyframes aw-wobble{0%{transform:scale(1,1);}25%{transform:scale(1.05,.92);}50%{transform:scale(.97,1.05);}
-        72%{transform:scale(1.02,.97);}100%{transform:scale(1,1);}}
+      /* fresh thought: the liquid inside sloshes (the shell stays a pill) */
+      #ambientWhisper.aw-fresh .aw-goo{animation:aw-slosh .9s cubic-bezier(.36,.07,.19,.97);}
+      @keyframes aw-slosh{0%{transform:translateX(0) scale(1,1);}25%{transform:translateX(4px) scale(1.04,.94);}
+        50%{transform:translateX(-3px) scale(.98,1.04);}72%{transform:translateX(2px) scale(1.01,.98);}100%{transform:translateX(0) scale(1,1);}}
       #ambientWhisper .aw-content{position:relative;z-index:1;display:flex;align-items:center;gap:9px;width:100%;
         opacity:1;transition:opacity .35s ease .12s;}
       #ambientWhisper .aw-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--accent,#89b4fa);
@@ -69,7 +76,6 @@
       #ambientWhisper .aw-x{background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:15px;line-height:1;
         padding:1px 3px;cursor:pointer;flex:none;border-radius:6px;}
       #ambientWhisper .aw-x:hover{color:var(--text,#cdd6f4);}
-      #ambientWhisper:hover .aw-goo{filter:url(#awGoo) drop-shadow(0 0 16px color-mix(in srgb,var(--accent,#89b4fa) 70%,transparent));}
       /* the panel melts UP out of the droplet - anchored to the waterline, not
          floating in the void like a dialog */
       #ambientWhisperModalBg{position:fixed;inset:0;z-index:3600;display:none;align-items:flex-end;justify-content:center;
@@ -154,6 +160,10 @@
     document.addEventListener("mousemove", _proximity, { passive: true });
     function _showPill(nudge) {
       _current = nudge;
+      const last = _thread[_thread.length - 1];
+      if (!(last && last.kind === "nudge" && last.n.title === nudge.title)) {
+        _thread.push({ at: Date.now(), kind: "nudge", n: nudge });
+      }
       const el = _ensurePill();
       el.querySelector(".aw-text").textContent = _plain(nudge.title);
       _surface();
@@ -192,39 +202,101 @@
     const _BTN_PRIMARY = "background:var(--accent,#89b4fa);border:none;color:#11111b;font-weight:600;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer;";
     const _BTN_SOFT = "background:var(--surface1,#313244);border:none;color:var(--subtext1,#cdd6f4);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;";
     const _STATUS = (label) => '<span style="font-size:12px;color:var(--subtext0,#a6adc8);display:flex;align-items:center;gap:7px;"><span class="aw-dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 8px var(--accent,#89b4fa);"></span>' + label + "</span>";
+    const _thread = [];
+    let _convo = [];
+    let _view = -1;
+    function _fmtTime(ts) {
+      const d = new Date(ts);
+      let h = d.getHours();
+      const m = String(d.getMinutes()).padStart(2, "0");
+      const ap = h >= 12 ? "PM" : "AM";
+      h = h % 12 || 12;
+      return h + ":" + m + " " + ap;
+    }
+    function _renderView(modal) {
+      const body = modal.querySelector("#awmBody");
+      const actions = modal.querySelector("#awmActions");
+      const nav = modal.querySelector("#awmNav");
+      const e = _view >= 0 && _view < _thread.length ? _thread[_view] : null;
+      if (_thread.length > 0) {
+        const canPrev = _view !== 0;
+        const canNext = _view >= 0 && _view < _thread.length - 1;
+        nav.innerHTML = '<button id="awmPrev" ' + (canPrev ? "" : "disabled") + ' style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:13px;cursor:pointer;padding:0 2px;">&lsaquo;</button><span style="font-size:10.5px;color:var(--overlay1,#7f849c);">' + (e ? _view + 1 + "/" + _thread.length + " &middot; " + _fmtTime(e.at) : _thread.length + " this session") + '</span><button id="awmNext" ' + (canNext ? "" : "disabled") + ' style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:13px;cursor:pointer;padding:0 2px;">&rsaquo;</button>';
+        const prev = nav.querySelector("#awmPrev");
+        const next = nav.querySelector("#awmNext");
+        if (prev) prev.addEventListener("click", () => {
+          _view = _view === -1 ? _thread.length - 1 : Math.max(0, _view - 1);
+          _renderView(modal);
+        });
+        if (next) next.addEventListener("click", () => {
+          if (_view >= 0 && _view < _thread.length - 1) {
+            _view += 1;
+            _renderView(modal);
+          }
+        });
+      } else nav.innerHTML = "";
+      if (!e) {
+        body.innerHTML = '<div style="font-size:13px;color:var(--subtext0,#a6adc8);">What do you want to know? I remember your notes, your decisions, and what every AI here has worked on.</div>';
+        actions.innerHTML = _offHtml();
+        _wireOff(modal);
+        return;
+      }
+      if (e.kind === "nudge") {
+        const n = e.n;
+        body.innerHTML = _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + // Provenance: WHY the whisper spoke - transparency keeps proactivity
+        // from feeling like noise.
+        (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + "</div>" : "");
+        const live = _current && _current.title === n.title;
+        actions.innerHTML = '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + (n.actionLabel || "Show me") + "</button>" + (live ? '<button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>' : "") + _offHtml();
+        modal.querySelector("#awmAct").addEventListener("click", () => _runAction(n, modal));
+        const dis = modal.querySelector("#awmDismiss");
+        if (dis) dis.addEventListener("click", () => {
+          _closeModal();
+          _dismiss();
+        });
+        _wireOff(modal);
+      } else {
+        body.innerHTML = '<div style="font-size:11.5px;color:var(--overlay1,#7f849c);margin-bottom:7px;">' + _md(e.q) + '</div><div id="awmAnswer">' + _md(e.a) + "</div>";
+        actions.innerHTML = '<button id="awmAgent" style="' + _BTN_SOFT + '">Go deeper in terminal</button>' + _offHtml();
+        modal.querySelector("#awmAgent").addEventListener("click", () => {
+          _closeModal();
+          _handToAgent(e.q, e.a);
+        });
+        _wireOff(modal);
+      }
+    }
+    function _offHtml() {
+      return '<span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off</button>';
+    }
+    function _wireOff(modal) {
+      const off = modal.querySelector("#awmOff");
+      if (off) off.addEventListener("click", () => {
+        _closeModal();
+        _disable();
+      });
+    }
     function _openModal(opts) {
       opts = opts || {};
-      const n = _current && !opts.askOnly ? _current : null;
       let bg = document.getElementById("ambientWhisperModalBg");
       if (bg) bg.remove();
       bg = document.createElement("div");
       bg.id = "ambientWhisperModalBg";
-      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;">' + (n ? _md(n.title) + (n.detail ? '<div style="margin-top:7px;font-size:12px;line-height:1.6;color:var(--subtext0,#a6adc8);">' + _md(n.detail) + "</div>" : "") + // Provenance: WHY the whisper spoke. Transparency is what keeps
-      // proactivity from feeling like noise.
-      (n.because ? '<div style="margin-top:9px;font-size:11px;font-style:italic;color:var(--overlay1,#7f849c);">because ' + _md(n.because) + "</div>" : "") : '<div style="font-size:13px;color:var(--subtext0,#a6adc8);">What do you want to know? I remember your notes, your decisions, and what every AI here has worked on.</div>') + '</div><div style="display:flex;align-items:center;gap:8px;padding:11px 18px 4px;"><input id="awmAsk" type="text" placeholder="Ask about your work..." style="flex:1;background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 22%,var(--surface2,#45475a));border-radius:10px;color:var(--text,#cdd6f4);font-size:12.5px;padding:8px 12px;outline:none;font-family:inherit;"/><button id="awmAskGo" style="' + _BTN_PRIMARY + 'padding:8px 13px;">Ask</button></div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:11px 18px 16px;">' + (n ? '<button id="awmAct" style="' + _BTN_PRIMARY + '">' + (n.actionLabel || (n.action && n.action.kind === "suggestion" ? "Do it" : "Show me")) + '</button><button id="awmDismiss" style="' + _BTN_SOFT + '">Dismiss</button>' : "") + '<span style="flex:1;"></span><button id="awmOff" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:11px;cursor:pointer;text-decoration:underline;">Turn off whispers</button></div></div>';
+      bg.innerHTML = '<div id="ambientWhisperModal"><div style="display:flex;align-items:center;gap:9px;padding:15px 18px 11px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent,#89b4fa);box-shadow:0 0 10px var(--accent,#89b4fa);"></span><strong style="font-size:13px;color:var(--text,#cdd6f4);">Symphonee</strong><span id="awmNav" style="display:flex;align-items:center;gap:5px;margin-left:4px;"></span><span style="flex:1;"></span><button id="awmClose" style="background:transparent;border:none;color:var(--overlay1,#7f849c);font-size:17px;line-height:1;cursor:pointer;">&times;</button></div><div id="awmBody" style="padding:2px 18px 4px;font-size:14px;line-height:1.55;color:var(--text,#cdd6f4);max-height:46vh;overflow:auto;"></div><div style="display:flex;align-items:center;gap:8px;padding:11px 18px 4px;"><input id="awmAsk" type="text" placeholder="Ask about your work..." style="flex:1;background:var(--surface1,#313244);border:1px solid color-mix(in srgb,var(--accent,#89b4fa) 22%,var(--surface2,#45475a));border-radius:10px;color:var(--text,#cdd6f4);font-size:12.5px;padding:8px 12px;outline:none;font-family:inherit;"/><button id="awmAskGo" style="' + _BTN_PRIMARY + 'padding:8px 13px;">Ask</button></div><div id="awmActions" style="display:flex;align-items:center;gap:8px;padding:11px 18px 16px;"></div></div>';
       document.body.appendChild(bg);
       bg.style.display = "flex";
       const modal = bg.querySelector("#ambientWhisperModal");
+      if (_pill) {
+        _pill.style.opacity = "0";
+        _pill.style.pointerEvents = "none";
+      }
       requestAnimationFrame(() => {
         modal.style.opacity = "1";
         modal.style.transform = "translateY(0) scale(1)";
       });
-      const close = () => bg.remove();
       bg.addEventListener("click", (e) => {
-        if (e.target === bg) close();
+        if (e.target === bg) _closeModal();
       });
-      bg.querySelector("#awmClose").addEventListener("click", close);
-      if (n) {
-        bg.querySelector("#awmAct").addEventListener("click", () => _runAction(n, modal));
-        bg.querySelector("#awmDismiss").addEventListener("click", () => {
-          close();
-          _dismiss();
-        });
-      }
-      bg.querySelector("#awmOff").addEventListener("click", () => {
-        close();
-        _disable();
-      });
+      bg.querySelector("#awmClose").addEventListener("click", _closeModal);
       const askInput = bg.querySelector("#awmAsk");
       const go = () => {
         const q = askInput.value.trim();
@@ -237,12 +309,45 @@
       askInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") go();
       });
-      if (!n || opts.focusAsk) setTimeout(() => askInput.focus(), 80);
+      _view = opts.askOnly ? -1 : _thread.length ? _thread.length - 1 : -1;
+      _renderView(modal);
+      if (_view === -1 || opts.focusAsk) setTimeout(() => askInput.focus(), 80);
       return modal;
     }
     function _closeModal() {
       const bg = document.getElementById("ambientWhisperModalBg");
       if (bg) bg.remove();
+      _convo = [];
+      if (_pill && !_disabled) {
+        _pill.style.opacity = "1";
+        _pill.style.pointerEvents = "";
+      }
+    }
+    function _handToAgent(question, answerSoFar) {
+      try {
+        const st = window.state || {};
+        const tid = st.activeTermId || "main";
+        let prompt = "Go deeper on this: " + _plain(question).replace(/\s+/g, " ").trim();
+        const known = _plain(answerSoFar || "").replace(/\s+/g, " ").trim();
+        if (known) prompt += " | What Symphonee already found in my local memory: " + known.slice(0, 280);
+        if (st.ws && st.ws.readyState === 1) {
+          st.ws.send(JSON.stringify({ type: "input", termId: tid, data: prompt }));
+          try {
+            if (typeof window.toast === "function") window.toast("Prompt pasted into your terminal - press Enter to send.", "success");
+          } catch (_) {
+          }
+          return true;
+        }
+      } catch (_) {
+      }
+      try {
+        if (window.openCmdPalette) {
+          window.openCmdPalette(question);
+          return true;
+        }
+      } catch (_) {
+      }
+      return false;
     }
     async function _streamAsk(question, modal) {
       const body = modal.querySelector("#awmBody");
@@ -256,7 +361,7 @@
         const r = await fetch("/api/symphonee/ask/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: question })
+          body: JSON.stringify({ input: question, history: _convo.slice(-3) })
         });
         if (!r.ok || !r.body) throw new Error("stream unavailable");
         const reader = r.body.getReader();
@@ -290,17 +395,12 @@
         finale = { type: "escalate", reason: "offline" };
       }
       if (finale && finale.type === "done" && finale.answer) {
-        answerEl.innerHTML = _md(finale.answer);
-        body.scrollTop = 0;
-        actions.innerHTML = '<button id="awmAgent" style="' + _BTN_SOFT + '">Go deeper with agent</button><span style="flex:1;"></span><button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
-        modal.querySelector("#awmDone").addEventListener("click", _closeModal);
-        modal.querySelector("#awmAgent").addEventListener("click", () => {
-          _closeModal();
-          try {
-            if (window.openCmdPalette) window.openCmdPalette(question);
-          } catch (_) {
-          }
-        });
+        _convo.push({ q: question, a: finale.answer });
+        _thread.push({ at: Date.now(), kind: "qa", q: question, a: finale.answer });
+        _view = _thread.length - 1;
+        _renderView(modal);
+        const ask = modal.querySelector("#awmAsk");
+        if (ask) ask.focus();
         fetch("/api/mind/save-result", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -308,16 +408,13 @@
         }).catch(() => {
         });
       } else {
-        answerEl.innerHTML = '<div style="font-size:13px;color:var(--text,#cdd6f4);">I do not have enough on that - your agent can dig deeper. Want me to hand it over?</div>';
-        actions.innerHTML = '<button id="awmAgent" style="' + _BTN_PRIMARY + '">Send to agent</button><button id="awmDone" style="' + _BTN_SOFT + '">Close</button>';
+        answerEl.innerHTML = '<div style="font-size:13px;color:var(--text,#cdd6f4);">I do not have enough on that - your agent can dig deeper.</div>';
+        actions.innerHTML = '<button id="awmAgent" style="' + _BTN_PRIMARY + '">Hand to my terminal</button>' + _offHtml();
         modal.querySelector("#awmAgent").addEventListener("click", () => {
           _closeModal();
-          try {
-            if (window.openCmdPalette) window.openCmdPalette(question);
-          } catch (_) {
-          }
+          _handToAgent(question, "");
         });
-        modal.querySelector("#awmDone").addEventListener("click", _closeModal);
+        _wireOff(modal);
       }
     }
     function _runAction(n, modal) {
@@ -378,12 +475,16 @@
       } catch (_) {
       }
     }
-    window.addEventListener("DOMContentLoaded", () => setTimeout(() => check(true), 5e3));
+    function _boot() {
+      if (!_disabled) _surface();
+      setTimeout(() => check(true), 5e3);
+    }
+    window.addEventListener("DOMContentLoaded", _boot);
     window.addEventListener("focus", () => check(false));
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") check(false);
     });
-    if (document.readyState !== "loading") setTimeout(() => check(true), 5e3);
+    if (document.readyState !== "loading") _boot();
     let _idleTimer = null;
     const IDLE_MS = 4 * 60 * 1e3;
     function _resetIdle() {

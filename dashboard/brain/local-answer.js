@@ -130,9 +130,12 @@ async function retrieveSources(repoRoot, space, question, max = MAX_SOURCES) {
 // the answer opens like a person talking, not a search engine reporting.
 function _humanize(s) {
   let out = String(s || '').replace(
-    /^\s*(based on (your|the) notes[,:]?\s*|according to (your|the) (notes|records)[,:]?\s*|(the user's|your) notes (indicate|show|say|suggest|mention)( that)?[,:]?\s*|from (your|the) notes[,:]?\s*|here(?:'s| is) what i (know|found)[,:]?\s*)/i,
+    /^\s*(based on (your|the) (notes|context|information)( and [a-z ]{3,30})?[,:]?\s*|according to (your|the) (notes|records)[,:]?\s*|(the user's|your) notes (indicate|show|say|suggest|mention)( that)?[,:]?\s*|from (your|the) notes[,:]?\s*|here(?:'s| is) what i (know|found)[,:]?\s*)/i,
     '',
   ).trim();
+  // A stripped preamble can leave a dangling conjunction ("And recent git
+  // activity, you changed..."). Drop it so the answer opens clean.
+  out = out.replace(/^(and|also|so|plus)[,]?\s+/i, '').trim();
   if (out) out = out.charAt(0).toUpperCase() + out.slice(1);
   return out;
 }
@@ -430,17 +433,18 @@ function _recallLeg(graph, question, { since = null, limit = 12 } = {}) {
   return { cards: cards.slice(0, 6), byCli, since: r.since || null };
 }
 
-function _buildDeepMessages(question, sources, recallLeg, activity) {
+function _buildDeepMessages(question, sources, recallLeg, activity, history = []) {
   const sys = [
     'You are Symphonee - the user\'s own assistant, answering a person about THEIR work from everything you have: their notes, memory cards, cross-AI session history, recent git changes, checkpoints, and task results.',
     '',
     'Answer like a sharp, warm colleague who was in the room for all of it.',
     'Rules:',
     '  - Lead with the answer. No preamble, no "based on your notes".',
-    '  - SHORT. 2 to 4 sentences unless the question truly needs more. People want answers, not reading.',
-    '  - Have a point of view: when the question invites it ("what are we missing", "what should I do"), end with ONE concrete opinionated recommendation.',
+    '  - VERY SHORT. 1 to 3 short sentences, max ~50 words total. People scan, they do not read.',
+    '  - One idea per sentence. Cut every word that does not earn its place.',
+    '  - Have a point of view: when the question invites it ("what are we missing", "what should I do"), add ONE recommendation on its own line, starting with "My take:" - a single sentence, an OPINION (a next move), never a restatement of facts.',
     '  - Honour time words: "last three weeks" means exactly that window - the context you were given is already filtered to it.',
-    '  - Be specific: name projects, files, decisions, commits, which AI did what.',
+    '  - Be specific: name projects, files, decisions, which AI did what. Specifics beat summaries.',
     '  - If you genuinely have nothing relevant, say so in one line and suggest sending it to the agent for a deeper search.',
     '  - Plain, human language. Plain ASCII only. No emojis, em dashes, or smart quotes.',
   ].join('\n');
@@ -471,7 +475,15 @@ function _buildDeepMessages(question, sources, recallLeg, activity) {
   if (act.length) blocks.push('Live activity:\n' + act.join('\n\n'));
 
   const user = `Question: ${question}\n\n${blocks.join('\n\n')}\n\nAnswer directly, short, and human - with an opinion where one is invited.`;
-  return [{ role: 'system', content: sys }, { role: 'user', content: user }];
+  // Prior turns make follow-ups ("explain more", "why?") mean something.
+  const turns = (Array.isArray(history) ? history : [])
+    .filter(h => h && typeof h.q === 'string' && typeof h.a === 'string')
+    .slice(-3)
+    .flatMap(h => [
+      { role: 'user', content: h.q.slice(0, 400) },
+      { role: 'assistant', content: h.a.slice(0, 600) },
+    ]);
+  return [{ role: 'system', content: sys }, ...turns, { role: 'user', content: user }];
 }
 
 /**
@@ -481,16 +493,21 @@ function _buildDeepMessages(question, sources, recallLeg, activity) {
  * Resolves { grounded:true, answer, citedNodeIds, sources, model, since }
  *       OR { grounded:false, reason }.
  */
-async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPath, activeRepo }, onEvent = () => {}) {
+async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPath, activeRepo, history = [] }, onEvent = () => {}) {
   if (!question || typeof question !== 'string') return { grounded: false, reason: 'no-question' };
   const emit = (e) => { try { onEvent(e); } catch (_) { /* listener errors never break the answer */ } };
 
-  emit({ type: 'status', label: 'searching your knowledge' });
-  const { graph, sources } = await retrieveSources(repoRoot, space, question, MAX_SOURCES);
+  // A short follow-up ("explain more") carries no topic of its own - retrieve
+  // on the previous question's terms joined with it.
+  const lastQ = (Array.isArray(history) && history.length && history[history.length - 1].q) || '';
+  const retrievalQ = question.split(/\s+/).length < 4 && lastQ ? lastQ + ' ' + question : question;
 
-  const since = _timeHintFromQuestion(question);
+  emit({ type: 'status', label: 'searching your knowledge' });
+  const { graph, sources } = await retrieveSources(repoRoot, space, retrievalQ, MAX_SOURCES);
+
+  const since = _timeHintFromQuestion(question) || _timeHintFromQuestion(lastQ);
   emit({ type: 'status', label: since ? `recalling since ${since}` : 'recalling prior work' });
-  const leg = _recallLeg(graph, question, { since });
+  const leg = _recallLeg(graph, retrievalQ, { since });
 
   const activity = {
     git: await _gitLog(activeRepoPath || repoRoot, 6),
@@ -507,8 +524,9 @@ async function deepAnswer({ repoRoot, space = '_global', question, activeRepoPat
   let res;
   try {
     res = await llm.chatOllamaStream(
-      _buildDeepMessages(question, sources, leg, activity),
-      { model: SYNTH_MODEL, temperature: 0.4, numPredict: 700, timeoutMs: SYNTH_TIMEOUT_MS },
+      _buildDeepMessages(question, sources, leg, activity, history),
+      // numPredict is a hard cap on rambling: short answers are a feature.
+      { model: SYNTH_MODEL, temperature: 0.4, numPredict: 130, timeoutMs: SYNTH_TIMEOUT_MS },
       (t) => emit({ type: 'token', text: t }),
     );
   } catch (e) {
