@@ -311,7 +311,7 @@ const OB_STEPS = [
 () => ({
   title: 'What should we call you?',
   subtitle: 'This will be used as your display name across Symphonee.',
-  html: `<div class="onboarding-field"><label>Your Name</label><input id="obName" type="text" placeholder="e.g. Jane Doe" value="${esc(state._obData.displayName)}" oninput="_obData.displayName=this.value"></div>`,
+  html: `<div class="onboarding-field"><label>Your Name</label><input id="obName" type="text" placeholder="e.g. Jane Doe" value="${esc(state._obData.displayName)}" oninput="state._obData.displayName=this.value"></div>`,
   validate: () => !!state._obData.displayName.trim()
 }),
 // 1: Welcome
@@ -371,7 +371,7 @@ const OB_STEPS = [
   title: 'AI tools (optional)',
   subtitle: 'Symphonee works with AI assistants like Claude, Gemini, and Codex. Install the ones you want now (or later from Settings), then pick your default. Skip if you only need the local AI.',
   html: `<div id="obAiTools" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"><div style="font-size:11px;color:var(--subtext0);">Detecting...</div></div>
-      <div class="onboarding-field"><label>Default AI</label><select id="obDefaultCli" onchange="_obData.defaultCli=this.value" style="padding:8px 10px;font-size:13px;">
+      <div class="onboarding-field"><label>Default AI</label><select id="obDefaultCli" onchange="state._obData.defaultCli=this.value" style="padding:8px 10px;font-size:13px;">
         <option value="claude"${state._obData.defaultCli === 'claude' ? ' selected' : ''}>Claude Code</option>
         <option value="gemini"${state._obData.defaultCli === 'gemini' ? ' selected' : ''}>Gemini CLI</option>
         <option value="copilot"${state._obData.defaultCli === 'copilot' ? ' selected' : ''}>Copilot CLI</option>
@@ -400,9 +400,9 @@ const OB_STEPS = [
   _requires: 'azure-devops',
   title: 'Azure DevOps (optional)',
   subtitle: 'If you use Azure Boards, fill these in to enable the Backlog tab, iterations, and AB# commit linking. Leave blank to skip - you can install it later from Settings > Plugins.',
-  html: `<div class="onboarding-field"><label>Organization</label><input id="obOrg" type="text" placeholder="e.g. my-org" value="${esc(state._obData.org)}" oninput="_obData.org=this.value"></div>
-      <div class="onboarding-field"><label>Project</label><input id="obProject" type="text" placeholder="e.g. My Project" value="${esc(state._obData.project)}" oninput="_obData.project=this.value"></div>
-      <div class="onboarding-field"><label>Personal Access Token</label><input id="obPat" type="password" placeholder="Your PAT" value="${esc(state._obData.pat)}" oninput="_obData.pat=this.value"></div>
+  html: `<div class="onboarding-field"><label>Organization</label><input id="obOrg" type="text" placeholder="e.g. my-org" value="${esc(state._obData.org)}" oninput="state._obData.org=this.value"></div>
+      <div class="onboarding-field"><label>Project</label><input id="obProject" type="text" placeholder="e.g. My Project" value="${esc(state._obData.project)}" oninput="state._obData.project=this.value"></div>
+      <div class="onboarding-field"><label>Personal Access Token</label><input id="obPat" type="password" placeholder="Your PAT" value="${esc(state._obData.pat)}" oninput="state._obData.pat=this.value"></div>
       <div class="onboarding-hint">
         <strong>How to get your PAT:</strong><br>
         1. Go to <a href="https://dev.azure.com" target="_blank">dev.azure.com</a> and sign in<br>
@@ -411,8 +411,8 @@ const OB_STEPS = [
         4. Under Scopes, select <strong>Work Items: Read & Write</strong> and <strong>Code: Read & Write</strong><br>
         5. Click Create and copy the token
       </div>
-      <div class="onboarding-field" style="margin-top:14px;"><label>Default Team</label><input id="obTeam" type="text" placeholder="e.g. My Project Team (optional)" value="${esc(state._obData.team)}" oninput="_obData.team=this.value"></div>
-      <div class="onboarding-field"><label>Display Name (must match your Azure DevOps name)</label><input id="obAdoName" type="text" value="${esc(state._obData.displayName)}" oninput="_obData.displayName=this.value">
+      <div class="onboarding-field" style="margin-top:14px;"><label>Default Team</label><input id="obTeam" type="text" placeholder="e.g. My Project Team (optional)" value="${esc(state._obData.team)}" oninput="state._obData.team=this.value"></div>
+      <div class="onboarding-field"><label>Display Name (must match your Azure DevOps name)</label><input id="obAdoName" type="text" value="${esc(state._obData.displayName)}" oninput="state._obData.displayName=this.value">
       <div style="font-size:10px;color:var(--subtext0);margin-top:3px;">This needs to match exactly how your name appears in Azure DevOps for "My Items" to work.</div></div>`
 }),
 // 6: Repositories
@@ -448,7 +448,7 @@ const OB_STEPS = [
   html: function () {
     const hasGh = !!(window._loadedPluginsRaw || []).some(p => p.id === 'github');
     const ghBlock = hasGh ? `<div class="onboarding-section-title">GitHub</div>
-        <div class="onboarding-field"><label>Personal Access Token</label><input id="obGhPat" type="password" placeholder="ghp_..." value="${esc(state._obData.ghPat)}" oninput="_obData.ghPat=this.value"></div>
+        <div class="onboarding-field"><label>Personal Access Token</label><input id="obGhPat" type="password" placeholder="ghp_..." value="${esc(state._obData.ghPat)}" oninput="state._obData.ghPat=this.value"></div>
         <div class="onboarding-hint" style="margin-bottom:18px;">
           <strong>How to get your GitHub PAT:</strong><br>
           1. Go to <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a><br>
